@@ -1,6 +1,6 @@
 /*
  * iLink Bot API 客户端（微信官方 ClawBot 通道）。
- * 协议细节移植自 Tencent/openclaw-weixin (src/api/api.ts, src/auth/login-qr.ts, v2.4.10)，
+ * 协议细节移植自 Tencent/openclaw-weixin (src/api/api.ts, src/auth/login-qr.ts, src/cdn/*.ts, src/messaging/send.ts, v2.4.10)，
  * 精简并改写为可注入 baseUrl/fetch 的类。
  * Portions Copyright (C) 2026 Tencent. All rights reserved. Licensed under the MIT, see ./LICENSE.openclaw-weixin.
  */

@@ -5,7 +5,9 @@ import { pathToFileURL } from "node:url";
 import { logger } from "../log.js";
 import type { Store } from "../store/db.js";
 import type { AgentBridge } from "./bridge.js";
-import { adaptSkill, bundledRoots, detectComputerUse, mcpPatchLines, type CuStatus } from "./computer-use.js";
+import os from "node:os";
+import { adaptSkill, mcpPatchLines, resolveComputerUse, type CuResolved } from "./computer-use.js";
+import { cuaConfig, cuaMcpEnv, discoverApps } from "./cua-driver.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 
 const log = logger("agent.host");
@@ -242,37 +244,69 @@ export class AgentHost {
     return f;
   }
 
-  /** 当前机器上 Computer Use 的可用性（不看本机器人的开关）。 */
-  computerUseStatus(): CuStatus {
-    return detectComputerUse(bundledRoots(this.o.runtimeDir));
+  /** 当前机器上本机器人所选后端的可用性（不看本机器人的开关）。 */
+  computerUseStatus(): CuResolved {
+    return resolveComputerUse(this.settings().computerUse.backend, this.o.runtimeDir);
   }
   /** 本机器人实际是否启用 Computer Use：系统支持且设置里开着。 */
-  private computerUseActive(): CuStatus | undefined {
+  private computerUseActive(): CuResolved | undefined {
     if (!this.settings().computerUse.enabled) return undefined;
     const st = this.computerUseStatus();
     return st.available ? st : undefined;
   }
+  private cuReadTools = "";
   /**
-   * Computer Use：插入 mcp-client（随附的 kimi-computer-use 桥，用宿主自己的 node/Electron 运行）
-   * 与审批闸门；把改写过工具名的 SKILL.md 放进 DSH 主目录的用户技能目录。不可用时删掉这份技能。
+   * Computer Use：插入 mcp-client（Cua Driver 经 amb-cua-mcp.mjs，或 macOS 上的 Codex 桥；都用宿主自己的
+   * node/Electron 运行），并写入对应的 SKILL.md。默认所有操作自动执行；只有设置为 ask-input 时才加载审批闸门。
    */
   private computerUseLines(): string[] {
     const skillDir = path.join(this.home, "skills", "computer-use");
     const st = this.computerUseActive();
+    this.cuReadTools = st ? st.readTools.join(",") : "";
     if (!st) {
       fs.rmSync(skillDir, { recursive: true, force: true });
       return [];
     }
+    let lines: string[];
     try {
       fs.mkdirSync(skillDir, { recursive: true });
-      fs.writeFileSync(path.join(skillDir, "SKILL.md"), adaptSkill(fs.readFileSync(st.skill!, "utf8")));
+      if (st.backend === "codex") {
+        fs.writeFileSync(path.join(skillDir, "SKILL.md"), adaptSkill(fs.readFileSync(st.codex.skill!, "utf8")));
+        lines = mcpPatchLines(st.codex, process.execPath, yamlStr);
+      } else {
+        fs.writeFileSync(path.join(skillDir, "SKILL.md"), CUA_SKILL);
+        lines = this.cuaLines(st);
+      }
     } catch (e) {
-      log.warn("computer-use skill copy failed", { err: String(e) });
+      log.warn("computer-use setup failed", { err: String(e) });
+      return [];
     }
+    if (this.settings().computerUse.approval === "ask-input") {
+      lines.push("    - id: amb-computer-use-gate", `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-computer-use-gate.mjs"))}`);
+    }
+    return lines;
+  }
+
+  /** Cua Driver：写配置（清单在 amb-cua-mcp.mjs 启动时按本平台实有工具生成），返回 mcp-client 配置行。 */
+  private cuaLines(st: CuResolved): string[] {
+    const dir = path.join(this.home, "cua");
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const cfg = cuaConfig(st.cua, dir, { readonly: this.settings().permission === "readonly", apps: discoverApps() });
+    const cfgFile = path.join(dir, "config.json");
+    fs.writeFileSync(cfgFile, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+    const env = cuaMcpEnv(process.env, os.homedir(), cfgFile);
     return [
-      ...mcpPatchLines(st, process.execPath, yamlStr),
-      "    - id: amb-computer-use-gate",
-      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-computer-use-gate.mjs"))}`,
+      "    - id: amb-computer-use",
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      "      config:",
+      "        transport: stdio",
+      "        serverName: computer-use",
+      `        command: ${yamlStr(process.execPath)}`,
+      `        args: [${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-cua-mcp.mjs"))}]`,
+      "        env:",
+      ...Object.entries(env).map(([k, v]) => `          ${k}: ${yamlStr(v)}`),
+      "        toolCallTimeoutMs: 120000",
+      "        failOnStartupError: false",
     ];
   }
 
@@ -333,6 +367,7 @@ exec "$REAL" "$@"
       DSH_PERMISSION_MODE: permissionMode(this.settings().permission),
       AMB_MEMORY: this.settings().memory.enabled ? "1" : "0",
       AMB_CU_APPROVAL: this.settings().computerUse.approval,
+      AMB_CU_READ_TOOLS: this.cuReadTools,
       AMB_MAGPIE_KEY: this.o.bridge.token,
       AMB_BRIDGE_URL: this.o.bridge.url,
       AMB_BRIDGE_TOKEN: this.o.bridge.token,
@@ -349,7 +384,7 @@ exec "$REAL" "$@"
   /** 影响子进程启动参数的设置签名 */
   private settingsSig(): string {
     const st = this.settings();
-    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.approval}`;
+    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.backend}|${st.computerUse.approval}`;
   }
   private sig = "";
 
@@ -562,3 +597,27 @@ exec "$REAL" "$@"
     this.state = "stopped";
   }
 }
+
+/** Cua Driver 后端的技能说明（由 anymodel bot 编写；工具来自 trycua/cua 的 cua-driver，MIT）。 */
+const CUA_SKILL = `---
+name: computer-use
+description: Operate native desktop apps on this computer (read windows, click, type, press keys, scroll, drag) through the bundled Cua Driver. Use when the user asks you to do something in a GUI application on their computer.
+---
+
+# Computer Use (Cua Driver)
+
+Tools are named \`mcp__computer-use__<tool>\`. Actions run automatically; no approval is needed unless this bot is set to ask before input actions (then wait for the user's answer).
+
+## Loop
+1. Find the target: \`list_windows\` (or \`list_apps\`), or start one with \`launch_app\`.
+2. Read it narrowly: \`get_window_state({pid, window_id, query:"<what you need>"})\`. Rows look like \`[N] role "label"\`; the element token for row N is \`<snapshot_id>:N\` (e.g. "s0000002a:11"), never a bare number.
+3. Act with the token on the same window: \`click\`, \`type_text\`, \`set_value\`, \`press_key\`, \`hotkey\`, \`scroll\`, \`drag\`, \`invoke_menu\`. Prefer \`run_steps({steps:[{tool,args},...], observe:{}})\` to act and see what changed in one call.
+4. Verify at checkpoints with \`verify_state\` or a targeted \`get_window_state\` (use \`since:"latest"\` for just the changes). Use pixel coordinates only for surfaces missing from the accessibility tree, from a fresh screenshot of the same window.
+
+## Rules
+- Screenshots are for you to look at. Do not send them to the user unless they ask; if they do, save the image into the workspace and present that file.
+- Only apps installed on this computer are in scope; if a call says the app or resource is outside the capability manifest, tell the user instead of looking for a workaround.
+- Do not type passwords, payment details or other secrets unless the user explicitly gave them for this task. Do not confirm purchases, deletions or messages to other people without the user asking for exactly that.
+- On Linux, reading window contents needs AT-SPI; on Wayland only the foreground window can be driven. On macOS the app needs Accessibility and Screen Recording permission; if \`check_permissions\` reports them missing, tell the user how to grant them.
+`;
+

@@ -163,3 +163,38 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Cua Driver（跨平台电脑操作驱动 — MIT）
+
+来源：https://github.com/trycua/cua （libs/cua-driver，发布版 cua-driver-rs-v0.37.0）
+
+安装包按平台随附官方预编译的 `cua-driver` 可执行文件（未修改），以及其 LICENSE 与 THIRD_PARTY_NOTICES.md（位于安装目录 resources/cua-driver/）。构建脚本 scripts/fetch-cua-driver.mjs 固定版本并校验每个发布包的 SHA256。本项目的 dsh-runtime/plugins/amb-cua-mcp.mjs 只是在其 stdio MCP 前面做工具过滤与清单生成，未复制其代码。
+
+**未随附**：cua-perception、OmniParser 等任何 AGPL 组件，以及 Cua Spaces 等 FSL 许可的内容。
+
+```
+MIT License
+
+Copyright (c) 2025 Cua AI, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+Cua Driver 自身依赖的第三方组件声明见其随附的 THIRD_PARTY_NOTICES.md。
+

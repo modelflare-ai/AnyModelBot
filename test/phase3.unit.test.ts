@@ -91,7 +91,11 @@ describe("settings", () => {
     const s = normalizeSettings({ permission: "full", memory: { review: false }, computerUse: { approval: "never" } });
     expect(s.permission).toBe("workspace");
     expect(s.memory).toEqual({ enabled: true, review: false, teamWrite: false });
-    expect(s.computerUse).toEqual({ enabled: true, approval: "always" });
+    expect(s.computerUse).toEqual({ enabled: true, backend: "cua", approval: "auto" });
+    // 旧的审批设置迁移为自动执行
+    expect(normalizeSettings({ computerUse: { approval: "always" } }).computerUse.approval).toBe("auto");
+    expect(normalizeSettings({ computerUse: { approval: "readonly-free" } }).computerUse.approval).toBe("auto");
+    expect(normalizeSettings({ computerUse: { approval: "ask-input", backend: "codex" } }).computerUse).toEqual({ enabled: true, backend: "codex", approval: "ask-input" });
     expect(permissionMode("readonly")).toBe("read-only");
     expect(permissionMode("workspace")).toBe("workspace-write");
   });
@@ -178,24 +182,30 @@ describe("computer use detection", () => {
 });
 
 describe("computer use approval gate plugin", () => {
-  it("asks for actions, lets readonly through when relaxed", async () => {
+  it("is a no-op by default and asks only for input actions in ask-input mode", async () => {
     const plugin = path.join(__dirname, "..", "dsh-runtime", "plugins", "amb-computer-use-gate.mjs");
-    const run = async (mode: string | undefined, tool: string) => {
-      const prev = process.env.AMB_CU_APPROVAL;
+    const run = async (mode: string | undefined, tool: string, read = "list_apps,get_app_state,get_window_state") => {
+      const prev = { a: process.env.AMB_CU_APPROVAL, r: process.env.AMB_CU_READ_TOOLS };
       if (mode) process.env.AMB_CU_APPROVAL = mode;
       else delete process.env.AMB_CU_APPROVAL;
+      process.env.AMB_CU_READ_TOOLS = read;
       let hook: any;
       const mod = await import(plugin + `?t=${Math.random()}`);
       mod.apply({ on: (_ev: string, fn: any) => (hook = fn) });
-      if (prev === undefined) delete process.env.AMB_CU_APPROVAL;
-      else process.env.AMB_CU_APPROVAL = prev;
-      return hook({ name: tool }, async () => ({ kind: "allow" }));
+      for (const [k, v] of [["AMB_CU_APPROVAL", prev.a], ["AMB_CU_READ_TOOLS", prev.r]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      return hook ? hook({ name: tool }, async () => ({ kind: "allow" })) : { kind: "allow", noHook: true };
     };
-    expect((await run(undefined, "mcp__computer-use__click")).kind).toBe("ask");
-    expect((await run(undefined, "mcp__computer-use__get_app_state")).kind).toBe("ask");
-    expect((await run("readonly-free", "mcp__computer-use__get_app_state")).kind).toBe("allow");
-    expect((await run("readonly-free", "mcp__computer-use__type_text")).kind).toBe("ask");
-    expect((await run(undefined, "read_file")).kind).toBe("allow");
+    // 默认（auto）：不注册钩子，所有操作直接执行
+    expect(await run(undefined, "mcp__computer-use__click")).toMatchObject({ kind: "allow", noHook: true });
+    expect(await run("auto", "mcp__computer-use__type_text")).toMatchObject({ kind: "allow", noHook: true });
+    expect((await run("ask-input", "mcp__computer-use__get_window_state")).kind).toBe("allow");
+    expect((await run("ask-input", "mcp__computer-use__get_app_state")).kind).toBe("allow");
+    expect((await run("ask-input", "mcp__computer-use__type_text")).kind).toBe("ask");
+    expect((await run("ask-input", "mcp__computer-use__click")).kind).toBe("ask");
+    expect((await run("ask-input", "read_file")).kind).toBe("allow");
   });
 });
 

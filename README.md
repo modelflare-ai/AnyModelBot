@@ -23,7 +23,7 @@ src/
   main.ts      命令行入口
 electron/      桌面版主进程（启动器 + 托盘）
 ui/            管理界面（Preact + htm，无构建步骤）
-scripts/       setup / build-magpie / electron-smoke
+scripts/       setup / build-magpie / fetch-cua-driver / electron-smoke
 vendor/magpie  magpie 源码（git 子模块，构建时编译）
 ```
 
@@ -73,6 +73,21 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 - 对话中发送 `/model` 查看可用模型，`/model <名称>` 为当前会话切换模型；`/reset` 清空上下文。
 - 隔离与安全：magpie 使用本程序数据目录内独立的 HOME/配置目录；**不读取**你电脑上已有的 Claude/Codex 等订阅凭据，**不改写**任何 agent 配置，关闭自动更新与账户发现；界面代理还会拦截 magpie 的 agent 接入、账户、更新等接口。
 - API Key 只保存在 magpie 的隔离配置中，不经过命令行参数、不写日志。
+
+## 电脑操作（Computer Use）
+
+每个机器人可在「机器人 → 设置 → 电脑操作」中开关、选择后端和审批方式；`/status` 与设置页会显示当前后端、是否可用及原因。
+
+- **后端**
+  - **Cua Driver（默认，三平台）**：随安装包附带官方预编译的 [cua-driver](https://github.com/trycua/cua/tree/main/libs/cua-driver) 0.37.0（MIT），构建时由 `scripts/fetch-cua-driver.mjs` 按平台/架构下载并校验 SHA256。作为内置 MCP 服务器 `cua-driver mcp` 运行，始终使用 `CUA_DRIVER_PERMISSION_MODE=bounded` + 能力清单，**从不**使用 `--dangerously-bypass-approvals`；子进程环境经过清理，不传任何密钥，关闭遥测，禁用 `run_script`。只开放所需的 24 个工具（读取窗口/截图、启动应用、点击、输入、按键、组合键、滚动、拖拽、设值、菜单等），其余工具（脚本、结束进程、剪贴板、浏览器注入、录制、更新等）对模型不可见且会被拒绝。清单列出本机已安装的图形应用（Linux 读 .desktop、macOS 读 /Applications、Windows 读开始菜单），并允许整屏输入；清单最长 24 小时有效，到期前自动重启驱动。
+  - **Codex Computer Use 桥（可选，仅 macOS）**：kimi-computer-use，需要本机已安装 OpenAI Codex Computer Use；不可用时自动回退到 Cua Driver。
+- **审批**：默认所有电脑操作（读取、截图、点击、输入、按键、滚动、拖拽、设值）**自动执行，无需审批**；可选「点击、输入等改变界面的操作先问我」（读取界面仍自动）。升级时已有机器人（含默认机器人）会被迁移为自动执行。权限预设为「只读」的机器人只开放读取类工具。
+- **平台说明**
+  - macOS：需在「系统设置 → 隐私与安全性」中给本应用授予「辅助功能」与「屏幕录制」权限；以 `--direct` 方式运行驱动（尚未在真机验证）。
+  - Linux：X11 下通过 AT-SPI 读取界面（需要 at-spi2-core，应用需开启无障碍）；Wayland 会降级——只能操作 XWayland 应用的前台窗口，界面会给出提示。没有图形会话（DISPLAY/WAYLAND_DISPLAY）时不可用。
+  - Windows：必须在已登录用户的交互式桌面会话中运行（服务/计划任务的非交互会话不可用）。
+- 截图只发给（支持视觉的）模型使用，不会被转发到微信/飞书聊天中；只有用户要求时才会作为文件发送。
+- 未打包：cua-perception、OmniParser（AGPL）以及任何 Cua Spaces（FSL）组件。
 
 ## 飞书应用配置
 

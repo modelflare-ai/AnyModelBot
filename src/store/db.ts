@@ -153,6 +153,24 @@ export class Store {
       const cols = (this.db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map((r) => String(r.name));
       if (!cols.includes(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
     }
+    this.migrateComputerUseAuto();
+  }
+
+  /** 一次性迁移：电脑操作改为默认自动执行（旧的 always / readonly-free 审批设置一律改成 auto）。 */
+  private migrateComputerUseAuto(): void {
+    const KEY = "migration.computer-use-auto";
+    if (this.getKV(KEY)) return;
+    for (const r of this.db.prepare("SELECT id, settings FROM bots").all() as Row[]) {
+      let raw: any = {};
+      try {
+        raw = JSON.parse(String(r.settings ?? "{}"));
+      } catch {
+        raw = {};
+      }
+      if (raw && typeof raw === "object" && raw.computerUse && typeof raw.computerUse === "object") raw.computerUse.approval = "auto";
+      this.db.prepare("UPDATE bots SET settings = ? WHERE id = ?").run(JSON.stringify(normalizeSettings(raw)), String(r.id));
+    }
+    this.setKV(KEY, String(Date.now()));
   }
 
   close(): void {

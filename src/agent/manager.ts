@@ -1,4 +1,4 @@
-import { bundledRoots, CU_UNAVAILABLE, detectComputerUse } from "./computer-use.js";
+import { resolveComputerUse } from "./computer-use.js";
 import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
@@ -106,14 +106,27 @@ export class AgentManager {
   }
 
   /** Computer Use 的系统可用性 + 本机器人开关，供界面与 /status 显示 */
-  computerUse(botId: string): { available: boolean; enabled: boolean; active: boolean; approval: string; reason: string } {
+  computerUse(botId: string): ComputerUseInfo {
     const st = this.settings(botId).computerUse;
-    const sys = this.o.runtimeDir
-      ? detectComputerUse(bundledRoots(this.o.runtimeDir))
-      : { available: false, reason: `${CU_UNAVAILABLE}（代理运行时缺失）` };
+    if (!this.o.runtimeDir) {
+      const reason = "Computer Use: 不可用（代理运行时缺失）";
+      return { available: false, enabled: st.enabled, active: false, backend: st.backend, selectedBackend: st.backend, approval: st.approval, reason, backends: [] };
+    }
+    const sys = resolveComputerUse(st.backend, this.o.runtimeDir);
     const active = this.available && sys.available && st.enabled;
-    const reason = sys.available && !st.enabled ? "Computer Use: 已在本机器人设置中关闭" : sys.reason;
-    return { available: sys.available, enabled: st.enabled, active, approval: st.approval, reason };
+    const mode = st.approval === "ask-input" ? "点击/输入前先问我" : "操作自动执行";
+    const reason = !st.enabled ? "Computer Use: 已在本机器人设置中关闭" : sys.available ? `${sys.reason}；${mode}` : sys.reason;
+    return {
+      available: sys.available,
+      enabled: st.enabled,
+      active,
+      backend: sys.backend,
+      selectedBackend: st.backend,
+      approval: st.approval,
+      reason,
+      notice: sys.notice,
+      backends: sys.backends,
+    };
   }
 
   settings(botId: string): BotSettings {
@@ -451,4 +464,18 @@ export class AgentManager {
     }
     return { done: true, outcome: row.status === "allowed" ? "allowed-once" : row.status === "cancelled" ? "cancelled" : "rejected" };
   }
+}
+
+export interface ComputerUseInfo {
+  available: boolean;
+  enabled: boolean;
+  active: boolean;
+  /** 实际使用的后端 */
+  backend: string;
+  /** 设置里选的后端 */
+  selectedBackend: string;
+  approval: string;
+  reason: string;
+  notice?: string;
+  backends: Array<{ id: string; available: boolean; reason: string }>;
 }

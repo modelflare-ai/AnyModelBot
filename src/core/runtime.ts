@@ -210,7 +210,8 @@ export class BotRuntime {
         const a = this.opts.agent;
         const mode = a?.available ? "代理模式（DeepSeek Harness，工作区沙箱）" : "纯对话模式";
         const pend = a ? a.approvals.pending(convId).map((r) => `${r.kind === "approval" ? "待批准" : "待回答"} ${r.code}`) : [];
-        const cu = a?.available ? [a.computerUse(botId).reason] : [];
+        const cui = a?.available ? a.computerUse(botId) : undefined;
+        const cu = cui ? [`电脑操作：${cui.backend === "codex" ? "Codex 桥" : "Cua Driver"}，${cui.active ? "已启用" : "未启用"}——${cui.reason}`, ...(cui.notice && cui.enabled ? [cui.notice] : [])] : [];
         return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
       }
       case "/model": {

@@ -21,12 +21,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "electron:dev": "npm run build && electron .",
-    "dist": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target current && electron-builder",
+    "dist": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target current && node scripts/fetch-cua-driver.mjs --target current && electron-builder",
     "electron:smoke": "npm run build && node scripts/electron-smoke.mjs",
-    "dist:linux": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target linux/amd64,linux/arm64 && electron-builder --linux",
-    "dist:mac": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target darwin/amd64,darwin/arm64 && electron-builder --mac",
-    "dist:win": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target windows/amd64,windows/arm64 && electron-builder --win",
-    "prepare:dsh": "node scripts/prepare-dsh.mjs"
+    "dist:linux": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target linux/amd64,linux/arm64 && node scripts/fetch-cua-driver.mjs --target linux/x64,linux/arm64 && electron-builder --linux",
+    "dist:mac": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target darwin/amd64,darwin/arm64 && node scripts/fetch-cua-driver.mjs --target darwin/x64,darwin/arm64 && electron-builder --mac",
+    "dist:win": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target windows/amd64,windows/arm64 && node scripts/fetch-cua-driver.mjs --target win32/x64,win32/arm64 && electron-builder --win",
+    "prepare:dsh": "node scripts/prepare-dsh.mjs",
+    "fetch:cua": "node scripts/fetch-cua-driver.mjs"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "1.76.0",
@@ -120,6 +121,16 @@
             "NOTICE",
             "README.md"
           ]
+        },
+        {
+          "from": "build/cua-driver/darwin-${arch}",
+          "to": "cua-driver",
+          "filter": [
+            "cua-driver",
+            "cua-driver.exe",
+            "LICENSE",
+            "THIRD_PARTY_NOTICES.md"
+          ]
         }
       ]
     },
@@ -154,6 +165,16 @@
             "**/*",
             "!**/*.map",
             "!**/*.d.ts"
+          ]
+        },
+        {
+          "from": "build/cua-driver/win32-${arch}",
+          "to": "cua-driver",
+          "filter": [
+            "cua-driver",
+            "cua-driver.exe",
+            "LICENSE",
+            "THIRD_PARTY_NOTICES.md"
           ]
         }
       ]
@@ -199,6 +220,16 @@
             "**/*",
             "!**/*.map",
             "!**/*.d.ts"
+          ]
+        },
+        {
+          "from": "build/cua-driver/linux-${arch}",
+          "to": "cua-driver",
+          "filter": [
+            "cua-driver",
+            "cua-driver.exe",
+            "LICENSE",
+            "THIRD_PARTY_NOTICES.md"
           ]
         }
       ],

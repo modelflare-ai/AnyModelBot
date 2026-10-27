@@ -1,26 +1,27 @@
-// anymodel bot: approval gate for the bundled Computer Use MCP tools (MIT, part of anymodel bot).
+// anymodel bot: optional "ask before input actions" gate for Computer Use (MIT, part of anymodel bot).
 //
-// The upstream bridge (songkeys/kimi-computer-use) auto-accepts the Computer Use service's own
-// app-access prompts, so every desktop action is gated here instead: the call is turned into a
-// normal DSH approval request, which amb-bridge routes to the chat (y/n code or card buttons).
-// AMB_CU_APPROVAL=readonly-free lets read-only observation tools (list_apps, get_app_state) through.
+// Computer Use actions run automatically by default (no approval). The host loads this plugin only
+// when a bot sets computerUse.approval = "ask-input": then every Computer Use tool that is not a
+// read-only observation (AMB_CU_READ_TOOLS, comma-separated raw tool names) becomes a normal DSH
+// approval request, which amb-bridge routes to the chat. Works for both backends (Cua Driver and
+// the Codex bridge); both are registered under the same MCP server name.
 export const name = 'amb-computer-use-gate'
 
 const PREFIX = 'mcp__computer-use__'
-const READONLY = new Set(['list_apps', 'get_app_state'])
 
 export function apply(ctx) {
-  const relaxed = process.env.AMB_CU_APPROVAL === 'readonly-free'
+  if (process.env.AMB_CU_APPROVAL !== 'ask-input') return
+  const read = new Set(String(process.env.AMB_CU_READ_TOOLS ?? '').split(',').map((s) => s.trim()).filter(Boolean))
   ctx.on('tools/pre-execute', async (exec, next) => {
     const name = String(exec?.name ?? '')
     if (!name.startsWith(PREFIX)) return next()
     const downstream = await next()
     if (downstream?.kind !== 'allow') return downstream
-    if (relaxed && READONLY.has(name.slice(PREFIX.length))) return downstream
     const action = name.slice(PREFIX.length)
+    if (read.has(action)) return downstream
     return {
       kind: 'ask',
-      reason: `Computer Use action "${action}" controls this Mac and needs the user's approval`,
+      reason: `Computer Use input action "${action}" needs the user's approval (this bot asks before input actions)`,
       displayReason: { en: `Computer Use: ${action}`, zh: `电脑操作：${action}` },
     }
   }, { prepend: true })

@@ -119,12 +119,17 @@ function BotSettings({ botId, models }) {
       <option value="">与对话模型相同</option>
       ${[...new Set([...(models || []), s.utilityModel].filter(Boolean))].map((m) => html`<option value=${m}>${m}</option>`)}
     </select>
-    <label>电脑操作（Computer Use，仅 macOS）</label>
-    <p class="muted">${cu ? cu.reason : ""}</p>
+    <label>电脑操作（Computer Use）</label>
+    <p class="muted">${cu ? (cu.available ? "✓ " : "✗ ") + cu.reason : ""}</p>
+    ${cu && cu.notice && html`<p class="muted">ℹ️ ${cu.notice}</p>`}
     ${chk("启用电脑操作", s.computerUse.enabled, (v) => ({ computerUse: { enabled: v } }))}
+    <select value=${s.computerUse.backend} disabled=${!s.computerUse.enabled} onChange=${(e) => put({ computerUse: { backend: e.target.value } })}>
+      <option value="cua">Cua Driver（默认，随附，macOS / Windows / Linux）</option>
+      ${cu && cu.backends.some((b) => b.id === "codex") && html`<option value="codex">Codex Computer Use 桥（仅 macOS${cu.backends.find((b) => b.id === "codex").available ? "" : "，本机不可用"}）</option>`}
+    </select>
     <select value=${s.computerUse.approval} disabled=${!s.computerUse.enabled} onChange=${(e) => put({ computerUse: { approval: e.target.value } })}>
-      <option value="always">每个操作都需要审批（默认）</option>
-      <option value="readonly-free">查看界面（列应用/读取窗口）免审批，点击输入等仍需审批</option>
+      <option value="auto">所有操作自动执行，无需审批（默认）</option>
+      <option value="ask-input">点击、输入等改变界面的操作先问我；读取界面仍自动</option>
     </select>
     <p class="muted">${msg}</p>
   </div>`;

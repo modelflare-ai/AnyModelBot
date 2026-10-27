@@ -96,8 +96,14 @@
           "to": "dsh",
           "filter": [
             "package.json",
-            "plugins/**",
-            "node_modules/**",
+            "plugins/**"
+          ]
+        },
+        {
+          "from": "dsh-runtime/node_modules",
+          "to": "dsh/node_modules",
+          "filter": [
+            "**/*",
             "!**/*.map",
             "!**/*.d.ts"
           ]
@@ -125,8 +131,14 @@
           "to": "dsh",
           "filter": [
             "package.json",
-            "plugins/**",
-            "node_modules/**",
+            "plugins/**"
+          ]
+        },
+        {
+          "from": "dsh-runtime/node_modules",
+          "to": "dsh/node_modules",
+          "filter": [
+            "**/*",
             "!**/*.map",
             "!**/*.d.ts"
           ]
@@ -164,8 +176,14 @@
           "to": "dsh",
           "filter": [
             "package.json",
-            "plugins/**",
-            "node_modules/**",
+            "plugins/**"
+          ]
+        },
+        {
+          "from": "dsh-runtime/node_modules",
+          "to": "dsh/node_modules",
+          "filter": [
+            "**/*",
             "!**/*.map",
             "!**/*.d.ts"
           ]

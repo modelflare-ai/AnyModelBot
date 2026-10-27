@@ -398,7 +398,7 @@ exec "$REAL" "$@"
           if (ev?.type === "tool/call") {
             this.calls.set(String(data.callId), { name: String(data.name), args: String(data.arguments ?? ""), at: Date.now() });
             if (this.calls.size > 500) this.calls.delete(this.calls.keys().next().value!);
-            input.observer?.onProgress?.(`🔧 ${summarizeCall(String(data.name), String(data.arguments ?? ""))}`);
+            input.observer?.onProgress?.(`🔧 ${summarizeCall(String(data.name), String(data.arguments ?? "")).split(this.workspace + "/").join("")}`);
           }
           if (ev?.type === "turn/end" && data?.reason?.kind === "error") turnError = String(data.reason.error?.message ?? "unknown error");
           input.observer?.onEvent?.(String(ev?.type), data);

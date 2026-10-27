@@ -1,0 +1,147 @@
+{
+  "name": "anymodel-bot",
+  "productName": "anymodel bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "anymodel bot：任意模型的个人 AI 助手（飞书 + 微信 iLink），内置 magpie 模型网关",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/electron/main.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "build:magpie": "node scripts/build-magpie.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts",
+    "init": "tsx src/cli/init.ts",
+    "weixin:login": "tsx src/cli/weixin-login.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "electron:dev": "npm run build && electron .",
+    "dist": "npm run build && node scripts/build-magpie.mjs --target current && electron-builder",
+    "electron:smoke": "npm run build && node scripts/electron-smoke.mjs",
+    "dist:linux": "npm run build && node scripts/build-magpie.mjs --target linux/amd64,linux/arm64 && electron-builder --linux",
+    "dist:mac": "npm run build && node scripts/build-magpie.mjs --target darwin/amd64,darwin/arm64 && electron-builder --mac",
+    "dist:win": "npm run build && node scripts/build-magpie.mjs --target windows/amd64,windows/arm64 && electron-builder --win"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.76.0",
+    "htm": "^3.1.1",
+    "preact": "^11.0.2",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/qrcode": "^1.5.6",
+    "@types/qrcode-terminal": "^0.12.2",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "author": {
+    "name": "anymodel bot"
+  },
+  "build": {
+    "appId": "dev.anymodel.bot",
+    "productName": "anymodel bot",
+    "artifactName": "anymodel-bot-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**",
+      "ui/**",
+      "assets/**",
+      "package.json",
+      "!**/*.map",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "extraResources": [
+        {
+          "from": "build/bin/magpie-darwin-${arch}",
+          "to": "magpie/magpie"
+        }
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "build/bin/magpie-win32-${arch}.exe",
+          "to": "magpie/magpie.exe"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Utility",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "build/bin/magpie-linux-${arch}",
+          "to": "magpie/magpie"
+        }
+      ],
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "anymodel bot"
+        }
+      }
+    }
+  }
+}

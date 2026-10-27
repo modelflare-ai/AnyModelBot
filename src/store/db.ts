@@ -1,0 +1,314 @@
+import fs from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+
+/**
+ * SQLite 存储（node:sqlite，无原生模块，Electron 下也无需 rebuild）。
+ * 敏感字段（飞书 app_secret、iLink bot_token、context_token）只存本地数据目录，文件权限 600。
+ */
+export interface Bot {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  defaultModel: string;
+  feishuAppId: string;
+  feishuAppSecret: string;
+  weixinEnabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Conversation {
+  id: string;
+  botId: string;
+  channel: string;
+  peerId: string;
+  title: string;
+  model: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Message {
+  id: number;
+  conversationId: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  createdAt: number;
+}
+
+export interface WeixinAccount {
+  botId: string;
+  botToken: string;
+  ilinkBotId: string;
+  baseUrl: string;
+  ownerUserId: string;
+  cursor: string;
+  pausedUntil: number;
+  updatedAt: number;
+}
+
+export interface WeixinPeer {
+  botId: string;
+  userId: string;
+  contextToken: string;
+  quotaRemaining: number;
+  windowStartedAt: number;
+}
+
+type Row = Record<string, unknown>;
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS bots (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, system_prompt TEXT NOT NULL DEFAULT '',
+  default_model TEXT NOT NULL DEFAULT '', feishu_app_id TEXT NOT NULL DEFAULT '',
+  feishu_app_secret TEXT NOT NULL DEFAULT '', weixin_enabled INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, channel TEXT NOT NULL, peer_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS conv_peer ON conversations(bot_id, channel, peer_id);
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
+  content TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS msg_conv ON messages(conversation_id, id);
+CREATE TABLE IF NOT EXISTS weixin_accounts (
+  bot_id TEXT PRIMARY KEY, bot_token TEXT NOT NULL, ilink_bot_id TEXT NOT NULL, base_url TEXT NOT NULL,
+  owner_user_id TEXT NOT NULL DEFAULT '', cursor TEXT NOT NULL DEFAULT '', paused_until INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS weixin_peers (
+  bot_id TEXT NOT NULL, user_id TEXT NOT NULL, context_token TEXT NOT NULL DEFAULT '',
+  quota_remaining INTEGER NOT NULL DEFAULT 0, window_started_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (bot_id, user_id));
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+`;
+
+export class Store {
+  readonly db: DatabaseSync;
+
+  constructor(file: string) {
+    if (file !== ":memory:") {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+    }
+    this.db = new DatabaseSync(file);
+    if (file !== ":memory:") {
+      try {
+        fs.chmodSync(file, 0o600);
+      } catch {
+        /* Windows 等平台忽略 */
+      }
+    }
+    this.db.exec("PRAGMA journal_mode = WAL;");
+    this.db.exec(SCHEMA);
+  }
+
+  close(): void {
+    this.db.close();
+  }
+
+  // ---------- kv ----------
+  getKV(key: string): string | undefined {
+    const r = this.db.prepare("SELECT value FROM kv WHERE key = ?").get(key) as Row | undefined;
+    return r ? String(r.value) : undefined;
+  }
+  setKV(key: string, value: string): void {
+    this.db.prepare("INSERT INTO kv(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+  }
+
+  // ---------- bots ----------
+  private toBot(r: Row): Bot {
+    return {
+      id: String(r.id),
+      name: String(r.name),
+      systemPrompt: String(r.system_prompt),
+      defaultModel: String(r.default_model),
+      feishuAppId: String(r.feishu_app_id),
+      feishuAppSecret: String(r.feishu_app_secret),
+      weixinEnabled: Number(r.weixin_enabled) === 1,
+      createdAt: Number(r.created_at),
+      updatedAt: Number(r.updated_at),
+    };
+  }
+  listBots(): Bot[] {
+    return (this.db.prepare("SELECT * FROM bots ORDER BY created_at").all() as Row[]).map((r) => this.toBot(r));
+  }
+  getBot(id: string): Bot | undefined {
+    const r = this.db.prepare("SELECT * FROM bots WHERE id = ?").get(id) as Row | undefined;
+    return r ? this.toBot(r) : undefined;
+  }
+  createBot(input: Partial<Bot> & { name: string }): Bot {
+    const now = Date.now();
+    const id = input.id || randomUUID().slice(0, 8);
+    this.db
+      .prepare(
+        `INSERT INTO bots(id, name, system_prompt, default_model, feishu_app_id, feishu_app_secret, weixin_enabled, created_at, updated_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, input.name, input.systemPrompt ?? "", input.defaultModel ?? "", input.feishuAppId ?? "", input.feishuAppSecret ?? "", input.weixinEnabled ? 1 : 0, now, now);
+    return this.getBot(id)!;
+  }
+  updateBot(id: string, patch: Partial<Omit<Bot, "id" | "createdAt" | "updatedAt">>): Bot | undefined {
+    const cur = this.getBot(id);
+    if (!cur) return undefined;
+    const next = { ...cur, ...patch };
+    this.db
+      .prepare(
+        `UPDATE bots SET name=?, system_prompt=?, default_model=?, feishu_app_id=?, feishu_app_secret=?, weixin_enabled=?, updated_at=? WHERE id=?`,
+      )
+      .run(next.name, next.systemPrompt, next.defaultModel, next.feishuAppId, next.feishuAppSecret, next.weixinEnabled ? 1 : 0, Date.now(), id);
+    return this.getBot(id);
+  }
+  deleteBot(id: string): void {
+    const convs = this.db.prepare("SELECT id FROM conversations WHERE bot_id = ?").all(id) as Row[];
+    for (const c of convs) this.db.prepare("DELETE FROM messages WHERE conversation_id = ?").run(String(c.id));
+    this.db.prepare("DELETE FROM conversations WHERE bot_id = ?").run(id);
+    this.db.prepare("DELETE FROM weixin_accounts WHERE bot_id = ?").run(id);
+    this.db.prepare("DELETE FROM weixin_peers WHERE bot_id = ?").run(id);
+    this.db.prepare("DELETE FROM bots WHERE id = ?").run(id);
+  }
+
+  // ---------- conversations ----------
+  private toConv(r: Row): Conversation {
+    return {
+      id: String(r.id),
+      botId: String(r.bot_id),
+      channel: String(r.channel),
+      peerId: String(r.peer_id),
+      title: String(r.title),
+      model: String(r.model),
+      createdAt: Number(r.created_at),
+      updatedAt: Number(r.updated_at),
+    };
+  }
+  ensureConversation(botId: string, channel: string, peerId: string, title = ""): Conversation {
+    const r = this.db
+      .prepare("SELECT * FROM conversations WHERE bot_id = ? AND channel = ? AND peer_id = ?")
+      .get(botId, channel, peerId) as Row | undefined;
+    if (r) return this.toConv(r);
+    const now = Date.now();
+    const id = `${botId}:${channel}:${peerId}`;
+    this.db
+      .prepare("INSERT INTO conversations(id, bot_id, channel, peer_id, title, model, created_at, updated_at) VALUES(?, ?, ?, ?, ?, '', ?, ?)")
+      .run(id, botId, channel, peerId, title, now, now);
+    return this.getConversation(id)!;
+  }
+  getConversation(id: string): Conversation | undefined {
+    const r = this.db.prepare("SELECT * FROM conversations WHERE id = ?").get(id) as Row | undefined;
+    return r ? this.toConv(r) : undefined;
+  }
+  listConversations(botId?: string): Array<Conversation & { messageCount: number; lastMessage: string }> {
+    const sql = `SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS n,
+      (SELECT content FROM messages m WHERE m.conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last
+      FROM conversations c ${botId ? "WHERE c.bot_id = ?" : ""} ORDER BY c.updated_at DESC LIMIT 200`;
+    const rows = (botId ? this.db.prepare(sql).all(botId) : this.db.prepare(sql).all()) as Row[];
+    return rows.map((r) => ({ ...this.toConv(r), messageCount: Number(r.n), lastMessage: r.last == null ? "" : String(r.last).slice(0, 120) }));
+  }
+  setConversationModel(id: string, model: string): void {
+    this.db.prepare("UPDATE conversations SET model = ?, updated_at = ? WHERE id = ?").run(model, Date.now(), id);
+  }
+
+  // ---------- messages ----------
+  addMessage(conversationId: string, role: Message["role"], content: string): number {
+    const now = Date.now();
+    const res = this.db
+      .prepare("INSERT INTO messages(conversation_id, role, content, created_at) VALUES(?, ?, ?, ?)")
+      .run(conversationId, role, content, now);
+    this.db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, conversationId);
+    return Number(res.lastInsertRowid);
+  }
+  listMessages(conversationId: string, limit = 500): Message[] {
+    const rows = this.db
+      .prepare("SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id ASC")
+      .all(conversationId, limit) as Row[];
+    return rows.map((r) => ({
+      id: Number(r.id),
+      conversationId: String(r.conversation_id),
+      role: String(r.role) as Message["role"],
+      content: String(r.content),
+      createdAt: Number(r.created_at),
+    }));
+  }
+  clearMessages(conversationId: string): void {
+    this.db.prepare("DELETE FROM messages WHERE conversation_id = ?").run(conversationId);
+  }
+
+  /**
+   * 滑动窗口上下文：从最新往回取，直到条数或字符数超限；保证以 user 消息开头。
+   */
+  contextWindow(conversationId: string, maxMessages: number, maxChars: number): Array<Pick<Message, "role" | "content">> {
+    const recent = this.listMessages(conversationId, maxMessages);
+    const picked: Array<Pick<Message, "role" | "content">> = [];
+    let chars = 0;
+    for (let i = recent.length - 1; i >= 0; i--) {
+      const m = recent[i];
+      if (picked.length > 0 && chars + m.content.length > maxChars) break;
+      chars += m.content.length;
+      picked.unshift({ role: m.role, content: m.content });
+    }
+    while (picked.length > 1 && picked[0].role !== "user") picked.shift();
+    return picked;
+  }
+
+  // ---------- weixin ----------
+  getWeixinAccount(botId: string): WeixinAccount | undefined {
+    const r = this.db.prepare("SELECT * FROM weixin_accounts WHERE bot_id = ?").get(botId) as Row | undefined;
+    if (!r) return undefined;
+    return {
+      botId: String(r.bot_id),
+      botToken: String(r.bot_token),
+      ilinkBotId: String(r.ilink_bot_id),
+      baseUrl: String(r.base_url),
+      ownerUserId: String(r.owner_user_id),
+      cursor: String(r.cursor),
+      pausedUntil: Number(r.paused_until),
+      updatedAt: Number(r.updated_at),
+    };
+  }
+  saveWeixinAccount(a: Omit<WeixinAccount, "cursor" | "pausedUntil" | "updatedAt">): void {
+    this.db
+      .prepare(
+        `INSERT INTO weixin_accounts(bot_id, bot_token, ilink_bot_id, base_url, owner_user_id, cursor, paused_until, updated_at)
+         VALUES(?, ?, ?, ?, ?, '', 0, ?)
+         ON CONFLICT(bot_id) DO UPDATE SET bot_token=excluded.bot_token, ilink_bot_id=excluded.ilink_bot_id,
+           base_url=excluded.base_url, owner_user_id=excluded.owner_user_id, cursor='', paused_until=0, updated_at=excluded.updated_at`,
+      )
+      .run(a.botId, a.botToken, a.ilinkBotId, a.baseUrl, a.ownerUserId, Date.now());
+  }
+  setWeixinCursor(botId: string, cursor: string): void {
+    this.db.prepare("UPDATE weixin_accounts SET cursor = ?, updated_at = ? WHERE bot_id = ?").run(cursor, Date.now(), botId);
+  }
+  setWeixinPaused(botId: string, until: number): void {
+    this.db.prepare("UPDATE weixin_accounts SET paused_until = ?, updated_at = ? WHERE bot_id = ?").run(until, Date.now(), botId);
+  }
+  deleteWeixinAccount(botId: string): void {
+    this.db.prepare("DELETE FROM weixin_accounts WHERE bot_id = ?").run(botId);
+    this.db.prepare("DELETE FROM weixin_peers WHERE bot_id = ?").run(botId);
+  }
+  getWeixinPeer(botId: string, userId: string): WeixinPeer | undefined {
+    const r = this.db.prepare("SELECT * FROM weixin_peers WHERE bot_id = ? AND user_id = ?").get(botId, userId) as Row | undefined;
+    if (!r) return undefined;
+    return {
+      botId: String(r.bot_id),
+      userId: String(r.user_id),
+      contextToken: String(r.context_token),
+      quotaRemaining: Number(r.quota_remaining),
+      windowStartedAt: Number(r.window_started_at),
+    };
+  }
+  listWeixinPeers(botId: string): WeixinPeer[] {
+    return (this.db.prepare("SELECT user_id FROM weixin_peers WHERE bot_id = ?").all(botId) as Row[]).map(
+      (r) => this.getWeixinPeer(botId, String(r.user_id))!,
+    );
+  }
+  upsertWeixinPeer(p: WeixinPeer): void {
+    this.db
+      .prepare(
+        `INSERT INTO weixin_peers(bot_id, user_id, context_token, quota_remaining, window_started_at) VALUES(?, ?, ?, ?, ?)
+         ON CONFLICT(bot_id, user_id) DO UPDATE SET context_token=excluded.context_token,
+           quota_remaining=excluded.quota_remaining, window_started_at=excluded.window_started_at`,
+      )
+      .run(p.botId, p.userId, p.contextToken, p.quotaRemaining, p.windowStartedAt);
+  }
+}

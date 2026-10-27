@@ -70,6 +70,7 @@ export class FeishuChannel {
         this.status = { state, detail, since: Date.now() };
         this.log.info(`bot ${this.botId} ws ${state}`, detail ? { detail } : undefined);
       },
+      (a) => this.runtime.cardAction(this.botId, a.value, `feishu:${a.operatorOpenId}`),
     );
   }
 
@@ -93,6 +94,16 @@ export class FeishuChannel {
       replyHandle: { messageId: ev.messageId, chatId: ev.chatId },
       receivedAt: Date.now(),
     };
+    // 审批/提问回复在入队前处理（正在进行的回合正等着它）
+    const intercepted = this.runtime.interceptReply(inbound);
+    if (intercepted.handled) {
+      if (intercepted.ack) {
+        const p = this.transport.replyText(ev.messageId, intercepted.ack).catch((e) => this.log.warn("ack failed", { message: (e as Error).message }));
+        this.pending.add(p);
+        void p.finally(() => this.pending.delete(p));
+      }
+      return;
+    }
     const p = this.queue.run(`feishu:${this.botId}:${ev.chatId}`, async () => {
       const reply = new FeishuReply(this.transport, ev.messageId, this.throttleMs);
       try {

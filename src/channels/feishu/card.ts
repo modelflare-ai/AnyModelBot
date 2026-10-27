@@ -1,6 +1,6 @@
 import type { OutboundOp, ReplySession } from "../../core/types.js";
 import { splitText } from "../../core/types.js";
-import { CARD_ELEMENT_ID, type FeishuTransport } from "./transport.js";
+import { CARD_ELEMENT_ID, actionCardSpec, type FeishuTransport } from "./transport.js";
 import { logger } from "../../log.js";
 
 const log = logger("feishu.card");
@@ -19,6 +19,7 @@ export class FeishuReply implements ReplySession {
   private fallback = false;
   private started = false;
   private closed = false;
+  private progress: string[] = [];
 
   constructor(private transport: FeishuTransport, private replyTo: string, private throttleMs = 400) {}
 
@@ -36,12 +37,27 @@ export class FeishuReply implements ReplySession {
         this.latest = op.text;
         this.schedule();
         return;
+      case "progress":
+        this.progress.push(op.text);
+        if (this.progress.length > 12) this.progress.splice(0, this.progress.length - 12);
+        this.latest = `⏳ 进行中…\n${this.progress.join("\n")}`;
+        this.schedule();
+        return;
       case "stream.finish":
         return this.finish(op.text);
       case "text":
         return this.sendText(op.text);
       case "interactive":
-        return this.sendText(`${op.prompt}${op.options?.length ? "\n" + op.options.map((o, i) => `${i + 1}. ${o}`).join("\n") : ""}`);
+        if (op.buttons?.length && this.transport.replyActionCard) {
+          try {
+            const title = op.kind === "approval" ? `需批准（${op.code ?? ""}）` : "需要你的回答";
+            await this.transport.replyActionCard(this.replyTo, actionCardSpec(title, op.prompt, op.buttons));
+            return;
+          } catch (e) {
+            log.warn("action card failed, sending text", { message: (e as Error).message });
+          }
+        }
+        return this.sendText(op.requestId ? op.prompt : `${op.prompt}${op.options?.length ? "\n" + op.options.map((o, i) => `${i + 1}. ${o}`).join("\n") : ""}`);
     }
   }
 

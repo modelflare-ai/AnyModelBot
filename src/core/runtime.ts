@@ -3,6 +3,9 @@ import { eventText } from "./types.js";
 import type { ModelClient, ChatMessage } from "../llm/client.js";
 import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
+import type { AgentManager } from "../agent/manager.js";
+import { promptText, type QuestionItem } from "../agent/approvals.js";
+import type { ApprovalRow } from "../store/db.js";
 
 const log = logger("runtime");
 
@@ -12,13 +15,15 @@ export interface RuntimeOptions {
   defaultModel: () => string;
   contextMessages: number;
   contextChars: number;
+  /** DSH 代理宿主；缺省或不可用时走纯对话路径 */
+  agent?: AgentManager;
 }
 
 const HELP = [
   "可用命令：",
   "/model — 列出可用模型（带编号）",
   "/model <编号或模型名> — 切换当前会话的模型",
-  "/reset — 清空当前会话的上下文",
+  "/reset — 清空当前会话的上下文（代理模式下同时开启新的代理会话）",
   "/status — 查看当前会话使用的模型",
   "/help — 显示本帮助",
 ].join("\n");
@@ -65,6 +70,12 @@ export class BotRuntime {
     });
     if (!model) return;
 
+    const agent = this.opts.agent;
+    if (agent?.available) {
+      const handled = await this.handleAgent(agent, bot.id, conv.id, text, model, bot.systemPrompt, out);
+      if (handled) return;
+    }
+
     store.addMessage(conv.id, "user", text);
     const history = store.contextWindow(conv.id, this.opts.contextMessages, this.opts.contextChars);
     const messages: ChatMessage[] = [];
@@ -92,6 +103,77 @@ export class BotRuntime {
     }
   }
 
+  /** 渠道在进入每会话串行队列之前调用：处理审批回复（y 1234 / n 1234）与提问回答。 */
+  interceptReply(ev: InboundEvent): { handled: boolean; ack?: string } {
+    const agent = this.opts.agent;
+    if (!agent) return { handled: false };
+    const text = eventText(ev);
+    const convId = `${ev.botId}:${ev.channel}:${ev.conversation.id}`;
+    return agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`);
+  }
+
+  /** 卡片按钮回调：批准/拒绝/选择选项。 */
+  cardAction(botId: string, value: Record<string, string>, by: string): { toast: string; ok: boolean } {
+    const agent = this.opts.agent;
+    const row = agent && value?.id ? this.opts.store.getApproval(String(value.id)) : undefined;
+    if (!agent || !row || row.botId !== botId) return { toast: "请求不存在", ok: false };
+    if (row.status !== "pending") return { toast: `请求 ${row.code} 已处理或已过期`, ok: false };
+    if (value.amb === "approval") {
+      const allow = value.decision === "allow";
+      return agent.approvals.decide(row.id, allow, by) ? { toast: allow ? `已批准 ${row.code}（仅本次）` : `已拒绝 ${row.code}`, ok: true } : { toast: "已过期", ok: false };
+    }
+    if (value.amb === "question") {
+      const r = agent.approvals.handleReply(row.conversationId, String(value.option ?? ""), by);
+      return r.handled ? { toast: "已提交", ok: true } : { toast: "提交失败", ok: false };
+    }
+    return { toast: "未知操作", ok: false };
+  }
+
+  /** 代理回合；返回 false 表示宿主不可用且尚无任何输出，调用方回退到纯对话。 */
+  private async handleAgent(agent: AgentManager, botId: string, convId: string, text: string, model: string, systemPrompt: string, out: ReplySession): Promise<boolean> {
+    const { store } = this.opts;
+    let visible = false;
+    const unbind = agent.approvals.bindSink(convId, async (row) => {
+      visible = true;
+      await out.apply(interactiveOp(row));
+    });
+    await out.apply({ type: "typing", on: true });
+    await out.apply({ type: "stream.start" });
+    try {
+      const fresh = !store.getAgentSession(convId);
+      const input = fresh && systemPrompt.trim() ? `[机器人设定]\n${systemPrompt.trim()}\n\n[用户消息]\n${text}` : text;
+      const r = await agent.runTurn(botId, {
+        conversationId: convId,
+        text: input,
+        model,
+        observer: {
+          onProgress: (t) => {
+            visible = true;
+            void out.apply({ type: "progress", text: t });
+          },
+        },
+      });
+      store.addMessage(convId, "user", text);
+      const finalText = r.text.trim() || "（已完成，没有文字回复）";
+      store.addMessage(convId, "assistant", finalText);
+      await out.apply({ type: "stream.finish", text: finalText });
+      return true;
+    } catch (e) {
+      const err = e as Error;
+      log.warn("agent turn failed", { message: err.message.slice(0, 300) });
+      if (!visible && agent.host(botId).state !== "running") {
+        log.warn("agent host unavailable, falling back to plain chat");
+        return false;
+      }
+      store.addMessage(convId, "user", text);
+      await out.apply({ type: "stream.finish", text: `⚠️ 代理执行失败：${err.message.slice(0, 300)}` });
+      return true;
+    } finally {
+      unbind();
+      await out.apply({ type: "typing", on: false });
+    }
+  }
+
   /** 返回 null 表示不是已知命令，按普通消息处理。 */
   private async command(text: string, convId: string, convModel: string, botModel: string): Promise<string | null> {
     const [cmd, ...rest] = text.trim().split(/\s+/);
@@ -101,10 +183,14 @@ export class BotRuntime {
         return HELP;
       case "/reset":
         this.opts.store.clearMessages(convId);
+        this.opts.agent?.resetConversation(convId);
         return "✅ 已清空本会话上下文";
       case "/status": {
         const m = convModel || botModel || this.opts.defaultModel() || "（自动：第一个可用模型）";
-        return `当前模型：${m}${convModel ? "（会话设置）" : ""}`;
+        const a = this.opts.agent;
+        const mode = a?.available ? "代理模式（DeepSeek Harness，工作区沙箱）" : "纯对话模式";
+        const pend = a ? a.approvals.pending(convId).map((r) => `${r.kind === "approval" ? "待批准" : "待回答"} ${r.code}`) : [];
+        return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
       }
       case "/model": {
         let list: string[];
@@ -132,4 +218,36 @@ export class BotRuntime {
         return null;
     }
   }
+}
+
+/** 审批/提问 → 出站交互操作（文本渠道用 prompt；卡片渠道用 buttons）。 */
+export function interactiveOp(row: ApprovalRow) {
+  if (row.kind === "approval") {
+    return {
+      type: "interactive" as const,
+      kind: "approval" as const,
+      prompt: promptText(row),
+      requestId: row.id,
+      code: row.code,
+      buttons: [
+        { label: "允许（仅本次）", value: { amb: "approval", id: row.id, decision: "allow" }, style: "primary" as const },
+        { label: "拒绝", value: { amb: "approval", id: row.id, decision: "deny" }, style: "danger" as const },
+      ],
+    };
+  }
+  let qs: QuestionItem[] = [];
+  try {
+    qs = JSON.parse(row.payload);
+  } catch {
+    /* ignore */
+  }
+  const single = qs.length === 1 ? qs[0] : undefined;
+  return {
+    type: "interactive" as const,
+    kind: "ask_user" as const,
+    prompt: promptText(row),
+    requestId: row.id,
+    code: row.code,
+    buttons: single?.options?.length && !single.multiSelect ? single.options.map((o, i) => ({ label: o.label, value: { amb: "question", id: row.id, option: String(i + 1) }, style: "default" as const })) : undefined,
+  };
 }

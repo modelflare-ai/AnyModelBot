@@ -57,6 +57,30 @@ export interface WeixinPeer {
   windowStartedAt: number;
 }
 
+export type ApprovalStatus = "pending" | "allowed" | "rejected" | "expired" | "cancelled" | "answered";
+
+/** 需要用户决定的请求：工具审批（approval）或 ask_user_question（question）。 */
+export interface ApprovalRow {
+  id: string;
+  code: string;
+  kind: "approval" | "question";
+  botId: string;
+  conversationId: string;
+  sessionId: string;
+  tool: string;
+  detail: string;
+  reason: string;
+  /** question 的原始问题 JSON */
+  payload: string;
+  status: ApprovalStatus;
+  /** question 的回答 JSON */
+  result: string;
+  decidedBy: string;
+  createdAt: number;
+  expiresAt: number;
+  decidedAt: number;
+}
+
 type Row = Record<string, unknown>;
 
 const SCHEMA = `
@@ -83,6 +107,15 @@ CREATE TABLE IF NOT EXISTS weixin_peers (
   quota_remaining INTEGER NOT NULL DEFAULT 0, window_started_at INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (bot_id, user_id));
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  conversation_id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, session_id TEXT NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY, code TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'approval', bot_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '', tool TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending', result TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_at INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS approvals_status ON approvals(status, expires_at);
 `;
 
 export class Store {
@@ -166,6 +199,7 @@ export class Store {
     this.db.prepare("DELETE FROM conversations WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM weixin_accounts WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM weixin_peers WHERE bot_id = ?").run(id);
+    this.db.prepare("DELETE FROM agent_sessions WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM bots WHERE id = ?").run(id);
   }
 
@@ -310,5 +344,81 @@ export class Store {
            quota_remaining=excluded.quota_remaining, window_started_at=excluded.window_started_at`,
       )
       .run(p.botId, p.userId, p.contextToken, p.quotaRemaining, p.windowStartedAt);
+  }
+
+  // ---------- agent sessions（会话 ↔ DSH session） ----------
+  getAgentSession(conversationId: string): string | undefined {
+    const r = this.db.prepare("SELECT session_id FROM agent_sessions WHERE conversation_id = ?").get(conversationId) as Row | undefined;
+    return r ? String(r.session_id) : undefined;
+  }
+  setAgentSession(conversationId: string, botId: string, sessionId: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO agent_sessions(conversation_id, bot_id, session_id, updated_at) VALUES(?, ?, ?, ?)
+         ON CONFLICT(conversation_id) DO UPDATE SET session_id=excluded.session_id, updated_at=excluded.updated_at`,
+      )
+      .run(conversationId, botId, sessionId, Date.now());
+  }
+  clearAgentSession(conversationId: string): void {
+    this.db.prepare("DELETE FROM agent_sessions WHERE conversation_id = ?").run(conversationId);
+  }
+  conversationForSession(sessionId: string): string | undefined {
+    const r = this.db.prepare("SELECT conversation_id FROM agent_sessions WHERE session_id = ?").get(sessionId) as Row | undefined;
+    return r ? String(r.conversation_id) : undefined;
+  }
+
+  // ---------- approvals ----------
+  private toApproval(r: Row): ApprovalRow {
+    return {
+      id: String(r.id),
+      code: String(r.code),
+      kind: String(r.kind) as ApprovalRow["kind"],
+      botId: String(r.bot_id),
+      conversationId: String(r.conversation_id),
+      sessionId: String(r.session_id),
+      tool: String(r.tool),
+      detail: String(r.detail),
+      reason: String(r.reason),
+      payload: String(r.payload),
+      status: String(r.status) as ApprovalStatus,
+      result: String(r.result),
+      decidedBy: String(r.decided_by),
+      createdAt: Number(r.created_at),
+      expiresAt: Number(r.expires_at),
+      decidedAt: Number(r.decided_at),
+    };
+  }
+  insertApproval(a: Omit<ApprovalRow, "status" | "result" | "decidedBy" | "decidedAt">): ApprovalRow {
+    this.db
+      .prepare(
+        `INSERT INTO approvals(id, code, kind, bot_id, conversation_id, session_id, tool, detail, reason, payload, status, created_at, expires_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      )
+      .run(a.id, a.code, a.kind, a.botId, a.conversationId, a.sessionId, a.tool, a.detail, a.reason, a.payload, a.createdAt, a.expiresAt);
+    return this.getApproval(a.id)!;
+  }
+  getApproval(id: string): ApprovalRow | undefined {
+    const r = this.db.prepare("SELECT * FROM approvals WHERE id = ?").get(id) as Row | undefined;
+    return r ? this.toApproval(r) : undefined;
+  }
+  pendingApprovalByCode(code: string): ApprovalRow | undefined {
+    const r = this.db.prepare("SELECT * FROM approvals WHERE code = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1").get(code) as Row | undefined;
+    return r ? this.toApproval(r) : undefined;
+  }
+  listApprovals(opts: { status?: ApprovalStatus; botId?: string; conversationId?: string; limit?: number } = {}): ApprovalRow[] {
+    const where: string[] = [];
+    const args: Array<string | number> = [];
+    if (opts.status) (where.push("status = ?"), args.push(opts.status));
+    if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
+    if (opts.conversationId) (where.push("conversation_id = ?"), args.push(opts.conversationId));
+    const sql = `SELECT * FROM approvals ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC LIMIT ${Math.max(1, Math.min(500, opts.limit ?? 100))}`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toApproval(r));
+  }
+  /** 只在 pending 时生效，返回是否更新成功（防止重复决定）。 */
+  decideApproval(id: string, status: Exclude<ApprovalStatus, "pending">, decidedBy: string, result = ""): boolean {
+    const res = this.db
+      .prepare("UPDATE approvals SET status = ?, decided_by = ?, result = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
+      .run(status, decidedBy, result, Date.now(), id);
+    return Number(res.changes) > 0;
   }
 }

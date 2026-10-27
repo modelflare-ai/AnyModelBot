@@ -98,7 +98,11 @@ function TestChat({ botId }) {
   const sendMsg = async () => {
     const t = text.trim(); if (!t) return;
     setText(""); setBusy(true); setLog((l) => [...l, { role: "user", content: t }]);
-    try { const r = await api(`/bots/${botId}/chat`, { method: "POST", body: { text: t } }); setLog((l) => [...l, { role: "assistant", content: r.reply }]); }
+    try {
+      const r = await api(`/bots/${botId}/chat`, { method: "POST", body: { text: t } });
+      const extra = [...(r.progress || []).map((p) => ({ role: "assistant progress", content: "⏳ " + p })), ...(r.prompts || []).map((p) => ({ role: "assistant prompt", content: p.prompt }))];
+      setLog((l) => [...l, ...extra, { role: "assistant", content: r.reply }]);
+    }
     catch (e) { setLog((l) => [...l, { role: "assistant", content: "✗ " + e.message }]); }
     setBusy(false);
   };
@@ -196,11 +200,42 @@ function Conversations() {
   </div>`;
 }
 
+// ---------------- 审批 ----------------
+const AP_STATUS = { pending: "待处理", allowed: "已批准", rejected: "已拒绝", expired: "已过期", answered: "已回答", cancelled: "已取消" };
+function QuestionForm({ a, done }) {
+  const [text, setText] = useState("");
+  const submit = async () => { await api(`/approvals/${a.id}/answer`, { method: "POST", body: { text } }); setText(""); done(); };
+  return html`<div>${(a.questions || []).map((q, i) => html`<div><b>${i + 1}. ${q.question}</b>${(q.options || []).map((o, j) => html`<div class="muted">　${j + 1}) ${o.label}${o.description ? " — " + o.description : ""}</div>`)}</div>`)}
+    <div class="row" style="margin-top:8px"><input class="grow" style="width:auto" placeholder="每行回答一个问题，可填选项编号" value=${text} onInput=${(e) => setText(e.target.value)} /><button class="pri" disabled=${!text.trim()} onClick=${submit}>回答</button></div></div>`;
+}
+function Approvals() {
+  const [filter, setFilter] = useState("pending");
+  const [data, err, reload] = usePoll(() => api(`/approvals${filter ? "?status=" + filter : ""}`), 3000, [filter]);
+  const [agent] = usePoll(() => api("/agent"), 5000);
+  const decide = async (id, ok) => { try { await api(`/approvals/${id}/${ok ? "approve" : "deny"}`, { method: "POST", body: {} }); } catch (e) { alert(e.message); } reload(); };
+  return html`<div>
+    ${agent && html`<div class="card"><h3>代理（DSH） ${agent.enabled ? html`<span class="badge running">已启用</span>` : html`<span class="badge disabled">未启用（普通对话）</span>`}</h3>
+      ${Object.entries(agent.hosts || {}).map(([id, h]) => html`<div class="row"><b>${id}</b><${Badge} s=${h.state} /><span class="muted">pid ${h.pid || "-"} · ${h.model || "默认模型"} · 重启 ${h.restarts} 次 · 进行中 ${h.activeTurns}${h.lastError ? " · " + h.lastError : ""}</span></div>`)}
+      <p class="muted">每个机器人一个 DSH 子进程；bash 默认在工作区沙箱中运行，越权操作会在这里和聊天中请求批准（10 分钟未处理自动拒绝）。</p></div>`}
+    <div class="row" style="margin-bottom:12px"><span>筛选</span><select style="width:160px" value=${filter} onChange=${(e) => setFilter(e.target.value)}>
+      <option value="pending">待处理</option><option value="">全部</option><option value="allowed">已批准</option><option value="rejected">已拒绝</option><option value="expired">已过期</option></select>
+      ${err && html`<span class="muted">✗ ${err}</span>`}</div>
+    ${data && data.approvals.length === 0 && html`<p class="muted">暂无${filter ? AP_STATUS[filter] : ""}请求</p>`}
+    ${data && data.approvals.map((a) => html`<div class="card">
+      <div class="row"><b>${a.kind === "question" ? "提问" : "需批准"} · ${a.code}</b><span class="badge ${a.status === "pending" ? "connecting" : a.status === "allowed" || a.status === "answered" ? "connected" : "disabled"}">${AP_STATUS[a.status] || a.status}</span>
+        <span class="muted">${a.botId} · ${a.conversationId} · ${fmt(a.createdAt)}${a.status === "pending" ? " · 截止 " + fmt(a.expiresAt) : a.decidedBy ? " · " + a.decidedBy : ""}</span></div>
+      ${a.kind === "approval" && html`<p><code>${a.tool}</code> <code>${a.detail}</code></p>${a.reason && html`<p class="muted">${a.reason}</p>`}`}
+      ${a.kind === "question" && (a.status === "pending" ? html`<${QuestionForm} a=${a} done=${reload} />` : html`<p class="muted">${(a.questions || []).map((q) => q.question).join(" / ")}</p>`)}
+      ${a.kind === "approval" && a.status === "pending" && html`<div class="row"><button class="pri" onClick=${() => decide(a.id, true)}>批准（仅本次）</button><button class="danger" onClick=${() => decide(a.id, false)}>拒绝</button></div>`}
+    </div>`)}
+  </div>`;
+}
+
 // ---------------- 模型（magpie） ----------------
 const Models = () => html`<iframe class="magpie" src="/magpie/" title="magpie"></iframe>`;
 
 // ---------------- 外壳 ----------------
-const TABS = [["overview", "概览"], ["bots", "机器人"], ["channels", "渠道"], ["conversations", "会话"], ["models", "模型"]];
+const TABS = [["overview", "概览"], ["bots", "机器人"], ["channels", "渠道"], ["conversations", "会话"], ["approvals", "审批"], ["models", "模型"]];
 function App() {
   const [tab, setTab] = useState(location.hash.slice(1) || "overview");
   const [botId, setBotId] = useState("");
@@ -212,6 +247,7 @@ function App() {
       ${tab === "bots" && html`<${Bots} botId=${botId} setBotId=${setBotId} />`}
       ${tab === "channels" && html`<${Channels} botId=${botId} setBotId=${setBotId} />`}
       ${tab === "conversations" && html`<${Conversations} />`}
+      ${tab === "approvals" && html`<${Approvals} />`}
       ${tab === "models" && html`<${Models} />`}
     </main></div>`;
 }

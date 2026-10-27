@@ -18,6 +18,8 @@ export interface AppConfig {
   llm: { defaultModel: string; contextMessages: number; contextChars: number };
   feishu: { throttleMs: number };
   weixin: { apiBaseUrl: string };
+  /** 代理宿主：dsh = DeepSeek Harness（工具/沙箱/审批）；off = 纯对话 */
+  agent: { mode: "dsh" | "off"; turnTimeoutMs: number; approvalTtlMs: number };
 }
 
 export function defaultDataDir(): string {
@@ -55,5 +57,10 @@ export function loadConfig(overrides: { dataDir?: string; env?: NodeJS.ProcessEn
     },
     feishu: { throttleMs: num(env.AMB_FEISHU_THROTTLE_MS, file.feishu?.throttleMs ?? 400) },
     weixin: { apiBaseUrl: env.AMB_WEIXIN_API_BASE || file.weixin?.apiBaseUrl || "https://ilinkai.weixin.qq.com" },
+    agent: {
+      mode: (env.AMB_AGENT || file.agent?.mode || "dsh") === "off" ? "off" : "dsh",
+      turnTimeoutMs: num(env.AMB_AGENT_TURN_TIMEOUT_MS, file.agent?.turnTimeoutMs ?? 30 * 60_000),
+      approvalTtlMs: num(env.AMB_APPROVAL_TTL_MS, file.agent?.approvalTtlMs ?? 10 * 60_000),
+    },
   };
 }

@@ -8,6 +8,8 @@ import type { InboundEvent, OutboundOp, ReplySession } from "../core/types.js";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { proxyHttp, proxyUpgrade, type ProxyTarget } from "./proxy.js";
 import { logger, mask } from "../log.js";
+import { connectionFromPids } from "../agent/peer-guard.js";
+import type { ApprovalRow } from "../store/db.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -88,9 +90,26 @@ function publicBot(b: NonNullable<ReturnType<App["store"]["getBot"]>>) {
 /** 网页“测试对话”渠道：收集输出 */
 class CollectReply implements ReplySession {
   text = "";
+  progress: string[] = [];
+  prompts: Array<{ kind: string; prompt: string; requestId?: string; code?: string }> = [];
   async apply(op: OutboundOp): Promise<void> {
     if (op.type === "stream.finish" || op.type === "text") this.text += (this.text ? "\n" : "") + op.text;
+    else if (op.type === "progress") this.progress.push(op.text);
+    else if (op.type === "interactive") this.prompts.push({ kind: op.kind, prompt: op.prompt, requestId: op.requestId, code: op.code });
   }
+}
+
+function publicApproval(r: ApprovalRow) {
+  const { payload, result, ...rest } = r;
+  let questions: unknown = undefined;
+  if (r.kind === "question") {
+    try {
+      questions = JSON.parse(payload);
+    } catch {
+      questions = [];
+    }
+  }
+  return { ...rest, questions };
 }
 
 function isLoopback(host: string): boolean {
@@ -123,6 +142,13 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
   const allowedHosts = () => new Set([`127.0.0.1:${boundPort}`, `localhost:${boundPort}`, `[::1]:${boundPort}`]);
 
   function authorized(req: http.IncomingMessage, url: URL, res: http.ServerResponse): boolean {
+    // 代理沙箱可访问回环网络：拒绝一切来自 DSH 子进程及其工具进程的请求（防止自行批准/读取配置）
+    const pids = app.agent.childPids();
+    if (pids.length && connectionFromPids(req.socket.remotePort, req.socket.localPort, pids)) {
+      log.warn("blocked request from agent sandbox", { path: url.pathname });
+      res.writeHead(403, { "content-type": "text/plain; charset=utf-8" }).end("forbidden from agent sandbox");
+      return false;
+    }
     // 防 DNS rebinding：回环模式只接受 127.0.0.1/localhost 的 Host
     if (isLoopback(host) && !allowedHosts().has(String(req.headers.host))) {
       res.writeHead(421).end("bad host");
@@ -181,6 +207,31 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         return send(res, 200, { id });
       }
     }
+    if (p === "/agent" && m === "GET") return send(res, 200, app.agent.status());
+    if (seg[0] === "approvals") {
+      if (seg.length === 1 && m === "GET") {
+        const status = url.searchParams.get("status") || undefined;
+        return send(res, 200, { approvals: app.store.listApprovals({ status: status as any, botId: url.searchParams.get("bot") || undefined, limit: 100 }).map(publicApproval) });
+      }
+      const row = seg[1] ? app.store.getApproval(decodeURIComponent(seg[1])) : undefined;
+      if (!row) throw new HttpError(404, "请求不存在");
+      if (seg.length === 2 && m === "GET") return send(res, 200, { approval: publicApproval(row) });
+      if (seg.length === 3 && m === "POST" && (seg[2] === "approve" || seg[2] === "deny")) {
+        if (row.kind !== "approval") throw new HttpError(400, "不是审批请求");
+        const ok = app.agent.approvals.decide(row.id, seg[2] === "approve", "web");
+        if (!ok) throw new HttpError(409, "请求已处理或已过期");
+        return send(res, 200, { approval: publicApproval(app.store.getApproval(row.id)!) });
+      }
+      if (seg.length === 3 && m === "POST" && seg[2] === "answer") {
+        if (row.kind !== "question" || row.status !== "pending") throw new HttpError(409, "请求已处理或已过期");
+        const b = await readJson(req);
+        const ok = Array.isArray(b.answers)
+          ? app.agent.approvals.answer(row.id, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
+          : app.agent.approvals.handleReply(row.conversationId, String(b.text ?? ""), "web").handled;
+        if (!ok) throw new HttpError(409, "提交失败");
+        return send(res, 200, { approval: publicApproval(app.store.getApproval(row.id)!) });
+      }
+    }
     if (seg[0] === "conversations") {
       if (seg.length === 1 && m === "GET") return send(res, 200, { conversations: app.store.listConversations(url.searchParams.get("bot") || undefined) });
       if (seg.length === 3 && seg[2] === "messages" && m === "GET") {
@@ -216,6 +267,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         }
         if (m === "DELETE") {
           await app.stopBot(id);
+          await app.agent.stopBot(id);
           app.store.deleteBot(id);
           return send(res, 200, { ok: true });
         }
@@ -279,9 +331,11 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           replyHandle: {},
           receivedAt: Date.now(),
         };
+        const intercepted = app.runtime.interceptReply(ev);
+        if (intercepted.handled) return send(res, 200, { reply: intercepted.ack ?? "", progress: [], prompts: [] });
         const out = new CollectReply();
         await app.queue.run(`web:${id}:console`, () => app.runtime.handle(ev, out));
-        return send(res, 200, { reply: out.text });
+        return send(res, 200, { reply: out.text, progress: out.progress, prompts: out.prompts });
       }
     }
     throw new HttpError(404, "not found");

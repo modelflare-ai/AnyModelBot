@@ -12,6 +12,9 @@ import { WeixinChannel } from "./channels/weixin/channel.js";
 import { WeixinLogin } from "./channels/weixin/login.js";
 import { startWebServer, type WebServer } from "./web/server.js";
 import { logger, mask } from "./log.js";
+import { AgentManager } from "./agent/manager.js";
+import { locateDshRuntime } from "./agent/host.js";
+import { findAppRoot } from "./magpie/supervisor.js";
 
 const log = logger("app");
 
@@ -41,6 +44,7 @@ export class App {
   readonly magpie: MagpieSupervisor | undefined;
   readonly models: ModelClient;
   readonly runtime: BotRuntime;
+  readonly agent: AgentManager;
   readonly queue = new KeyedQueue();
   readonly channels = new Map<string, BotChannels>();
   web: WebServer | undefined;
@@ -58,7 +62,21 @@ export class App {
           ? { baseUrl: this.magpie.baseUrl, apiKey: this.magpie.gatewayKey }
           : { baseUrl: config.magpie.externalBaseUrl.replace(/\/+$/, ""), apiKey: config.magpie.externalApiKey },
       );
+    const upstream = () =>
+      this.magpie
+        ? { baseUrl: this.magpie.baseUrl, apiKey: this.magpie.gatewayKey }
+        : { baseUrl: config.magpie.externalBaseUrl.replace(/\/+$/, ""), apiKey: config.magpie.externalApiKey };
+    this.agent = new AgentManager({
+      store: this.store,
+      dataDir: config.dataDir,
+      runtimeDir: config.agent.mode === "dsh" ? locateDshRuntime(findAppRoot()) : undefined,
+      upstream,
+      enabled: config.agent.mode === "dsh" && !opts.models,
+      turnTimeoutMs: config.agent.turnTimeoutMs,
+      approvalTtlMs: config.agent.approvalTtlMs,
+    });
     this.runtime = new BotRuntime({
+      agent: this.agent,
       store: this.store,
       models: this.models,
       defaultModel: () => this.config.llm.defaultModel,
@@ -85,6 +103,7 @@ export class App {
         this.notice("warn", `magpie 启动失败：${(e as Error).message}`);
       }
     }
+    this.agent.start();
     this.seedDefaultBot();
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
     if (!this.opts.noWeb) this.web = await startWebServer(this);
@@ -93,6 +112,7 @@ export class App {
   async stop(): Promise<void> {
     await this.web?.close();
     for (const id of [...this.channels.keys()]) await this.stopBot(id);
+    await this.agent.stop();
     await this.magpie?.stop();
     this.store.close();
   }

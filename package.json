@@ -21,11 +21,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "electron:dev": "npm run build && electron .",
-    "dist": "npm run build && node scripts/build-magpie.mjs --target current && electron-builder",
+    "dist": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target current && electron-builder",
     "electron:smoke": "npm run build && node scripts/electron-smoke.mjs",
-    "dist:linux": "npm run build && node scripts/build-magpie.mjs --target linux/amd64,linux/arm64 && electron-builder --linux",
-    "dist:mac": "npm run build && node scripts/build-magpie.mjs --target darwin/amd64,darwin/arm64 && electron-builder --mac",
-    "dist:win": "npm run build && node scripts/build-magpie.mjs --target windows/amd64,windows/arm64 && electron-builder --win"
+    "dist:linux": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target linux/amd64,linux/arm64 && electron-builder --linux",
+    "dist:mac": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target darwin/amd64,darwin/arm64 && electron-builder --mac",
+    "dist:win": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target windows/amd64,windows/arm64 && electron-builder --win",
+    "prepare:dsh": "node scripts/prepare-dsh.mjs"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "1.76.0",
@@ -38,7 +39,7 @@
     "@types/node": "^22.20.5",
     "@types/qrcode": "^1.5.6",
     "@types/qrcode-terminal": "^0.12.2",
-    "electron": "^45.0.0",
+    "electron": "44.7.0",
     "electron-builder": "^26.18.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
@@ -89,6 +90,17 @@
         {
           "from": "build/bin/magpie-darwin-${arch}",
           "to": "magpie/magpie"
+        },
+        {
+          "from": "dsh-runtime",
+          "to": "dsh",
+          "filter": [
+            "package.json",
+            "plugins/**",
+            "node_modules/**",
+            "!**/*.map",
+            "!**/*.d.ts"
+          ]
         }
       ]
     },
@@ -107,6 +119,17 @@
         {
           "from": "build/bin/magpie-win32-${arch}.exe",
           "to": "magpie/magpie.exe"
+        },
+        {
+          "from": "dsh-runtime",
+          "to": "dsh",
+          "filter": [
+            "package.json",
+            "plugins/**",
+            "node_modules/**",
+            "!**/*.map",
+            "!**/*.d.ts"
+          ]
         }
       ]
     },
@@ -135,6 +158,17 @@
         {
           "from": "build/bin/magpie-linux-${arch}",
           "to": "magpie/magpie"
+        },
+        {
+          "from": "dsh-runtime",
+          "to": "dsh",
+          "filter": [
+            "package.json",
+            "plugins/**",
+            "node_modules/**",
+            "!**/*.map",
+            "!**/*.d.ts"
+          ]
         }
       ],
       "desktop": {

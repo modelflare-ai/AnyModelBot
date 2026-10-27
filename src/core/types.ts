@@ -30,8 +30,21 @@ export type OutboundOp =
   | { type: "stream.update"; text: string }
   | { type: "stream.finish"; text: string }
   | { type: "text"; text: string }
-  /** P2：ask_user / approval / secret_request 等交互，按能力映射到卡片或编号文本 */
-  | { type: "interactive"; kind: "ask_user" | "approval" | "secret_request"; prompt: string; options?: string[] };
+  /** 代理执行中的进度（工具调用等）：微信批量发送并受配额约束，飞书写入卡片，网页收集 */
+  | { type: "progress"; text: string }
+  /**
+   * ask_user / approval / secret_request 等交互，按能力映射到卡片按钮或编号文本。
+   * prompt 为完整的纯文本提示（文本渠道直接发送）；buttons 供卡片渠道使用，value 会原样回传。
+   */
+  | {
+      type: "interactive";
+      kind: "ask_user" | "approval" | "secret_request";
+      prompt: string;
+      options?: string[];
+      requestId?: string;
+      code?: string;
+      buttons?: Array<{ label: string; value: Record<string, string>; style?: "primary" | "danger" | "default" }>;
+    };
 
 export interface ChannelCapabilities {
   streaming: boolean;

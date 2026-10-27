@@ -22,7 +22,7 @@ d("内置 magpie 集成", () => {
   beforeAll(async () => {
     llm = await mockOpenAI({ key: "upstream-key", models: ["up-model"] });
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-int-"));
-    app = new App(loadConfig({ dataDir, env: { AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: "http://127.0.0.1:9" } }), {
+    app = new App(loadConfig({ dataDir, env: { AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: "http://127.0.0.1:9", AMB_AGENT: "off" } }), {
       feishuTransport: () => new FakeFeishu(),
       printQrToTerminal: false,
     });

@@ -53,28 +53,92 @@ export function weixinParts(items: MessageItem[] | undefined): Part[] {
   return parts;
 }
 
-/** 微信回复会话：不流式；生成期间显示“正在输入”，结束时一次性发送（>4000 字切分），遵守配额。 */
+/** 进度批量发送参数（微信每次入站后 24h 内仅 10 条可发） */
+export const PROGRESS_FLUSH_MS = 15_000;
+export const PROGRESS_MAX_PER_TURN = 3;
+/** 进度消息发送后至少保留的配额（留给最终回复与审批提示） */
+export const PROGRESS_QUOTA_RESERVE = 4;
+
+/**
+ * 微信回复会话：不流式；生成期间显示“正在输入”，结束时一次性发送（>4000 字切分），遵守配额。
+ * 代理进度按 ~15s 合并为一条，每回合最多 3 条，且始终为最终回复/审批保留配额；发完进度后恢复“正在输入”。
+ */
 export class WeixinReply implements ReplySession {
   private ticket: string | undefined;
   private typingTimer: NodeJS.Timeout | undefined;
+  private typingOn = false;
+  private progressBuf: string[] = [];
+  private progressTimer: NodeJS.Timeout | undefined;
+  private progressSent = 0;
+  private chain: Promise<void> = Promise.resolve();
   readonly sent: string[] = [];
   private log = logger("weixin.reply");
 
-  constructor(private client: IlinkClient, private userId: string, private contextToken: string, private quota: WeixinQuota) {}
+  constructor(
+    private client: IlinkClient,
+    private userId: string,
+    private contextToken: string,
+    private quota: WeixinQuota,
+    private progressFlushMs = PROGRESS_FLUSH_MS,
+  ) {}
+
+  private enqueue(fn: () => Promise<void>): Promise<void> {
+    const p = this.chain.then(fn, fn);
+    this.chain = p.catch(() => {});
+    return p;
+  }
 
   async apply(op: OutboundOp): Promise<void> {
     switch (op.type) {
       case "typing":
+        this.typingOn = op.on;
+        if (!op.on) this.dropProgress();
         return this.typing(op.on);
       case "stream.start":
       case "stream.update":
         return;
+      case "progress":
+        this.progressBuf.push(op.text);
+        this.progressTimer ??= setTimeout(() => {
+          this.progressTimer = undefined;
+          void this.enqueue(() => this.flushProgress());
+        }, this.progressFlushMs);
+        return;
       case "stream.finish":
       case "text":
-        return this.send(op.text);
-      case "interactive":
-        return this.send(`${op.prompt}${op.options?.length ? "\n" + op.options.map((o, i) => `${i + 1}. ${o}`).join("\n") + "\n（回复编号选择）" : ""}`);
+        this.dropProgress();
+        return this.enqueue(() => this.send(op.text));
+      case "interactive": {
+        if (this.progressTimer) clearTimeout(this.progressTimer);
+        this.progressTimer = undefined;
+        const text = op.requestId
+          ? op.prompt // 代理请求：提示里已含编号/回复方式
+          : `${op.prompt}${op.options?.length ? "\n" + op.options.map((o, i) => `${i + 1}. ${o}`).join("\n") + "\n（回复编号选择）" : ""}`;
+        return this.enqueue(async () => {
+          await this.flushProgress();
+          await this.send(text, { raw: !!op.requestId });
+          if (this.typingOn) await this.typing(true);
+        });
+      }
     }
+  }
+
+  private dropProgress(): void {
+    if (this.progressTimer) clearTimeout(this.progressTimer);
+    this.progressTimer = undefined;
+    this.progressBuf = [];
+  }
+
+  private async flushProgress(): Promise<void> {
+    if (!this.progressBuf.length) return;
+    const lines = this.progressBuf;
+    this.progressBuf = [];
+    if (this.progressSent >= PROGRESS_MAX_PER_TURN) return;
+    if (this.quota.remaining(this.userId) <= PROGRESS_QUOTA_RESERVE) return;
+    const shown = lines.length > 8 ? [...lines.slice(0, 3), `…（另 ${lines.length - 6} 步）`, ...lines.slice(-3)] : lines;
+    this.progressSent++;
+    await this.send(`⏳ 进行中：\n${shown.join("\n")}`, { raw: true, maxChunks: 1 });
+    if (this.typingOn) await this.typing(true);
   }
 
   private async typing(on: boolean): Promise<void> {
@@ -97,12 +161,13 @@ export class WeixinReply implements ReplySession {
     }
   }
 
-  private async send(text: string): Promise<void> {
+  private async send(text: string, o: { raw?: boolean; maxChunks?: number } = {}): Promise<void> {
     if (this.typingTimer) {
       clearInterval(this.typingTimer);
       this.typingTimer = undefined;
     }
-    const chunks = splitText(filterMarkdown(text), WEIXIN_CAPS.maxTextLength);
+    let chunks = splitText(o.raw ? text.trim() : filterMarkdown(text), WEIXIN_CAPS.maxTextLength);
+    if (o.maxChunks) chunks = chunks.slice(0, o.maxChunks);
     const budget = this.quota.remaining(this.userId);
     if (budget <= 0) {
       this.log.warn("weixin quota exhausted, reply dropped", { userId: this.userId });
@@ -233,6 +298,17 @@ export class WeixinChannel {
       replyHandle: { contextToken: peer.contextToken },
       receivedAt: Date.now(),
     };
+    // 审批/提问回复不能排在正在等待审批的回合后面（会死锁），在入队前处理
+    const intercepted = this.runtime.interceptReply(ev);
+    if (intercepted.handled) {
+      if (intercepted.ack) {
+        const ack = new WeixinReply(this.client!, userId, peer.contextToken, this.quota);
+        const p = ack.apply({ type: "text", text: intercepted.ack }).catch((e) => this.log.warn("ack failed", { message: (e as Error).message }));
+        this.pending.add(p);
+        void p.finally(() => this.pending.delete(p));
+      }
+      return;
+    }
     const p = this.queue.run(`weixin:${this.botId}:${userId}`, async () => {
       const reply = new WeixinReply(this.client!, userId, this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? peer.contextToken, this.quota);
       try {

@@ -22,8 +22,18 @@ COPY src ./src
 COPY electron ./electron
 RUN npx tsc -p tsconfig.build.json
 
+# ---- DSH 代理运行时（MIT，npm 固定版本）----
+FROM node:22-bookworm-slim AS dsh
+WORKDIR /app
+COPY dsh-runtime/package.json dsh-runtime/package-lock.json ./dsh-runtime/
+COPY scripts/prepare-dsh.mjs ./scripts/
+RUN node scripts/prepare-dsh.mjs && npm cache clean --force
+
 # ---- 运行时 ----
 FROM node:22-bookworm-slim
+# bubblewrap：DSH 的 bash 沙箱（容器内若禁止 user namespace，DSH 自动回退到 Landlock）
+RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production \
     AMB_DATA_DIR=/data \
@@ -36,6 +46,9 @@ COPY --from=build /app/dist ./dist
 COPY ui ./ui
 COPY assets ./assets
 COPY --from=magpie /out/magpie ./bin/magpie
+COPY --from=dsh /app/dsh-runtime/node_modules ./dsh-runtime/node_modules
+COPY dsh-runtime/package.json ./dsh-runtime/
+COPY dsh-runtime/plugins ./dsh-runtime/plugins
 COPY LICENSE THIRD_PARTY_NOTICES.md ./
 RUN mkdir -p /data && chown node:node /data
 USER node

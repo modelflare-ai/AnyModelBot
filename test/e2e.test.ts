@@ -31,7 +31,7 @@ beforeAll(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-e2e-"));
   const config = loadConfig({
     dataDir,
-    env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: ilink.url, AMB_FEISHU_THROTTLE_MS: "30" },
+    env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: ilink.url, AMB_FEISHU_THROTTLE_MS: "30", AMB_AGENT: "off" },
   });
   process.env.FEISHU_APP_ID = "cli_test";
   process.env.FEISHU_APP_SECRET = "secret_test";

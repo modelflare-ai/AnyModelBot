@@ -13,4 +13,6 @@ if (!fs.existsSync(path.join(root, "vendor", "magpie", "go.mod"))) {
   run("git", ["submodule", "update", "--init", "--depth", "1", "vendor/magpie"]);
 }
 run(process.execPath, [path.join(root, "scripts", "build-magpie.mjs"), ...process.argv.slice(2)]);
+console.log("安装 DSH 代理运行时（dsh-runtime/）…");
+run(process.execPath, [path.join(root, "scripts", "prepare-dsh.mjs")]);
 console.log("\n下一步：npm run init（填写模型 API Key 与飞书凭据，可跳过改在界面中设置）→ npm start");

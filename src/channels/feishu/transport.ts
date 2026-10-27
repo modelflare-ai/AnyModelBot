@@ -19,8 +19,22 @@ export interface FeishuMessageEvent {
  * 飞书传输层抽象（便于离线测试用 mock 替换）。
  * 真实实现：WSClient 长连接接收事件 + OpenAPI（CardKit 流式卡片 / 文本回复）。
  */
+/** 卡片按钮回调（card.action.trigger）：value 为按钮上携带的值 */
+export interface FeishuCardAction {
+  value: Record<string, string>;
+  operatorOpenId: string;
+  messageId?: string;
+}
+export type CardActionHandler = (a: FeishuCardAction) => { toast: string; ok: boolean } | Promise<{ toast: string; ok: boolean }>;
+
 export interface FeishuTransport {
-  start(onMessage: (ev: FeishuMessageEvent) => void, onState: (state: "connecting" | "connected" | "error", detail?: string) => void): Promise<void>;
+  start(
+    onMessage: (ev: FeishuMessageEvent) => void,
+    onState: (state: "connecting" | "connected" | "error", detail?: string) => void,
+    onCardAction?: CardActionHandler,
+  ): Promise<void>;
+  /** 发送带按钮的交互卡片（审批/提问）；未实现时降级为文本 */
+  replyActionCard?(replyToMessageId: string, card: Record<string, unknown>): Promise<void>;
   stop(): Promise<void>;
   createStreamingCard(initial: string): Promise<string>;
   sendCardReply(replyToMessageId: string, cardId: string): Promise<void>;
@@ -47,6 +61,35 @@ export function streamingCardSpec(initial: string) {
   };
 }
 
+/** 审批/提问卡片：说明 + 一排回调按钮（schema 2.0）。 */
+export function actionCardSpec(title: string, text: string, buttons: Array<{ label: string; value: Record<string, string>; style?: string }>) {
+  return {
+    schema: "2.0",
+    config: { summary: { content: title } },
+    header: { title: { tag: "plain_text", content: title }, template: "orange" },
+    body: {
+      elements: [
+        { tag: "markdown", content: text },
+        {
+          tag: "column_set",
+          columns: buttons.map((b) => ({
+            tag: "column",
+            width: "auto",
+            elements: [
+              {
+                tag: "button",
+                text: { tag: "plain_text", content: b.label },
+                type: b.style === "danger" ? "danger" : b.style === "primary" ? "primary" : "default",
+                behaviors: [{ type: "callback", value: b.value }],
+              },
+            ],
+          })),
+        },
+      ],
+    },
+  };
+}
+
 function check(res: { code?: number; msg?: string } | undefined, what: string): void {
   if (res && typeof res.code === "number" && res.code !== 0) throw new Error(`${what} failed: code=${res.code} msg=${res.msg}`);
 }
@@ -65,9 +108,28 @@ export class LarkTransport implements FeishuTransport {
     });
   }
 
-  async start(onMessage: (ev: FeishuMessageEvent) => void, onState: (s: "connecting" | "connected" | "error", d?: string) => void): Promise<void> {
+  async start(
+    onMessage: (ev: FeishuMessageEvent) => void,
+    onState: (s: "connecting" | "connected" | "error", d?: string) => void,
+    onCardAction?: CardActionHandler,
+  ): Promise<void> {
     onState("connecting");
     const dispatcher = new Lark.EventDispatcher({}).register({
+      // 卡片按钮回调（长连接模式下以事件形式下发；需在开发者后台订阅 card.action.trigger）
+      "card.action.trigger": async (data: any) => {
+        if (!onCardAction) return {};
+        try {
+          const r = await onCardAction({
+            value: (data?.action?.value ?? {}) as Record<string, string>,
+            operatorOpenId: data?.operator?.open_id ?? "",
+            messageId: data?.context?.open_message_id,
+          });
+          return { toast: { type: r.ok ? "success" : "warning", content: r.toast } };
+        } catch (e) {
+          this.log.warn("card action failed", { message: (e as Error).message });
+          return { toast: { type: "error", content: "处理失败" } };
+        }
+      },
       "im.message.receive_v1": async (data: any) => {
         // 3 秒规则：立即返回，业务异步处理（onMessage 内只入队）
         try {
@@ -146,6 +208,14 @@ export class LarkTransport implements FeishuTransport {
       },
     });
     check(res, "cardkit.card.settings");
+  }
+
+  async replyActionCard(replyToMessageId: string, card: Record<string, unknown>): Promise<void> {
+    const res: any = await this.client.im.v1.message.reply({
+      path: { message_id: replyToMessageId },
+      data: { msg_type: "interactive", content: JSON.stringify(card) },
+    });
+    check(res, "im.message.reply(action card)");
   }
 
   async replyText(replyToMessageId: string, text: string): Promise<void> {

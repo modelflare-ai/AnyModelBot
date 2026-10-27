@@ -8,6 +8,14 @@
   <script type="importmap">
     { "imports": { "preact": "/amb/vendor/preact.mjs", "preact/hooks": "/amb/vendor/hooks.mjs", "htm": "/amb/vendor/htm.mjs" } }
   </script>
+  <script>
+    (function () {
+      try {
+        var m = localStorage.getItem("amb-theme");
+        if (m === "light" || m === "dark") document.documentElement.setAttribute("data-theme", m);
+      } catch (_) {}
+    })();
+  </script>
 </head>
 <body>
   <div id="app">加载中…</div>

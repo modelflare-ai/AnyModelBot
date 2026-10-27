@@ -148,9 +148,9 @@ export class BotRuntime {
         text: input,
         model,
         observer: {
-          onProgress: (t) => {
+          // 工具调用不进入聊天：只用于判断代理已开始工作（不再回退到纯对话），正在输入状态由渠道维持
+          onProgress: () => {
             visible = true;
-            void out.apply({ type: "progress", text: t });
           },
         },
       });

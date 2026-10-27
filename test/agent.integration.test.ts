@@ -105,7 +105,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   const chat = async (text: string) => {
     const r = await fetch(`${base}/amb/api/bots/default/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
     expect(r.status).toBe(200);
-    return (await r.json()) as { reply: string; progress: string[]; prompts: any[]; files?: string[] };
+    return (await r.json()) as { reply: string; progress?: string[]; prompts: any[]; files?: string[] };
   };
 
   it("runs a sandboxed bash tool in the bot workspace (quicksort)", async () => {
@@ -114,6 +114,13 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(fs.existsSync(path.join(dataDir, "workspaces", "default", "qs.py"))).toBe(true);
     // 模型只看到真实上游密钥，子进程只拿到 bridge 令牌
     expect([...seenAuth]).toEqual(["Bearer gw-key"]);
+    // 工具调用不进入聊天：响应与会话历史里只有用户消息和最终回复
+    expect(r.progress).toBeUndefined();
+    const convs = ((await (await fetch(`${base}/amb/api/conversations?bot=default`)).json()) as any).conversations;
+    const conv = convs.find((c: any) => String(c.id).includes("web"));
+    const hist = ((await (await fetch(`${base}/amb/api/conversations/${encodeURIComponent(conv.id)}/messages`)).json()) as any).messages;
+    expect(hist.map((m: any) => m.role)).toEqual(["user", "assistant"]);
+    expect(JSON.stringify(hist)).not.toMatch(/🔧|tool|bash:/);
   }, 120_000);
 
   it("escalation waits for approval; approve via API allows once", async () => {

@@ -90,13 +90,11 @@ function publicBot(b: NonNullable<ReturnType<App["store"]["getBot"]>>) {
 /** 网页“测试对话”渠道：收集输出 */
 class CollectReply implements ReplySession {
   text = "";
-  progress: string[] = [];
   prompts: Array<{ kind: string; prompt: string; requestId?: string; code?: string }> = [];
   files: string[] = [];
   async apply(op: OutboundOp): Promise<void> {
     if (op.type === "file") this.files.push(op.name);
     if (op.type === "stream.finish" || op.type === "text") this.text += (this.text ? "\n" : "") + op.text;
-    else if (op.type === "progress") this.progress.push(op.text);
     else if (op.type === "interactive") this.prompts.push({ kind: op.kind, prompt: op.prompt, requestId: op.requestId, code: op.code });
   }
 }
@@ -334,10 +332,10 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           receivedAt: Date.now(),
         };
         const intercepted = app.runtime.interceptReply(ev);
-        if (intercepted.handled) return send(res, 200, { reply: intercepted.ack ?? "", progress: [], prompts: [] });
+        if (intercepted.handled) return send(res, 200, { reply: intercepted.ack ?? "", prompts: [] });
         const out = new CollectReply();
         await app.queue.run(`web:${id}:console`, () => app.runtime.handle(ev, out));
-        return send(res, 200, { reply: out.text, progress: out.progress, prompts: out.prompts, files: out.files });
+        return send(res, 200, { reply: out.text, prompts: out.prompts, files: out.files });
       }
     }
     throw new HttpError(404, "not found");

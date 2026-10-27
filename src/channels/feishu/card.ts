@@ -19,7 +19,6 @@ export class FeishuReply implements ReplySession {
   private fallback = false;
   private started = false;
   private closed = false;
-  private progress: string[] = [];
 
   constructor(private transport: FeishuTransport, private replyTo: string, private throttleMs = 400) {}
 
@@ -35,12 +34,6 @@ export class FeishuReply implements ReplySession {
         return this.start();
       case "stream.update":
         this.latest = op.text;
-        this.schedule();
-        return;
-      case "progress":
-        this.progress.push(op.text);
-        if (this.progress.length > 12) this.progress.splice(0, this.progress.length - 12);
-        this.latest = `⏳ 进行中…\n${this.progress.join("\n")}`;
         this.schedule();
         return;
       case "stream.finish":

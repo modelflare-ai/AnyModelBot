@@ -93,46 +93,45 @@ describe("parseAnswer", () => {
   });
 });
 
-describe("WeixinReply progress batching", () => {
+describe("WeixinReply: only final reply / prompts / files become messages", () => {
   function setup(remaining = 10) {
     store.upsertWeixinPeer({ botId: "b", userId: "u1", contextToken: "ctx", quotaRemaining: remaining, windowStartedAt: Date.now() });
     const sent: string[] = [];
+    const typing: boolean[] = [];
     const client = {
       sendText: async (_u: string, t: string) => void sent.push(t),
       getTypingTicket: async () => "ticket",
-      sendTyping: async () => {},
+      sendTyping: async (_u: string, _t: string, on: boolean) => void typing.push(on),
     } as any;
-    return { sent, reply: new WeixinReply(client, "u1", "ctx", new WeixinQuota(store, "b"), 30) };
+    return { sent, typing, reply: new WeixinReply(client, "u1", "ctx", new WeixinQuota(store, "b")) };
   }
   const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  it("batches progress lines into one message per flush, max 3 per turn", async () => {
-    const { sent, reply } = setup();
-    for (let round = 0; round < 5; round++) {
-      await reply.apply({ type: "progress", text: `🔧 step ${round}a` });
-      await reply.apply({ type: "progress", text: `🔧 step ${round}b` });
-      await tick(60);
-    }
-    expect(sent.length).toBe(3);
-    expect(sent[0]).toBe("⏳ 进行中：\n🔧 step 0a\n🔧 step 0b");
+  it("uses the typing indicator as the only working signal and sends just the final reply", async () => {
+    const { sent, typing, reply } = setup();
+    await reply.apply({ type: "typing", on: true });
+    await reply.apply({ type: "stream.start" });
     await reply.apply({ type: "stream.finish", text: "完成" });
+    await reply.apply({ type: "typing", on: false });
     await tick(10);
-    expect(sent.at(-1)).toBe("完成");
+    expect(sent).toEqual(["完成"]);
+    expect(typing).toEqual([true, false]);
   });
 
-  it("keeps a quota reserve and drops pending progress when the final reply arrives", async () => {
-    const low = setup(4);
-    await low.reply.apply({ type: "progress", text: "🔧 x" });
-    await tick(60);
-    expect(low.sent).toEqual([]);
+  it("no quota is reserved: the last remaining message goes to the reply", async () => {
+    const low = setup(1);
+    await low.reply.apply({ type: "stream.finish", text: "最终答案" });
+    expect(low.sent).toEqual(["最终答案"]);
   });
 
-  it("sends approval prompts raw (backticks intact) and flushes progress first", async () => {
-    const { sent, reply } = setup();
-    await reply.apply({ type: "progress", text: "🔧 bash ls" });
-    await reply.apply({ type: "interactive", kind: "confirm", prompt: "需批准: bash `rm -rf build` — 回复 y 1234 / n 1234", requestId: "r1", code: "1234" } as any);
+  it("sends approval prompts raw (backticks intact) and resumes typing", async () => {
+    const { sent, typing, reply } = setup();
+    await reply.apply({ type: "typing", on: true });
+    await reply.apply({ type: "interactive", kind: "approval", prompt: "需批准: bash `rm -rf build` — 回复 y 1234 / n 1234", requestId: "r1", code: "1234" });
     await tick(10);
-    expect(sent).toEqual(["⏳ 进行中：\n🔧 bash ls", "需批准: bash `rm -rf build` — 回复 y 1234 / n 1234"]);
+    expect(sent).toEqual(["需批准: bash `rm -rf build` — 回复 y 1234 / n 1234"]);
+    expect(typing.filter(Boolean).length).toBe(2);
+    await reply.apply({ type: "typing", on: false });
   });
 });
 
@@ -184,7 +183,7 @@ describe("WeChat media delivery", () => {
       },
     } as any;
     const quota = new WeixinQuota(store, "b");
-    const reply = new WeixinReply(client, "u1", "ctx", quota, 30);
+    const reply = new WeixinReply(client, "u1", "ctx", quota);
     await reply.apply({ type: "file", path: "/w/a.png", name: "a.png" });
     expect(sent).toEqual(["media:/w/a.png"]);
     expect(quota.remaining("u1")).toBe(1);

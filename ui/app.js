@@ -100,7 +100,7 @@ function TestChat({ botId }) {
     setText(""); setBusy(true); setLog((l) => [...l, { role: "user", content: t }]);
     try {
       const r = await api(`/bots/${botId}/chat`, { method: "POST", body: { text: t } });
-      const extra = [...(r.progress || []).map((p) => ({ role: "assistant progress", content: "⏳ " + p })), ...(r.prompts || []).map((p) => ({ role: "assistant prompt", content: p.prompt }))];
+      const extra = [...(r.prompts || []).map((p) => ({ role: "assistant prompt", content: p.prompt }))];
       const files = (r.files || []).map((f) => ({ role: "assistant progress", content: "📎 已交付文件：" + f + "（微信/飞书会直接发送；网页端请在机器人工作区查看）" }));
       setLog((l) => [...l, ...extra, { role: "assistant", content: r.reply }, ...files]);
     }

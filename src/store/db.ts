@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { normalizeSettings, type BotSettings } from "../agent/settings.js";
 
 /**
  * SQLite 存储（node:sqlite，无原生模块，Electron 下也无需 rebuild）。
@@ -15,6 +16,8 @@ export interface Bot {
   feishuAppId: string;
   feishuAppSecret: string;
   weixinEnabled: boolean;
+  /** 身份与行为设置（权限预设、记忆、上下文管家） */
+  settings: BotSettings;
   createdAt: number;
   updatedAt: number;
 }
@@ -26,6 +29,8 @@ export interface Conversation {
   peerId: string;
   title: string;
   model: string;
+  /** dm 或 group（群聊使用群记忆） */
+  kind: "dm" | "group";
   createdAt: number;
   updatedAt: number;
 }
@@ -116,7 +121,16 @@ CREATE TABLE IF NOT EXISTS approvals (
   status TEXT NOT NULL DEFAULT 'pending', result TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_at INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS approvals_status ON approvals(status, expires_at);
+CREATE TABLE IF NOT EXISTS agent_segments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL, session_id TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '', handoff TEXT NOT NULL DEFAULT '', ended_at INTEGER NOT NULL);
 `;
+
+/** 旧库补列（CREATE TABLE IF NOT EXISTS 不会改已有表）。 */
+const COLUMNS: Array<[string, string, string]> = [
+  ["bots", "settings", "TEXT NOT NULL DEFAULT '{}'"],
+  ["conversations", "kind", "TEXT NOT NULL DEFAULT 'dm'"],
+];
 
 export class Store {
   readonly db: DatabaseSync;
@@ -135,6 +149,10 @@ export class Store {
     }
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec(SCHEMA);
+    for (const [table, col, def] of COLUMNS) {
+      const cols = (this.db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map((r) => String(r.name));
+      if (!cols.includes(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+    }
   }
 
   close(): void {
@@ -160,6 +178,7 @@ export class Store {
       feishuAppId: String(r.feishu_app_id),
       feishuAppSecret: String(r.feishu_app_secret),
       weixinEnabled: Number(r.weixin_enabled) === 1,
+      settings: parseSettings(r.settings),
       createdAt: Number(r.created_at),
       updatedAt: Number(r.updated_at),
     };
@@ -176,10 +195,10 @@ export class Store {
     const id = input.id || randomUUID().slice(0, 8);
     this.db
       .prepare(
-        `INSERT INTO bots(id, name, system_prompt, default_model, feishu_app_id, feishu_app_secret, weixin_enabled, created_at, updated_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO bots(id, name, system_prompt, default_model, feishu_app_id, feishu_app_secret, weixin_enabled, settings, created_at, updated_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.name, input.systemPrompt ?? "", input.defaultModel ?? "", input.feishuAppId ?? "", input.feishuAppSecret ?? "", input.weixinEnabled ? 1 : 0, now, now);
+      .run(id, input.name, input.systemPrompt ?? "", input.defaultModel ?? "", input.feishuAppId ?? "", input.feishuAppSecret ?? "", input.weixinEnabled ? 1 : 0, JSON.stringify(normalizeSettings(input.settings)), now, now);
     return this.getBot(id)!;
   }
   updateBot(id: string, patch: Partial<Omit<Bot, "id" | "createdAt" | "updatedAt">>): Bot | undefined {
@@ -188,14 +207,15 @@ export class Store {
     const next = { ...cur, ...patch };
     this.db
       .prepare(
-        `UPDATE bots SET name=?, system_prompt=?, default_model=?, feishu_app_id=?, feishu_app_secret=?, weixin_enabled=?, updated_at=? WHERE id=?`,
+        `UPDATE bots SET name=?, system_prompt=?, default_model=?, feishu_app_id=?, feishu_app_secret=?, weixin_enabled=?, settings=?, updated_at=? WHERE id=?`,
       )
-      .run(next.name, next.systemPrompt, next.defaultModel, next.feishuAppId, next.feishuAppSecret, next.weixinEnabled ? 1 : 0, Date.now(), id);
+      .run(next.name, next.systemPrompt, next.defaultModel, next.feishuAppId, next.feishuAppSecret, next.weixinEnabled ? 1 : 0, JSON.stringify(normalizeSettings(next.settings)), Date.now(), id);
     return this.getBot(id);
   }
   deleteBot(id: string): void {
     const convs = this.db.prepare("SELECT id FROM conversations WHERE bot_id = ?").all(id) as Row[];
     for (const c of convs) this.db.prepare("DELETE FROM messages WHERE conversation_id = ?").run(String(c.id));
+    this.db.prepare("DELETE FROM agent_segments WHERE conversation_id IN (SELECT id FROM conversations WHERE bot_id = ?)").run(id);
     this.db.prepare("DELETE FROM conversations WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM weixin_accounts WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM weixin_peers WHERE bot_id = ?").run(id);
@@ -212,20 +232,24 @@ export class Store {
       peerId: String(r.peer_id),
       title: String(r.title),
       model: String(r.model),
+      kind: String(r.kind ?? "dm") === "group" ? "group" : "dm",
       createdAt: Number(r.created_at),
       updatedAt: Number(r.updated_at),
     };
   }
-  ensureConversation(botId: string, channel: string, peerId: string, title = ""): Conversation {
+  ensureConversation(botId: string, channel: string, peerId: string, title = "", kind: "dm" | "group" = "dm"): Conversation {
     const r = this.db
       .prepare("SELECT * FROM conversations WHERE bot_id = ? AND channel = ? AND peer_id = ?")
       .get(botId, channel, peerId) as Row | undefined;
-    if (r) return this.toConv(r);
+    if (r) {
+      if (kind === "group" && String(r.kind) !== "group") this.db.prepare("UPDATE conversations SET kind = 'group' WHERE id = ?").run(String(r.id));
+      return this.toConv({ ...r, kind: kind === "group" ? "group" : r.kind });
+    }
     const now = Date.now();
     const id = `${botId}:${channel}:${peerId}`;
     this.db
-      .prepare("INSERT INTO conversations(id, bot_id, channel, peer_id, title, model, created_at, updated_at) VALUES(?, ?, ?, ?, ?, '', ?, ?)")
-      .run(id, botId, channel, peerId, title, now, now);
+      .prepare("INSERT INTO conversations(id, bot_id, channel, peer_id, title, model, kind, created_at, updated_at) VALUES(?, ?, ?, ?, ?, '', ?, ?, ?)")
+      .run(id, botId, channel, peerId, title, kind, now, now);
     return this.getConversation(id)!;
   }
   getConversation(id: string): Conversation | undefined {
@@ -362,6 +386,28 @@ export class Store {
   clearAgentSession(conversationId: string): void {
     this.db.prepare("DELETE FROM agent_sessions WHERE conversation_id = ?").run(conversationId);
   }
+  /** 段落归档：上下文管家换段时记下旧 session 与交接便条。 */
+  archiveSegment(conversationId: string, sessionId: string, reason: string, handoff: string): void {
+    this.db
+      .prepare("INSERT INTO agent_segments(conversation_id, session_id, reason, handoff, ended_at) VALUES(?, ?, ?, ?, ?)")
+      .run(conversationId, sessionId, reason, handoff, Date.now());
+  }
+  listSegments(conversationId: string): Array<{ sessionId: string; reason: string; handoff: string; endedAt: number }> {
+    return (this.db.prepare("SELECT * FROM agent_segments WHERE conversation_id = ? ORDER BY id").all(conversationId) as Row[]).map((r) => ({
+      sessionId: String(r.session_id),
+      reason: String(r.reason),
+      handoff: String(r.handoff),
+      endedAt: Number(r.ended_at),
+    }));
+  }
+  /** 消息 id 大于 afterId 的消息（旧→新） */
+  messagesAfter(conversationId: string, afterId: number, limit = 60): Message[] {
+    const rows = this.db
+      .prepare("SELECT * FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id DESC LIMIT ?")
+      .all(conversationId, afterId, limit) as Row[];
+    return rows.reverse().map((r) => ({ id: Number(r.id), conversationId: String(r.conversation_id), role: String(r.role) as Message["role"], content: String(r.content), createdAt: Number(r.created_at) }));
+  }
+
   conversationForSession(sessionId: string): string | undefined {
     const r = this.db.prepare("SELECT conversation_id FROM agent_sessions WHERE session_id = ?").get(sessionId) as Row | undefined;
     return r ? String(r.conversation_id) : undefined;
@@ -420,5 +466,13 @@ export class Store {
       .prepare("UPDATE approvals SET status = ?, decided_by = ?, result = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
       .run(status, decidedBy, result, Date.now(), id);
     return Number(res.changes) > 0;
+  }
+}
+
+function parseSettings(v: unknown): BotSettings {
+  try {
+    return normalizeSettings(JSON.parse(String(v ?? "{}")));
+  } catch {
+    return normalizeSettings({});
   }
 }

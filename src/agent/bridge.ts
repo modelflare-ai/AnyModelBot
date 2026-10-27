@@ -12,6 +12,10 @@ export interface BridgeHandlers {
   ask(body: any): Promise<{ id: string }>;
   wait(body: any): Promise<Record<string, unknown>>;
   cancel(body: any): Promise<void>;
+  /** amb-memory 插件：remember / forget / recall */
+  memory?(body: any): Promise<unknown>;
+  /** amb-memory 插件：上下文管家判定 / 压缩回报 */
+  steward?(body: any): Promise<unknown>;
 }
 
 /**
@@ -107,6 +111,8 @@ export class AgentBridge {
     if (url === "/dsh/ask") out = await this.h.ask(body);
     else if (url === "/dsh/wait") out = await this.h.wait(body);
     else if (url === "/dsh/cancel") out = (await this.h.cancel(body), { ok: true });
+    else if (url === "/dsh/memory" && this.h.memory) out = await this.h.memory(body);
+    else if (url === "/dsh/steward" && this.h.steward) out = await this.h.steward(body);
     else return void res.writeHead(404).end();
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
   }

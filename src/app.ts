@@ -74,6 +74,9 @@ export class App {
       enabled: config.agent.mode === "dsh" && !opts.models,
       turnTimeoutMs: config.agent.turnTimeoutMs,
       approvalTtlMs: config.agent.approvalTtlMs,
+      // 后台小任务（管家判定/交接/记忆整理）直接走 magpie，不经代理子进程
+      complete: (model, system, user) =>
+        this.models.streamChat({ model, messages: [{ role: "system", content: system }, { role: "user", content: user }], signal: AbortSignal.timeout(120_000) }, () => {}),
     });
     this.runtime = new BotRuntime({
       agent: this.agent,

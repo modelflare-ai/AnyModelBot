@@ -63,7 +63,8 @@
       "package.json",
       "!**/*.map",
       "LICENSE",
-      "THIRD_PARTY_NOTICES.md"
+      "THIRD_PARTY_NOTICES.md",
+      "LICENSES/**"
     ],
     "asar": true,
     "mac": {
@@ -106,6 +107,18 @@
             "**/*",
             "!**/*.map",
             "!**/*.d.ts"
+          ]
+        },
+        {
+          "from": "vendor/kimi-computer-use",
+          "to": "kimi-computer-use",
+          "filter": [
+            "bin/**",
+            "skills/**",
+            "package.json",
+            "LICENSE",
+            "NOTICE",
+            "README.md"
           ]
         }
       ]

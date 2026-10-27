@@ -6,6 +6,7 @@ import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
 import { promptText, type QuestionItem } from "../agent/approvals.js";
+import { MEMORY_GUIDE } from "../agent/steward.js";
 import type { ApprovalRow } from "../store/db.js";
 
 const log = logger("runtime");
@@ -24,7 +25,8 @@ const HELP = [
   "可用命令：",
   "/model — 列出可用模型（带编号）",
   "/model <编号或模型名> — 切换当前会话的模型",
-  "/reset — 清空当前会话的上下文（代理模式下同时开启新的代理会话）",
+  "/reset — 清空当前会话的上下文（代理模式下同时开启新的代理会话；长期记忆保留）",
+  "/new — 开始新的一段对话：旧对话归档并生成交接便条，长期记忆保留",
   "/status — 查看当前会话使用的模型",
   "/help — 显示本帮助",
 ].join("\n");
@@ -53,12 +55,12 @@ export class BotRuntime {
     const { store } = this.opts;
     const bot = store.getBot(ev.botId);
     if (!bot) throw new Error(`unknown bot ${ev.botId}`);
-    const conv = store.ensureConversation(bot.id, ev.channel, ev.conversation.id, ev.sender.name || ev.sender.id);
+    const conv = store.ensureConversation(bot.id, ev.channel, ev.conversation.id, ev.sender.name || ev.sender.id, ev.conversation.kind === "group" ? "group" : "dm");
     const text = eventText(ev);
     if (!text) return;
 
     if (text.startsWith("/")) {
-      const reply = await this.command(text, conv.id, conv.model, bot.defaultModel);
+      const reply = await this.command(text, conv.id, conv.model, bot.defaultModel, bot.id);
       if (reply !== null) {
         await out.apply({ type: "text", text: reply });
         return;
@@ -141,8 +143,7 @@ export class BotRuntime {
     await out.apply({ type: "typing", on: true });
     await out.apply({ type: "stream.start" });
     try {
-      const fresh = !store.getAgentSession(convId);
-      const input = fresh && systemPrompt.trim() ? `[机器人设定]\n${systemPrompt.trim()}\n\n[用户消息]\n${text}` : text;
+      const input = store.getAgentSession(convId) ? text : firstInput(agent, botId, convId, systemPrompt, text);
       const r = await agent.runTurn(botId, {
         conversationId: convId,
         text: input,
@@ -183,7 +184,7 @@ export class BotRuntime {
   }
 
   /** 返回 null 表示不是已知命令，按普通消息处理。 */
-  private async command(text: string, convId: string, convModel: string, botModel: string): Promise<string | null> {
+  private async command(text: string, convId: string, convModel: string, botModel: string, botId: string): Promise<string | null> {
     const [cmd, ...rest] = text.trim().split(/\s+/);
     const arg = rest.join(" ");
     switch (cmd.toLowerCase()) {
@@ -193,12 +194,24 @@ export class BotRuntime {
         this.opts.store.clearMessages(convId);
         this.opts.agent?.resetConversation(convId);
         return "✅ 已清空本会话上下文";
+      case "/new": {
+        const a = this.opts.agent;
+        if (!a?.available) return "⚠️ /new 只在代理模式下可用；纯对话模式请用 /reset";
+        if (!this.opts.store.getAgentSession(convId)) return "当前已经是新的一段对话";
+        try {
+          await a.newSegment(botId, convId, await this.resolveModel(convModel, botModel));
+        } catch (e) {
+          return `⚠️ 开新段失败：${(e as Error).message.slice(0, 200)}`;
+        }
+        return "✅ 已开始新的一段对话（旧对话已归档并留下交接便条，长期记忆保留）";
+      }
       case "/status": {
         const m = convModel || botModel || this.opts.defaultModel() || "（自动：第一个可用模型）";
         const a = this.opts.agent;
         const mode = a?.available ? "代理模式（DeepSeek Harness，工作区沙箱）" : "纯对话模式";
         const pend = a ? a.approvals.pending(convId).map((r) => `${r.kind === "approval" ? "待批准" : "待回答"} ${r.code}`) : [];
-        return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
+        const cu = a?.available ? [a.computerUse(botId).reason] : [];
+        return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
       }
       case "/model": {
         let list: string[];
@@ -226,6 +239,23 @@ export class BotRuntime {
         return null;
     }
   }
+}
+
+/**
+ * 一段代理会话的首条输入：机器人设定 + 记忆说明与冻结快照 + 交接便条（一次性）+ 用户消息。
+ * 这一段之内不再变化，便于模型端前缀缓存；记忆在下一段才刷新（本段内用 recall 查最新）。
+ */
+export function firstInput(agent: AgentManager, botId: string, convId: string, systemPrompt: string, text: string): string {
+  const parts: string[] = [];
+  if (systemPrompt.trim()) parts.push(`[机器人设定]\n${systemPrompt.trim()}`);
+  if (agent.settings(botId).memory.enabled) {
+    const snap = agent.memoryPrefix(botId, convId);
+    parts.push(`[长期记忆]\n${MEMORY_GUIDE}\n\n${snap || "（目前为空）"}`);
+  }
+  const seed = agent.takeSeed(convId);
+  if (seed) parts.push(`[交接]\n以下是上一段对话留下的交接便条，供你延续上下文：\n${seed}`);
+  if (!parts.length) return text;
+  return `${parts.join("\n\n")}\n\n[用户消息]\n${text}`;
 }
 
 /** 审批/提问 → 出站交互操作（文本渠道用 prompt；卡片渠道用 buttons）。 */

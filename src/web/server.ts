@@ -10,6 +10,8 @@ import { proxyHttp, proxyUpgrade, type ProxyTarget } from "./proxy.js";
 import { logger, mask } from "../log.js";
 import { connectionFromPids } from "../agent/peer-guard.js";
 import type { ApprovalRow } from "../store/db.js";
+import { normalizeSettings } from "../agent/settings.js";
+import { scopeLabel } from "../agent/memory.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -82,6 +84,7 @@ function publicBot(b: NonNullable<ReturnType<App["store"]["getBot"]>>) {
     feishuAppId: b.feishuAppId,
     feishuAppSecretMasked: mask(b.feishuAppSecret),
     weixinEnabled: b.weixinEnabled,
+    settings: b.settings,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };
@@ -274,6 +277,55 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       }
       const sub = seg.slice(2).join("/");
       if (sub === "channels" && m === "GET") return send(res, 200, app.channelStatus(id));
+      if (sub === "settings" && m === "GET") return send(res, 200, { settings: bot.settings, computerUse: app.agent.computerUse(id) });
+      if (sub === "settings" && m === "PUT") {
+        const b = await readJson(req);
+        // 只接受已知字段；未给出的沿用当前值
+        const cur = bot.settings;
+        const merged = normalizeSettings({
+          ...cur,
+          ...(b.permission !== undefined ? { permission: b.permission } : {}),
+          ...(b.utilityModel !== undefined ? { utilityModel: b.utilityModel } : {}),
+          ...(b.computerUse !== undefined ? { computerUse: { ...cur.computerUse, ...b.computerUse } } : {}),
+          memory: { ...cur.memory, ...(b.memory ?? {}) },
+          steward: { ...cur.steward, ...(b.steward ?? {}) },
+        });
+        const next = app.store.updateBot(id, { settings: merged })!;
+        return send(res, 200, { settings: next.settings, computerUse: app.agent.computerUse(id) });
+      }
+      if (sub === "memory" && m === "GET") {
+        const scopes = [
+          { kind: "team" as const, id: "" },
+          { kind: "bot" as const, id },
+          ...app.store
+            .listConversations(id)
+            .filter((c) => c.kind === "group")
+            .map((c) => ({ kind: "group" as const, id: c.id })),
+        ];
+        return send(res, 200, {
+          scopes: scopes.map((s) => ({
+            kind: s.kind,
+            id: s.id,
+            label: scopeLabel(s),
+            entries: app.agent.memory.entries(s).map((e) => ({ text: e.text, meta: e.meta })),
+            topics: app.agent.memory.topics(s).map((t) => ({ name: t, entries: app.agent.memory.entries(s, t).map((e) => ({ text: e.text, meta: e.meta })) })),
+          })),
+          journal: app.agent.memory.journalTail(30).filter((j) => j.scope === "team" || j.scope.includes(id)),
+          steward: app.agent.stewardLog.filter((l) => l.conversationId.startsWith(id + ":")).slice(-20),
+        });
+      }
+      if (sub === "memory/forget" && m === "POST") {
+        const b = await readJson(req);
+        const kind = String(b.kind ?? "bot");
+        const scope = kind === "team" ? { kind: "team" as const, id: "" } : kind === "group" ? { kind: "group" as const, id: String(b.id ?? "") } : { kind: "bot" as const, id };
+        if (scope.kind === "group" && !scope.id.startsWith(id + ":")) throw new HttpError(400, "群不属于该机器人");
+        try {
+          const text = app.agent.memory.forget(scope, String(b.match ?? ""), { topic: b.topic ? String(b.topic) : undefined, by: "web" });
+          return send(res, 200, { ok: true, text });
+        } catch (e) {
+          throw new HttpError(400, (e as Error).message);
+        }
+      }
       if (sub === "feishu" && m === "PUT") {
         const b = await readJson(req);
         const appId = String(b.appId ?? "").trim();

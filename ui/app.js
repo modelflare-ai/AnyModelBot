@@ -91,6 +91,70 @@ function BotEditor({ bot, models, onSaved, onDeleted }) {
   </div>`;
 }
 
+// 机器人身份与行为设置（权限预设、长期记忆、上下文管家、电脑操作）
+function BotSettings({ botId, models }) {
+  const [d, err, reload] = usePoll(() => api(`/bots/${botId}/settings`), 0, [botId]);
+  const [msg, setMsg] = useState("");
+  if (!d) return html`<div class="card"><p class="muted">${err || "加载中…"}</p></div>`;
+  const s = d.settings, cu = d.computerUse;
+  const put = async (body) => {
+    try { await api(`/bots/${botId}/settings`, { method: "PUT", body }); setMsg("✓ 已保存（空闲时自动生效）"); reload(); }
+    catch (e) { setMsg("✗ " + e.message); }
+  };
+  const chk = (label, val, body) => html`<label class="row" style="font-weight:normal"><input type="checkbox" style="width:auto" checked=${val} onChange=${(e) => put(body(e.target.checked))} /> ${label}</label>`;
+  return html`<div class="card"><h3>设置</h3>
+    <label>权限预设</label>
+    <select value=${s.permission} onChange=${(e) => put({ permission: e.target.value })}>
+      <option value="workspace">工作区可写（默认）：只能改本机器人工作区，越界操作需审批</option>
+      <option value="readonly">只读：不能改文件，命令在只读沙箱中运行</option>
+    </select>
+    <label>长期记忆</label>
+    ${chk("启用长期记忆（remember / forget / recall）", s.memory.enabled, (v) => ({ memory: { enabled: v } }))}
+    ${chk("回合结束后自动整理记忆", s.memory.review, (v) => ({ memory: { review: v } }))}
+    ${chk("允许写入团队记忆（所有机器人共享）", s.memory.teamWrite, (v) => ({ memory: { teamWrite: v } }))}
+    <label>上下文管家</label>
+    ${chk("上下文变长时自动压缩或开新段（带交接便条）", s.steward.enabled, (v) => ({ steward: { enabled: v } }))}
+    <label>后台小任务模型（记忆整理 / 管家 / 交接）</label>
+    <select value=${s.utilityModel} onChange=${(e) => put({ utilityModel: e.target.value })}>
+      <option value="">与对话模型相同</option>
+      ${[...new Set([...(models || []), s.utilityModel].filter(Boolean))].map((m) => html`<option value=${m}>${m}</option>`)}
+    </select>
+    <label>电脑操作（Computer Use，仅 macOS）</label>
+    <p class="muted">${cu ? cu.reason : ""}</p>
+    ${chk("启用电脑操作", s.computerUse.enabled, (v) => ({ computerUse: { enabled: v } }))}
+    <select value=${s.computerUse.approval} disabled=${!s.computerUse.enabled} onChange=${(e) => put({ computerUse: { approval: e.target.value } })}>
+      <option value="always">每个操作都需要审批（默认）</option>
+      <option value="readonly-free">查看界面（列应用/读取窗口）免审批，点击输入等仍需审批</option>
+    </select>
+    <p class="muted">${msg}</p>
+  </div>`;
+}
+
+// 长期记忆查看器：按作用域列出条目，可逐条删除；附变更日志与管家记录
+function MemoryViewer({ botId }) {
+  const [d, err, reload] = usePoll(() => api(`/bots/${botId}/memory`), 0, [botId]);
+  const [msg, setMsg] = useState("");
+  if (!d) return html`<div class="card"><p class="muted">${err || "加载中…"}</p></div>`;
+  const forget = async (sc, text, topic) => {
+    if (!confirm(`删除这条记忆？\n${text}`)) return;
+    try { await api(`/bots/${botId}/memory/forget`, { method: "POST", body: { kind: sc.kind, id: sc.id, match: text, topic } }); setMsg("✓ 已删除"); reload(); }
+    catch (e) { setMsg("✗ " + e.message); }
+  };
+  const list = (sc, entries, topic) => entries.map((e) => html`<div class="row"><span class="grow">• ${e.text}</span><button onClick=${() => forget(sc, e.text, topic)}>删除</button></div>`);
+  return html`<div class="card"><h3>长期记忆 <button onClick=${reload}>刷新</button></h3>
+    ${d.scopes.map((sc) => html`<div><b>${sc.label}</b>
+      ${!sc.entries.length && !sc.topics.length ? html`<p class="muted">（空）</p>` : ""}
+      ${list(sc, sc.entries)}
+      ${sc.topics.map((t) => html`<div class="muted">主题：${t.name}</div>${list(sc, t.entries, t.name)}`)}
+    </div>`)}
+    <p class="muted">${msg}</p>
+    <details><summary>变更日志（最近 ${d.journal.length} 条）</summary>
+      ${d.journal.slice().reverse().map((j) => html`<div class="muted">${fmt(j.at)} ${j.op === "add" ? "＋" : "－"} [${j.file}] ${j.text} · ${j.by}</div>`)}</details>
+    <details><summary>上下文管家记录（最近 ${d.steward.length} 条）</summary>
+      ${d.steward.slice().reverse().map((l) => html`<div class="muted">${fmt(l.at)} ${l.action} ${l.detail}</div>`)}</details>
+  </div>`;
+}
+
 function TestChat({ botId }) {
   const [text, setText] = useState("");
   const [log, setLog] = useState([]);
@@ -109,7 +173,7 @@ function TestChat({ botId }) {
   };
   return html`<div class="card"><h3>测试对话</h3>
     <div class="msgs">${log.map((m) => html`<div class="msg ${m.role}">${m.content}</div>`)}</div>
-    <div class="row" style="margin-top:12px"><input class="grow" style="width:auto" placeholder="输入消息，支持 /model /reset /help" value=${text}
+    <div class="row" style="margin-top:12px"><input class="grow" style="width:auto" placeholder="输入消息，支持 /model /reset /new /help" value=${text}
       onInput=${(e) => setText(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && !busy && sendMsg()} />
       <button class="pri" disabled=${busy} onClick=${sendMsg}>${busy ? "生成中…" : "发送"}</button></div></div>`;
 }
@@ -127,7 +191,7 @@ function Bots({ botId, setBotId }) {
       <div class="card"><label>新建机器人</label><div class="row"><input class="grow" style="width:auto" value=${name} placeholder="名称" onInput=${(e) => setName(e.target.value)} /><button disabled=${!name.trim()} onClick=${create}>创建</button></div>
       <p class="muted">一个机器人对应一个飞书应用；微信每个机器人扫码绑定一次。</p></div>
     </div>
-    <div>${bot && html`<${BotEditor} key=${bot.id} bot=${bot} models=${models && models.models} onSaved=${reload} onDeleted=${() => { setBotId(""); reload(); }} /><${TestChat} key=${"c" + bot.id} botId=${bot.id} />`}</div>
+    <div>${bot && html`<${BotEditor} key=${bot.id} bot=${bot} models=${models && models.models} onSaved=${reload} onDeleted=${() => { setBotId(""); reload(); }} /><${BotSettings} key=${"s" + bot.id} botId=${bot.id} models=${models && models.models} /><${MemoryViewer} key=${"m" + bot.id} botId=${bot.id} /><${TestChat} key=${"c" + bot.id} botId=${bot.id} />`}</div>
   </div>`;
 }
 

@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 import { logger } from "../log.js";
 import type { Store } from "../store/db.js";
 import type { AgentBridge } from "./bridge.js";
+import { adaptSkill, bundledRoots, detectComputerUse, mcpPatchLines, type CuStatus } from "./computer-use.js";
+import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 
 const log = logger("agent.host");
 
@@ -100,6 +102,8 @@ export interface AgentHostOptions {
   runtimeDir: string;
   bridge: AgentBridge;
   store: Store;
+  /** 当前机器人设置（权限预设、记忆开关）；变化后空闲时重启子进程 */
+  settings?: () => BotSettings;
   /** 单回合上限，超时则重启子进程（SDK 无中断接口） */
   turnTimeoutMs?: number;
 }
@@ -113,6 +117,20 @@ const MODEL_LIMITS: Array<[RegExp, number, number]> = [
   [/gemini/i, 1_000_000, 32_000],
   [/deepseek/i, 128_000, 32_000],
 ];
+
+/** 模型的上下文窗口与最大输出（与写入 DSH 补丁的数值一致）。 */
+export function modelLimits(model: string): { window: number; maxTokens: number } {
+  const lim = MODEL_LIMITS.find(([re]) => re.test(model)) ?? [/./, 128_000, 16_000];
+  return { window: lim[1], maxTokens: lim[2] };
+}
+
+/** 回合结束时的上下文用量（来自 DSH 事件）。 */
+export interface TurnUsage {
+  /** 最后一次模型请求的输入+输出 token，约等于当前上下文大小 */
+  tokens: number;
+  window: number;
+  maxTokens: number;
+}
 
 function yamlStr(s: string): string {
   return JSON.stringify(s); // JSON 字符串是合法的 YAML 标量
@@ -185,6 +203,7 @@ export class AgentHost {
   private writePatch(model: string): string {
     const lim = MODEL_LIMITS.find(([re]) => re.test(model)) ?? [/./, 128_000, 16_000];
     const plugin = path.join(this.o.runtimeDir, "plugins", "amb-bridge.mjs");
+    const memory = path.join(this.o.runtimeDir, "plugins", "amb-memory.mjs");
     const text = [
       "# 由 anymodel bot 每次启动生成；请勿手改。",
       "- id: llm-pi-ai",
@@ -203,17 +222,58 @@ export class AgentHost {
       "- insert:",
       "    - id: amb-bridge",
       `      name: ${yamlStr(plugin)}`,
+      // 长期记忆工具（remember/forget/recall，经 bridge 由宿主读写）+ 上下文管家的原地压缩钩子
+      // 已有会话也跟随机器人的权限预设（DSH 默认只对新会话生效）
+      "    - id: amb-permission",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-permission.mjs"))}`,
+      "    - id: amb-memory",
+      `      name: ${yamlStr(memory)}`,
       // sdk 配置默认不带这两个工具：ask_user_question 走 user-questions → 插件 → 审批中心；
       // present 只声明交付文件，由宿主在回合结束后经渠道发送。
       "    - id: amb-tool-ask-user",
       "      name: '@deepseek-ai/dsh-tool-ask-user'",
       "    - id: amb-present",
       "      name: '@deepseek-ai/dsh-tool-present'",
+      ...this.computerUseLines(),
       "",
     ].join("\n");
     const f = path.join(this.home, "amb.patch.yml");
     fs.writeFileSync(f, text, { mode: 0o600 });
     return f;
+  }
+
+  /** 当前机器上 Computer Use 的可用性（不看本机器人的开关）。 */
+  computerUseStatus(): CuStatus {
+    return detectComputerUse(bundledRoots(this.o.runtimeDir));
+  }
+  /** 本机器人实际是否启用 Computer Use：系统支持且设置里开着。 */
+  private computerUseActive(): CuStatus | undefined {
+    if (!this.settings().computerUse.enabled) return undefined;
+    const st = this.computerUseStatus();
+    return st.available ? st : undefined;
+  }
+  /**
+   * Computer Use：插入 mcp-client（随附的 kimi-computer-use 桥，用宿主自己的 node/Electron 运行）
+   * 与审批闸门；把改写过工具名的 SKILL.md 放进 DSH 主目录的用户技能目录。不可用时删掉这份技能。
+   */
+  private computerUseLines(): string[] {
+    const skillDir = path.join(this.home, "skills", "computer-use");
+    const st = this.computerUseActive();
+    if (!st) {
+      fs.rmSync(skillDir, { recursive: true, force: true });
+      return [];
+    }
+    try {
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, "SKILL.md"), adaptSkill(fs.readFileSync(st.skill!, "utf8")));
+    } catch (e) {
+      log.warn("computer-use skill copy failed", { err: String(e) });
+    }
+    return [
+      ...mcpPatchLines(st, process.execPath, yamlStr),
+      "    - id: amb-computer-use-gate",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-computer-use-gate.mjs"))}`,
+    ];
   }
 
   /**
@@ -270,7 +330,9 @@ exec "$REAL" "$@"
       HOME: this.home,
       LANG: "C.UTF-8",
       TZ: process.env.TZ || "Asia/Shanghai",
-      DSH_PERMISSION_MODE: "workspace-write",
+      DSH_PERMISSION_MODE: permissionMode(this.settings().permission),
+      AMB_MEMORY: this.settings().memory.enabled ? "1" : "0",
+      AMB_CU_APPROVAL: this.settings().computerUse.approval,
       AMB_MAGPIE_KEY: this.o.bridge.token,
       AMB_BRIDGE_URL: this.o.bridge.url,
       AMB_BRIDGE_TOKEN: this.o.bridge.token,
@@ -280,6 +342,16 @@ exec "$REAL" "$@"
     if (process.env.AMB_DSH_LOG_LEVEL) env.DSH_LOG_LEVEL = process.env.AMB_DSH_LOG_LEVEL;
     return env;
   }
+
+  private settings(): BotSettings {
+    return this.o.settings?.() ?? DEFAULT_SETTINGS;
+  }
+  /** 影响子进程启动参数的设置签名 */
+  private settingsSig(): string {
+    const st = this.settings();
+    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.approval}`;
+  }
+  private sig = "";
 
   private reapStale(): void {
     let pid = 0;
@@ -317,6 +389,10 @@ exec "$REAL" "$@"
       log.info("model changed, restarting dsh", { bot: this.o.botId, model });
       await this.closeHarness();
     }
+    if (this.harness && this.sig !== this.settingsSig() && this.active === 0) {
+      log.info("bot settings changed, restarting dsh", { bot: this.o.botId });
+      await this.closeHarness();
+    }
     if (this.harness) return this.harness;
     this.starting ??= this.spawn(model).finally(() => (this.starting = undefined));
     return this.starting;
@@ -335,6 +411,7 @@ exec "$REAL" "$@"
     await this.o.bridge.start();
     const sdk = await loadSdk(this.o.runtimeDir);
     const patch = this.writePatch(model);
+    this.sig = this.settingsSig();
     const h = new sdk.DeepSeekHarness({
       profile: "sdk",
       patches: [patch],
@@ -425,13 +502,15 @@ exec "$REAL" "$@"
     this.o.store.clearAgentSession(conversationId);
   }
 
-  async runTurn(input: { conversationId: string; text: string; model: string; observer?: TurnObserver }): Promise<{ text: string; sessionId: string; files: string[] }> {
+  async runTurn(input: { conversationId: string; text: string; model: string; observer?: TurnObserver }): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
     const h = await this.ensure(input.model);
     const s = await this.sessionFor(h, input.conversationId);
     this.active++;
     let timer: NodeJS.Timeout | undefined;
     let turnError: string | undefined;
     const presented: string[] = [];
+    const lim = modelLimits(input.model);
+    const usage: TurnUsage = { tokens: 0, window: lim.window, maxTokens: lim.maxTokens };
     try {
       const timeoutMs = this.o.turnTimeoutMs ?? 30 * 60_000;
       const run = s.run(input.text, {
@@ -446,6 +525,12 @@ exec "$REAL" "$@"
             if (data.name === "present") presented.push(...presentPaths(String(data.arguments ?? "")));
             input.observer?.onProgress?.(`🔧 ${summarizeCall(String(data.name), String(data.arguments ?? "")).split(this.workspace + "/").join("")}`);
           }
+          if (ev?.type === "request/context" && Number(data?.contextWindow) > 0) usage.window = Number(data.contextWindow);
+          if (ev?.type === "assistant/message" && data?.usage) {
+            const u = data.usage;
+            const t = Number(u.totalTokens) || (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0);
+            if (t > 0) usage.tokens = t;
+          }
           if (ev?.type === "turn/end" && data?.reason?.kind === "error") turnError = String(data.reason.error?.message ?? "unknown error");
           input.observer?.onEvent?.(String(ev?.type), data);
         },
@@ -456,7 +541,7 @@ exec "$REAL" "$@"
       const r = await Promise.race([run, timeout]);
       this.failures = 0;
       if (!r.finalResponse && turnError) throw new Error(turnError);
-      return { text: r.finalResponse, sessionId: s.id, files: deliverables(this.workspace, presented) };
+      return { text: r.finalResponse, sessionId: s.id, files: deliverables(this.workspace, presented), usage };
     } catch (e) {
       if (/timed out/.test((e as Error).message)) await this.closeHarness();
       throw e;

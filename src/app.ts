@@ -73,7 +73,16 @@ export class App {
         config.agent.mode === "dsh"
           ? (() => {
               const located = locateDshRuntime(findAppRoot());
-              return located ? materializeDshRuntime(located, config.dataDir) : undefined;
+              if (!located) return undefined;
+              try {
+                return materializeDshRuntime(located, config.dataDir);
+              } catch (err) {
+                log.warn("DSH runtime materialize failed; continuing with plain chat", {
+                  located,
+                  err: err instanceof Error ? err.message : String(err),
+                });
+                return undefined;
+              }
             })()
           : undefined,
       upstream,

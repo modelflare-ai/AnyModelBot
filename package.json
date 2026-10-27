@@ -1,9 +1,9 @@
 {
   "name": "anymodel-bot",
   "productName": "anymodel bot",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
-  "description": "anymodel bot\uff1a\u4efb\u610f\u6a21\u578b\u7684\u4e2a\u4eba AI \u52a9\u624b\uff08\u98de\u4e66 + \u5fae\u4fe1 iLink\uff09\uff0c\u5185\u7f6e magpie \u6a21\u578b\u7f51\u5173",
+  "description": "anymodel bot：任意模型的个人 AI 助手（飞书 + 微信 iLink），内置 magpie 模型网关",
   "license": "MIT",
   "type": "module",
   "main": "dist/electron/main.js",
@@ -31,6 +31,7 @@
     "pack:dsh": "node scripts/pack-dsh-asar.mjs"
   },
   "dependencies": {
+    "@electron/asar": "^3.4.1",
     "@larksuiteoapi/node-sdk": "1.76.0",
     "htm": "^3.1.1",
     "preact": "^11.0.2",

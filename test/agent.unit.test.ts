@@ -135,3 +135,72 @@ describe("WeixinReply progress batching", () => {
     expect(sent).toEqual(["⏳ 进行中：\n🔧 bash ls", "需批准: bash `rm -rf build` — 回复 y 1234 / n 1234"]);
   });
 });
+
+describe("WeChat media delivery", () => {
+  it("IlinkClient.sendMedia: getuploadurl → encrypted CDN upload → file item", async () => {
+    const { IlinkClient } = await import("../src/channels/weixin/api.js");
+    const crypto = await import("node:crypto");
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "amb-media-")), "report.txt");
+    fs.writeFileSync(f, "hello deliverable");
+    const calls: Array<{ url: string; body: any; raw?: Buffer }> = [];
+    let aeskey = "";
+    const fetchImpl = (async (url: string, init: any) => {
+      if (url.includes("getuploadurl")) {
+        const b = JSON.parse(init.body);
+        aeskey = b.aeskey;
+        calls.push({ url, body: b });
+        return new Response(JSON.stringify({ ret: 0, upload_param: "UP+/=" }), { status: 200 });
+      }
+      if (url.includes("/upload?")) {
+        calls.push({ url, body: null, raw: Buffer.from(init.body) });
+        return new Response("", { status: 200, headers: { "x-encrypted-param": "DOWN" } });
+      }
+      calls.push({ url, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ ret: 0 }), { status: 200 });
+    }) as any;
+    const c = new IlinkClient({ baseUrl: "http://ilink", token: "t", fetchImpl, cdnBaseUrl: "http://cdn/c2c" });
+    await c.sendMedia("u1", f, "ctx");
+    expect(calls).toHaveLength(3);
+    expect(calls[0].body).toMatchObject({ media_type: 3, to_user_id: "u1", rawsize: 17, filesize: 32, no_need_thumb: true });
+    expect(calls[1].url).toBe("http://cdn/c2c/upload?encrypted_query_param=UP%2B%2F%3D&filekey=" + calls[0].body.filekey);
+    const d = crypto.createDecipheriv("aes-128-ecb", Buffer.from(aeskey, "hex"), null);
+    expect(Buffer.concat([d.update(calls[1].raw!), d.final()]).toString()).toBe("hello deliverable");
+    const item = calls[2].body.msg.item_list[0];
+    expect(item.type).toBe(4);
+    expect(item.file_item).toMatchObject({ file_name: "report.txt", len: "17", media: { encrypt_query_param: "DOWN", encrypt_type: 1 } });
+    expect(Buffer.from(item.file_item.media.aes_key, "base64").toString()).toBe(aeskey);
+    expect(calls[2].body.msg.context_token).toBe("ctx");
+  });
+
+  it("WeixinReply file op consumes quota and falls back to text on failure", async () => {
+    store.upsertWeixinPeer({ botId: "b", userId: "u1", contextToken: "ctx", quotaRemaining: 2, windowStartedAt: Date.now() });
+    const sent: string[] = [];
+    let fail = false;
+    const client = {
+      sendText: async (_u: string, t: string) => void sent.push(t),
+      sendMedia: async (_u: string, p: string) => {
+        if (fail) throw new Error("cdn down");
+        sent.push("media:" + p);
+      },
+    } as any;
+    const quota = new WeixinQuota(store, "b");
+    const reply = new WeixinReply(client, "u1", "ctx", quota, 30);
+    await reply.apply({ type: "file", path: "/w/a.png", name: "a.png" });
+    expect(sent).toEqual(["media:/w/a.png"]);
+    expect(quota.remaining("u1")).toBe(1);
+    fail = true;
+    await reply.apply({ type: "file", path: "/w/b.png", name: "b.png" });
+    expect(sent[1]).toContain("b.png");
+    expect(quota.remaining("u1")).toBe(0);
+  });
+
+  it("deliverables() keeps only regular files inside the workspace", async () => {
+    const { deliverables, presentPaths } = await import("../src/agent/host.js");
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "amb-ws-"));
+    fs.writeFileSync(path.join(ws, "ok.txt"), "x");
+    fs.writeFileSync(path.join(ws, "empty.txt"), "");
+    fs.symlinkSync("/etc/hostname", path.join(ws, "link.txt"));
+    const args = JSON.stringify({ files: [{ path: "ok.txt" }, { path: path.join(ws, "ok.txt") }, { path: "../../etc/passwd" }, { path: "/etc/hostname" }, { path: "link.txt" }, { path: "empty.txt" }, { path: "missing" }] });
+    expect(deliverables(ws, presentPaths(args))).toEqual([path.join(fs.realpathSync(ws), "ok.txt")]);
+  });
+});

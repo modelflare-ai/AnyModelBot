@@ -39,7 +39,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): { tool?: { name: string; args: any }; text?: string } {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
@@ -48,6 +48,8 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       [/ESCALATE/, [{ name: "bash", args: { description: "run", command: "echo escalated-$((40+2))", sandbox_permissions: "danger-full-access", justification: "测试提权" } }]],
       [/SECRET/, [{ name: "bash", args: { description: "run", command: `ls ${dataDir} 2>&1; cat ${path.join(dataDir, "anymodel.db")} >/dev/null 2>&1 && echo DB-READABLE || echo DB-HIDDEN` } }]],
       [/READFILE/, [{ name: "read", args: { file_path: path.join(dataDir, "config.json") } }, { name: "read", args: { file_path: "qs.py" } }]],
+      [/PRESENT/, [{ name: "bash", args: { description: "run", command: "printf 'hello deliverable' > report.txt" } }, { name: "present", args: { files: [{ path: "report.txt", description: "报告" }, { path: "/etc/hostname" }] } }]],
+      [/ASKQ/, [{ name: "ask_user_question", args: { questions: [{ id: "lang", question: "用哪种语言？", options: [{ label: "Python" }, { label: "Go" }] }] } }]],
       [/LOOPBACK/, [{ name: "bash", args: { description: "run", command: `python3 -c "import urllib.request as u\ntry:\n  print('API', u.urlopen('${base}/amb/api/status').status)\nexcept Exception as e:\n  print('API', getattr(e,'code',e))"` } }]],
     ];
     for (const [re, steps] of scripts) {
@@ -103,7 +105,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   const chat = async (text: string) => {
     const r = await fetch(`${base}/amb/api/bots/default/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
     expect(r.status).toBe(200);
-    return (await r.json()) as { reply: string; progress: string[]; prompts: any[] };
+    return (await r.json()) as { reply: string; progress: string[]; prompts: any[]; files?: string[] };
   };
 
   it("runs a sandboxed bash tool in the bot workspace (quicksort)", async () => {
@@ -159,6 +161,26 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(r.reply).toContain("file access denied");
     expect(r.reply).not.toContain("SECRET-TOKEN-XYZ");
     expect(r.reply).toContain("def qs");
+  }, 120_000);
+
+  it("present delivers workspace files only", async () => {
+    const r = await chat("PRESENT report");
+    expect(r.files).toEqual(["report.txt"]);
+  }, 120_000);
+
+  it("ask_user_question becomes a numbered prompt answered by reply", async () => {
+    const pending = chat("ASKQ please");
+    let row: any;
+    for (let i = 0; i < 300 && !row; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      row = ((await (await fetch(`${base}/amb/api/approvals?status=pending`)).json()) as any).approvals[0];
+    }
+    expect(row?.kind).toBe("question");
+    await chat("2");
+    const r = await pending;
+    expect(r.prompts[0]?.prompt).toContain("1. Python");
+    expect(r.prompts[0]?.prompt).toContain("2. Go");
+    expect(r.reply).toContain("Go");
   }, 120_000);
 
   it("blocks loopback management API calls from the agent", async () => {

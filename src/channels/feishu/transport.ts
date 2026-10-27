@@ -1,6 +1,13 @@
+import fsp from "node:fs/promises";
+import path from "node:path";
 import * as Lark from "@larksuiteoapi/node-sdk";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../log.js";
+
+const FEISHU_IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
+const FEISHU_FILE_TYPES: Record<string, string> = {
+  pdf: "pdf", doc: "doc", docx: "doc", xls: "xls", xlsx: "xls", csv: "xls", ppt: "ppt", pptx: "ppt", mp4: "mp4", opus: "opus",
+};
 
 /** 归一化后的飞书 im.message.receive_v1 关键字段 */
 export interface FeishuMessageEvent {
@@ -41,6 +48,8 @@ export interface FeishuTransport {
   updateCardText(cardId: string, elementId: string, text: string, sequence: number): Promise<void>;
   finishCard(cardId: string, sequence: number, summary: string): Promise<void>;
   replyText(replyToMessageId: string, text: string): Promise<void>;
+  /** 上传本地文件并作为图片/文件消息回复（present 交付物） */
+  replyFile?(replyToMessageId: string, filePath: string): Promise<void>;
 }
 
 export const CARD_ELEMENT_ID = "md";
@@ -216,6 +225,31 @@ export class LarkTransport implements FeishuTransport {
       data: { msg_type: "interactive", content: JSON.stringify(card) },
     });
     check(res, "im.message.reply(action card)");
+  }
+
+  async replyFile(replyToMessageId: string, filePath: string): Promise<void> {
+    const buf = await fsp.readFile(filePath);
+    const name = path.basename(filePath);
+    const ext = path.extname(name).toLowerCase().slice(1);
+    let msgType: "image" | "file";
+    let content: string;
+    if (FEISHU_IMAGE_EXT.has(ext) && buf.length <= 10 * 1024 * 1024) {
+      const res: any = await this.client.im.v1.image.create({ data: { image_type: "message", image: buf } as any });
+      const key = res?.image_key ?? res?.data?.image_key;
+      if (!key) throw new Error(`im.image.create failed${res?.code ? ` (code ${res.code})` : ""}`);
+      msgType = "image";
+      content = JSON.stringify({ image_key: key });
+    } else {
+      if (buf.length > 30 * 1024 * 1024) throw new Error("file too large for feishu (>30MB)");
+      const fileType = FEISHU_FILE_TYPES[ext] ?? "stream";
+      const res: any = await this.client.im.v1.file.create({ data: { file_type: fileType, file_name: name, file: buf } as any });
+      const key = res?.file_key ?? res?.data?.file_key;
+      if (!key) throw new Error(`im.file.create failed${res?.code ? ` (code ${res.code})` : ""}`);
+      msgType = "file";
+      content = JSON.stringify({ file_key: key });
+    }
+    const res: any = await this.client.im.v1.message.reply({ path: { message_id: replyToMessageId }, data: { msg_type: msgType, content } });
+    check(res, `im.message.reply(${msgType})`);
   }
 
   async replyText(replyToMessageId: string, text: string): Promise<void> {

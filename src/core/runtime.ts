@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { InboundEvent, ReplySession } from "./types.js";
 import { eventText } from "./types.js";
 import type { ModelClient, ChatMessage } from "../llm/client.js";
@@ -157,6 +158,13 @@ export class BotRuntime {
       const finalText = r.text.trim() || "（已完成，没有文字回复）";
       store.addMessage(convId, "assistant", finalText);
       await out.apply({ type: "stream.finish", text: finalText });
+      for (const f of r.files ?? []) {
+        try {
+          await out.apply({ type: "file", path: f, name: path.basename(f) });
+        } catch (e) {
+          log.warn("deliver file failed", { name: path.basename(f), message: (e as Error).message.slice(0, 200) });
+        }
+      }
       return true;
     } catch (e) {
       const err = e as Error;

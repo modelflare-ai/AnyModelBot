@@ -108,6 +108,26 @@ export class WeixinReply implements ReplySession {
       case "text":
         this.dropProgress();
         return this.enqueue(() => this.send(op.text));
+      case "file":
+        return this.enqueue(async () => {
+          if (this.quota.remaining(this.userId) <= 0) {
+            this.log.warn("weixin quota exhausted, file dropped", { userId: this.userId });
+            return;
+          }
+          try {
+            // 上传失败不占配额；发送串行，先查后扣不会超发
+            await this.client.sendMedia(this.userId, op.path, this.contextToken);
+            this.quota.tryConsume(this.userId);
+            this.sent.push(`[文件] ${op.name}`);
+          } catch (e) {
+            this.log.warn("weixin media send failed", { name: op.name, message: (e as Error).message.slice(0, 200) });
+            if (this.quota.tryConsume(this.userId)) {
+              const t = `⚠️ 文件「${op.name}」发送失败，可在工作区中查看。`;
+              await this.client.sendText(this.userId, t, this.contextToken);
+              this.sent.push(t);
+            }
+          }
+        });
       case "interactive": {
         if (this.progressTimer) clearTimeout(this.progressTimer);
         this.progressTimer = undefined;

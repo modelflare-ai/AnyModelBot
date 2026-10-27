@@ -32,6 +32,8 @@ export type OutboundOp =
   | { type: "text"; text: string }
   /** 代理执行中的进度（工具调用等）：微信批量发送并受配额约束，飞书写入卡片，网页收集 */
   | { type: "progress"; text: string }
+  /** 代理交付的本地文件（present）：微信走 CDN 媒体消息，飞书上传文件/图片，网页列出文件名 */
+  | { type: "file"; path: string; name: string }
   /**
    * ask_user / approval / secret_request 等交互，按能力映射到卡片按钮或编号文本。
    * prompt 为完整的纯文本提示（文本渠道直接发送）；buttons 供卡片渠道使用，value 会原样回传。

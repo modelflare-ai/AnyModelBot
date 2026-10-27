@@ -47,6 +47,17 @@ export class FeishuReply implements ReplySession {
         return this.finish(op.text);
       case "text":
         return this.sendText(op.text);
+      case "file":
+        await this.inflight;
+        if (this.transport.replyFile) {
+          try {
+            await this.transport.replyFile(this.replyTo, op.path);
+            return;
+          } catch (e) {
+            log.warn("feishu file upload failed", { name: op.name, message: (e as Error).message.slice(0, 200) });
+          }
+        }
+        return this.sendText(`⚠️ 文件「${op.name}」发送失败，可在工作区中查看。`);
       case "interactive":
         if (op.buttons?.length && this.transport.replyActionCard) {
           try {

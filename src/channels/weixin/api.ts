@@ -5,9 +5,30 @@
  * Portions Copyright (C) 2026 Tencent. All rights reserved. Licensed under the MIT, see ./LICENSE.openclaw-weixin.
  */
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 export const ILINK_APP_ID = "bot";
 export const DEFAULT_ILINK_BASE = "https://ilinkai.weixin.qq.com";
+export const DEFAULT_CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c";
+/** proto: UploadMediaType */
+export const UploadMediaType = { IMAGE: 1, VIDEO: 2, FILE: 3 } as const;
+
+const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
+const VIDEO_EXT = new Set([".mp4", ".mov", ".m4v", ".webm"]);
+export function mediaKind(file: string): "image" | "video" | "file" {
+  const ext = path.extname(file).toLowerCase();
+  return IMAGE_EXT.has(ext) ? "image" : VIDEO_EXT.has(ext) ? "video" : "file";
+}
+
+/** AES-128-ECB（PKCS7）加密，CDN 上传要求。 */
+export function encryptAesEcb(plain: Buffer, key: Buffer): Buffer {
+  const c = crypto.createCipheriv("aes-128-ecb", key, null);
+  return Buffer.concat([c.update(plain), c.final()]);
+}
+export function aesEcbPaddedSize(n: number): number {
+  return Math.ceil((n + 1) / 16) * 16;
+}
 export const SESSION_EXPIRED_ERRCODE = -14;
 const CHANNEL_VERSION = "0.1.0";
 const BOT_AGENT = "AnymodelBot/0.1.0";
@@ -77,11 +98,19 @@ export function parseWeixinApiJson<T>(rawText: string): T {
 export const MessageType = { USER: 1, BOT: 2 } as const;
 export const MessageItemType = { TEXT: 1, IMAGE: 2, VOICE: 3, FILE: 4, VIDEO: 5 } as const;
 
+export interface CdnMedia {
+  encrypt_query_param?: string;
+  aes_key?: string;
+  encrypt_type?: number;
+}
+
 export interface MessageItem {
   type?: number;
   text_item?: { text?: string };
   voice_item?: { text?: string };
-  file_item?: { file_name?: string };
+  file_item?: { file_name?: string; media?: CdnMedia; len?: string };
+  image_item?: { media?: CdnMedia; mid_size?: number };
+  video_item?: { media?: CdnMedia; video_size?: number };
   ref_msg?: { title?: string; message_item?: MessageItem };
 }
 
@@ -136,6 +165,7 @@ export interface IlinkClientOptions {
   token?: string;
   routeTag?: string;
   fetchImpl?: typeof fetch;
+  cdnBaseUrl?: string;
 }
 
 export class IlinkClient {
@@ -224,6 +254,66 @@ export class IlinkClient {
   }
 
   async sendText(toUserId: string, text: string, contextToken: string): Promise<void> {
+    await this.sendItem(toUserId, { type: MessageItemType.TEXT, text_item: { text } }, contextToken);
+  }
+
+  /**
+   * 发送本地文件：getuploadurl → AES-128-ECB 加密后 POST 到 CDN → sendmessage 媒体条目。
+   * 移植自 openclaw-weixin src/cdn/upload.ts、src/cdn/cdn-upload.ts、src/messaging/send.ts。
+   */
+  async sendMedia(toUserId: string, filePath: string, contextToken: string): Promise<void> {
+    const plain = await fs.readFile(filePath);
+    const kind = mediaKind(filePath);
+    const filekey = crypto.randomBytes(16).toString("hex");
+    const aeskey = crypto.randomBytes(16);
+    const filesize = aesEcbPaddedSize(plain.length);
+    const raw = await this.request(
+      "POST",
+      "ilink/bot/getuploadurl",
+      {
+        filekey,
+        media_type: kind === "image" ? UploadMediaType.IMAGE : kind === "video" ? UploadMediaType.VIDEO : UploadMediaType.FILE,
+        to_user_id: toUserId,
+        rawsize: plain.length,
+        rawfilemd5: crypto.createHash("md5").update(plain).digest("hex"),
+        filesize,
+        no_need_thumb: true,
+        aeskey: aeskey.toString("hex"),
+      },
+      15_000,
+    );
+    const up = parseWeixinApiJson<{ ret?: number; errmsg?: string; upload_full_url?: string; upload_param?: string }>(raw || "{}");
+    const cdnBase = (this.opts.cdnBaseUrl || DEFAULT_CDN_BASE).replace(/\/+$/, "");
+    const url = up.upload_full_url?.trim() || (up.upload_param ? `${cdnBase}/upload?encrypted_query_param=${encodeURIComponent(up.upload_param)}&filekey=${encodeURIComponent(filekey)}` : "");
+    if (!url) throw new WeixinApiError(`getuploadurl returned no upload url (ret=${up.ret ?? ""})`, up.ret);
+    const cipher = encryptAesEcb(plain, aeskey);
+    let param = "";
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= 3 && !param; attempt++) {
+      try {
+        const res = await this.fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: new Uint8Array(cipher) });
+        if (res.status >= 400 && res.status < 500) throw Object.assign(new Error(`CDN upload client error ${res.status}`), { fatal: true });
+        if (res.status !== 200) throw new Error(`CDN upload server error ${res.status}`);
+        param = res.headers.get("x-encrypted-param") ?? "";
+        if (!param) throw new Error("CDN upload response missing x-encrypted-param");
+      } catch (e) {
+        lastErr = e;
+        if ((e as { fatal?: boolean }).fatal) throw e;
+      }
+    }
+    if (!param) throw lastErr instanceof Error ? lastErr : new Error("CDN upload failed");
+    // 与上游一致：aes_key 为十六进制密钥字符串的 base64
+    const media = { encrypt_query_param: param, aes_key: Buffer.from(aeskey.toString("hex")).toString("base64"), encrypt_type: 1 };
+    const item: MessageItem =
+      kind === "image"
+        ? { type: MessageItemType.IMAGE, image_item: { media, mid_size: filesize } }
+        : kind === "video"
+          ? { type: MessageItemType.VIDEO, video_item: { media, video_size: filesize } }
+          : { type: MessageItemType.FILE, file_item: { media, file_name: path.basename(filePath), len: String(plain.length) } };
+    await this.sendItem(toUserId, item, contextToken);
+  }
+
+  private async sendItem(toUserId: string, item: MessageItem, contextToken: string): Promise<void> {
     const raw = await this.request(
       "POST",
       "ilink/bot/sendmessage",
@@ -235,7 +325,7 @@ export class IlinkClient {
           message_type: MessageType.BOT,
           message_state: 2, // FINISH
           context_token: contextToken || undefined,
-          item_list: [{ type: MessageItemType.TEXT, text_item: { text } }],
+          item_list: [item],
         },
       },
       15_000,

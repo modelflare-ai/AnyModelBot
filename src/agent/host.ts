@@ -44,6 +44,44 @@ export function locateDshRuntime(appRoot: string): string | undefined {
   return cands.find((d) => fs.existsSync(path.join(d, "node_modules", "@deepseek-ai", "dsh-sdk-client", "package.json")));
 }
 
+/** present 工具参数里的文件路径（原样，相对路径以工作区为准）。 */
+export function presentPaths(args: string): string[] {
+  try {
+    const a = JSON.parse(args) as { files?: Array<{ path?: unknown }> };
+    return (a.files ?? []).map((f) => String(f?.path ?? "")).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export const MAX_DELIVERABLE_BYTES = 50 * 1024 * 1024;
+
+/**
+ * 只交付工作区内（解析符号链接后）真实存在的普通文件，去重，最多 8 个、单个 ≤ 50 MB。
+ * 防止模型借 present 把工作区外的文件（如 ~/.ssh、数据目录）发到聊天里。
+ */
+export function deliverables(workspace: string, paths: string[]): string[] {
+  let root: string;
+  try {
+    root = fs.realpathSync(workspace);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const p of paths) {
+    try {
+      const real = fs.realpathSync(path.resolve(workspace, p));
+      if (real !== root && !real.startsWith(root + path.sep)) continue;
+      const st = fs.statSync(real);
+      if (!st.isFile() || st.size === 0 || st.size > MAX_DELIVERABLE_BYTES) continue;
+      if (!out.includes(real)) out.push(real);
+    } catch {
+      /* 不存在则忽略 */
+    }
+  }
+  return out.slice(0, 8);
+}
+
 let sdkPromise: Promise<SdkModule> | undefined;
 function loadSdk(runtimeDir: string): Promise<SdkModule> {
   sdkPromise ??= import(pathToFileURL(path.join(runtimeDir, "node_modules", "@deepseek-ai", "dsh-sdk-client", "lib", "index.js")).href) as Promise<SdkModule>;
@@ -165,6 +203,12 @@ export class AgentHost {
       "- insert:",
       "    - id: amb-bridge",
       `      name: ${yamlStr(plugin)}`,
+      // sdk 配置默认不带这两个工具：ask_user_question 走 user-questions → 插件 → 审批中心；
+      // present 只声明交付文件，由宿主在回合结束后经渠道发送。
+      "    - id: amb-tool-ask-user",
+      "      name: '@deepseek-ai/dsh-tool-ask-user'",
+      "    - id: amb-present",
+      "      name: '@deepseek-ai/dsh-tool-present'",
       "",
     ].join("\n");
     const f = path.join(this.home, "amb.patch.yml");
@@ -381,12 +425,13 @@ exec "$REAL" "$@"
     this.o.store.clearAgentSession(conversationId);
   }
 
-  async runTurn(input: { conversationId: string; text: string; model: string; observer?: TurnObserver }): Promise<{ text: string; sessionId: string }> {
+  async runTurn(input: { conversationId: string; text: string; model: string; observer?: TurnObserver }): Promise<{ text: string; sessionId: string; files: string[] }> {
     const h = await this.ensure(input.model);
     const s = await this.sessionFor(h, input.conversationId);
     this.active++;
     let timer: NodeJS.Timeout | undefined;
     let turnError: string | undefined;
+    const presented: string[] = [];
     try {
       const timeoutMs = this.o.turnTimeoutMs ?? 30 * 60_000;
       const run = s.run(input.text, {
@@ -398,6 +443,7 @@ exec "$REAL" "$@"
           if (ev?.type === "tool/call") {
             this.calls.set(String(data.callId), { name: String(data.name), args: String(data.arguments ?? ""), at: Date.now() });
             if (this.calls.size > 500) this.calls.delete(this.calls.keys().next().value!);
+            if (data.name === "present") presented.push(...presentPaths(String(data.arguments ?? "")));
             input.observer?.onProgress?.(`🔧 ${summarizeCall(String(data.name), String(data.arguments ?? "")).split(this.workspace + "/").join("")}`);
           }
           if (ev?.type === "turn/end" && data?.reason?.kind === "error") turnError = String(data.reason.error?.message ?? "unknown error");
@@ -410,7 +456,7 @@ exec "$REAL" "$@"
       const r = await Promise.race([run, timeout]);
       this.failures = 0;
       if (!r.finalResponse && turnError) throw new Error(turnError);
-      return { text: r.finalResponse, sessionId: s.id };
+      return { text: r.finalResponse, sessionId: s.id, files: deliverables(this.workspace, presented) };
     } catch (e) {
       if (/timed out/.test((e as Error).message)) await this.closeHarness();
       throw e;

@@ -2,11 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { materializeDshRuntime } from "../src/agent/host.js";
+import { locateDshRuntime, materializeDshRuntime } from "../src/agent/host.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
-
-const packagedAsar = path.join(findAppRoot(), "release", "win-unpacked", "resources", "dsh.asar");
-const hasPackaged = fs.existsSync(packagedAsar) && fs.existsSync(`${packagedAsar}.unpacked`);
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -14,7 +11,7 @@ afterEach(() => {
 });
 
 describe("materializeDshRuntime", () => {
-  it("returns plain dirs unchanged", () => {
+  it("is identity (no extract) for plain dirs", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-plain-"));
     dirs.push(dir);
     fs.mkdirSync(path.join(dir, "node_modules", "@deepseek-ai", "dsh-sdk-client"), { recursive: true });
@@ -22,27 +19,25 @@ describe("materializeDshRuntime", () => {
     const cache = fs.mkdtempSync(path.join(os.tmpdir(), "amb-cache-"));
     dirs.push(cache);
     expect(materializeDshRuntime(dir, cache)).toBe(dir);
+    expect(fs.readdirSync(cache)).toEqual([]);
   });
 
-  it.skipIf(!hasPackaged)("extracts packaged dsh.asar + unpacked natives into versioned cache", () => {
-    const cache = fs.mkdtempSync(path.join(os.tmpdir(), "amb-dsh-mat-"));
+  it("does not extract even when path looks like an asar", () => {
+    const fake = path.join(os.tmpdir(), "amb-fake-dsh.asar");
+    const cache = fs.mkdtempSync(path.join(os.tmpdir(), "amb-cache-asar-"));
     dirs.push(cache);
-    const dest = materializeDshRuntime(packagedAsar, cache);
-    expect(dest).toContain(path.join(cache, "dsh-runtime"));
-    expect(fs.existsSync(path.join(dest, ".amb-dsh-ready"))).toBe(true);
-    expect(fs.existsSync(path.join(dest, "node_modules", "@deepseek-ai", "dsh-sdk-client", "package.json"))).toBe(true);
-    // At least one native from dsh.asar.unpacked
-    const walk = (d: string): string[] => {
-      const out: string[] = [];
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, e.name);
-        if (e.isDirectory()) out.push(...walk(p));
-        else if (e.name.endsWith(".node")) out.push(p);
-      }
-      return out;
-    };
-    expect(walk(dest).length).toBeGreaterThan(0);
-    // Second call hits cache marker
-    expect(materializeDshRuntime(packagedAsar, cache)).toBe(dest);
+    expect(materializeDshRuntime(fake, cache)).toBe(fake);
+    expect(fs.readdirSync(cache)).toEqual([]);
+  });
+});
+
+describe("locateDshRuntime", () => {
+  it("finds checkout dsh-runtime when prepared", () => {
+    const root = findAppRoot();
+    const hit = locateDshRuntime(root);
+    // In CI/dev after prepare-dsh; skip soft if missing
+    if (!hit) return;
+    expect(hit).toContain("dsh");
+    expect(fs.existsSync(path.join(hit, "node_modules", "@deepseek-ai", "dsh-sdk-client", "package.json"))).toBe(true);
   });
 });

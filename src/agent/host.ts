@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { logger } from "../log.js";
@@ -47,16 +46,15 @@ function isDshRuntime(dir: string): boolean {
 
 /**
  * 找到随应用分发的 DSH 运行时目录（含 node_modules/@deepseek-ai/dsh）。
- * 打包后优先 `resources/dsh.asar`（extraResources）；开发时用 `dsh-runtime/`。
- * `ELECTRON_RUN_AS_NODE` 子进程读不了 asar，调用方应再经 {@link materializeDshRuntime} 落到实目录。
+ * 打包后优先 `resources/dsh`（extraResources 实目录）；开发时用 `dsh-runtime/`。
+ * 实目录可直接给 ELECTRON_RUN_AS_NODE 子进程用，无需再 extract。
  */
 export function locateDshRuntime(appRoot: string): string | undefined {
   const res = (process as any).resourcesPath as string | undefined;
   const cands = [
     process.env.AMB_DSH_RUNTIME,
     path.join(appRoot, "dsh-runtime"), // dev checkout
-    res ? path.join(res, "dsh.asar") : undefined, // packaged: resources/dsh.asar (+ .unpacked)
-    res ? path.join(res, "dsh") : undefined, // legacy unpacked extraResources
+    res ? path.join(res, "dsh") : undefined, // packaged: resources/dsh (pruned tree)
     path.join(appRoot, "dsh"), // packaged inside app.asar (older layout)
     res ? path.join(res, "app.asar", "dsh") : undefined,
     res ? path.join(res, "app.asar.unpacked", "dsh") : undefined,
@@ -65,141 +63,12 @@ export function locateDshRuntime(appRoot: string): string | undefined {
 }
 
 /**
- * Resolve cache key for a materialized DSH runtime.
- * Prefer the anymodel-bot app package.json version (via findAppRoot), not
- * `dsh.asar/../package.json` which is wrong under resources/.
+ * Identity for callers that historically extracted asar → dataDir.
+ * DSH now ships as a real `resources/dsh` directory (no asar, no first-launch extract).
+ * Kept so App / tests can call it without branching; returns `runtimeDir` unchanged.
  */
-function resolveDshCacheVersion(runtimeDir: string): string {
-  try {
-    const appPj = path.join(findAppRoot(), "package.json");
-    if (fs.existsSync(appPj)) {
-      const v = JSON.parse(fs.readFileSync(appPj, "utf8")).version;
-      if (typeof v === "string" && v) return v;
-    }
-  } catch {
-    /* ignore */
-  }
-  try {
-    const v = JSON.parse(fs.readFileSync(path.join(runtimeDir, "package.json"), "utf8")).version;
-    if (typeof v === "string" && v) return v;
-  } catch {
-    /* ignore */
-  }
-  try {
-    const v = JSON.parse(
-      fs.readFileSync(path.join(runtimeDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), "utf8"),
-    ).version;
-    if (typeof v === "string" && v) return v;
-  } catch {
-    /* ignore */
-  }
-  return "unknown";
-}
-
-/**
- * Extract an asar archive to dest, then merge sibling `.asar.unpacked` when present.
- * Prefer `@electron/asar` extractAll (reads archive + unpacked natives). Fall back to a
- * walk that on ENOENT under the asar reads from the `.asar.unpacked` mirror — never use
- * plain recursive `fs.cpSync` on an asar with asarUnpack entries (ENOENT in Electron).
- */
-function extractAsarWithUnpacked(asarPath: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  const unpacked = `${asarPath}.unpacked`;
-  try {
-    const require = createRequire(import.meta.url);
-    const asar = require("@electron/asar") as { extractAll: (a: string, d: string) => void };
-    asar.extractAll(asarPath, dest);
-  } catch (err) {
-    log.warn("asar.extractAll failed; falling back to walk+unpacked merge", {
-      asarPath,
-      err: err instanceof Error ? err.message : String(err),
-    });
-    copyAsarWithUnpackedFallback(asarPath, dest, unpacked);
-  }
-  if (fs.existsSync(unpacked)) {
-    fs.cpSync(unpacked, dest, { recursive: true, force: true });
-  }
-}
-
-/** Recursive copy that treats ENOENT under asarPath as "read from sibling .unpacked". */
-function copyAsarWithUnpackedFallback(asarPath: string, dest: string, unpacked: string): void {
-  const walk = (rel: string): void => {
-    const src = path.join(asarPath, rel);
-    const outDir = path.join(dest, rel);
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(src, { withFileTypes: true });
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException)?.code;
-      if (code === "ENOENT" && fs.existsSync(path.join(unpacked, rel))) {
-        fs.cpSync(path.join(unpacked, rel), outDir, { recursive: true, force: true });
-        return;
-      }
-      throw err;
-    }
-    fs.mkdirSync(outDir, { recursive: true });
-    for (const e of entries) {
-      const child = rel ? path.join(rel, e.name) : e.name;
-      const childSrc = path.join(asarPath, child);
-      const childOut = path.join(dest, child);
-      const childUnp = path.join(unpacked, child);
-      try {
-        const st = fs.lstatSync(childSrc);
-        if (st.isDirectory()) walk(child);
-        else if (st.isSymbolicLink()) {
-          try {
-            fs.symlinkSync(fs.readlinkSync(childSrc), childOut);
-          } catch {
-            if (fs.existsSync(childUnp)) fs.cpSync(childUnp, childOut, { recursive: true, force: true });
-          }
-        } else {
-          fs.copyFileSync(childSrc, childOut);
-        }
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException)?.code;
-        if (code === "ENOENT" && fs.existsSync(childUnp)) {
-          fs.cpSync(childUnp, childOut, { recursive: true, force: true });
-          continue;
-        }
-        throw err;
-      }
-    }
-  };
-  walk("");
-}
-
-/**
- * 若运行时在 asar 内，提取到 cacheRoot/dsh-runtime/<version>，供 ELECTRON_RUN_AS_NODE 子进程使用。
- * Packaged layout is `resources/dsh.asar` + `dsh.asar.unpacked` (natives); plain cpSync throws ENOENT.
- */
-export function materializeDshRuntime(runtimeDir: string, cacheRoot: string): string {
-  if (!runtimeDir.split(path.sep).some((p) => p.endsWith(".asar"))) return runtimeDir;
-  const version = resolveDshCacheVersion(runtimeDir);
-  const dest = path.join(cacheRoot, "dsh-runtime", version);
-  const marker = path.join(dest, ".amb-dsh-ready");
-  if (isDshRuntime(dest) && fs.existsSync(marker)) return dest;
-  const tmp = `${dest}.tmp-${process.pid}`;
-  fs.rmSync(tmp, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  log.info("materializing dsh runtime from asar", { from: runtimeDir, to: dest, version });
-  // runtimeDir may be the asar file itself (…/dsh.asar) or a path inside it.
-  let asarPath = runtimeDir;
-  const parts = runtimeDir.split(path.sep);
-  for (let i = 0; i < parts.length; i++) {
-    if (parts[i].endsWith(".asar")) {
-      asarPath = parts.slice(0, i + 1).join(path.sep);
-      break;
-    }
-  }
-  extractAsarWithUnpacked(asarPath, tmp);
-  if (!isDshRuntime(tmp)) {
-    fs.rmSync(tmp, { recursive: true, force: true });
-    throw new Error(`materializeDshRuntime: extracted tree missing dsh-sdk-client (${asarPath})`);
-  }
-  fs.writeFileSync(path.join(tmp, ".amb-dsh-ready"), new Date().toISOString());
-  fs.rmSync(dest, { recursive: true, force: true });
-  fs.renameSync(tmp, dest);
-  return dest;
+export function materializeDshRuntime(runtimeDir: string, _cacheRoot?: string): string {
+  return runtimeDir;
 }
 
 /** present 工具参数里的文件路径（原样，相对路径以工作区为准）。 */

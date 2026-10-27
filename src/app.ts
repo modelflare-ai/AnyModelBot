@@ -13,7 +13,7 @@ import { WeixinLogin } from "./channels/weixin/login.js";
 import { startWebServer, type WebServer } from "./web/server.js";
 import { logger, mask } from "./log.js";
 import { AgentManager } from "./agent/manager.js";
-import { locateDshRuntime, materializeDshRuntime } from "./agent/host.js";
+import { locateDshRuntime } from "./agent/host.js";
 import { findAppRoot } from "./magpie/supervisor.js";
 
 const log = logger("app");
@@ -69,22 +69,7 @@ export class App {
     this.agent = new AgentManager({
       store: this.store,
       dataDir: config.dataDir,
-      runtimeDir:
-        config.agent.mode === "dsh"
-          ? (() => {
-              const located = locateDshRuntime(findAppRoot());
-              if (!located) return undefined;
-              try {
-                return materializeDshRuntime(located, config.dataDir);
-              } catch (err) {
-                log.warn("DSH runtime materialize failed; continuing with plain chat", {
-                  located,
-                  err: err instanceof Error ? err.message : String(err),
-                });
-                return undefined;
-              }
-            })()
-          : undefined,
+      runtimeDir: config.agent.mode === "dsh" ? locateDshRuntime(findAppRoot()) : undefined,
       upstream,
       enabled: config.agent.mode === "dsh" && !opts.models,
       turnTimeoutMs: config.agent.turnTimeoutMs,

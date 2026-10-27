@@ -31,10 +31,26 @@ describe("cua-driver detection", () => {
     expect(m.notice).toMatch(/辅助功能.*屏幕录制/);
     expect(m.notice).toMatch(/未在真机验证/);
   });
-  it("windows: needs an interactive session", () => {
+  it("windows: interactive session via SESSIONNAME or SessionId", () => {
     const files = ["/r/cua-driver.exe"];
-    expect(detectCua(["/r"], probe({ platform: "win32", files })).reason).toMatch(/交互式会话/);
-    expect(detectCua(["/r"], probe({ platform: "win32", files, env: { SESSIONNAME: "Console" } })).available).toBe(true);
+    const base = { platform: "win32" as const, files };
+    // SESSIONNAME 非空 → 可用
+    expect(detectCua(["/r"], probe({ ...base, env: { SESSIONNAME: "Console" } })).available).toBe(true);
+    // 缺 SESSIONNAME 但 SessionId > 0 → 可用（GUI/Electron 常见）
+    expect(detectCua(["/r"], probe({ ...base, windowsSessionId: 1 })).available).toBe(true);
+    expect(detectCua(["/r"], probe({ ...base, windowsSessionId: 2, env: { USERPROFILE: "C:\\Users\\u" } })).available).toBe(true);
+    // SessionId 0（服务/非交互）→ 不可用
+    const s0 = detectCua(["/r"], probe({ ...base, windowsSessionId: 0 }));
+    expect(s0.available).toBe(false);
+    expect(s0.reason).toMatch(/交互式会话/);
+    // 查不到 SessionId 且不像用户桌面 → 不可用
+    expect(detectCua(["/r"], probe({ ...base, windowsSessionId: null })).reason).toMatch(/交互式会话/);
+    // 查不到 SessionId 但 USERPROFILE+SystemRoot 像正常桌面 → 可用（避免误报）
+    const heuristic = detectCua(
+      ["/r"],
+      probe({ ...base, windowsSessionId: null, env: { USERPROFILE: "C:\\Users\\Alice", SystemRoot: "C:\\Windows" } }),
+    );
+    expect(heuristic.available).toBe(true);
   });
   it("roots cover packaged and dev layouts", () => {
     expect(cuaRoots("/a/dsh-runtime", "linux", "x64")).toContain("/a/build/cua-driver/linux-x64");

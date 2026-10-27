@@ -54,6 +54,8 @@ export interface CuaProbe {
   env: Record<string, string | undefined>;
   homedir: string;
   isFile(p: string): boolean;
+  /** Windows：当前进程 SessionId；测试可注入。未设置时在 win32 上查询。null 表示查询失败。 */
+  windowsSessionId?: number | null;
 }
 
 export interface CuaStatus {
@@ -129,9 +131,61 @@ export function detectCua(roots: string[], probe: CuaProbe = defaultCuaProbe()):
       direct: true,
     };
   }
-  // Windows：服务 / 会话 0 里没有可操作的桌面
-  if (!env.SESSIONNAME) return off("需要在已登录用户的交互式会话中运行（检测到服务或非交互会话）");
-  return { available: true, reason: "Cua Driver: 可用（Windows）", notice: "需在已登录用户的交互式桌面会话中运行；无法操作以管理员权限运行的窗口（除非本应用也以管理员运行）。", bin };
+  // Windows：服务 / 会话 0 里没有可操作的桌面。GUI/Electron 常不设 SESSIONNAME，不能单靠它判断。
+  if (env.SESSIONNAME) {
+    return {
+      available: true,
+      reason: "Cua Driver: 可用（Windows）",
+      notice: "需在已登录用户的交互式桌面会话中运行；无法操作以管理员权限运行的窗口（除非本应用也以管理员运行）。",
+      bin,
+    };
+  }
+  let sid = probe.windowsSessionId;
+  if (sid === undefined) {
+    // 仅在真实 Windows 进程上查询；交叉平台单测不注入时走下方启发式，避免误起 PowerShell。
+    sid = process.platform === "win32" ? (queryWindowsSessionId() ?? null) : null;
+  }
+  if (sid === 0) return off("需要在已登录用户的交互式会话中运行（检测到服务或非交互会话）");
+  if (typeof sid === "number" && sid > 0) {
+    return {
+      available: true,
+      reason: "Cua Driver: 可用（Windows）",
+      notice: "需在已登录用户的交互式桌面会话中运行；无法操作以管理员权限运行的窗口（除非本应用也以管理员运行）。",
+      bin,
+    };
+  }
+  // 查不到 SessionId 时：宁可在像正常用户桌面的环境里判可用，也不要因缺 SESSIONNAME 误报不可用。
+  if (looksLikeWindowsUserDesktop(env)) {
+    return {
+      available: true,
+      reason: "Cua Driver: 可用（Windows）",
+      notice: "需在已登录用户的交互式桌面会话中运行；无法操作以管理员权限运行的窗口（除非本应用也以管理员运行）。",
+      bin,
+    };
+  }
+  return off("需要在已登录用户的交互式会话中运行（检测到服务或非交互会话）");
+}
+
+/** Windows：当前进程的 SessionId（交互式用户会话 > 0；服务/Session 0 = 0）。失败返回 undefined。 */
+export function queryWindowsSessionId(): number | undefined {
+  try {
+    const out = execFileSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", "(Get-Process -Id $PID).SessionId"],
+      { encoding: "utf8", timeout: 5000, windowsHide: true },
+    ).trim();
+    const n = Number(out);
+    return Number.isInteger(n) && n >= 0 ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** USERPROFILE 像 C:\Users\... 且带 SystemRoot 时，视为正常用户桌面（排除 systemprofile）。 */
+export function looksLikeWindowsUserDesktop(env: Record<string, string | undefined>): boolean {
+  const profile = env.USERPROFILE || "";
+  const root = env.SystemRoot || env.WINDIR || "";
+  return !!root && /\\Users\\/i.test(profile) && !/systemprofile/i.test(profile);
 }
 
 export type CuaApp = { executable: string } | { bundle_id: string };

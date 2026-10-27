@@ -23,10 +23,97 @@ const STATE_TEXT = {
 };
 const Badge = ({ s }) => html`<span class="badge ${s}">${STATE_TEXT[s] || s}</span>`;
 const fmt = (t) => (t ? new Date(t).toLocaleString("zh-CN", { hour12: false }) : "");
-const initials = (name) => {
-  const s = String(name || "?").trim();
-  return s.slice(0, 1).toUpperCase();
-};
+/** Stable soft hue (0–359) from bot id/name — pastel face fill. */
+function botHue(id, name) {
+  const s = String(id || name || "?");
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h) % 360;
+}
+
+/**
+ * One shared pointermove on a container; writes --look-x/--look-y on each .bot-face
+ * inside it (no per-avatar listeners, no React re-renders for look-at).
+ */
+function usePointerLook(containerRef) {
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    let raf = 0;
+    let px = -1e5, py = -1e5;
+    const apply = () => {
+      raf = 0;
+      const faces = root.querySelectorAll(".bot-face");
+      for (const el of faces) {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const dx = px - cx;
+        const dy = py - cy;
+        const dist = Math.hypot(dx, dy);
+        const reach = Math.max(96, r.width * 3.2);
+        let lx = 0, ly = 0;
+        if (dist < reach * 1.35) {
+          const fall = Math.max(0, 1 - dist / reach);
+          lx = Math.max(-1, Math.min(1, (dx / (r.width * 0.55)) * fall));
+          ly = Math.max(-1, Math.min(1, (dy / (r.height * 0.55)) * fall));
+        }
+        el.style.setProperty("--look-x", lx.toFixed(3));
+        el.style.setProperty("--look-y", ly.toFixed(3));
+      }
+    };
+    const onMove = (e) => {
+      px = e.clientX; py = e.clientY;
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    const onLeave = () => {
+      px = -1e5; py = -1e5;
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    root.addEventListener("pointermove", onMove, { passive: true });
+    root.addEventListener("pointerleave", onLeave);
+    return () => {
+      root.removeEventListener("pointermove", onMove);
+      root.removeEventListener("pointerleave", onLeave);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+}
+
+/** Friendly SVG face — look via CSS vars; working via .is-working. */
+function BotAvatar({ name, id, size = 36, working = false }) {
+  const hue = botHue(id, name);
+  const eyeR = size * 0.11;
+  const pupilR = size * 0.055;
+  const eyeY = size * 0.42;
+  const eyeDX = size * 0.16;
+  const mouthY = size * 0.68;
+  const vb = size;
+  return html`<div
+    class=${`bot-face${working ? " is-working" : ""}`}
+    style=${{ width: size + "px", height: size + "px", "--bot-hue": String(hue) }}
+    aria-hidden="true"
+  >
+    <div class="bot-face-3d">
+      <svg width=${size} height=${size} viewBox=${`0 0 ${vb} ${vb}`} xmlns="http://www.w3.org/2000/svg">
+        <circle class="bot-head" cx=${vb / 2} cy=${vb / 2} r=${vb / 2 - 0.5} />
+        <ellipse class="bot-eye-white" cx=${vb / 2 - eyeDX} cy=${eyeY} rx=${eyeR * 1.15} ry=${eyeR} />
+        <ellipse class="bot-eye-white" cx=${vb / 2 + eyeDX} cy=${eyeY} rx=${eyeR * 1.15} ry=${eyeR} />
+        <g class="bot-pupils">
+          <circle class="bot-pupil" cx=${vb / 2 - eyeDX} cy=${eyeY} r=${pupilR} />
+          <circle class="bot-pupil" cx=${vb / 2 + eyeDX} cy=${eyeY} r=${pupilR} />
+        </g>
+        <path class="bot-mouth bot-mouth-idle" d=${`M ${vb / 2 - size * 0.12} ${mouthY} Q ${vb / 2} ${mouthY + size * 0.08} ${vb / 2 + size * 0.12} ${mouthY}`} fill="none" stroke-linecap="round" />
+        <ellipse class="bot-mouth bot-mouth-work" cx=${vb / 2} cy=${mouthY + size * 0.02} rx=${size * 0.07} ry=${size * 0.045} />
+      </svg>
+    </div>
+  </div>`;
+}
+
 
 function usePoll(fn, ms, deps = []) {
   const [data, setData] = useState(null);
@@ -310,13 +397,15 @@ function Approvals({ botId, compact }) {
 const Models = ({ theme }) => html`<iframe class="magpie" src=${`/magpie/?theme=${theme}`} title="magpie"></iframe>`;
 
 // ---------------- 中栏：对话 ----------------
-function ChatPane({ bot, onToggleRight, rightOpen }) {
+function ChatPane({ bot, onToggleRight, rightOpen, onBusyChange }) {
   const [text, setText] = useState("");
   const [log, setLog] = useState([]);
   const [busy, setBusy] = useState(false);
   const [convId, setConvId] = useState("");
   const bottom = useRef(null);
   const ta = useRef(null);
+
+  useEffect(() => { onBusyChange && onBusyChange(busy); return () => onBusyChange && onBusyChange(false); }, [busy]);
 
   // 加载该机器人最近的网页测试会话消息（若有）
   useEffect(() => {
@@ -401,18 +490,20 @@ function ChatPane({ bot, onToggleRight, rightOpen }) {
 }
 
 // ---------------- 右栏 ----------------
-function RightPane({ bot, models, onSaved, onDeleted, onClose }) {
+function RightPane({ bot, models, onSaved, onDeleted, onClose, working }) {
   const [tab, setTab] = useState("channels");
+  const rightRef = useRef(null);
+  usePointerLook(rightRef);
   const tabs = [
     ["channels", "渠道"],
     ["settings", "设置"],
     ["memory", "记忆"],
     ["approvals", "审批"],
   ];
-  return html`<div class="right">
+  return html`<div class="right" ref=${rightRef}>
     <div class="right-head">
       <div class="row" style="gap:8px">
-        <div class="thread-avatar" style="width:28px;height:28px;font-size:12px">${initials(bot.name)}</div>
+        <${BotAvatar} name=${bot.name} id=${bot.id} size=${28} working=${!!working} />
         <b style="font-size:14px">${bot.name}</b>
       </div>
       <button class="icon-btn" title="收起" onClick=${onClose}>✕</button>
@@ -433,9 +524,11 @@ function RightPane({ bot, models, onSaved, onDeleted, onClose }) {
 }
 
 // ---------------- 左栏 ----------------
-function LeftRail({ bots, botId, setBotId, view, setView, themeMode, setThemeMode, onCreate }) {
+function LeftRail({ bots, botId, setBotId, view, setView, themeMode, setThemeMode, onCreate, workingById = {} }) {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
+  const leftRef = useRef(null);
+  usePointerLook(leftRef);
   const [convs] = usePoll(() => api("/conversations"), 8000);
   const byBot = useMemo(() => {
     const map = {};
@@ -454,7 +547,7 @@ function LeftRail({ bots, botId, setBotId, view, setView, themeMode, setThemeMod
     } catch (e) { alert(e.message); setCreating(false); }
   };
 
-  return html`<div class="left">
+  return html`<div class="left" ref=${leftRef}>
     <div class="brand">
       <${Mark} />
       <div>
@@ -478,7 +571,7 @@ function LeftRail({ bots, botId, setBotId, view, setView, themeMode, setThemeMod
         const snip = byBot[b.id];
         return html`<button type="button" class=${`thread ${view === "chat" && b.id === botId ? "sel" : ""}`}
           onClick=${() => { setBotId(b.id); setView("chat"); }}>
-          <div class="thread-avatar">${initials(b.name)}</div>
+          <${BotAvatar} name=${b.name} id=${b.id} size=${36} working=${!!workingById[b.id]} />
           <div class="thread-body">
             <div class="thread-title">${b.name}</div>
             <div class="thread-snip">${snip ? (snip.lastMessage || snip.title || snip.channel) : (b.defaultModel || "尚未对话")}</div>
@@ -511,9 +604,11 @@ function App() {
   const [view, setViewRaw] = useState(initialView);
   const [botId, setBotId] = useState("");
   const [rightOpen, setRightOpen] = useState(true);
+  const [chatBusy, setChatBusy] = useState(false);
   const [themeMode, setThemeMode, theme] = useTheme();
   const [botsData, , reloadBots] = usePoll(() => api("/bots"), 0);
   const [models] = usePoll(() => api("/models"), 0);
+  const [agent] = usePoll(() => api("/agent"), 2500);
 
   const setView = (v) => { setViewRaw(v); location.hash = v; };
   useEffect(() => {
@@ -528,6 +623,16 @@ function App() {
   const bots = botsData ? botsData.bots : null;
   const bot = bots && (bots.find((b) => b.id === botId) || bots[0]);
   useEffect(() => { if (bot && bot.id !== botId) setBotId(bot.id); }, [bots, bot && bot.id]);
+  const workingById = useMemo(() => {
+    const map = {};
+    for (const [id, h] of Object.entries((agent && agent.hosts) || {})) {
+      const turns = Number(h.activeTurns || 0);
+      map[id] = turns > 0 || h.state === "starting" || h.state === "restarting";
+    }
+    if (chatBusy && bot) map[bot.id] = true;
+    return map;
+  }, [agent, chatBusy, bot && bot.id]);
+  const selectedWorking = !!(bot && workingById[bot.id]);
 
   const shellClass = [
     "app",
@@ -545,9 +650,10 @@ function App() {
       setView=${setView}
       themeMode=${themeMode}
       setThemeMode=${setThemeMode}
+      workingById=${workingById}
       onCreate=${(b) => { reloadBots(); setBotId(b.id); setView("chat"); }}
     />
-    ${view === "chat" && bot && html`<${ChatPane} bot=${bot} rightOpen=${rightOpen} onToggleRight=${() => setRightOpen((v) => !v)} />`}
+    ${view === "chat" && bot && html`<${ChatPane} bot=${bot} rightOpen=${rightOpen} onToggleRight=${() => setRightOpen((v) => !v)} onBusyChange=${setChatBusy} />`}
     ${view === "chat" && !bot && html`<div class="center"><div class="transcript"><div class="empty-chat"><h2>开始</h2><p>在左侧新建一个机器人，然后直接对话。</p></div></div></div>`}
     ${view === "overview" && html`<div class="admin-pane"><${Overview} goChat=${() => setView("chat")} /></div>`}
     ${view === "approvals" && html`<div class="admin-pane"><${Approvals} /></div>`}
@@ -559,6 +665,7 @@ function App() {
       onSaved=${() => reloadBots()}
       onDeleted=${() => { setBotId(""); reloadBots(); }}
       onClose=${() => setRightOpen(false)}
+      working=${selectedWorking}
     />`}
   </div>`;
 }

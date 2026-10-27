@@ -54,8 +54,6 @@ npm run dist:linux | dist:mac | dist:win
 - 界面只监听 127.0.0.1，且每次启动生成随机访问令牌，其他本机程序无法直接调用管理接口
 - 退出时先停渠道、再停 magpie；若上次被强杀残留 magpie 进程，下次启动会自动清理（Linux/macOS）
 
-**签名与发布（需你本人完成）**：macOS 需 Apple Developer ID 证书 + 公证（`CSC_LINK`/`CSC_KEY_PASSWORD`、`APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`），内置的 magpie 二进制也会被一并签名（hardened runtime）；Windows 建议 Authenticode 证书，否则 SmartScreen 会拦截。自动更新（electron-updater）需要发布地址与签名，暂未启用。
-
 ## Docker
 
 ```bash

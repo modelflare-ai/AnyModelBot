@@ -49,6 +49,33 @@ if (fs.existsSync(koffi)) for (const pkg of fs.readdirSync(koffi)) {
 walk(nm, (p, name) => {
   if (/\.(map|d\.ts|d\.mts|d\.cts|tsbuildinfo)$/.test(name)) rm(p);
 });
+// 其他平台的 libreoffice-kit 预编译包（只留当前 os-cpu）
+const loPrefix = "@deepseek-ai";
+const loRoot = path.join(nm, loPrefix);
+if (fs.existsSync(loRoot)) {
+  const want = `libreoffice-kit-${os === "win32" ? "win32" : os}-${cpu}`;
+  for (const pkg of fs.readdirSync(loRoot)) {
+    if (pkg.startsWith("libreoffice-kit-") && pkg !== want) rm(path.join(loRoot, pkg));
+  }
+}
+// 已有平台 sharp 时丢掉 wasm 兜底（安装包体积）
+const img = path.join(nm, "@img");
+if (fs.existsSync(img)) {
+  const hasNative = fs.readdirSync(img).some((d) => d.startsWith(`sharp-${os === "win32" ? "win32" : os}-`));
+  if (hasNative) rm(path.join(img, "sharp-wasm32"));
+}
+// node-pty third_party 里非目标 arch 的 conpty
+const ptyConpty = path.join(nm, "node-pty", "third_party", "conpty");
+if (fs.existsSync(ptyConpty)) {
+  for (const ver of fs.readdirSync(ptyConpty)) {
+    const vdir = path.join(ptyConpty, ver);
+    if (!fs.statSync(vdir).isDirectory()) continue;
+    for (const archDir of fs.readdirSync(vdir)) {
+      const keepArch = os === "win32" && ((cpu === "x64" && archDir === "win10-x64") || (cpu === "arm64" && archDir === "win10-arm64"));
+      if (!keepArch) rm(path.join(vdir, archDir));
+    }
+  }
+}
 console.log(`dsh-runtime 已准备（${keep}），裁剪 ${(removed / 1048576).toFixed(1)} MB`);
 
 function findDirs(base, name, out = []) {

@@ -12,7 +12,7 @@ import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.j
 
 const log = logger("agent.host");
 
-// ---------- @deepseek-ai/dsh-sdk-client 的最小本地类型（运行时动态加载，避免进入 app asar） ----------
+// ---------- @deepseek-ai/dsh-sdk-client 的最小本地类型（运行时从 dsh-runtime / app.asar/dsh 动态加载） ----------
 interface SdkNotification {
   method: string;
   params: any;
@@ -38,14 +38,68 @@ interface SdkModule {
   DeepSeekHarness: new (opts: Record<string, unknown>) => SdkHarness;
 }
 
-/** 找到随应用分发的 DSH 运行时目录（含 node_modules/@deepseek-ai/dsh）。 */
+/** DSH 运行时是否具备可加载的 sdk-client。 */
+function isDshRuntime(dir: string): boolean {
+  return fs.existsSync(path.join(dir, "node_modules", "@deepseek-ai", "dsh-sdk-client", "package.json"));
+}
+
+/**
+ * 找到随应用分发的 DSH 运行时目录（含 node_modules/@deepseek-ai/dsh）。
+ * 打包后优先 `resources/dsh.asar`（extraResources）；开发时用 `dsh-runtime/`。
+ * `ELECTRON_RUN_AS_NODE` 子进程读不了 asar，调用方应再经 {@link materializeDshRuntime} 落到实目录。
+ */
 export function locateDshRuntime(appRoot: string): string | undefined {
+  const res = (process as any).resourcesPath as string | undefined;
   const cands = [
     process.env.AMB_DSH_RUNTIME,
-    (process as any).resourcesPath ? path.join((process as any).resourcesPath, "dsh") : undefined,
-    path.join(appRoot, "dsh-runtime"),
+    path.join(appRoot, "dsh-runtime"), // dev checkout
+    res ? path.join(res, "dsh.asar") : undefined, // packaged: resources/dsh.asar (+ .unpacked)
+    res ? path.join(res, "dsh") : undefined, // legacy unpacked extraResources
+    path.join(appRoot, "dsh"), // packaged inside app.asar (older layout)
+    res ? path.join(res, "app.asar", "dsh") : undefined,
+    res ? path.join(res, "app.asar.unpacked", "dsh") : undefined,
   ].filter(Boolean) as string[];
-  return cands.find((d) => fs.existsSync(path.join(d, "node_modules", "@deepseek-ai", "dsh-sdk-client", "package.json")));
+  return cands.find(isDshRuntime);
+}
+
+/**
+ * 若运行时在 asar 内，复制到 cacheRoot/dsh-runtime/<version>，供 ELECTRON_RUN_AS_NODE 子进程使用。
+ * Electron 主进程的 fs 能读 asar；复制时 asarUnpack 的原生模块也会落到实文件。
+ */
+export function materializeDshRuntime(runtimeDir: string, cacheRoot: string): string {
+  if (!runtimeDir.split(path.sep).some((p) => p.endsWith(".asar"))) return runtimeDir;
+  let version = "unknown";
+  try {
+    version = JSON.parse(fs.readFileSync(path.join(runtimeDir, "package.json"), "utf8")).version ?? version;
+  } catch {
+    try {
+      version = JSON.parse(fs.readFileSync(path.join(runtimeDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), "utf8")).version ?? version;
+    } catch {
+      /* keep unknown */
+    }
+  }
+  // Prefer app version so cache invalidates on each anymodel bump even if dsh pin is unchanged.
+  try {
+    const appPj = path.join(runtimeDir, "..", "package.json");
+    if (fs.existsSync(appPj)) {
+      const v = JSON.parse(fs.readFileSync(appPj, "utf8")).version;
+      if (v) version = v;
+    }
+  } catch {
+    /* ignore */
+  }
+  const dest = path.join(cacheRoot, "dsh-runtime", version);
+  const marker = path.join(dest, ".amb-dsh-ready");
+  if (isDshRuntime(dest) && fs.existsSync(marker)) return dest;
+  const tmp = `${dest}.tmp-${process.pid}`;
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  log.info("materializing dsh runtime from asar", { from: runtimeDir, to: dest });
+  fs.cpSync(runtimeDir, tmp, { recursive: true });
+  fs.writeFileSync(path.join(tmp, ".amb-dsh-ready"), new Date().toISOString());
+  fs.rmSync(dest, { recursive: true, force: true });
+  fs.renameSync(tmp, dest);
+  return dest;
 }
 
 /** present 工具参数里的文件路径（原样，相对路径以工作区为准）。 */

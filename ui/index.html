@@ -3,22 +3,32 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>anymodel bot</title>
-  <link rel="stylesheet" href="/amb/static/style.css" />
+  <title>AnyModelBot</title>
+  <link rel="icon" href="data:," />
+  <script>
+    // 首帧前解析主题（data-theme 总是 light/dark，CSS 只定义一份深色变量）与平台
+    (function () {
+      var root = document.documentElement;
+      var m = "system";
+      try { m = localStorage.getItem("amb-theme") || "system"; } catch (_) {}
+      var dark = m === "dark" || (m !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      root.setAttribute("data-theme", dark ? "dark" : "light");
+      if (/Windows/.test(navigator.userAgent)) root.classList.add("win");
+      if (/Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform)) root.classList.add("mac-app");
+    })();
+  </script>
+  <link rel="stylesheet" href="/amb/static/tokens.css" />
+  <link rel="stylesheet" href="/amb/static/css/base.css" />
+  <link rel="stylesheet" href="/amb/static/css/shell.css" />
+  <link rel="stylesheet" href="/amb/static/css/avatar.css" />
+  <link rel="stylesheet" href="/amb/static/css/chat.css" />
+  <link rel="stylesheet" href="/amb/static/css/settings.css" />
   <script type="importmap">
     { "imports": { "preact": "/amb/vendor/preact.mjs", "preact/hooks": "/amb/vendor/hooks.mjs", "htm": "/amb/vendor/htm.mjs" } }
   </script>
-  <script>
-    (function () {
-      try {
-        var m = localStorage.getItem("amb-theme");
-        if (m === "light" || m === "dark") document.documentElement.setAttribute("data-theme", m);
-      } catch (_) {}
-    })();
-  </script>
 </head>
 <body>
-  <div id="app">加载中…</div>
-  <script type="module" src="/amb/static/app.js"></script>
+  <div id="app"></div>
+  <script type="module" src="/amb/static/main.js"></script>
 </body>
 </html>

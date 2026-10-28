@@ -1,0 +1,63 @@
+/* Settings (magpie's settings page: tabs + find, white .list cards, a control per row, saved on change). */
+.settings { flex: 1; min-height: 0; overflow-y: auto; background: var(--bg); }
+.set-head {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 6px;
+  padding: 14px max(20px, calc((100% - 720px) / 2)) 10px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(16px); backdrop-filter: saturate(1.6) blur(16px);
+  -webkit-app-region: drag;
+}
+.set-head > * { -webkit-app-region: no-drag; }
+.set-head.stuck { box-shadow: 0 1px 0 var(--line-2); }
+:root.mac-app .set-head { padding-top: 16px; }
+.set-title { display: flex; align-items: center; gap: 8px; width: 100%; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.set-title .grow { flex: 1; }
+.warm-tabs { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; row-gap: 2px; min-width: 0; flex: 1; margin-left: -7px; }
+.warm-tabs button { height: 22px; padding: 0 7px; border-radius: 6px; font-size: 11.5px; font-weight: 600; color: var(--muted); transition: color .12s, background-color .12s; white-space: nowrap; }
+.warm-tabs button:hover:not(.on) { color: var(--fg-2); }
+.warm-tabs button.on { color: var(--fg); background: var(--pill); }
+.set-find { flex: 0 1 180px; min-width: 120px; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); font-size: 12px; outline: none; }
+.set-find:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.set-find::placeholder { color: var(--placeholder); }
+.set-body { padding: 6px max(20px, calc((100% - 720px) / 2)) 40px; }
+.set-part { margin: 14px 2px 6px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.set-part:first-child { margin-top: 4px; }
+.set-none { margin: 18px 2px; font-size: 13px; color: var(--muted); text-align: center; }
+.settings .row .sub { max-width: 440px; }
+.mf-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); }
+
+/* bot settings page */
+.bot-head { display: flex; align-items: center; gap: 10px; width: 100%; }
+.bot-head .grow { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inline-input { width: 220px; height: 26px; padding: 0 8px; border-radius: 7px; border: 1px solid transparent; background: var(--pill); outline: none; font-size: 12.5px; text-align: right; }
+.inline-input:hover { background: var(--pill-hover); }
+.inline-input:focus { border-color: var(--accent); background: var(--card); box-shadow: 0 0 0 3px var(--accent-soft); text-align: left; }
+.prompt-edit { padding: 0 14px 12px; }
+.prompt-edit textarea { min-height: 88px; font-size: 13px; }
+
+/* onboarding */
+.onboard { flex: 1; min-height: 0; overflow-y: auto; background: var(--bg); display: grid; justify-items: center; align-content: center; padding: 48px 16px; -webkit-app-region: drag; }
+.onboard > * { -webkit-app-region: no-drag; }
+.onboard-col { width: min(400px, 100%); display: grid; gap: 14px; animation: view-in .24s var(--ease); }
+.onboard-hero { display: grid; justify-items: center; gap: 10px; text-align: center; margin-bottom: 6px; }
+.onboard-hero h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+.onboard-hero p { font-size: 13px; color: var(--muted); line-height: 1.55; }
+.onboard .list { padding: 16px; display: grid; gap: 10px; }
+.onboard label.k { font-size: 12px; font-weight: 600; color: var(--fg-2); }
+.onboard .err-text { font-size: 12px; color: var(--red); line-height: 1.5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.onboard .slow { font-size: 12px; color: var(--muted); }
+.onboard .links { display: grid; gap: 8px; justify-items: center; font-size: 12.5px; color: var(--muted); }
+.onboard details { width: 100%; }
+.onboard details summary { list-style: none; cursor: default; display: flex; justify-content: center; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.onboard details summary::-webkit-details-marker { display: none; }
+.onboard details[open] summary .ic { transform: rotate(180deg); }
+.onboard details .row { margin-top: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.onboard .connected { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.picklist { max-height: 300px; overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
+.picklist .group { padding: 8px 4px 3px; font-size: 10.5px; font-weight: 600; color: var(--faint); letter-spacing: .04em; }
+.picklist button { display: flex; align-items: center; width: 100%; height: 32px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; text-align: left; gap: 8px; }
+.picklist button:hover { background: var(--pill); }
+.picklist button.cur { background: var(--sel); }
+.picklist button .v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.picklist button .check { color: var(--accent); }

@@ -1,5 +1,7 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import type { AppConfig } from "./config.js";
+import { saveConfigFile, type AppConfig } from "./config.js";
 import { Store, type Bot } from "./store/db.js";
 import { OpenAICompatClient, type ModelClient } from "./llm/client.js";
 import { BotRuntime } from "./core/runtime.js";
@@ -15,8 +17,40 @@ import { logger, mask } from "./log.js";
 import { AgentManager } from "./agent/manager.js";
 import { locateDshRuntime } from "./agent/host.js";
 import { findAppRoot } from "./magpie/supervisor.js";
+import { MODELFLARE_LINES, modelflareBaseUrl, verifyModelflareKey, type ModelflareLine, type VerifyResult } from "./modelflare.js";
 
 const log = logger("app");
+
+/** 桌面外壳（Electron 主进程）提供的能力；CLI / Docker 下为空 */
+export interface DesktopHooks {
+  autostart(): { supported: boolean; on: boolean };
+  setAutostart(on: boolean): void;
+  applyZoom(zoom: number): void;
+  openDataDir(): void;
+  openInBrowser(): void;
+}
+
+export interface ModelflareStatus {
+  /** managed：经内置网关连接 Modelflare；external：使用环境变量指定的端点（开发/测试），界面不做连接管理 */
+  mode: "managed" | "external";
+  connected: boolean;
+  keyTail: string;
+  line: ModelflareLine;
+  baseUrl: string;
+  gateway: string;
+}
+
+let cachedVersion = "";
+export function appVersion(): string {
+  if (!cachedVersion) {
+    try {
+      cachedVersion = String(JSON.parse(fs.readFileSync(path.join(findAppRoot(), "package.json"), "utf8")).version || "");
+    } catch {
+      cachedVersion = "";
+    }
+  }
+  return cachedVersion;
+}
 
 export interface AppOptions {
   /** 测试注入：替换飞书传输层 */
@@ -48,6 +82,7 @@ export class App {
   readonly queue = new KeyedQueue();
   readonly channels = new Map<string, BotChannels>();
   web: WebServer | undefined;
+  desktop: DesktopHooks | undefined;
   private notices: Array<{ at: number; level: "info" | "warn"; text: string }> = [];
 
   constructor(readonly config: AppConfig, readonly opts: AppOptions = {}) {
@@ -120,6 +155,59 @@ export class App {
     this.store.close();
   }
 
+  get username(): string {
+    try {
+      return os.userInfo().username;
+    } catch {
+      return "";
+    }
+  }
+
+  // ---------- Modelflare ----------
+  private allowedModelflareUrls(): string[] {
+    return [...new Set([...Object.values(MODELFLARE_LINES), modelflareBaseUrl("auto"), modelflareBaseUrl("cn")])];
+  }
+
+  modelflareStatus(): ModelflareStatus {
+    const line = this.config.modelflare.line;
+    if (!this.magpie) return { mode: "external", connected: true, keyTail: "", line, baseUrl: this.config.magpie.externalBaseUrl, gateway: "external" };
+    const info = this.magpie.modelflareInfo();
+    return { mode: "managed", connected: info.connected, keyTail: info.keyTail, line, baseUrl: info.baseUrl || modelflareBaseUrl(line), gateway: this.magpie.state };
+  }
+
+  /** 先校验（GET /models），通过后才写入网关；失败时什么都不改 */
+  async connectModelflare(apiKey: string, line: ModelflareLine): Promise<VerifyResult> {
+    if (!this.magpie) throw new Error("外部模型端点模式下不管理 Modelflare 连接");
+    const baseUrl = modelflareBaseUrl(line);
+    const r = await verifyModelflareKey(baseUrl, apiKey.trim(), { line });
+    if (!r.ok) return r;
+    await this.magpie.connectModelflare(apiKey, baseUrl, this.allowedModelflareUrls());
+    this.setModelflareLineConfig(line);
+    await this.runtime.listModels(true).catch(() => []);
+    return r;
+  }
+
+  async setModelflareLine(line: ModelflareLine): Promise<void> {
+    if (this.magpie && this.magpie.modelflareInfo().connected) await this.magpie.setModelflareUrl(modelflareBaseUrl(line), this.allowedModelflareUrls());
+    this.setModelflareLineConfig(line);
+  }
+
+  private setModelflareLineConfig(line: ModelflareLine): void {
+    this.config.modelflare.line = line;
+    saveConfigFile(this.config.dataDir, (f) => (f.modelflare = { ...(f.modelflare ?? {}), line }));
+  }
+
+  async disconnectModelflare(): Promise<void> {
+    if (!this.magpie) throw new Error("外部模型端点模式下不管理 Modelflare 连接");
+    await this.magpie.disconnectModelflare();
+    await this.runtime.listModels(true).catch(() => []);
+  }
+
+  setDefaultModel(model: string): void {
+    this.config.llm.defaultModel = model;
+    saveConfigFile(this.config.dataDir, (f) => (f.llm = { ...(f.llm ?? {}), defaultModel: model }));
+  }
+
   private seedDefaultBot(): void {
     if (this.store.listBots().length) return;
     const bot = this.store.createBot({
@@ -153,7 +241,7 @@ export class App {
         fetchImpl: this.opts.weixinFetch,
         pollTimeoutMs: this.opts.weixinPollTimeoutMs,
       });
-      ch.weixin.onExpired = () => this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在「渠道」页重新扫码`);
+      ch.weixin.onExpired = () => this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);
       ch.weixin.start();
     }
   }

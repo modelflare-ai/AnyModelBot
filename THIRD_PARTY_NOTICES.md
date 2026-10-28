@@ -4,9 +4,15 @@ anymodel bot 自身以 MIT 许可发布（见 LICENSE）。以下组件随本程
 
 部分代码移植/改编自 Fei2411/DS-Bot（Apache-2.0），见下文「DS Bot」一节。
 
-## magpie（内置模型网关，以二进制形式随附）
+## magpie（内置模型网关，以二进制形式随附；界面样式部分改编自它）
 
 来源：https://github.com/yetone/magpie （vendor/magpie 子模块，v0.1.1720）
+
+- 以二进制形式随附：内置模型网关。
+- 改编：`ui/tokens.css`、`ui/css/base.css`、`ui/css/settings.css` 中的中性色、圆角、动效与组件样式
+  （`.list` / `.row`、分段控件 `.seg`、弹出菜单 `.pop`、设置页页签、"已保存"胶囊）改编自
+  `internal/gui/assets/app.css`。未使用 magpie 的名称、喜鹊标志、`assets/icons/` 中的厂商 logo、
+  赞助商/合作方图片或官网截图。
 
 ```
 MIT License

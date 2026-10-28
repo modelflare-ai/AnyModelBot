@@ -150,9 +150,23 @@ describe("Web 界面 / API", () => {
   it("页面与前端依赖可加载", async () => {
     const html = await (await fetch(base + "/")).text();
     expect(html).toContain("importmap");
-    for (const p of ["/amb/vendor/preact.mjs", "/amb/vendor/hooks.mjs", "/amb/vendor/htm.mjs", "/amb/static/app.js", "/amb/static/style.css"]) {
-      expect((await fetch(base + p)).status, p).toBe(200);
+    // index.html 里引用的每一个样式与脚本、以及脚本之间的相对 import 都能取到
+    const refs = [...html.matchAll(/(?:href|src)="(\/amb\/[^"]+)"/g)].map((m) => m[1]);
+    expect(refs).toContain("/amb/static/main.js");
+    const seen = new Set<string>();
+    const queue = [...refs, "/amb/vendor/preact.mjs", "/amb/vendor/hooks.mjs", "/amb/vendor/htm.mjs"];
+    while (queue.length) {
+      const p = queue.shift()!;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      const r = await fetch(base + p);
+      expect(r.status, p).toBe(200);
+      if (p.startsWith("/amb/static/") && p.endsWith(".js")) {
+        const src = await r.text();
+        for (const m of src.matchAll(/from "(\.{1,2}\/[^"]+)"/g)) queue.push(new URL(m[1], "http://x" + p).pathname);
+      }
     }
+    expect(seen.size).toBeGreaterThan(15);
   });
   it("机器人 CRUD + 飞书凭据（secret 不回显）+ 测试对话", async () => {
     const c = await api("/bots", { method: "POST", body: { name: "测试机器人", systemPrompt: "你是测试", defaultModel: "mock-b" } });
@@ -172,14 +186,120 @@ describe("Web 界面 / API", () => {
     expect((await api(`/bots/${id}`, { method: "DELETE" })).status).toBe(200);
     expect((await api(`/bots/${id}`)).status).toBe(404);
   });
-  it("安全：错误 Host 拒绝、非 JSON 写请求拒绝、外部模式下 /magpie 503", async () => {
+  it("安全：错误 Host 拒绝、非 JSON 写请求拒绝、不再反代内置网关（/magpie、/v1 均 404）", async () => {
     const http = await import("node:http");
     const port = new URL(base).port;
     const status = await new Promise<number>((r) => http.get({ host: "127.0.0.1", port, path: "/amb/api/status", headers: { host: "evil.example:80" } }, (res) => r(res.statusCode!)));
     expect(status).toBe(421);
     const form = await fetch(base + "/amb/api/bots", { method: "POST", headers: { "content-type": "text/plain" }, body: "{}" });
     expect(form.status).toBe(415);
-    expect((await fetch(base + "/magpie/")).status).toBe(503);
+    for (const p of ["/magpie/", "/v1/models", "/api/providers"]) expect((await fetch(base + p)).status, p).toBe(404);
+    expect((await api("/providers", { method: "POST", body: { preset: "deepseek", apiKey: "x" } })).status).toBe(404);
+  });
+  it("状态：版本号来自 package.json，不暴露网关端口与二进制路径", async () => {
+    const st = await api("/status");
+    expect(st.json.version).toBe(JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version);
+    expect(st.json.gateway).toEqual({ mode: "external", state: "external" });
+    expect(JSON.stringify(st.json)).not.toMatch(/gatewayPort|webPort|binary/);
+  });
+  it("Modelflare：外部端点模式视为已连接，不能在界面里连接/断开", async () => {
+    const mf = await api("/modelflare");
+    expect(mf.json).toMatchObject({ mode: "external", connected: true });
+    expect((await api("/modelflare", { method: "PUT", body: { apiKey: "k" } })).status).toBe(409);
+    expect((await api("/modelflare", { method: "DELETE" })).status).toBe(409);
+  });
+  it("设置：改动即保存到 config.json；非法值拒绝；桌面专属项在浏览器模式下不可改", async () => {
+    const s = await api("/settings");
+    expect(s.json).toMatchObject({ closeToTray: true, zoom: 1, desktop: false, autostart: { supported: false } });
+    const r = await api("/settings", { method: "PUT", body: { defaultModel: "mock-b", closeToTray: false, zoom: 1.25 } });
+    expect(r.json).toMatchObject({ defaultModel: "mock-b", closeToTray: false, zoom: 1.25 });
+    const file = JSON.parse(fs.readFileSync(path.join(dataDir, "config.json"), "utf8"));
+    expect(file).toMatchObject({ llm: { defaultModel: "mock-b" }, ui: { closeToTray: false, zoom: 1.25 } });
+    expect((await api("/settings", { method: "PUT", body: { zoom: 3 } })).status).toBe(400);
+    expect((await api("/settings", { method: "PUT", body: { autostart: true } })).status).toBe(400);
+    await api("/settings", { method: "PUT", body: { defaultModel: "", closeToTray: true, zoom: 1 } });
+  });
+  it("许可与第三方声明可在界面查看", async () => {
+    const n = await api("/notices");
+    expect(n.json.license).toContain("MIT");
+    expect(n.json.notices).toContain("magpie");
+  });
+});
+
+/** 读完一个 SSE 响应，返回 [事件, 数据] 列表 */
+async function sse(p: string, body: unknown, signal?: AbortSignal, onEvent?: (ev: string, data: any) => void) {
+  const res = await fetch(base + "/amb/api" + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+  expect(res.headers.get("content-type")).toContain("text/event-stream");
+  const events: Array<[string, any]> = [];
+  let buf = "";
+  const dec = new TextDecoder();
+  try {
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      buf += dec.decode(chunk, { stream: true });
+      let i: number;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const ev = /^event: (.*)$/m.exec(block)?.[1];
+        const data = /^data: (.*)$/m.exec(block)?.[1];
+        if (ev && data) {
+          events.push([ev, JSON.parse(data)]);
+          onEvent?.(ev, JSON.parse(data));
+        }
+      }
+    }
+  } catch (e) {
+    if ((e as Error).name !== "AbortError") throw e;
+  }
+  return events;
+}
+
+describe("网页对话（流式）", () => {
+  it("SSE：逐段 text（覆盖式累计）→ done；消息持久化；GET /chat 读回", async () => {
+    const ev = await sse("/bots/default/chat/stream", { text: "流式你好" });
+    const texts = ev.filter(([e]) => e === "text").map(([, d]) => d.text);
+    expect(texts.length).toBeGreaterThan(2);
+    for (let i = 1; i < texts.length; i++) expect(texts[i].startsWith(texts[i - 1].slice(0, -1))).toBe(true);
+    expect(texts.at(-1)).toMatch(/你说：流式你好$/);
+    expect(ev.at(-1)).toEqual(["done", { conversationId: "default:web:console" }]);
+    const chat = await api("/bots/default/chat");
+    expect(chat.json.conversationId).toBe("default:web:console");
+    expect(chat.json.messages.slice(-2).map((m: any) => [m.role, m.content])).toEqual([
+      ["user", "流式你好"],
+      ["assistant", texts.at(-1)],
+    ]);
+    expect(chat.json.pending).toEqual([]);
+  });
+  it("会话级模型：PUT /chat/model 后下一条消息使用它，空字符串恢复默认", async () => {
+    expect((await api("/bots/default/chat/model", { method: "PUT", body: { model: "mock-b" } })).json.model).toBe("mock-b");
+    expect((await api("/bots/default/chat")).json.model).toBe("mock-b");
+    await sse("/bots/default/chat/stream", { text: "用哪个" });
+    expect(llm.calls.at(-1)!.model).toBe("mock-b");
+    await api("/bots/default/chat/model", { method: "PUT", body: { model: "" } });
+    await sse("/bots/default/chat/stream", { text: "又用哪个" });
+    expect(llm.calls.at(-1)!.model).toBe("mock-a");
+  });
+  it("命令回复也走流：/status 一次性 text(final)", async () => {
+    const ev = await sse("/bots/default/chat/stream", { text: "/status" });
+    expect(ev.find(([e, d]) => e === "text" && d.final)?.[1].text).toContain("当前模型");
+  });
+  it("停止：客户端断开 → 上游请求被中止，已生成的部分保留为助手消息", async () => {
+    const before = llm.calls.length;
+    const ac = new AbortController();
+    let got = 0;
+    await sse("/bots/default/chat/stream", { text: "长".repeat(400) }, ac.signal, (e) => {
+      if (e === "text" && ++got === 3) ac.abort();
+    });
+    expect(llm.calls.length).toBe(before + 1);
+    await until(() => llm.aborted > 0, 3000, 20);
+    const msgs = (await api("/bots/default/chat")).json.messages;
+    const last = msgs.at(-1);
+    expect(last.role).toBe("assistant");
+    expect(last.content.length).toBeGreaterThan(0);
+    expect(last.content.length).toBeLessThan(400);
+    // 中止后同一会话还能继续对话（队列没被卡住）
+    const ev = await sse("/bots/default/chat/stream", { text: "还在吗" });
+    expect(ev.at(-1)![0]).toBe("done");
   });
   it("日志与数据库外文件中不含明文密钥", () => {
     const files = fs.readdirSync(dataDir, { recursive: true }).map(String).filter((f) => !f.endsWith(".db") && !f.includes(".db-") && !f.endsWith(".png"));

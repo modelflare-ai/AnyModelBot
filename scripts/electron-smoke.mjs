@@ -1,4 +1,4 @@
-// 桌面版冒烟测试：启动 Electron（Linux 无显示时自动用 xvfb-run），加载界面、截图、检查 /amb/api/status 与 /magpie/，然后干净退出。
+// 桌面版冒烟测试：启动 Electron（Linux 无显示时自动用 xvfb-run），加载界面、截图、检查 /amb/api/status、内置网关已运行且 /magpie/ 不再对外（404），然后干净退出。
 // 用法：node scripts/electron-smoke.mjs [可执行文件路径，默认 node_modules 中的 electron + 当前目录]
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -26,5 +26,5 @@ if (!line) {
 }
 const res = JSON.parse(line.slice(6));
 console.log(res, "截图：", shot);
-const ok = res.hasUi && res.status === 200 && res.magpie === 200 && res.magpieState === "running" && fs.existsSync(shot);
+const ok = res.hasUi && res.status === 200 && res.magpie === 404 && res.magpieState === "running" && fs.existsSync(shot);
 process.exit(ok ? 0 : 1);

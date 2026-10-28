@@ -25,6 +25,7 @@ async function body(req: http.IncomingMessage): Promise<any> {
 export async function mockOpenAI(opts: { models?: string[]; key?: string; reply?: (msgs: any[], model: string) => string } = {}) {
   const models = opts.models ?? ["mock-a", "mock-b"];
   const calls: Array<{ model: string; messages: any[]; auth?: string }> = [];
+  const stats = { aborted: 0 };
   const srv = await listen(async (req, res) => {
     if (opts.key && req.headers.authorization !== `Bearer ${opts.key}`) {
       res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "bad key" } }));
@@ -45,7 +46,12 @@ export async function mockOpenAI(opts: { models?: string[]; key?: string; reply?
       }
       res.writeHead(200, { "content-type": "text/event-stream" });
       const pieces = text.match(/.{1,4}/gsu) ?? [];
+      let gone = false;
+      res.on("close", () => {
+        if (!res.writableEnded) (gone = true), stats.aborted++;
+      });
       for (const p of pieces) {
+        if (gone) return;
         res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: p } }] })}\n\n`);
         await new Promise((r) => setTimeout(r, 2));
       }
@@ -55,7 +61,15 @@ export async function mockOpenAI(opts: { models?: string[]; key?: string; reply?
     }
     res.writeHead(404).end();
   });
-  return { ...srv, calls, models };
+  return {
+    ...srv,
+    calls,
+    models,
+    /** 流式回复中途被客户端断开的次数 */
+    get aborted() {
+      return stats.aborted;
+    },
+  };
 }
 
 /** 模拟 iLink：登录（wait→scaned→confirmed）、getupdates（队列）、sendmessage、getconfig、sendtyping、-14 */

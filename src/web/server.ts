@@ -3,11 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
-import type { App } from "../app.js";
+import { appVersion, type App } from "../app.js";
 import type { InboundEvent, OutboundOp, ReplySession } from "../core/types.js";
 import { findAppRoot } from "../magpie/supervisor.js";
-import { proxyHttp, proxyUpgrade, type ProxyTarget } from "./proxy.js";
 import { logger, mask } from "../log.js";
+import { ZOOMS, saveConfigFile } from "../config.js";
+import { normalizeLine } from "../modelflare.js";
+import { SseReply } from "./sse-reply.js";
 import { connectionFromPids } from "../agent/peer-guard.js";
 import type { ApprovalRow } from "../store/db.js";
 import { normalizeSettings } from "../agent/settings.js";
@@ -31,6 +33,7 @@ const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".json": "application/json",
+  ".woff2": "font/woff2",
 };
 
 function vendorFiles(): Record<string, string> {
@@ -102,6 +105,21 @@ class CollectReply implements ReplySession {
   }
 }
 
+/** 网页控制台对话：每个机器人一个固定会话 <botId>:web:console */
+function webEvent(botId: string, text: string): InboundEvent {
+  return {
+    id: crypto.randomUUID(),
+    channel: "web",
+    botId,
+    conversation: { kind: "dm", id: "console" },
+    sender: { id: "owner", name: "控制台" },
+    parts: [{ type: "text", text }],
+    replyHandle: {},
+    receivedAt: Date.now(),
+  };
+}
+const consoleConvId = (botId: string) => `${botId}:web:console`;
+
 function publicApproval(r: ApprovalRow) {
   const { payload, result, ...rest } = r;
   let questions: unknown = undefined;
@@ -132,14 +150,6 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     fs.writeFileSync(f, token, { mode: 0o600 });
     log.warn(`UI 监听在非回环地址 ${host}，访问需带令牌：见 ${f}（打开 /?token=<令牌> 一次即可）`);
   }
-
-  const target: ProxyTarget = {
-    webOrigin: () => app.magpie?.webOrigin ?? "http://127.0.0.1:9",
-    gatewayOrigin: () => (app.magpie ? `http://127.0.0.1:${app.magpie.gatewayPort}` : "http://127.0.0.1:9"),
-    cookie: () => (app.magpie ? `${app.magpie.cookieName}=${app.magpie.webKey}` : ""),
-    gatewayKey: () => app.magpie?.gatewayKey ?? "",
-    ready: () => !!app.magpie && app.magpie.state === "running",
-  };
 
   let boundPort = 0;
   const allowedHosts = () => new Set([`127.0.0.1:${boundPort}`, `localhost:${boundPort}`, `[::1]:${boundPort}`]);
@@ -183,11 +193,13 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     if (p === "/status" && m === "GET") {
       const mp = app.magpie;
       return send(res, 200, {
-        version: "0.1.0",
+        version: appVersion(),
         dataDir: cfg.dataDir,
-        magpie: mp
-          ? { mode: "managed", state: mp.state, lastError: mp.lastError, restarts: mp.restarts, gatewayPort: mp.gatewayPort, webPort: mp.webPort, binary: mp.binPath ?? null, providers: mp.listProviders().length }
-          : { mode: "external", state: "external", baseUrl: cfg.magpie.externalBaseUrl },
+        username: app.username,
+        desktop: !!app.desktop,
+        platform: process.platform,
+        // 诊断信息：内置网关只是实现细节，界面里只在"关于 → 诊断信息"展示
+        gateway: mp ? { mode: "managed", state: mp.state, lastError: mp.lastError, restarts: mp.restarts } : { mode: "external", state: "external" },
         notices: app.recentNotices,
       });
     }
@@ -198,17 +210,78 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         return send(res, 200, { models: [], error: (e as Error).message });
       }
     }
-    if (p === "/providers") {
-      if (!app.magpie) throw new HttpError(400, "外部模型端点模式下不管理服务商");
-      if (m === "GET") return send(res, 200, { providers: app.magpie.listProviders() });
-      if (m === "POST") {
+    if (p === "/modelflare" || p === "/modelflare/line") {
+      if (m === "GET" && p === "/modelflare") return send(res, 200, app.modelflareStatus());
+      if (m !== "GET" && !app.magpie) throw new HttpError(409, "外部模型端点模式下不管理 Modelflare 连接");
+    }
+    if (p === "/modelflare") {
+      if (m === "PUT") {
         const b = await readJson(req);
-        if (!b.apiKey && !b.url) throw new HttpError(400, "缺少 apiKey");
-        const id = b.url
-          ? await app.magpie.addCustomProvider(String(b.name || "custom"), String(b.url), String(b.apiKey || ""), String(b.models || "").split(",").map((s: string) => s.trim()).filter(Boolean))
-          : await app.magpie.addPresetProvider(String(b.preset), String(b.apiKey));
-        return send(res, 200, { id });
+        const apiKey = String(b.apiKey ?? "").trim();
+        if (!apiKey) throw new HttpError(400, "缺少 API Key");
+        const r = await app.connectModelflare(apiKey, normalizeLine(b.line ?? cfg.modelflare.line));
+        if (!r.ok) return send(res, 400, { error: r.message, code: r.code, status: r.status, suggestLine: r.suggestLine });
+        return send(res, 200, { ...app.modelflareStatus(), models: r.models });
       }
+      if (m === "DELETE") {
+        await app.disconnectModelflare();
+        return send(res, 200, app.modelflareStatus());
+      }
+    }
+    if (p === "/modelflare/line" && m === "PUT") {
+      const b = await readJson(req);
+      await app.setModelflareLine(normalizeLine(b.line));
+      return send(res, 200, app.modelflareStatus());
+    }
+    if (p === "/settings") {
+      if (m === "PUT") {
+        const b = await readJson(req);
+        if (b.defaultModel !== undefined) app.setDefaultModel(String(b.defaultModel));
+        if (b.closeToTray !== undefined) {
+          cfg.ui.closeToTray = !!b.closeToTray;
+          saveConfigFile(cfg.dataDir, (f) => (f.ui = { ...(f.ui ?? {}), closeToTray: cfg.ui.closeToTray }));
+        }
+        if (b.zoom !== undefined) {
+          const z = Number(b.zoom);
+          if (!ZOOMS.includes(z)) throw new HttpError(400, "不支持的缩放比例");
+          cfg.ui.zoom = z;
+          saveConfigFile(cfg.dataDir, (f) => (f.ui = { ...(f.ui ?? {}), zoom: z }));
+          app.desktop?.applyZoom(z);
+        }
+        if (b.autostart !== undefined) {
+          if (!app.desktop?.autostart().supported) throw new HttpError(400, "当前环境不支持开机自启");
+          app.desktop.setAutostart(!!b.autostart);
+        }
+      } else if (m !== "GET") throw new HttpError(405, "method not allowed");
+      return send(res, 200, {
+        defaultModel: cfg.llm.defaultModel,
+        closeToTray: cfg.ui.closeToTray,
+        zoom: cfg.ui.zoom,
+        autostart: app.desktop ? app.desktop.autostart() : { supported: false, on: false },
+        desktop: !!app.desktop,
+        listen: { host, port: boundPort, tokenRequired: !!token },
+        dataDir: cfg.dataDir,
+      });
+    }
+    if (p === "/notices" && m === "GET") {
+      const read = (f: string) => {
+        try {
+          return fs.readFileSync(path.join(findAppRoot(), f), "utf8");
+        } catch {
+          return "";
+        }
+      };
+      return send(res, 200, { license: read("LICENSE"), notices: read("THIRD_PARTY_NOTICES.md") });
+    }
+    if (p === "/desktop/open-data-dir" && m === "POST") {
+      if (!app.desktop) throw new HttpError(400, "仅桌面版可用");
+      app.desktop.openDataDir();
+      return send(res, 200, { ok: true });
+    }
+    if (p === "/desktop/open-in-browser" && m === "POST") {
+      if (!app.desktop) throw new HttpError(400, "仅桌面版可用");
+      app.desktop.openInBrowser();
+      return send(res, 200, { ok: true });
     }
     if (p === "/agent" && m === "GET") return send(res, 200, app.agent.status());
     if (seg[0] === "approvals") {
@@ -369,25 +442,57 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         await app.weixinLogout(id);
         return send(res, 200, app.channelStatus(id));
       }
+      if (sub === "chat" && m === "GET") {
+        const conv = app.store.getConversation(consoleConvId(id));
+        return send(res, 200, {
+          conversationId: consoleConvId(id),
+          model: conv?.model ?? "",
+          messages: conv ? app.store.listMessages(conv.id, 200) : [],
+          pending: app.store.listApprovals({ status: "pending", conversationId: consoleConvId(id), limit: 50 }).map(publicApproval),
+        });
+      }
+      if (sub === "chat/model" && m === "PUT") {
+        const b = await readJson(req);
+        const conv = app.store.ensureConversation(id, "web", "console", "控制台");
+        app.store.setConversationModel(conv.id, String(b.model ?? ""));
+        return send(res, 200, { conversationId: conv.id, model: String(b.model ?? "") });
+      }
       if (sub === "chat" && m === "POST") {
         const b = await readJson(req);
         const text = String(b.text ?? "").trim();
         if (!text) throw new HttpError(400, "内容为空");
-        const ev: InboundEvent = {
-          id: crypto.randomUUID(),
-          channel: "web",
-          botId: id,
-          conversation: { kind: "dm", id: "console" },
-          sender: { id: "owner", name: "控制台" },
-          parts: [{ type: "text", text }],
-          replyHandle: {},
-          receivedAt: Date.now(),
-        };
+        const ev = webEvent(id, text);
         const intercepted = app.runtime.interceptReply(ev);
         if (intercepted.handled) return send(res, 200, { reply: intercepted.ack ?? "", prompts: [] });
         const out = new CollectReply();
         await app.queue.run(`web:${id}:console`, () => app.runtime.handle(ev, out));
-        return send(res, 200, { reply: out.text, prompts: out.prompts, files: out.files });
+        return send(res, 200, { reply: out.text, prompts: out.prompts, files: out.files, conversationId: consoleConvId(id) });
+      }
+      if (sub === "chat/stream" && m === "POST") {
+        const b = await readJson(req);
+        const text = String(b.text ?? "").trim();
+        if (!text) throw new HttpError(400, "内容为空");
+        const ev = webEvent(id, text);
+        const out = new SseReply(res);
+        const ac = new AbortController();
+        res.on("close", () => {
+          if (!res.writableEnded) ac.abort();
+        });
+        try {
+          const intercepted = app.runtime.interceptReply(ev);
+          if (intercepted.handled) {
+            if (intercepted.ack) out.send("text", { text: intercepted.ack, final: true, ack: true });
+            return out.end("done", { conversationId: consoleConvId(id) });
+          }
+          await app.queue.run(`web:${id}:console`, async () => {
+            if (!ac.signal.aborted) await app.runtime.handle(ev, out, { signal: ac.signal });
+          });
+          out.end("done", { conversationId: consoleConvId(id) });
+        } catch (e) {
+          log.warn("web chat failed", { message: (e as Error).message.slice(0, 300) });
+          out.end("error", { message: (e as Error).message });
+        }
+        return;
       }
     }
     throw new HttpError(404, "not found");
@@ -423,15 +528,10 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       return serveFile(res, f);
     }
     if (url.pathname === "/amb/healthz") return send(res, 200, { ok: true });
-    // 其余路径全部交给 magpie（/magpie/* 以及 magpie 前端用到的绝对路径）
-    proxyHttp(req, res, target);
+    // 不再反代内置网关的界面或 /v1：网关只供本进程内部调用
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("not found");
   });
-  server.on("upgrade", (req, socket, head) => {
-    const url = new URL(req.url || "/", "http://localhost");
-    const fake = { writeHead: () => ({ end: () => socket.destroy() }), end: () => socket.destroy() } as unknown as http.ServerResponse;
-    if (!authorized(req, url, fake)) return;
-    proxyUpgrade(req, socket, head, target);
-  });
+  server.on("upgrade", (_req, socket) => socket.end("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
 
   const port = opts.port ?? cfg.ui.port;
   const listen = (p: number) =>

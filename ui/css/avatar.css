@@ -1,0 +1,59 @@
+/* Bot faces: static when idle (a quiet list); look-at, blink, bob and darting eyes only while working. */
+.bot-face {
+  --look-x: 0;
+  --look-y: 0;
+  --face: hsl(var(--bot-hue, 240) 46% 78%);
+  --face-ink: hsl(var(--bot-hue, 240) 40% 22%);
+  --eye-white: #f8f8fc;
+  border-radius: 50%; flex: none; position: relative; perspective: 120px;
+}
+:root[data-theme="dark"] .bot-face {
+  --face: hsl(var(--bot-hue, 240) 34% 38%);
+  --face-ink: hsl(var(--bot-hue, 240) 60% 88%);
+  --eye-white: #1c1c28;
+}
+.bot-face-3d { width: 100%; height: 100%; border-radius: 50%; }
+.bot-face svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.bot-head { fill: var(--face); stroke: color-mix(in srgb, var(--face-ink) 18%, transparent); stroke-width: 1; }
+.bot-eye-white { fill: var(--eye-white); transform-box: fill-box; transform-origin: center; }
+.bot-pupils { transform-box: view-box; transform-origin: center; }
+.bot-pupil { fill: var(--face-ink); }
+.bot-mouth { stroke: var(--face-ink); stroke-width: 1.4; transition: opacity .2s ease; }
+.bot-mouth-idle { fill: none; }
+.bot-mouth-work { fill: var(--face-ink); stroke: none; opacity: 0; }
+
+.bot-face.is-working .bot-mouth-idle { opacity: 0; }
+.bot-face.is-working .bot-mouth-work { opacity: 1; }
+.bot-face.is-working { animation: bot-bob 1.6s ease-in-out infinite; }
+.bot-face.is-working .bot-face-3d {
+  transform-style: preserve-3d;
+  transform: translateX(calc(var(--look-x) * 1.6px)) rotateY(calc(var(--look-x) * 18deg)) rotateX(calc(var(--look-y) * -10deg - 4deg));
+  transition: transform .14s ease-out;
+}
+.bot-face.is-working .bot-eye-white { animation: bot-eye-blink 2.4s calc(var(--bot-hue, 0) * 7ms) ease-in-out infinite; }
+.bot-face.is-working .bot-pupils { animation: bot-dart 2.8s ease-in-out infinite; }
+@keyframes bot-eye-blink {
+  0%, 41%, 47%, 100% { transform: scaleY(1); }
+  44% { transform: scaleY(0.08); }
+}
+@keyframes bot-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+}
+@keyframes bot-dart {
+  0%, 100% { transform: translate(calc(var(--look-x) * 2.4px), calc(var(--look-y) * 2.2px)); }
+  22% { transform: translate(calc(var(--look-x) * 2.4px + 1.4px), calc(var(--look-y) * 2.2px - 0.6px)); }
+  48% { transform: translate(calc(var(--look-x) * 2.4px - 1.2px), calc(var(--look-y) * 2.2px + 0.4px)); }
+  70% { transform: translate(calc(var(--look-x) * 2.4px + 0.4px), calc(var(--look-y) * 2.2px + 1px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bot-face.is-working, .bot-face.is-working .bot-eye-white, .bot-face.is-working .bot-pupils { animation: none !important; }
+  .bot-face.is-working .bot-face-3d { transition: none; transform: none; }
+}
+
+/* the app's own mark (not Modelflare's or anyone else's logo) */
+.app-mark {
+  display: grid; place-items: center; flex: none; border-radius: 30%;
+  background: var(--accent-solid); color: var(--on-accent); box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.app-mark svg { width: 56%; height: 56%; }

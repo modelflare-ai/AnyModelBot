@@ -5,6 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../log.js";
+import { MODELFLARE_PROVIDER, keyTail } from "../modelflare.js";
 
 const log = logger("magpie");
 
@@ -359,43 +360,71 @@ export class MagpieSupervisor {
     this.state = "stopped";
   }
 
-  // ---------- 服务商管理（首次设置 / UI） ----------
-  async addPresetProvider(preset: string, apiKey: string): Promise<string> {
-    if (!/^[a-z0-9-]+$/.test(preset)) throw new Error("invalid preset id");
-    // 先用占位 key 创建，再通过 stdin 设置真实 key，避免密钥出现在进程参数里
-    const add = await this.runCli(["provider", "add", preset, "placeholder-key"]);
-    if (add.code !== 0) throw new Error(`provider add failed: ${(add.stderr || add.stdout).trim().slice(0, 300)}`);
-    const id = await this.findProviderId(preset);
-    await this.setProviderKey(id, apiKey);
-    return id;
-  }
-
-  async addCustomProvider(name: string, url: string, apiKey: string, models: string[]): Promise<string> {
-    const args = ["provider", "add", name, `url=${url}`, "key=placeholder-key"];
-    if (models.length) args.push(`models=${models.join(",")}`);
-    const add = await this.runCli(args);
-    if (add.code !== 0) throw new Error(`provider add failed: ${(add.stderr || add.stdout).trim().slice(0, 300)}`);
-    const id = await this.findProviderId(name);
-    if (apiKey) await this.setProviderKey(id, apiKey);
-    return id;
-  }
-
+  // ---------- Modelflare（唯一的服务商；界面里不出现"服务商"概念） ----------
   /**
-   * 设置服务商 API Key。magpie CLI 只接受命令行参数形式的 key（会出现在进程列表里），
-   * 所以改走 magpie 自己界面使用的 POST /api/provider/save（key 在请求体里，仅回环、带 web key）。
+   * 连接 Modelflare：没有就以占位 key 创建固定 id 的 provider，再经 /api/provider/save 写入地址与真实 key
+   * （key 不出现在进程参数里）。重复连接 = 覆盖。baseUrl 必须是白名单里的地址。
    */
-  async setProviderKey(id: string, apiKey: string): Promise<void> {
-    if (this.state !== "running") throw new Error("magpie 未运行，无法保存 API Key");
+  async connectModelflare(apiKey: string, baseUrl: string, allowed: string[]): Promise<void> {
+    if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
+    if (!apiKey.trim()) throw new Error("缺少 API Key");
+    let id = this.modelflareId();
+    if (!id) {
+      const add = await this.runCli(["provider", "add", "Modelflare", `id=${MODELFLARE_PROVIDER}`, `url=${baseUrl}`, "key=placeholder-key"]);
+      if (add.code !== 0) throw new Error(`创建 Modelflare 连接失败：${(add.stderr || add.stdout).trim().slice(0, 300)}`);
+      id = this.modelflareId() ?? (await this.findProviderId(MODELFLARE_PROVIDER));
+    }
+    await this.saveProvider(id, { chat: baseUrl, key: apiKey.trim() });
+  }
+
+  /** 切换线路：只改地址，key 不变 */
+  async setModelflareUrl(baseUrl: string, allowed: string[]): Promise<void> {
+    if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
+    const id = this.modelflareId();
+    if (!id) return;
+    await this.saveProvider(id, { chat: baseUrl });
+  }
+
+  async disconnectModelflare(): Promise<void> {
+    const id = this.modelflareId();
+    if (!id) return;
+    if (this.state !== "running") throw new Error("模型网关未运行，稍后再试");
+    const res = await fetch(`${this.webOrigin}/api/provider/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `${this.cookieName}=${this.webKey}`, origin: this.webOrigin },
+      body: JSON.stringify({ id }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`断开失败：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+
+  /** 当前 Modelflare 连接（只回传尾号，不外传 key） */
+  modelflareInfo(): { connected: boolean; keyTail: string; baseUrl: string } {
+    const id = this.modelflareId();
+    const p = id ? this.readProviderRaw(id) : undefined;
+    const key = String(p?.key ?? "");
+    const connected = !!key && key !== "placeholder-key";
+    return { connected, keyTail: connected ? keyTail(key) : "", baseUrl: String(p?.chat ?? "") };
+  }
+
+  private modelflareId(): string | undefined {
+    const hit = this.listProviders().find((p) => p.id.toLowerCase() === MODELFLARE_PROVIDER || p.name.toLowerCase() === MODELFLARE_PROVIDER);
+    return hit?.id;
+  }
+
+  private async saveProvider(id: string, patch: Record<string, string>): Promise<void> {
+    if (this.state !== "running") throw new Error("模型网关未运行，稍后再试");
     const p = this.readProviderRaw(id);
     if (!p) throw new Error(`provider ${id} not found`);
     const res = await fetch(`${this.webOrigin}/api/provider/save`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie: `${this.cookieName}=${this.webKey}`, origin: this.webOrigin },
-      body: JSON.stringify({ ...p, key: apiKey, from: id }),
+      body: JSON.stringify({ ...p, ...patch, from: id }),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) throw new Error(`保存 API Key 失败：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
-    if (this.readProviderRaw(id)?.key !== apiKey) throw new Error("保存 API Key 后校验失败");
+    if (!res.ok) throw new Error(`保存失败：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    const saved = this.readProviderRaw(id);
+    for (const [k, v] of Object.entries(patch)) if (saved?.[k] !== v) throw new Error("保存后校验失败");
   }
 
   private readProviderRaw(id: string): Record<string, unknown> | undefined {

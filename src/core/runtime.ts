@@ -47,11 +47,12 @@ export class BotRuntime {
     const m = convModel || botModel || this.opts.defaultModel();
     if (m) return m;
     const list = await this.listModels();
-    if (!list.length) throw new Error("没有可用模型：请先在「模型」页（magpie）添加服务商并配置 API Key");
+    if (!list.length) throw new Error("没有可用模型：请先连接 Modelflare（设置 → Modelflare）");
     return list[0];
   }
 
-  async handle(ev: InboundEvent, out: ReplySession): Promise<void> {
+  /** signal：网页"停止"按钮；纯对话路径会中止模型请求并保留已生成的部分（代理回合无法中途打断，会在后台跑完） */
+  async handle(ev: InboundEvent, out: ReplySession, opts: { signal?: AbortSignal } = {}): Promise<void> {
     const { store } = this.opts;
     const bot = store.getBot(ev.botId);
     if (!bot) throw new Error(`unknown bot ${ev.botId}`);
@@ -89,7 +90,7 @@ export class BotRuntime {
     await out.apply({ type: "stream.start" });
     let acc = "";
     try {
-      const full = await this.opts.models.streamChat({ model, messages }, (delta) => {
+      const full = await this.opts.models.streamChat({ model, messages, signal: opts.signal }, (delta) => {
         acc += delta;
         void out.apply({ type: "stream.update", text: acc });
       });
@@ -98,6 +99,11 @@ export class BotRuntime {
       await out.apply({ type: "stream.finish", text: finalText });
     } catch (e) {
       const err = e as Error & { status?: number };
+      if (opts.signal?.aborted) {
+        if (acc) store.addMessage(conv.id, "assistant", acc);
+        await out.apply({ type: "stream.finish", text: acc });
+        return;
+      }
       log.warn("model call failed", { model, status: err.status, message: err.message });
       const msg = acc ? `${acc}\n\n⚠️ 生成中断：${err.message}` : `⚠️ 模型调用失败（${model}）：${err.message}`;
       await out.apply({ type: "stream.finish", text: msg });
@@ -223,7 +229,7 @@ export class BotRuntime {
         }
         if (!arg) {
           const cur = convModel || botModel || this.opts.defaultModel();
-          if (!list.length) return "暂无可用模型，请先在「模型」页添加服务商。";
+          if (!list.length) return "暂无可用模型：请先连接 Modelflare（设置 → Modelflare）。";
           return ["可用模型（回复 /model 编号 切换）：", ...list.map((m, i) => `${i + 1}. ${m}${m === cur ? "  ← 当前" : ""}`)].join("\n");
         }
         if (arg === "default" || arg === "reset") {

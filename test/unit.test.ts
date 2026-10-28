@@ -14,8 +14,9 @@ import { FeishuReply } from "../src/channels/feishu/card.js";
 import { feishuParts } from "../src/channels/feishu/channel.js";
 import { redactValue, mask } from "../src/log.js";
 import { loadConfig } from "../src/config.js";
-import { isBlockedPath } from "../src/web/proxy.js";
-import { FakeFeishu, feishuEvent, mockOpenAI } from "./helpers.js";
+import { verifyModelflareKey, modelflareBaseUrl, normalizeLine, keyTail, MODELFLARE_LINES } from "../src/modelflare.js";
+import { saveConfigFile } from "../src/config.js";
+import { FakeFeishu, feishuEvent, listen, mockOpenAI } from "./helpers.js";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "amb-unit-"));
 
@@ -217,10 +218,6 @@ describe("安全", () => {
     expect(out).toContain('"name":"ok"');
     expect(mask("1234567890")).toBe("****7890");
   });
-  it("代理拒绝 agent 改写 / 账号复用 / 自更新接口（含编码绕过）", () => {
-    for (const p of ["/api/agents/connect/claude", "/magpie/api/agents/", "/api/accounts/authorize", "/api/%61gents/connect/codex", "//api//agents/x", "/api/agent-models/codex", "/api/update", "/API/Agents"]) expect(isBlockedPath(p), p).toBe(true);
-    for (const p of ["/api/gateway/trace", "/magpie/", "/v1/models", "/api/state", "/icons/x.svg"]) expect(isBlockedPath(p), p).toBe(false);
-  });
   it("配置：环境变量优先，AMB_UI_PORT=0 合法", () => {
     const dir = tmp();
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ ui: { port: 4000 }, llm: { defaultModel: "f" } }));
@@ -228,5 +225,67 @@ describe("安全", () => {
     expect(c.ui.port).toBe(0);
     expect(c.llm.defaultModel).toBe("f");
     expect(c.magpie.mode).toBe("external");
+  });
+});
+
+describe("Modelflare", () => {
+  it("线路：白名单两条，auto=国际；测试覆盖变量优先", () => {
+    expect(modelflareBaseUrl("auto", {})).toBe("https://modelflare.dev/v1");
+    expect(modelflareBaseUrl("global", {})).toBe(MODELFLARE_LINES.global);
+    expect(modelflareBaseUrl("cn", {})).toBe("https://origin.modelflare.dev/v1");
+    expect(modelflareBaseUrl("cn", { AMB_MODELFLARE_BASE_URL: "http://127.0.0.1:9/v1/" })).toBe("http://127.0.0.1:9/v1");
+    expect(normalizeLine("cn")).toBe("cn");
+    expect(normalizeLine("https://evil.example")).toBe("auto");
+    expect(keyTail("mf-abcdef1234")).toBe("1234");
+    expect(keyTail("abc")).toBe("");
+  });
+  it("校验密钥：200 列出模型；401/403/429/5xx/坏响应/连不上分别给出可操作的结果", async () => {
+    let status = 200;
+    let body = JSON.stringify({ data: [{ id: "b" }, { id: "a" }] });
+    const auth: string[] = [];
+    const srv = await listen((req, res) => {
+      auth.push(String(req.headers.authorization));
+      res.writeHead(status, { "content-type": "application/json", ...(status === 429 ? { "retry-after": "7" } : {}) }).end(body);
+    });
+    try {
+      const base = srv.url + "/v1";
+      expect(await verifyModelflareKey(base, "k1")).toEqual({ ok: true, models: ["a", "b"] });
+      expect(auth.at(-1)).toBe("Bearer k1");
+      body = JSON.stringify({ data: [] });
+      expect(await verifyModelflareKey(base, "k1")).toEqual({ ok: true, models: [] });
+      status = 401;
+      expect(await verifyModelflareKey(base, "k")).toMatchObject({ ok: false, code: "invalid_key", status: 401 });
+      status = 403;
+      expect(await verifyModelflareKey(base, "k")).toMatchObject({ ok: false, code: "forbidden" });
+      status = 429;
+      expect(await verifyModelflareKey(base, "k")).toMatchObject({ ok: false, code: "rate_limited", message: expect.stringContaining("7 秒") });
+      status = 502;
+      expect(await verifyModelflareKey(base, "k")).toMatchObject({ ok: false, code: "upstream", status: 502 });
+      status = 200;
+      body = "<html>";
+      expect(await verifyModelflareKey(base, "k")).toMatchObject({ ok: false, code: "bad_response" });
+    } finally {
+      await srv.close();
+    }
+    const down = await verifyModelflareKey("http://127.0.0.1:9/v1", "k", { line: "auto" });
+    expect(down).toMatchObject({ ok: false, code: "network", suggestLine: "cn" });
+    expect(await verifyModelflareKey("http://127.0.0.1:9/v1", "k", { line: "cn" })).not.toHaveProperty("suggestLine");
+  });
+  it("配置写回：只改给出的键，其余保留；读取时规范化", () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ ui: { port: 4000 }, llm: { defaultModel: "f" } }));
+    saveConfigFile(dir, (f) => (f.modelflare = { line: "cn" }));
+    saveConfigFile(dir, (f) => (f.ui = { ...f.ui, zoom: 1.25, closeToTray: false }));
+    const c = loadConfig({ dataDir: dir, env: {} });
+    expect(c.ui.port).toBe(4000);
+    expect(c.llm.defaultModel).toBe("f");
+    expect(c.modelflare.line).toBe("cn");
+    expect(c.ui.zoom).toBe(1.25);
+    expect(c.ui.closeToTray).toBe(false);
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ ui: { zoom: 3 }, modelflare: { line: "x" } }));
+    const d = loadConfig({ dataDir: dir, env: {} });
+    expect(d.ui.zoom).toBe(1);
+    expect(d.ui.closeToTray).toBe(true);
+    expect(d.modelflare.line).toBe("auto");
   });
 });

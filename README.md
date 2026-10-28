@@ -1,7 +1,8 @@
-# anymodel bot
+# AnyModelBot
 
 任意模型的个人 AI 助手：一个机器人 = 人设 + 默认模型 + 渠道（飞书 / 微信）。
-模型调用全部经过**内置的 [magpie](https://github.com/yetone/magpie) 模型网关**（OpenAI 兼容 `/v1`），在管理界面里加服务商、切模型、看用量。
+模型来自 **[Modelflare](https://modelflare.dev)**：首次启动粘贴一个 Modelflare API Key，GPT、Claude、Grok、Gemini 等模型自动列出。
+请求经过内置的 [magpie](https://github.com/yetone/magpie) 网关转发（实现细节，界面里不出现）。
 
 - 飞书：官方机器人，长连接（WSClient）接收事件，CardKit 流式卡片回复
 - 微信：官方 iLink 通道（移植自 Tencent/openclaw-weixin），扫码登录
@@ -18,11 +19,12 @@ src/
   magpie/      内置 magpie 守护：隔离目录、空闲端口、自动生成密钥、健康检查、崩溃重启、干净退出
   channels/    feishu/（长连接 + CardKit）  weixin/（iLink，MIT 声明见 LICENSE.openclaw-weixin）
   store/       SQLite（node:sqlite，无需原生编译）
-  web/         管理界面服务 + /magpie/ 反向代理
+  modelflare.ts  Modelflare 线路与密钥校验（GET /v1/models）
+  web/         管理界面服务（JSON API + 流式对话 SSE）
   cli/         init 首次设置向导、weixin-login
   main.ts      命令行入口
 electron/      桌面版主进程（启动器 + 托盘）
-ui/            管理界面（Preact + htm，无构建步骤）
+ui/            管理界面（Preact + htm，无构建步骤）：tokens.css、css/、lib/、components/、screens/、main.js
 scripts/       setup / build-magpie / fetch-cua-driver / electron-smoke
 vendor/magpie  magpie 源码（git 子模块，构建时编译）
 ```
@@ -34,8 +36,8 @@ vendor/magpie  magpie 源码（git 子模块，构建时编译）
 ```bash
 npm install
 npm run setup        # 拉取 vendor/magpie 子模块并编译到 build/bin/
-npm run init         # 可选：首次设置向导（模型服务商 Key、飞书凭据）
-npm start            # 启动全部：magpie + 机器人 + 管理界面 http://127.0.0.1:3600/
+npm run init         # 可选：终端里的首次设置（Modelflare API Key、飞书凭据）
+npm start            # 启动全部：内置网关 + 机器人 + 管理界面 http://127.0.0.1:3600/
 ```
 
 数据默认在 `./data`（`AMB_DATA_DIR` 可改）。其余环境变量见 `.env.example`。
@@ -50,7 +52,8 @@ npm run dist:linux | dist:mac | dist:win
 ```
 
 - 数据目录：`<userData>/data`（macOS `~/Library/Application Support/anymodel bot/data`，Windows `%APPDATA%\anymodel bot\data`，Linux `~/.config/anymodel bot/data`）
-- 单实例；关闭窗口隐藏到托盘；托盘菜单：打开 / 在浏览器中打开 / 开机自启（macOS、Windows）/ 打开数据目录 / 退出
+- 单实例；关闭窗口默认隐藏到托盘（设置 → 常规 可改为退出）；托盘菜单：打开 / 在浏览器中打开 / 开机自启（macOS、Windows）/ 打开数据目录 / 退出
+- macOS 下窗口无标题栏，红绿灯嵌在侧栏顶部；窗口最小宽度 860
 - 界面只监听 127.0.0.1，且每次启动生成随机访问令牌，其他本机程序无法直接调用管理接口
 - 退出时先停渠道、再停 magpie；若上次被强杀残留 magpie 进程，下次启动会自动清理（Linux/macOS）
 
@@ -63,18 +66,28 @@ docker run -d --name amb -p 3600:3600 -v amb-data:/data anymodel-bot
 docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令牌>
 ```
 
-容器内界面监听 0.0.0.0，因此强制令牌访问。微信扫码在界面「渠道」页完成。
+容器内界面监听 0.0.0.0，因此强制令牌访问。微信扫码在对话页的信息面板（点顶部机器人名称）→「渠道」里完成。
 
-## 模型（内置 magpie）
+## 模型（Modelflare）
 
-- 管理界面「概览」可快速添加预设服务商（DeepSeek、OpenAI、Anthropic、Kimi、通义等）；「模型」页内嵌 magpie 完整界面（自定义端点、路由、用量）。
-- 对话中发送 `/model` 查看可用模型，`/model <名称>` 为当前会话切换模型；`/reset` 清空上下文。
-- 隔离与安全：magpie 使用本程序数据目录内独立的 HOME/配置目录；**不读取**你电脑上已有的 Claude/Codex 等订阅凭据，**不改写**任何 agent 配置，关闭自动更新与账户发现；界面代理还会拦截 magpie 的 agent 接入、账户、更新等接口。
-- API Key 只保存在 magpie 的隔离配置中，不经过命令行参数、不写日志。
+- 首次启动只有一个页面：粘贴 Modelflare API Key → 校验（`GET https://modelflare.dev/v1/models`）→ 选默认模型 → 开始对话。还没有 Key 可去 [Modelflare](https://modelflare.dev) 控制台创建。
+- 线路：默认国际线路 `https://modelflare.dev/v1`；中国大陆可在「高级」或 设置 → Modelflare → 线路 选「中国大陆优化」（`https://origin.modelflare.dev/v1`）。线路由你选定，不自动切换。
+- 设置 → Modelflare：查看连接状态（只显示 Key 尾号）、更换密钥、断开（机器人与会话保留，断开后回到首次连接页）、默认模型、刷新模型列表；用量与账单以 Modelflare 控制台为准。
+- 对话中输入框右侧的模型按钮可为当前会话切换模型（也可设为机器人默认）；`/model`、`/reset`、`/new`、`/status`、`/help` 照常可用。
+- 内置网关：magpie 以 `--gateway` 模式运行，使用本程序数据目录内独立的 HOME/配置目录；**不读取**你电脑上已有的 Claude/Codex 等订阅凭据，**不改写**任何 agent 配置，关闭自动更新与账户发现。它只供本进程内部调用，界面不再反代它的页面或 `/v1`。
+- API Key 只保存在内置网关的隔离配置中，不经过命令行参数、不写日志，前端只拿到尾号。
+- 开发/测试：设置 `AMB_MAGPIE_BASE_URL` 可直接使用一个 OpenAI 兼容端点（不启动内置网关，界面视为已连接）；`AMB_MODELFLARE_BASE_URL` 可把 Modelflare 基址指向本地 mock。
+
+## 界面
+
+- 侧栏：机器人列表（头像 + 名称 + 最近一条消息），＋ 新建，右键 重命名 / 删除；左下角账户按钮打开设置（`⌘/Ctrl+,`）。
+- 对话页：顶部悬浮的机器人名称胶囊打开信息面板（`⌘/Ctrl+⇧+I`：渠道、待审批、记忆、最近会话，⚙ 进机器人设置）；回复流式显示（Markdown、代码块一键复制），可随时停止（`Esc`）；审批与提问以卡片形式出现在对话里；向上翻阅时不会被拉回底部。
+- 命令面板 `⌘/Ctrl+K`；外观（跟随系统 / 浅色 / 深色）在 设置 → 常规。
+- 视觉：中性色与组件改编自 magpie 的界面（MIT），强调色为 Modelflare 荧光黄绿 `#d7ff00`。
 
 ## 电脑操作（Computer Use）
 
-每个机器人可在「机器人 → 设置 → 电脑操作」中开关、选择后端和审批方式；`/status` 与设置页会显示当前后端、是否可用及原因。
+每个机器人可在 机器人设置（信息面板的 ⚙）→ 电脑操作 中开关、选择后端和审批方式；`/status` 与设置页会显示当前后端、是否可用及原因。
 
 - **后端**
   - **Cua Driver（默认，三平台）**：随安装包附带官方预编译的 [cua-driver](https://github.com/trycua/cua/tree/main/libs/cua-driver) 0.37.0（MIT），构建时由 `scripts/fetch-cua-driver.mjs` 按平台/架构下载并校验 SHA256。作为内置 MCP 服务器 `cua-driver mcp` 运行，始终使用 `CUA_DRIVER_PERMISSION_MODE=bounded` + 能力清单，**从不**使用 `--dangerously-bypass-approvals`；子进程环境经过清理，不传任何密钥，关闭遥测，禁用 `run_script`。只开放所需的 24 个工具（读取窗口/截图、启动应用、点击、输入、按键、组合键、滚动、拖拽、设值、菜单等），其余工具（脚本、结束进程、剪贴板、浏览器注入、录制、更新等）对模型不可见且会被拒绝。清单列出本机已安装的图形应用（Linux 读 .desktop、macOS 读 /Applications、Windows 读开始菜单），并允许整屏输入；清单最长 24 小时有效，到期前自动重启驱动。
@@ -94,7 +107,7 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
    - `im:message.p2p_msg:readonly`（读取用户发给机器人的单聊消息）
    - `im:message:send_as_bot`（以应用身份发消息）
    - `cardkit:card:write`（创建与更新卡片，用于流式回复）
-3. 先在本程序界面「渠道」页填入 App ID / App Secret 并启用（长连接需要程序在线才能保存下一步）。
+3. 先在本程序信息面板的「渠道 → 飞书」里填入 App ID / App Secret 并保存（长连接需要程序在线才能保存下一步）。
 4. 事件与回调 → 订阅方式选「**使用长连接接收事件**」，添加事件 `im.message.receive_v1`。
 5. 发布版本并在可用范围内添加自己，然后在飞书里私聊机器人。
 
@@ -102,7 +115,7 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 
 ## 微信（iLink）
 
-- 界面「渠道」页 → 微信 → 「扫码登录」，用微信扫描二维码并确认；或命令行 `npm run weixin:login`（终端显示二维码，同时保存 PNG 到数据目录）。
+- 信息面板「渠道」→ 微信 → 「扫码登录」，用微信扫描二维码并确认；或命令行 `npm run weixin:login`（终端显示二维码，同时保存 PNG 到数据目录）。
 - 登录态、同步游标、context_token 保存在数据目录，重启后自动续用。
 - 平台限制：用户每发来一条消息后 24 小时内最多可回复 10 条；回复在生成结束后一次发出，超过 4000 字自动分段；生成期间显示“正在输入”。
 - 登录过期（错误码 -14）时自动暂停并在界面提示，重新扫码即可。
@@ -111,9 +124,9 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 
 ```bash
 npm run typecheck
-npm test            # 单元测试 + 离线端到端（模拟飞书/iLink/OpenAI）+ magpie 集成测试（需已编译 magpie）
+npm test            # 单元测试 + 离线端到端（模拟飞书/iLink/Modelflare，含流式对话与停止）+ 内置网关集成测试（需已编译 magpie）
 ```
 
 ## 许可
 
-MIT，见 `LICENSE`；第三方组件（magpie MIT、Tencent openclaw-weixin MIT 等）见 `THIRD_PARTY_NOTICES.md`。
+MIT，见 `LICENSE`；第三方组件（magpie MIT——含界面样式改编、Tencent openclaw-weixin MIT 等）见 `THIRD_PARTY_NOTICES.md`，也可在 设置 → 关于 中查看。

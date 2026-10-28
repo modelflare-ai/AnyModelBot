@@ -1,6 +1,6 @@
 /**
  * 首次设置向导（终端版；界面里也能完成同样的设置）：
- * 1. 模型服务商 + API Key → 写入内置 magpie 的隔离配置（key 经 stdin 传给 magpie CLI）
+ * 1. Modelflare API Key → 先校验（GET /v1/models），再写入内置网关的隔离配置（key 不进命令行参数）
  * 2. 飞书 App ID / App Secret → 写入本程序数据库
  */
 import readline from "node:readline";
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
     await app.magpie?.stop();
     app.store.close();
   }
-  console.log("\n完成。运行 npm start 启动；微信请在管理界面「渠道」页扫码，或运行 npm run weixin:login。");
+  console.log("\n完成。运行 npm start 启动；微信请在管理界面的信息面板「渠道」里扫码，或运行 npm run weixin:login。");
 }
 
 async function setup(app: App, rl: ReturnType<typeof lineReader>, dataDir: string): Promise<void> {
@@ -63,13 +63,14 @@ async function setup(app: App, rl: ReturnType<typeof lineReader>, dataDir: strin
       throw new Error("找不到 magpie 可执行文件，请先运行：npm run setup");
     }
     await app.magpie.start();
-    const preset = (await rl.ask("模型服务商预设（如 deepseek / openai / anthropic / moonshot-cn / qwen-cn，留空跳过；运行 build/bin/magpie presets 查看全部）：")).trim();
-    if (preset) {
-      const key = await rl.ask(`${preset} API Key：`, true);
-      if (key) {
-        const id = await app.magpie.addPresetProvider(preset, key);
-        console.log(`✓ 已添加服务商 ${id}`);
-      }
+    const status = app.modelflareStatus();
+    const hint = status.connected ? `已连接（尾号 ${status.keyTail}），回车保留` : "留空跳过，稍后可在界面里连接";
+    const key = await rl.ask(`Modelflare API Key（${hint}）：`, true);
+    if (key) {
+      const line = (await rl.ask("线路：回车 = 国际（modelflare.dev），输入 cn = 中国大陆优化（origin.modelflare.dev）：")).trim() === "cn" ? "cn" : "auto";
+      const r = await app.connectModelflare(key, line);
+      if (!r.ok) throw new Error(r.message + (r.suggestLine === "cn" ? "（可重试并选择 cn 线路）" : ""));
+      console.log(`✓ 已连接 Modelflare，找到 ${r.models.length} 个模型`);
     }
   }
   const appId = (await rl.ask("飞书 App ID（cli_xxx，留空跳过）：")).trim();

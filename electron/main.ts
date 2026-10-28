@@ -3,7 +3,8 @@
  *  - 单实例锁；数据目录 = <userData>/data（可用 AMB_DATA_DIR 覆盖）
  *  - 在进程内启动 App（机器人运行时 + 渠道 + 管理界面 + 受管 magpie 子进程）
  *  - 窗口加载本机管理界面（每次启动生成随机令牌，其他本机程序/浏览器无法直接访问）
- *  - 托盘：显示 / 开机自启 / 退出；关闭窗口=隐藏到托盘；退出时干净关闭 magpie
+ *  - 托盘：显示 / 开机自启 / 退出；关闭窗口=隐藏到托盘（可在设置 → 常规里改为退出）；退出时干净关闭 magpie
+ *  - 设置页里的开机自启、缩放、打开数据目录经 core.desktop 回调到这里（同进程，无需 preload/IPC）
  * CLI（npm start）与 Docker 走同一套 src/ 代码，本文件只做桌面外壳。
  */
 import { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog } from "electron";
@@ -38,16 +39,21 @@ function showWindow(): void {
   win.focus();
 }
 
+const PRODUCT = "AnyModelBot";
+const canAutostart = process.platform === "darwin" || process.platform === "win32";
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1200,
     height: 820,
-    minWidth: 760,
+    minWidth: 860,
     minHeight: 520,
-    title: "anymodel bot",
+    title: PRODUCT,
     icon: iconPath(),
     show: !SMOKE,
     autoHideMenuBar: true,
+    // macOS：无标题栏，红绿灯嵌进侧栏顶部（界面在 Electron + Mac 下给它留位）；其他系统用系统标题栏
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 15 } } : {}),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   const origin = new URL(entryUrl).origin;
@@ -62,25 +68,28 @@ function createWindow(): void {
       if (/^https?:/i.test(url)) void shell.openExternal(url);
     }
   });
+  win.webContents.on("did-finish-load", () => win?.webContents.setZoomFactor(core?.config.ui.zoom ?? 1));
   win.on("close", (e) => {
-    if (!quitting && tray) {
+    if (!quitting && tray && core?.config.ui.closeToTray !== false) {
       e.preventDefault();
       win?.hide();
     }
   });
-  win.on("closed", () => (win = undefined));
+  win.on("closed", () => {
+    win = undefined;
+    if (!quitting && core?.config.ui.closeToTray === false) app.quit();
+  });
   void win.loadURL(entryUrl);
 }
 
 function buildTray(): void {
   const img = nativeImage.createFromPath(iconPath()).resize({ width: 18, height: 18 });
   tray = new Tray(img);
-  tray.setToolTip("anymodel bot");
-  const canAutostart = process.platform === "darwin" || process.platform === "win32";
+  tray.setToolTip(PRODUCT);
   const render = () =>
     tray!.setContextMenu(
       Menu.buildFromTemplate([
-        { label: "打开 anymodel bot", click: showWindow },
+        { label: `打开 ${PRODUCT}`, click: showWindow },
         { label: "在浏览器中打开", click: () => void shell.openExternal(entryUrl) },
         { type: "separator" },
         {
@@ -88,18 +97,22 @@ function buildTray(): void {
           type: "checkbox",
           enabled: canAutostart,
           checked: canAutostart && app.getLoginItemSettings().openAtLogin,
-          click: (item) => {
-            app.setLoginItemSettings({ openAtLogin: item.checked, args: ["--hidden"] });
-            render();
-          },
+          click: (item) => setAutostart(item.checked),
         },
         { label: "打开数据目录", click: () => void shell.openPath(core!.config.dataDir) },
         { type: "separator" },
         { label: "退出", click: () => app.quit() },
       ]),
     );
+  renderTray = render;
   render();
   tray.on("click", showWindow);
+}
+
+let renderTray: (() => void) | undefined;
+function setAutostart(on: boolean): void {
+  app.setLoginItemSettings({ openAtLogin: on, args: ["--hidden"] });
+  renderTray?.();
 }
 
 async function boot(): Promise<void> {
@@ -110,6 +123,13 @@ async function boot(): Promise<void> {
   config.ui.host = "127.0.0.1";
   if (!config.ui.token) config.ui.token = crypto.randomBytes(24).toString("base64url");
   core = new App(config);
+  core.desktop = {
+    autostart: () => ({ supported: canAutostart, on: canAutostart && app.getLoginItemSettings().openAtLogin }),
+    setAutostart,
+    applyZoom: (z) => win?.webContents.setZoomFactor(z),
+    openDataDir: () => void shell.openPath(config.dataDir),
+    openInBrowser: () => void shell.openExternal(entryUrl),
+  };
   await core.start();
   if (!core.web) throw new Error("管理界面未启动");
   entryUrl = `${core.web.url.replace(/\/$/, "")}/?token=${encodeURIComponent(config.ui.token)}`;
@@ -124,17 +144,18 @@ async function boot(): Promise<void> {
 async function smoke(out: string): Promise<void> {
   const wc = win!.webContents;
   await new Promise<void>((r) => (wc.isLoading() ? wc.once("did-finish-load", () => r()) : r()));
-  let text = "";
+  // 未连接 Modelflare 时是引导页，已连接时是对话页；两者都带 data-screen
+  let screen = "";
   for (let i = 0; i < 50; i++) {
-    text = String(await wc.executeJavaScript("document.body.innerText"));
-    if (text.includes("概览") && text.length > 40) break;
+    screen = String(await wc.executeJavaScript("document.querySelector('[data-screen]')?.getAttribute('data-screen') || ''"));
+    if (screen) break;
     await new Promise((r) => setTimeout(r, 200));
   }
   const img = await wc.capturePage();
   fs.writeFileSync(out, img.toPNG());
   const status = await wc.executeJavaScript("fetch('/amb/api/status').then(r=>r.status)");
   const magpie = await wc.executeJavaScript("fetch('/magpie/').then(r=>r.status)");
-  console.log(`SMOKE ${JSON.stringify({ hasUi: text.includes("概览"), status, magpie, magpieState: core?.magpie?.state, chars: text.length })}`);
+  console.log(`SMOKE ${JSON.stringify({ hasUi: !!screen, screen, status, magpie, magpieState: core?.magpie?.state })}`);
   app.quit();
 }
 
@@ -166,7 +187,7 @@ if (!app.requestSingleInstanceLock()) {
     .then(boot)
     .catch((e) => {
       log.error((e as Error).stack || String(e));
-      dialog.showErrorBox("anymodel bot 启动失败", (e as Error).message);
+      dialog.showErrorBox(`${PRODUCT} 启动失败`, (e as Error).message);
       app.exit(1);
     });
 }

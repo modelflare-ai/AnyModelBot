@@ -18,7 +18,9 @@ const cpu = arg("cpu", process.arch);
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 
 if (!process.argv.includes("--prune-only")) {
-  const extra = os !== process.platform || cpu !== process.arch ? [`--os=${os}`, `--cpu=${cpu}`] : [];
+  // 交叉准备时跳过依赖的 install 脚本：它们按宿主机而不是目标平台执行（koffi 找不到宿主机的预编译包就会用 CMake 现场编译宿主机架构）。
+  // 目标平台需要的那一步（spawn-helper 可执行位）在下面补上。
+  const extra = os !== process.platform || cpu !== process.arch ? [`--os=${os}`, `--cpu=${cpu}`, "--ignore-scripts"] : [];
   execFileSync(npm, ["ci", "--omit=dev", "--no-audit", "--no-fund", ...extra], { cwd: dir, stdio: "inherit", shell: process.platform === "win32" });
 }
 
@@ -39,6 +41,9 @@ function size(p) {
 const keep = `${os}-${cpu}`;
 // node-pty 自带全平台 prebuilds
 for (const pre of findDirs(nm, "prebuilds")) for (const d of fs.readdirSync(pre)) if (!d.startsWith(keep)) rm(path.join(pre, d));
+// npm 包里 spawn-helper 没有可执行位；dsh-subprocess-local 的 postinstall 只修宿主机架构那份，这里修目标架构那份
+const spawnHelper = path.join(nm, "node-pty", "prebuilds", keep, "spawn-helper");
+if (os !== "win32" && fs.existsSync(spawnHelper)) fs.chmodSync(spawnHelper, 0o755);
 // koffi：只保留目标平台目录
 const koffi = path.join(nm, "@koromix");
 if (fs.existsSync(koffi)) for (const pkg of fs.readdirSync(koffi)) {
@@ -49,11 +54,11 @@ if (fs.existsSync(koffi)) for (const pkg of fs.readdirSync(koffi)) {
 walk(nm, (p, name) => {
   if (/\.(map|d\.ts|d\.mts|d\.cts|tsbuildinfo)$/.test(name)) rm(p);
 });
-// 其他平台的 libreoffice-kit 预编译包（只留当前 os-cpu）
+// 其他平台的 libreoffice-kit 预编译包（只留当前 os-cpu）。Linux 没有原生包，libreoffice-kit 在 Linux 上用 -wasm 引擎，必须保留。
 const loPrefix = "@deepseek-ai";
 const loRoot = path.join(nm, loPrefix);
 if (fs.existsSync(loRoot)) {
-  const want = `libreoffice-kit-${os === "win32" ? "win32" : os}-${cpu}`;
+  const want = os === "linux" ? "libreoffice-kit-wasm" : `libreoffice-kit-${os === "win32" ? "win32" : os}-${cpu}`;
   for (const pkg of fs.readdirSync(loRoot)) {
     if (pkg.startsWith("libreoffice-kit-") && pkg !== want) rm(path.join(loRoot, pkg));
   }

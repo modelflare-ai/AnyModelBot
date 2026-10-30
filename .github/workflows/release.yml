@@ -1,0 +1,281 @@
+# Release: one single-file installer per platform/arch.
+#
+# How to use
+#   - Release: bump "version" in package.json, commit, then push a tag `v<version>` (e.g. v0.1.4).
+#     The tag must equal "v" + package.json version or the run fails before building anything.
+#     All installers are built; then the GitHub Release for that tag is created (or, if it
+#     already exists, its assets are replaced) with the installers plus SHA256SUMS.
+#     Tags containing "-" (v0.2.0-rc.1) are published as pre-releases.
+#   - Test build: Actions -> Release -> "Run workflow" on any branch. Same builds; the installers are
+#     only kept as workflow artifacts (14 days). Running it on a tag ref re-publishes that release.
+#
+# Outputs (<version> = package.json version)
+#   anymodel-bot-<version>-mac-arm64.dmg            macos-15 (Apple Silicon)   [disabled for now, see matrix]
+#   anymodel-bot-<version>-mac-x64.dmg              macos-15-intel             [disabled for now, see matrix]
+#   anymodel-bot-<version>-win-x64.exe              windows-2025    (NSIS)
+#   anymodel-bot-<version>-win-arm64.exe            windows-11-arm  (NSIS)
+#   anymodel-bot-<version>-linux-x86_64.AppImage    ubuntu-24.04    (smoke-tested under Xvfb)
+#   anymodel-bot-<version>-linux-arm64.AppImage     ubuntu-24.04-arm (smoke-tested under Xvfb)
+#   Each installer is built on a runner of its own OS *and* CPU: dsh-runtime/node_modules is full of
+#   per-arch native packages (node-pty, koffi, sharp, ripgrep, libreoffice-kit, ...) and
+#   scripts/prepare-dsh.mjs installs and prunes them for exactly one os-cpu.
+#
+# Code signing / notarization: optional repository secrets. Without them the build still succeeds:
+#   macOS is ad-hoc signed (Apple Silicon refuses to launch unsigned code) but not notarized, so
+#   Gatekeeper asks users to allow it in System Settings > Privacy & Security; Windows is unsigned,
+#   so SmartScreen warns.
+#     CSC_LINK                     macOS: Developer ID Application certificate, base64 of the .p12
+#     CSC_KEY_PASSWORD             macOS: password of that .p12
+#     APPLE_ID                     notarization: Apple ID e-mail                 \ used only together
+#     APPLE_APP_SPECIFIC_PASSWORD  notarization: app-specific password           | with CSC_LINK;
+#     APPLE_TEAM_ID                notarization: 10-character Apple Team ID      / set all three or none
+#     WIN_CSC_LINK                 Windows: Authenticode certificate, base64 of the .pfx
+#     WIN_CSC_KEY_PASSWORD         Windows: password of that .pfx
+#   (e.g. `base64 -i cert.p12 | gh secret set CSC_LINK`). On macOS everything inside the .app is
+#   signed with the hardened runtime, including the bundled magpie, cua-driver and dsh native modules.
+#   Certificates kept in an HSM / cloud signing service need a custom win.sign setup instead.
+#
+# Auto-update (electron-updater) is not enabled, so electron-builder runs with --publish never (on a
+# tag it would otherwise try to publish to GitHub itself) and only the installer files are uploaded,
+# no update metadata (latest*.yml, .blockmap). The release job publishes them with gh.
+#
+# Caches: npm (both lockfiles), Go modules + build cache (vendor/magpie/go.sum), Electron and
+# electron-builder downloads. GitHub scopes caches to the ref that created them, and a tag run can
+# only read caches from its own tag or the default branch, so a manual run on master warms them
+# for the next release.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  meta:
+    name: Version check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Read package.json version and match it against the tag
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ "$REF_TYPE" = tag ] && [ "$REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $REF_NAME does not match package.json version $version (expected tag v$version)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building anymodel-bot $version"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS is disabled for now (macOS runners are expensive on private repos). Uncomment to re-enable.
+          # - { name: mac-arm64, runner: macos-15, os: darwin, arch: arm64, goos: darwin, goarch: arm64, targets: "--mac dmg", file: mac-arm64.dmg }
+          # - { name: mac-x64, runner: macos-15-intel, os: darwin, arch: x64, goos: darwin, goarch: amd64, targets: "--mac dmg", file: mac-x64.dmg }
+          - { name: win-x64, runner: windows-2025, os: win32, arch: x64, goos: windows, goarch: amd64, targets: "--win nsis", file: win-x64.exe }
+          - { name: win-arm64, runner: windows-11-arm, os: win32, arch: arm64, goos: windows, goarch: arm64, targets: "--win nsis", file: win-arm64.exe }
+          - { name: linux-x64, runner: ubuntu-24.04, os: linux, arch: x64, goos: linux, goarch: amd64, targets: "--linux AppImage", file: linux-x86_64.AppImage }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, os: linux, arch: arm64, goos: linux, goarch: arm64, targets: "--linux AppImage", file: linux-arm64.AppImage }
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXPECTED_PLATFORM: ${{ matrix.os }}-${{ matrix.arch }}
+      # artifactName in package.json: anymodel-bot-${version}-${os}-${arch}.${ext}
+      INSTALLER: release/anymodel-bot-${{ needs.meta.outputs.version }}-${{ matrix.file }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # vendor/deepseek-harness is not needed to package (DSH comes from npm via dsh-runtime/).
+      - name: Fetch submodules
+        run: git submodule update --init --depth 1 vendor/magpie vendor/kimi-computer-use
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          architecture: ${{ matrix.arch }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            dsh-runtime/package-lock.json
+
+      - name: Check runner platform
+        run: |
+          host=$(node -p 'process.platform + "-" + process.arch')
+          if [ "$host" != "$EXPECTED_PLATFORM" ]; then
+            echo "::error::Runner ${{ matrix.runner }} runs Node as $host, expected $EXPECTED_PLATFORM"
+            exit 1
+          fi
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: vendor/magpie/go.mod
+          cache-dependency-path: vendor/magpie/go.sum
+
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ matrix.name }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ matrix.name }}-
+
+      - name: Install dependencies
+        # electron-builder downloads the Electron build for the target itself; skip the dev copy.
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: npm ci --no-audit --no-fund
+
+      - name: Compile TypeScript
+        run: npm run build
+
+      - name: Prepare dsh-runtime for ${{ matrix.os }}-${{ matrix.arch }}
+        run: node scripts/prepare-dsh.mjs --os "${{ matrix.os }}" --cpu "${{ matrix.arch }}"
+
+      - name: Verify dsh-runtime native modules load on this platform
+        run: |
+          # shellcheck disable=SC2016 # ${...} below is JavaScript, not shell
+          node -e '
+            const fs = require("fs"), path = require("path");
+            const want = process.env.EXPECTED_PLATFORM;
+            const prebuilds = fs.readdirSync("dsh-runtime/node_modules/node-pty/prebuilds");
+            if (prebuilds.join() !== want) throw new Error(`node-pty prebuilds are [${prebuilds}], expected [${want}]`);
+            const helper = `dsh-runtime/node_modules/node-pty/prebuilds/${want}/spawn-helper`;
+            if (fs.existsSync(helper)) fs.accessSync(helper, fs.constants.X_OK);
+            const req = require("module").createRequire(path.resolve("dsh-runtime/package.json"));
+            for (const m of ["koffi", "sharp", ...(process.platform === "win32" ? [] : ["node-pty"])]) req(m);
+            console.log(`dsh-runtime native modules OK for ${want}`);
+          '
+
+      - name: Build magpie
+        run: node scripts/build-magpie.mjs --target "${{ matrix.goos }}/${{ matrix.goarch }}"
+
+      - name: Fetch cua-driver
+        run: node scripts/fetch-cua-driver.mjs --target "${{ matrix.os }}/${{ matrix.arch }}"
+
+      - name: Package ${{ matrix.file }}
+        env:
+          # Secrets are handed only to the OS that uses them; empty ones are unset below.
+          CSC_LINK: ${{ matrix.os == 'darwin' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'darwin' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.os == 'darwin' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'darwin' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.os == 'darwin' && secrets.APPLE_TEAM_ID || '' }}
+          WIN_CSC_LINK: ${{ matrix.os == 'win32' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.os == 'win32' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+        run: |
+          # Naming the target on the command line overrides the arch lists in package.json "build",
+          # so exactly one installer for this runner's arch is produced.
+          args=(${{ matrix.targets }} --${{ matrix.arch }} --publish never)
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            [ -n "${!v}" ] || unset "$v"
+          done
+          if [ "${{ matrix.os }}" = darwin ] && [ -z "${CSC_LINK:-}" ]; then
+            echo "::warning::CSC_LINK is not set: ${{ matrix.file }} is ad-hoc signed and not notarized"
+            # Notarizing an ad-hoc signed app can only fail.
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            args+=(-c.mac.identity=-)
+          elif [ "${{ matrix.os }}" = darwin ] && [ -z "${APPLE_ID:-}" ]; then
+            echo "::warning::APPLE_ID is not set: ${{ matrix.file }} is signed but not notarized"
+          elif [ "${{ matrix.os }}" = win32 ] && [ -z "${WIN_CSC_LINK:-}" ]; then
+            echo "::warning::WIN_CSC_LINK is not set: ${{ matrix.file }} is not code-signed"
+          fi
+          npx electron-builder "${args[@]}"
+          if [ ! -f "$INSTALLER" ]; then
+            echo "::error::Expected installer $INSTALLER was not produced"
+            ls -la release
+            exit 1
+          fi
+          ls -la "$INSTALLER"
+
+      - name: Smoke-test the AppImage
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends xvfb xauth fonts-dejavu-core libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libxss1 libxtst6 libnotify4 libsecret-1-0
+          chmod +x "$INSTALLER"
+          # Extract instead of mounting: no FUSE on the runner. This is the exact payload users get.
+          (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/$INSTALLER" --appimage-extract >/dev/null)
+          node scripts/electron-smoke.mjs "$RUNNER_TEMP/squashfs-root/AppRun"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          # archive: false uploads the installer itself (artifact name = file name) instead of a zip.
+          path: ${{ env.INSTALLER }}
+          archive: false
+          if-no-files-found: error
+          overwrite: true # "Re-run all jobs" uploads the same name again
+          retention-days: 14
+
+  release:
+    name: GitHub Release
+    needs: [meta, build]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: anymodel-bot-${{ needs.meta.outputs.version }}-*
+          path: installers
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: installers
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create or update the release
+        working-directory: installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" ./* --clobber
+          else
+            flags=()
+            if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
+            gh release create "$TAG" ./* --verify-tag --title "$TAG" --generate-notes "${flags[@]}"
+          fi

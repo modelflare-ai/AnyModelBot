@@ -1,0 +1,46 @@
+# CI: cheap check on every pull request and every push to master (one ubuntu job, ~2-3 min).
+# Typecheck, unit tests and the TypeScript build. Installers are not built here because the six
+# native runners (two of them macOS) cost far more; use the Release workflow's "Run workflow"
+# button for a full packaging test.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, unit tests, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # test/phase3.unit.test.ts reads skills/computer-use/SKILL.md from this submodule.
+      - name: Fetch submodules
+        run: git submodule update --init --depth 1 vendor/kimi-computer-use
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: npm ci --no-audit --no-fund
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

@@ -5,6 +5,7 @@ import { html, Icon, IconButton, CopyButton, Menu, Popover, Badge, Notice, Skele
 import { BotAvatar } from "../components/avatar.js";
 import { Markdown, Linkified } from "../components/markdown.js";
 import { ModelPicker, shortModel, sameModel } from "../components/model-picker.js";
+import { PwshHint } from "../components/pwsh-hint.js";
 import { api, streamChat } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
 import { fmtSep, fmtClock, fmtDur } from "../lib/format.js";
@@ -456,6 +457,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
             <button type="button" class="chip" onClick=${() => send("你能帮我做什么？")}>你能帮我做什么？</button>
             <button type="button" class="chip" onClick=${() => send("/help")}>/help 查看命令</button>
           </div>
+          <${PwshHint} />
         </div>`}
         ${rows}
       </div>

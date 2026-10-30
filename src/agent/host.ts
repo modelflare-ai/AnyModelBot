@@ -46,15 +46,16 @@ function isDshRuntime(dir: string): boolean {
 
 /**
  * 找到随应用分发的 DSH 运行时目录（含 node_modules/@deepseek-ai/dsh）。
- * 打包后优先 `resources/dsh`（extraResources 实目录）；开发时用 `dsh-runtime/`。
- * 实目录可直接给 ELECTRON_RUN_AS_NODE 子进程用，无需再 extract。
+ * 打包后是 `resources/dsh/dsh.asar`（JS 打成一个归档，原生包是旁边的 resources/dsh/node_modules 实文件）；开发时用 `dsh-runtime/`。
+ * Electron 主进程与 ELECTRON_RUN_AS_NODE 子进程都能直接读 asar，无需再 extract。
  */
 export function locateDshRuntime(appRoot: string): string | undefined {
   const res = (process as any).resourcesPath as string | undefined;
   const cands = [
     process.env.AMB_DSH_RUNTIME,
     path.join(appRoot, "dsh-runtime"), // dev checkout
-    res ? path.join(res, "dsh") : undefined, // packaged: resources/dsh (pruned tree)
+    res ? path.join(res, "dsh", "dsh.asar") : undefined, // packaged: resources/dsh/dsh.asar (scripts/bundle-dsh.mjs)
+    res ? path.join(res, "dsh") : undefined, // packaged: resources/dsh (pruned tree, ≤ 0.1.5)
     path.join(appRoot, "dsh"), // packaged inside app.asar (older layout)
     res ? path.join(res, "app.asar", "dsh") : undefined,
     res ? path.join(res, "app.asar.unpacked", "dsh") : undefined,
@@ -64,7 +65,7 @@ export function locateDshRuntime(appRoot: string): string | undefined {
 
 /**
  * Identity for callers that historically extracted asar → dataDir.
- * DSH now ships as a real `resources/dsh` directory (no asar, no first-launch extract).
+ * DSH ships as `resources/dsh/dsh.asar`, which Electron reads in place (no first-launch extract).
  * Kept so App / tests can call it without branching; returns `runtimeDir` unchanged.
  */
 export function materializeDshRuntime(runtimeDir: string, _cacheRoot?: string): string {

@@ -16,6 +16,8 @@ export interface AppConfig {
     zoom: number;
     /** 桌面版关闭窗口时：true 隐藏到托盘，false 退出 */
     closeToTray: boolean;
+    /** Windows 上"建议安装 PowerShell 7"的提示点过"不再提示" */
+    pwshHintDismissed: boolean;
   };
   /**
    * Modelflare 线路；密钥本身只存在内置 magpie 的隔离配置里。
@@ -67,6 +69,7 @@ export function loadConfig(overrides: { dataDir?: string; env?: NodeJS.ProcessEn
       token: env.AMB_UI_TOKEN || file.ui?.token || "",
       zoom: ZOOMS.includes(Number(file.ui?.zoom)) ? Number(file.ui?.zoom) : 1,
       closeToTray: file.ui?.closeToTray !== false,
+      pwshHintDismissed: file.ui?.pwshHintDismissed === true,
     },
     modelflare: {
       line: normalizeLine(file.modelflare?.line),

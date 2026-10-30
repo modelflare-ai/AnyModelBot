@@ -126,8 +126,9 @@ jobs:
 
       # --launch shell: Start-Process without redirection (ShellExecute), so the app has no std
       # handles, like a Start-menu launch. /status is probed before and during the first turn.
+      # --expect-pwsh7: the image has PowerShell 7; the app must detect it and DSH must run the tool in it.
       - name: Chat through the app; no console windows
-        run: node scripts/e2e-agent.mjs --out "$RUNNER_TEMP/e2e" --launch shell --cwd "$GITHUB_WORKSPACE" --timeout-ms 150000 --procmon --managed --stream --tool --status-probes --observe-ms 20000 --max-console-windows 0 --expect-diagnostics -- "$ELECTRON_EXE" .
+        run: node scripts/e2e-agent.mjs --out "$RUNNER_TEMP/e2e" --launch shell --cwd "$GITHUB_WORKSPACE" --timeout-ms 150000 --procmon --managed --stream --tool --status-probes --observe-ms 20000 --max-console-windows 0 --expect-diagnostics --expect-pwsh7 -- "$ELECTRON_EXE" .
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()

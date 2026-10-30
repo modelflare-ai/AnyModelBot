@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { html, Button, CopyButton, Icon, Skeleton } from "../components/ui.js";
 import { api } from "../lib/api.js";
 import { failed, toast } from "../lib/store.js";
+import { PWSH_INSTALL_URL, PWSH_WINGET, recheckPwsh } from "../lib/pwsh.js";
 
 const GATEWAY = { running: ["运行中", "ok"], starting: ["启动中", "warn"], restarting: ["重启中", "warn"], failed: ["失败", "err"], stopped: ["已停止", "off"], external: ["外部端点", "ok"] };
 const HOST = { running: ["运行中", "ok"], starting: ["启动中", "warn"], backoff: ["等待重试", "warn"], error: ["已暂停", "err"], stopped: ["未启动", "off"] };
@@ -44,6 +45,28 @@ const Verdict = ({ ok }) => html`<span class="ts-state"><span class=${`dot ${ok 
 const ms = (v) => (v === undefined || v === null ? "" : v >= 10_000 ? `${(v / 1000).toFixed(1)} 秒` : `${v} ms`);
 const exitText = (e) => (e ? `上次退出 code=${e.code ?? "-"}${e.signal ? ` signal=${e.signal}` : ""}` : "");
 const join = (...a) => a.filter(Boolean).join(" · ");
+const PS_SOURCE = { "program-files": "安装目录", path: "PATH", preview: "预览版", store: "Microsoft Store" };
+
+/** PowerShell（只在 Windows 上）：版本或"未安装"；没有 7 时下面多一行安装命令和下载链接 */
+function PwshRows({ ps, busy, onRecheck }) {
+  if (!ps || !ps.applicable) return null;
+  const [text, kind] = ps.checking ? ["检测中", ""] : !ps.missing ? [ps.version || "7", "ok"] : ps.found && ps.version ? [ps.version, "warn"] : ["未安装", "warn"];
+  const sub = ps.checking
+    ? "正在找 PowerShell 7"
+    : !ps.missing
+      ? join(ps.path, PS_SOURCE[ps.source], "代理用它执行命令")
+      : ps.found
+        ? join(ps.path, "版本较旧：装上 PowerShell 7，命令执行快得多，也更稳定")
+        : "代理执行命令用的是系统自带的 Windows PowerShell 5.1，每条可能要二三十秒。装上 PowerShell 7，命令执行快得多，也更稳定";
+  return html`<${Row} id="pwsh" name="PowerShell" sub=${sub}>
+      <span class="ts-state"><span class=${`dot ${kind}`}></span>${text}</span>
+      <button type="button" class="text" disabled=${!!busy} aria-busy=${busy === "pwsh" || undefined} onClick=${onRecheck}>${busy === "pwsh" ? "检测中…" : "重新检测"}</button>
+    <//>
+    ${ps.missing && html`<${Row} compact id="pwsh-install" name="安装 PowerShell 7" sub=${PWSH_WINGET} mono>
+      <${CopyButton} text=${PWSH_WINGET} label="复制安装命令" />
+      <a class="btn sm" href=${PWSH_INSTALL_URL} target="_blank" rel="noopener noreferrer">下载安装 ↗</a>
+    <//>`}`;
+}
 
 function ProbeRow({ name, p }) {
   if (!p) return null;
@@ -107,6 +130,7 @@ export function TroubleshootPane({ bots, desktop }) {
       const r = await api("/diagnostics/restart-agent", { method: "POST", body: {} });
       toast(r.restarted.length ? "代理进程已重启" : "代理进程还没有启动，下一条消息时启动");
     });
+  const recheckPs = () => run("pwsh", recheckPwsh);
   const copy = () =>
     run("copy", async () => {
       const { text } = await api("/diagnostics/report?lines=200");
@@ -133,6 +157,7 @@ export function TroubleshootPane({ bots, desktop }) {
         <${State} map=${HOST} s=${h.state} />
       <//>`)}
       ${tail.length > 0 && html`<div class="row-edit ts-tail"><span class="t-label">代理进程输出（stderr 最后 ${tail.length} 行）</span><pre class="ts-mono">${tail.join("\n")}</pre></div>`}
+      <${PwshRows} ps=${st.pwsh} busy=${busy} onRecheck=${recheckPs} />
       <${Row} id="version" name="版本" sub=${join(st.os, st.electron && `Electron ${st.electron}`, `Node ${st.node}`)}>
         <span class="val">${st.version} · ${st.platform} ${st.arch}</span>
       <//>

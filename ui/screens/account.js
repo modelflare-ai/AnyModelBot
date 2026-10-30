@@ -10,8 +10,8 @@ const notifLink = (link) => (!link ? "" : link.startsWith("/") && !link.startsWi
 
 export function LoginSheet({ onClose, onSignedIn }) {
   return html`<${Sheet} title="登录 Modelflare 账户" onClose=${onClose}>
-    <p class="hint">登录后会为这台电脑签发一把专用 API Key，替换现在手动填的 Key。</p>
-    <${AccountLogin} hint=${false} onSignedIn=${(s) => { onSignedIn(s); onClose(); }} />
+    <p class="hint">登录后会替换现在填的 API Key。</p>
+    <${AccountLogin} onSignedIn=${(s) => { onSignedIn(s); onClose(); }} />
   <//>`;
 }
 

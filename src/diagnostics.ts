@@ -9,6 +9,7 @@ import type { HostEvent } from "./agent/host.js";
 import type { ProxyEvent } from "./agent/bridge.js";
 import { logFilePath, logger, readLogTail, redactText, redactValue } from "./log.js";
 import { bareModel } from "./modelflare.js";
+import { pwshProbe, pwshReportLine } from "./agent/pwsh.js";
 
 const log = logger("diagnostics");
 
@@ -343,6 +344,8 @@ export function diagnosticsStatus(app: App): Record<string, unknown> {
         }
       : { mode: "external", state: "external", url: redactText(app.config.magpie.externalBaseUrl) },
     agent: app.agent.diagnostics(),
+    // Windows：代理执行命令用的 PowerShell（没有 7 时每条命令要二三十秒）
+    pwsh: pwshProbe.snapshot(),
     last: app.lastDiagnostics,
   };
 }
@@ -373,6 +376,8 @@ export function diagnosticsReport(app: App, lines = 200): string {
     out.push(`  机器人 ${id}: ${h.state} · pid ${h.pid ?? "-"} · 重启 ${h.restarts} 次 · 进行中 ${h.activeTurns}${h.lastExit ? ` · 上次退出 code=${h.lastExit.code} signal=${h.lastExit.signal} @ ${ts(h.lastExit.at)}` : ""}${h.lastError ? `\n    最近错误：${h.lastError}` : ""}`);
     for (const l of h.stderrTail ?? []) out.push(`    | ${l}`);
   }
+  const ps = pwshReportLine(s.pwsh);
+  if (ps) out.push(ps);
   const m = app.lastDiagnostics.model;
   if (m) {
     out.push("");

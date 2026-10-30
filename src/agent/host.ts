@@ -9,6 +9,7 @@ import os from "node:os";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { adaptSkill, mcpPatchLines, resolveComputerUse, type CuResolved } from "./computer-use.js";
 import { cuaConfig, cuaMcpEnv, discoverAppsCached, type CuaApp } from "./cua-driver.js";
+import { pwshPatchLines, pwshProbe } from "./pwsh.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 
 const log = logger("agent.host");
@@ -309,7 +310,7 @@ export class AgentHost {
     });
   }
 
-  private writePatch(model: string, apps: CuaApp[] = []): string {
+  private writePatch(model: string, apps: CuaApp[] = [], pwshPath?: string): string {
     const lim = MODEL_LIMITS.find(([re]) => re.test(model)) ?? [/./, 128_000, 16_000];
     const plugin = path.join(this.o.runtimeDir, "plugins", "amb-bridge.mjs");
     const memory = path.join(this.o.runtimeDir, "plugins", "amb-memory.mjs");
@@ -328,6 +329,8 @@ export class AgentHost {
       `            name: ${yamlStr(model.split("/").pop() || model)}`,
       `            contextWindow: ${lim[1]}`,
       `            maxTokens: ${lim[2]}`,
+      // Windows：命令用检测到的 PowerShell 7（DSH 自己只看 Program Files\PowerShell\7 和 PATH，找不到就退回 5.1）
+      ...pwshPatchLines(pwshPath),
       "- insert:",
       "    - id: amb-bridge",
       `      name: ${yamlStr(plugin)}`,
@@ -507,7 +510,8 @@ exec "$REAL" "$@"
   /** 影响子进程启动参数的设置签名 */
   private settingsSig(): string {
     const st = this.settings();
-    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.backend}|${st.computerUse.approval}`;
+    // 带上 PowerShell 路径：用户装好 PowerShell 7 点"重新检测"后，空闲的代理进程在下一条消息时换用它
+    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.backend}|${st.computerUse.approval}|${pwshProbe.cachedDshPath ?? ""}`;
   }
   private sig = "";
 
@@ -552,7 +556,7 @@ exec "$REAL" "$@"
       await this.closeHarness();
     }
     if (this.harness && this.sig !== this.settingsSig() && this.active === 0) {
-      log.info("bot settings changed, restarting dsh", { bot: this.o.botId });
+      log.info("bot settings or PowerShell changed, restarting dsh", { bot: this.o.botId });
       await this.closeHarness();
     }
     if (this.harness) return this.harness;
@@ -607,10 +611,11 @@ exec "$REAL" "$@"
       // 应用清单（Computer Use 的能力清单用）异步扫描并缓存，不阻塞主进程
       const cu = this.computerUseActive();
       const apps = cu && cu.backend === "cua" ? await discoverAppsCached() : [];
-      const patch = this.writePatch(model, apps);
+      const pwshPath = await pwshProbe.dshPath();
+      const patch = this.writePatch(model, apps, pwshPath);
       this.sig = this.settingsSig();
       const timeoutMs = this.initTimeoutMs();
-      this.stage("patch written", t0, { computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs });
+      this.stage("patch written", t0, { computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
       h = new sdk.DeepSeekHarness({
         profile: "sdk",
         patches: [patch],

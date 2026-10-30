@@ -7,6 +7,7 @@ import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
 import { promptText, type QuestionItem } from "../agent/approvals.js";
 import { MEMORY_GUIDE } from "../agent/steward.js";
+import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
 import { isBotProviderModel } from "../modelflare.js";
 import type { ApprovalRow } from "../store/db.js";
 
@@ -147,9 +148,11 @@ export class BotRuntime {
     const cui = a?.available ? a.computerUse(botId) : undefined;
     const cu = cui ? [`电脑操作：${cui.backend === "codex" ? "Codex 桥" : "Cua Driver"}，${cui.active ? "已启用" : "未启用"}——${cui.reason}`, ...(cui.notice && cui.enabled ? [cui.notice] : [])] : [];
     const host = a?.available ? [a.hostSummary(botId)] : [];
+    // Windows：代理执行命令用的 PowerShell；没有 7 时建议安装
+    const ps = a?.available ? pwshStatusLine(pwshProbe.snapshot()) : "";
     const turn = a?.turnsInProgress.get(convId);
     const busy = turn ? [`本会话上一条消息还在处理（已 ${Math.round((Date.now() - turn.since) / 1000)} 秒），新消息会排在它后面`] : [];
-    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...host, ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
+    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
   }
 
   /** 卡片按钮回调：批准/拒绝/选择选项。 */

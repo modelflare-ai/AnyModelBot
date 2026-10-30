@@ -21,8 +21,10 @@
 #   anymodel-bot-<version>-linux-x86_64.AppImage    ubuntu-24.04    (smoke-tested under Xvfb)
 #   anymodel-bot-<version>-linux-arm64.AppImage     ubuntu-24.04-arm (smoke-tested under Xvfb)
 #   Each installer is built on a runner of its own OS *and* CPU: dsh-runtime/node_modules is full of
-#   per-arch native packages (node-pty, koffi, sharp, ripgrep, libreoffice-kit, ...) and
-#   scripts/prepare-dsh.mjs installs and prunes them for exactly one os-cpu.
+#   per-arch native packages (node-pty, koffi, sharp, ripgrep, ...) and scripts/prepare-dsh.mjs
+#   installs and prunes them for exactly one os-cpu. scripts/bundle-dsh.mjs then packs the runtime
+#   into resources/dsh: one dsh.asar (all JavaScript, ~10k files) plus a node_modules/ with only the
+#   native packages (~55 files), which keeps the Windows installer fast (few files to extract and scan).
 #
 # Code signing / notarization: optional repository secrets. Without them the build still succeeds:
 #   macOS is ad-hoc signed (Apple Silicon refuses to launch unsigned code) but not notarized, so
@@ -104,13 +106,14 @@ jobs:
         env:
           TARGETS: ${{ inputs.targets || 'all' }}
         run: |
+          # app: the unpacked app electron-builder leaves next to the installer (checked before upload)
           all='[
-            {"name":"mac-arm64","runner":"macos-15","os":"darwin","arch":"arm64","goos":"darwin","goarch":"arm64","targets":"--mac dmg","file":"mac-arm64.dmg"},
-            {"name":"mac-x64","runner":"macos-15-intel","os":"darwin","arch":"x64","goos":"darwin","goarch":"amd64","targets":"--mac dmg","file":"mac-x64.dmg"},
-            {"name":"win-x64","runner":"windows-2025","os":"win32","arch":"x64","goos":"windows","goarch":"amd64","targets":"--win nsis","file":"win-x64.exe"},
-            {"name":"win-arm64","runner":"windows-11-arm","os":"win32","arch":"arm64","goos":"windows","goarch":"arm64","targets":"--win nsis","file":"win-arm64.exe"},
-            {"name":"linux-x64","runner":"ubuntu-24.04","os":"linux","arch":"x64","goos":"linux","goarch":"amd64","targets":"--linux AppImage","file":"linux-x86_64.AppImage"},
-            {"name":"linux-arm64","runner":"ubuntu-24.04-arm","os":"linux","arch":"arm64","goos":"linux","goarch":"arm64","targets":"--linux AppImage","file":"linux-arm64.AppImage"}
+            {"name":"mac-arm64","runner":"macos-15","os":"darwin","arch":"arm64","goos":"darwin","goarch":"arm64","targets":"--mac dmg","file":"mac-arm64.dmg","app":"release/mac-arm64/anymodel bot.app/Contents/MacOS/anymodel bot"},
+            {"name":"mac-x64","runner":"macos-15-intel","os":"darwin","arch":"x64","goos":"darwin","goarch":"amd64","targets":"--mac dmg","file":"mac-x64.dmg","app":"release/mac/anymodel bot.app/Contents/MacOS/anymodel bot"},
+            {"name":"win-x64","runner":"windows-2025","os":"win32","arch":"x64","goos":"windows","goarch":"amd64","targets":"--win nsis","file":"win-x64.exe","app":"release/win-unpacked/anymodel bot.exe"},
+            {"name":"win-arm64","runner":"windows-11-arm","os":"win32","arch":"arm64","goos":"windows","goarch":"arm64","targets":"--win nsis","file":"win-arm64.exe","app":"release/win-arm64-unpacked/anymodel bot.exe"},
+            {"name":"linux-x64","runner":"ubuntu-24.04","os":"linux","arch":"x64","goos":"linux","goarch":"amd64","targets":"--linux AppImage","file":"linux-x86_64.AppImage","app":"release/linux-unpacked/anymodel-bot"},
+            {"name":"linux-arm64","runner":"ubuntu-24.04-arm","os":"linux","arch":"arm64","goos":"linux","goarch":"arm64","targets":"--linux AppImage","file":"linux-arm64.AppImage","app":"release/linux-arm64-unpacked/anymodel-bot"}
           ]'
           if [ "$TARGETS" = all ]; then
             selected=$(jq -c . <<<"$all")
@@ -212,6 +215,9 @@ jobs:
             console.log(`dsh-runtime native modules OK for ${want}`);
           '
 
+      - name: Bundle dsh-runtime into dsh.asar + native node_modules
+        run: node scripts/bundle-dsh.mjs --os "${{ matrix.os }}" --cpu "${{ matrix.arch }}"
+
       - name: Build magpie
         run: node scripts/build-magpie.mjs --target "${{ matrix.goos }}/${{ matrix.goarch }}"
 
@@ -228,11 +234,15 @@ jobs:
           APPLE_TEAM_ID: ${{ matrix.os == 'darwin' && secrets.APPLE_TEAM_ID || '' }}
           WIN_CSC_LINK: ${{ matrix.os == 'win32' && secrets.WIN_CSC_LINK || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ matrix.os == 'win32' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          # NSIS payload (app-64.7z) at 7z level 3 instead of 9: on windows-2025 with Defender on, the
+          # installer grows 156 -> 171 MB and a fresh install drops 35 -> 22 s (extraction 21 -> 11 s).
+          # The 7z filter stays BCJ (electron-builder pins it for the NSIS decoder).
+          ELECTRON_BUILDER_COMPRESSION_LEVEL: ${{ matrix.os == 'win32' && '3' || '' }}
         run: |
           # Naming the target on the command line overrides the arch lists in package.json "build",
           # so exactly one installer for this runner's arch is produced.
           args=(${{ matrix.targets }} --${{ matrix.arch }} --publish never)
-          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD ELECTRON_BUILDER_COMPRESSION_LEVEL; do
             [ -n "${!v}" ] || unset "$v"
           done
           if [ "${{ matrix.os }}" = darwin ] && [ -z "${CSC_LINK:-}" ]; then
@@ -253,6 +263,11 @@ jobs:
             exit 1
           fi
           ls -la "$INSTALLER"
+
+      # The packaged executable in Node mode (as the app runs DSH): SDK client and DSH from dsh.asar, native
+      # modules from resources/dsh/node_modules, and one agent turn through a mock model.
+      - name: Check the packaged DSH runtime
+        run: node scripts/verify-dsh-bundle.mjs "${{ matrix.app }}"
 
       - name: Smoke-test the AppImage
         if: matrix.os == 'linux'

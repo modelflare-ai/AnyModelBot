@@ -1,7 +1,7 @@
 {
   "name": "anymodel-bot-dsh-runtime",
   "private": true,
-  "description": "Pinned DeepSeek Harness (MIT) runtime used by anymodel bot as its agent host. Packaged as resources/dsh.asar (natives in dsh.asar.unpacked).",
+  "description": "Pinned DeepSeek Harness (MIT) runtime used by anymodel bot as its agent host. Packaged by scripts/bundle-dsh.mjs as resources/dsh/dsh.asar, with native packages in resources/dsh/node_modules.",
   "type": "module",
   "license": "MIT",
   "dependencies": {

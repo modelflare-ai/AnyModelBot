@@ -1,7 +1,7 @@
 // 对话页（参考 Grok Bot 的顶栏、Codex 的对话与输入框）：顶栏左侧头像 + 名称，右侧新对话 / 信息面板；
 // 760 阅读列，用户消息是浅灰气泡，机器人回复是整列正文，上方一行"思考中 / 正在回复 / 用时"；底部两行输入框。
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, IconButton, CopyButton, Menu, Popover, Badge, Skeleton, autoGrow } from "../components/ui.js";
+import { html, Icon, IconButton, CopyButton, Menu, Popover, Badge, Notice, Skeleton, autoGrow } from "../components/ui.js";
 import { BotAvatar } from "../components/avatar.js";
 import { Markdown, Linkified } from "../components/markdown.js";
 import { ModelPicker, shortModel, sameModel } from "../components/model-picker.js";
@@ -56,7 +56,7 @@ export function PromptCard({ requestId, fallback }) {
     return () => clearInterval(t);
   }, [row && row.status]);
 
-  if (gone || (!row && !requestId)) return html`<div class="notice"><span class="notice-text pre-wrap">${fallback}</span></div>`;
+  if (gone || (!row && !requestId)) return html`<${Notice}><span class="pre-wrap">${fallback}</span><//>`;
   if (!row) return html`<div class="card"><${Skeleton} w="60%" /><${Skeleton} w="40%" /></div>`;
   const pending = row.status === "pending";
   const decide = async (ok) => {
@@ -164,11 +164,8 @@ function MsgActions({ text, at }) {
 
 function ErrorNotice({ text, onRetry, onFixKey }) {
   const auth = isAuthError(text);
-  return html`<div class="notice red" role="alert">
-    <span class="notice-text">${auth ? "Modelflare 密钥失效或已被撤销。" : text}</span>
-    ${auth && onFixKey && html`<button type="button" class="btn" onClick=${onFixKey}>去更新</button>`}
-    ${onRetry && html`<button type="button" class="btn" onClick=${onRetry}>重试</button>`}
-  </div>`;
+  return html`<${Notice} tone="red" action=${html`${auth && onFixKey && html`<button type="button" class="btn" onClick=${onFixKey}>去更新</button>`}
+    ${onRetry && html`<button type="button" class="btn" onClick=${onRetry}>重试</button>`}`}>${auth ? "Modelflare 密钥失效或已被撤销。" : text}<//>`;
 }
 
 export function ChatScreen({ bot, models, modelsError, reloadModels, defaultModel, infoOpen, onToggleInfo, onWorking, onOpenSettings, onOpenBotSettings, onBotUpdated, pending = 0 }) {
@@ -449,7 +446,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     </header>
     <div class="chat-scroll" ref=${scroller} onScroll=${onScroll}>
       <div class="chat-col" role="log" aria-live="polite" aria-busy=${generating}>
-        ${loadErr && html`<div class="notice red"><span class="notice-text">读取历史消息失败：${loadErr}</span><button type="button" class="btn" onClick=${load}>重试</button></div>`}
+        ${loadErr && html`<${Notice} tone="red" action=${html`<button type="button" class="btn" onClick=${load}>重试</button>`}>读取历史消息失败：${loadErr}<//>`}
         ${items === null && html`<div class="chat-skel"><${Skeleton} w="40%" /><${Skeleton} w="28%" /></div>`}
         ${empty && html`<div class="chat-empty">
           <${BotAvatar} bot=${bot} size=${88} state=${face} cue=${cue} lively pokeable greet />

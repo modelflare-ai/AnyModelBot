@@ -1,26 +1,16 @@
-/* 行内提示（可带一个操作）：.notice [amber | red] > .notice-text + .btn。
-   定制：覆盖 --notice-bg / --notice-fg / --notice-edge。 */
+/* 行内提示（可带一个操作）：.notice [amber | red] > 图标 + .notice-text + .btn（Notice 组件会带上图标）。
+   一行安静的提示：只铺一层很淡的底色，不描边、不加左侧色条。字总是 --fg（在淡底上 ≥ 14:1），
+   语气由图标的颜色和底色表达，所以不会出现"淡红底上的红字"这种对比度不够的组合。
+   定制：覆盖 --notice-bg / --notice-ic。 */
 .notice {
-  --notice-bg: var(--card-2);
-  --notice-fg: var(--fg);
-  --notice-edge: inset 0 0 0 1px var(--line);
-  display: flex; align-items: center; gap: var(--space-2-5); padding: var(--space-2) var(--space-2-5) var(--space-2) var(--space-3);
-  border-radius: var(--r-lg); font-size: var(--fs-sm); line-height: var(--lh-normal);
-  background: var(--notice-bg); color: var(--notice-fg); box-shadow: var(--notice-edge);
+  --notice-bg: var(--well);
+  --notice-ic: var(--muted);
+  display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--r-well); font-size: var(--fs-sm); line-height: var(--lh-normal);
+  background: var(--notice-bg); color: var(--fg);
 }
+.notice > .ic { color: var(--notice-ic); }
 .notice .notice-text { flex: 1; min-width: 0; }
-.notice.amber {
-  --notice-bg: var(--amber-soft); --notice-fg: var(--amber);
-  --notice-edge: inset 0 0 0 1px color-mix(in srgb, var(--amber) 25%, transparent);
-}
-.notice.red {
-  --notice-bg: var(--red-soft); --notice-fg: var(--red);
-  --notice-edge: inset 3px 0 0 var(--red), inset 0 0 0 1px color-mix(in srgb, var(--red) 22%, transparent);
-}
-/* 提示里的按钮是一块白色小卡：悬停时浮起一点（描边加深、投影变大），在任何底色的提示上都成立 */
-.notice .btn {
-  --btn-h: var(--ctl-sm); --btn-px: var(--space-2-5);
-  --btn-bg: var(--card); --btn-bg-hover: var(--card); --btn-bg-press: var(--card);
-  --btn-edge: 0 0 0 .5px var(--line), var(--shadow-xs);
-}
-.notice .btn:hover:not(:disabled) { --btn-edge: 0 0 0 .5px var(--line-strong), var(--shadow-sm); }
+.notice.amber { --notice-bg: var(--amber-wash); --notice-ic: var(--amber); }
+.notice.red { --notice-bg: var(--red-wash); --notice-ic: var(--red); }
+.notice .btn { --btn-h: var(--ctl-sm); --btn-px: var(--space-2-5); }

@@ -2,13 +2,13 @@
 @layer app {
 .gal { display: grid; grid-template-columns: 196px minmax(0, 1fr); height: 100vh; background: var(--bg); }
 .gal-nav {
-  display: grid; align-content: start; gap: 1px; overflow-y: auto;
+  display: grid; align-content: start; gap: var(--space-0-5); overflow-y: auto;
   padding: var(--space-5) var(--space-3); background: var(--grain), var(--glass-side); border-right: .5px solid var(--line-2);
 }
 .gal-nav .brand { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2) var(--space-4); font-weight: var(--fw-semibold); }
-.gal-nav .t-caption { padding: var(--space-3) var(--space-2-5) var(--space-1); }
+.gal-nav .t-label { padding: var(--space-3) var(--space-2-5) var(--space-1); }
 .gal-nav a {
-  display: block; padding: 5px var(--space-2-5); border-radius: var(--r-md);
+  display: block; padding: var(--space-1-5) var(--space-2-5); border-radius: var(--r-md);
   font-size: var(--fs-sm); color: var(--fg-2); transition: background var(--t-fast), color var(--t-fast);
 }
 .gal-nav a:hover { background: var(--side-hover); color: var(--fg); text-decoration: none; }
@@ -19,34 +19,35 @@
   display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
   padding: var(--space-3) var(--space-8);
   background: color-mix(in srgb, var(--bg) 92%, transparent);
-  -webkit-backdrop-filter: saturate(1.6) blur(16px); backdrop-filter: saturate(1.6) blur(16px);
+  backdrop-filter: var(--glass-filter);
   border-bottom: 1px solid var(--line-2);
 }
-.gal-body { max-width: 1080px; padding: var(--space-2) var(--space-8) 120px; }
-.gal-sec { padding-top: var(--space-8); scroll-margin-top: 56px; }
+.gal-body { max-width: 1080px; padding: var(--space-2) var(--space-8) calc(2 * var(--space-16)); }
+.gal-sec { padding-top: var(--space-8); scroll-margin-top: calc(var(--space-12) + var(--space-2)); }   /* 让出粘在顶上的标题栏 */
 .gal-sec > h2 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tight); }
 .gal-sec > .lead { max-width: 680px; margin: var(--space-1-5) 0 var(--space-4); color: var(--muted); line-height: var(--lh-relaxed); }
+.gal-sec > h2 + :not(.lead) { margin-top: var(--space-4); }   /* 没有导语的分节：标题和第一个样例之间留出同样的距离 */
 .gal-sec h3 { margin: var(--space-6) var(--space-0-5) var(--space-2); }
 
-/* —— 样例卡：标题 / 演示区（可双主题对照）/ 用法 —— */
-.gal-specimen { margin: 0 0 var(--space-3); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-xl); overflow: hidden; }
+/* —— 样例卡：标题 / 演示区（可双主题对照）/ 用法。白卡放在 --bg 上，靠底色区分，不描边；卡里的几段之间是细线 —— */
+.gal-specimen { margin: 0 0 var(--space-3); background: var(--card); border-radius: var(--r-xl); overflow: hidden; }
 .gal-specimen > figcaption { display: flex; align-items: baseline; gap: var(--space-2); padding: var(--space-2-5) var(--space-3-5); border-bottom: 1px solid var(--line-2); }
 .gal-specimen > figcaption b { font-weight: var(--fw-semibold); }
 .gal-pair { display: grid; grid-template-columns: 1fr 1fr; }
-.gal-pair > .gal-demo + .gal-demo { border-left: 1px solid var(--line); }
+.gal-pair > .gal-demo + .gal-demo { border-left: 1px solid var(--line-2); }
 .gal-demo { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-5); min-width: 0; }
 .gal-demo[data-theme] { background: var(--card); }
 .gal-demo.col { flex-direction: column; align-items: stretch; }
 .gal-demo.flush { padding: 0; }
-.gal-demo.flush > .list { border: 0; border-radius: 0; width: 100%; }
+.gal-demo.flush > .list { border-radius: 0; width: 100%; }
 .gal-code {
-  margin: 0; padding: var(--space-2-5) var(--space-3-5); border-top: 1px solid var(--line-2); background: var(--card-2);
+  margin: 0; padding: var(--space-2-5) var(--space-3-5); border-top: 1px solid var(--line-2); background: var(--well);
   font: var(--fs-xs)/var(--lh-normal) var(--code); color: var(--fg-2); white-space: pre-wrap; overflow-x: auto;
   user-select: text; -webkit-user-select: text;
 }
 
 /* —— token 表 —— */
-.gal-rows { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-xl); overflow: hidden; }
+.gal-rows { background: var(--card); border-radius: var(--r-xl); overflow: hidden; }
 .gal-row {
   display: grid; grid-template-columns: minmax(190px, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); align-items: center;
   padding: var(--space-2) var(--space-3-5); border-top: 1px solid var(--line-2);
@@ -59,26 +60,26 @@
 .gal-chip { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-1); border-radius: var(--r-md); }
 .gal-chip i {
   width: 28px; height: 28px; flex: none; border-radius: var(--r-sm); background: var(--sw);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 12%, transparent);   /* 描边：色块样例，白色、透明色也要看得出边界 */
 }
 .gal-chip code { font-size: var(--fs-2xs); color: var(--muted); overflow-wrap: anywhere; }
-.gal-bar { height: 10px; width: var(--w); border-radius: 2px; background: var(--accent-solid); box-shadow: inset 0 0 0 1px var(--accent-line); }
-.gal-radius { width: 64px; height: 40px; border-radius: var(--r); background: var(--pill); box-shadow: inset 0 0 0 1px var(--line); }
-.gal-height { height: var(--h); width: 120px; border-radius: var(--r-sm); background: var(--pill); box-shadow: inset 0 0 0 1px var(--line); }
+.gal-bar { height: 10px; width: var(--w); border-radius: 2px; background: var(--accent-solid); box-shadow: inset 0 0 0 1px var(--accent-line); }   /* 描边：黄绿样例条要一道墨色细边 */
+.gal-radius { width: 64px; height: 40px; border-radius: var(--r); background: var(--pill); box-shadow: inset 0 0 0 1px var(--line); }   /* 描边：圆角样例，画出轮廓才看得出圆角 */
+.gal-height { height: var(--h); width: 120px; border-radius: var(--r-sm); background: var(--pill); box-shadow: inset 0 0 0 1px var(--line); }   /* 描边：高度样例 */
 .gal-elev { display: grid; place-items: end start; width: 150px; height: 84px; padding: var(--space-2-5); border-radius: var(--r-xl); background: var(--card); box-shadow: var(--sh); }
 
 /* —— 动效 —— */
 .gal-track { position: relative; flex: 1; min-width: 120px; height: 18px; border-radius: var(--r-full); background: var(--pill); }
 .gal-track i {
-  position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent);
+  position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent);   /* 微调：18 高的轨道里居中 12 的圆点 */
   transition: left var(--d, var(--dur-slow)) var(--e, var(--ease-out));
 }
-.gal-track.on i { left: calc(100% - 15px); }
+.gal-track.on i { left: calc(100% - 15px); }   /* 微调：圆点 12 + 右边留 3 */
 .gal-curve { width: 56px; height: 56px; flex: none; overflow: visible; }
 .gal-curve rect { fill: none; stroke: var(--line); }
 .gal-curve path { fill: none; stroke: var(--accent); stroke-width: 2; }
 .gal-anim { display: grid; justify-items: center; gap: var(--space-2); width: 120px; }
-.gal-anim-box { width: 72px; height: 48px; border-radius: var(--r-lg); background: var(--accent-solid); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.gal-anim-box { width: 72px; height: 48px; border-radius: var(--r-lg); background: var(--accent-solid); box-shadow: inset 0 0 0 1px var(--accent-line); }   /* 描边：黄绿样例块要一道墨色细边 */
 
 /* —— 页面模式 —— */
 .gal-chat { display: flex; flex-direction: column; width: 100%; }
@@ -119,6 +120,6 @@
   .gal-pair { grid-template-columns: minmax(0, 1fr); }
   .gal-stage { height: 520px; }
   .gal-stage-over { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .gal-pair > .gal-demo + .gal-demo { border-left: 0; border-top: 1px solid var(--line); }
+  .gal-pair > .gal-demo + .gal-demo { border-left: 0; border-top: 1px solid var(--line-2); }
 }
 }

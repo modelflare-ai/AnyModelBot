@@ -3,11 +3,23 @@
    底部是两行输入框（文字区 + 工具栏：更多 | 模型 · 发送）。
    顶栏和输入框都是盖在对话流上的毛玻璃：消息从它们底下滚过，透出来是模糊的。 */
 @layer app {
-.chat { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 对话列和输入框同宽、同一个居中列（两侧至少 --page-gutter）。输入框浮在主区底部，
+   对话列的下边距和"回到底部"的位置都从它的高度算出来，改输入框的内边距时这里跟着变。 */
+.chat, .composer {
+  --composer-line: 22px;          /* 输入框的行高 */
+  --composer-pad: var(--space-2); /* 工具栏离输入框的左、右、下边：加号和发送钮都贴着这条线 */
+  /* 一行字时输入框的高度：文字区（上 14 + 行高 + 下 4）+ 工具栏（上 6 + 发送钮 + 下 --composer-pad） */
+  --composer-h: calc(var(--space-3-5) + var(--composer-line) + var(--space-1) + var(--space-1-5) + var(--ctl-lg) + var(--composer-pad));
+}
+.chat {
+  --col: min(var(--col-w), calc(100% - 2 * var(--page-gutter)));
+  --dock-pb: var(--space-4);      /* 输入框离主区下沿 */
+  position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
 
 /* —— 顶栏：对话页里浮在滚动内容上；内容滚到它底下时（.scrolled）才出现细线和投影 —— */
 .chat-head {
-  flex: none; display: flex; align-items: center; gap: var(--space-1); height: var(--head-h); padding: 0 var(--space-3) 0 var(--space-3-5);
+  flex: none; display: flex; align-items: center; gap: var(--bar-gap); height: var(--head-h); padding: 0 var(--head-px);
   -webkit-app-region: drag;
 }
 .chat > .chat-head {
@@ -30,18 +42,20 @@ button.head-bot[aria-pressed="true"] { background: var(--pill-hover); }
 button.head-bot:active { background: var(--pill-press); }
 .head-bot .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* —— 对话流 —— */
+/* —— 对话流 ——
+   滚动条总是占着右边那一条（scrollbar-gutter），输入框的底座也留同样一条：对话列和输入框按同一个宽度居中，左右边对齐 */
 .chat-scroll {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; scroll-padding-top: var(--head-h);
+  flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; scroll-padding-top: var(--head-h); scrollbar-gutter: stable;
   /* 输入框下面那一窄条：内容淡出，露出主区本身 */
   mask-image: linear-gradient(to top, transparent, var(--black) var(--space-4));
 }
+/* 下边距 = 输入框占的高度 + 48，最后一条消息滚到底时停在输入框上方 */
 .chat-col {
-  width: min(var(--col-w), calc(100% - 48px)); margin: 0 auto;
-  padding: calc(var(--head-h) + var(--space-6)) 0 150px; display: flex; flex-direction: column;
+  width: var(--col); margin: 0 auto;
+  padding: calc(var(--head-h) + var(--space-6)) 0 calc(var(--dock-pb) + var(--composer-h) + var(--space-12)); display: flex; flex-direction: column;
 }
 .chat-skel { display: grid; gap: var(--space-3-5); margin-top: var(--space-6); }
-.chat-skel .skel { height: 34px; border-radius: var(--r-3xl); }
+.chat-skel .skel { height: 34px; border-radius: var(--r-bubble); }
 .chat-skel .skel:nth-child(2) { justify-self: end; }
 .chat-col > .notice { margin-top: var(--space-2); }
 
@@ -51,7 +65,7 @@ button.head-bot:active { background: var(--pill-press); }
 .msg-row.assistant { align-items: stretch; }
 .msg { font-size: var(--fs-xl); word-break: break-word; overflow-wrap: anywhere; cursor: text; }
 .msg-row.user .msg {
-  max-width: min(var(--bubble-w), 80%); padding: 9px var(--space-4); border-radius: var(--r-3xl);
+  max-width: min(var(--bubble-w), 80%); padding: var(--space-2-5) var(--space-4); border-radius: var(--r-bubble);
   background: var(--bubble-user); color: var(--fg); line-height: 1.55; white-space: pre-wrap;
 }
 .msg-row.assistant .msg { color: var(--fg); line-height: 1.7; }
@@ -74,7 +88,7 @@ button.head-bot:active { background: var(--pill-press); }
 
 /* 消息下方的操作：悬停出现；最后一条回复常显 */
 .msg-actions {
-  display: flex; align-items: center; gap: var(--space-1); height: 24px; margin-top: var(--space-0-5);
+  display: flex; align-items: center; gap: var(--bar-gap); height: 24px; margin-top: var(--space-0-5);
   color: var(--muted); opacity: 0; transition: opacity var(--t-fast);
 }
 .msg-row.user .msg-actions { flex-direction: row-reverse; }
@@ -97,29 +111,36 @@ button.head-bot:active { background: var(--pill-press); }
 .md p, .md ul, .md ol, .md blockquote, .md pre, .md table, .md hr { margin: 0 0 var(--space-3); }
 .md h1, .md h2, .md h3, .md h4 { margin: var(--space-5) 0 var(--space-2); font-size: var(--fs-xl); font-weight: var(--fw-semibold); line-height: 1.5; }
 .md h1 { font-size: var(--fs-2xl); }
-.md ul, .md ol { padding-left: 22px; }
+.md ul, .md ol { padding-left: var(--space-6); }
 .md li + li { margin-top: var(--space-1); }
-.md blockquote { padding-left: var(--space-3); border-left: 3px solid var(--line); color: var(--fg-2); }
+.md blockquote { padding-left: var(--space-3); border-left: 3px solid var(--line); color: var(--fg-2); }   /* 描边：引文的排版记号（灰色、不圈住内容），不是提示框的色条 */
 .md hr { border: 0; border-top: 1px solid var(--line); }
-.md code { font-size: var(--fs-sm); padding: 1px 5px; border-radius: var(--r-xs); background: var(--code-bg); }
+.md code { font-size: var(--fs-sm); padding: var(--space-0-5) var(--space-1); border-radius: var(--r-xs); background: var(--code-bg); }
 .md a { text-decoration: underline; text-underline-offset: 2px; }
 .md .table-wrap { overflow-x: auto; margin: 0 0 var(--space-3); }
 .md table { border-collapse: collapse; font-size: var(--fs-md); line-height: 1.45; margin: 0; }
-.md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
-.md th { font-weight: var(--fw-semibold); background: var(--card-2); }
-.codeblock { margin: 0 0 var(--space-3); border-radius: var(--r-xl); background: var(--card-2); box-shadow: inset 0 0 0 1px var(--line-2); overflow: hidden; }
+/* 表格不画格子：表头下一条 --line，行与行之间一条 --line-2，没有外框、竖线和表头底色；列靠右边距分开，第一列贴着正文左边 */
+.md th, .md td { padding: var(--space-1-5) var(--space-5) var(--space-1-5) 0; text-align: left; vertical-align: top; }
+.md :is(th, td):last-child { padding-right: 0; }
+.md th { font-weight: var(--fw-semibold); border-bottom: 1px solid var(--line); }
+.md tr + tr > td { border-top: 1px solid var(--line-2); }
+/* 代码块：一块 --well，不描边 */
+.codeblock { margin: 0 0 var(--space-3); border-radius: var(--r-well); background: var(--well); overflow: hidden; }
+/* 语言名和代码左对齐；复制钮离右边和上边一样远（30 高的条里放 22 的按钮） */
 .codeblock .bar {
   display: flex; align-items: center; height: 30px; padding: 0 var(--space-1) 0 var(--space-3);
   font-family: var(--code); font-size: var(--fs-2xs); color: var(--muted);
 }
 .codeblock .bar .lang { flex: 1; }
-.codeblock pre { margin: 0; padding: 0 var(--space-3-5) var(--space-3); overflow-x: auto; font: var(--fs-sm)/var(--lh-relaxed) var(--code); color: var(--fg); white-space: pre; }
+.codeblock .bar .icon-btn { --ib-size: var(--ctl-xs); }
+.codeblock pre { margin: 0; padding: 0 var(--space-3) var(--space-3); overflow-x: auto; font: var(--fs-sm)/var(--lh-relaxed) var(--code); color: var(--fg); white-space: pre; }
 .codeblock pre code { font-size: inherit; padding: 0; background: none; }
 
-/* 流里的卡片：提问 / 审批 / 文件 */
+/* 流里的一组：提问 / 审批 / 文件。一块 --well，不描边、不加投影；里面不再套框——
+   命令是一行等宽字，选项是可悬停的行，只有输入框留着自己的边 */
 .card {
-  width: min(var(--bubble-w), 100%); background: var(--card); border-radius: var(--r-2xl);
-  box-shadow: inset 0 0 0 .5px var(--line), var(--shadow-xs); padding: var(--space-4) 18px; display: grid; gap: var(--space-2-5);
+  width: min(var(--bubble-w), 100%); background: var(--well); border-radius: var(--r-well);
+  padding: var(--card-pad); display: grid; gap: var(--space-2-5);
 }
 .card .q { font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--fg); line-height: 1.45; }
 .card .q-detail { font-size: var(--fs-md); color: var(--fg-2); line-height: var(--lh-normal); white-space: pre-wrap; }
@@ -132,28 +153,29 @@ button.head-bot:active { background: var(--pill-press); }
 }
 .card .opt:hover:not(:disabled) { background: var(--pill); }
 .card .opt:active:not(:disabled) { background: var(--pill-hover); }
+/* 选项字母平时只是一列字；选中后才填成一块（这是状态，不是容器） */
 .card .opt .letter {
   width: 22px; height: 22px; border-radius: var(--r-sm); flex: none; display: grid; place-items: center;
-  background: var(--pill); color: var(--muted); font-size: var(--fs-sm); font-weight: var(--fw-semibold);
+  color: var(--muted); font-size: var(--fs-sm); font-weight: var(--fw-semibold);
   transition: background var(--t-fast), color var(--t-fast);
 }
-.card .opt:hover:not(:disabled) .letter { background: var(--pill-hover); color: var(--fg-2); }
+.card .opt:hover:not(:disabled) .letter { color: var(--fg); }
 .card .opt .desc { display: block; font-size: var(--fs-sm); color: var(--muted); }
 .card .opt.picked .letter, .card .opt.picked:hover .letter { background: var(--fg); color: var(--surface-solid); }
 .card.done .q { color: var(--muted); }
 .card.done .opt { color: var(--placeholder); }
 .card .meta { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); color: var(--muted); }
-.card .actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.card .actions { display: flex; gap: var(--ctl-gap); flex-wrap: wrap; }
 .card .cmd {
-  font: var(--fs-sm)/var(--lh-normal) var(--code); background: var(--card-2); border-radius: var(--r-md); padding: 7px 9px;
+  font: var(--fs-sm)/var(--lh-normal) var(--code);
   white-space: pre-wrap; word-break: break-all; color: var(--fg-2); max-height: 160px; overflow: auto;
 }
-.card .answer { display: flex; gap: var(--space-1-5); }
+.card .answer { display: flex; gap: var(--ctl-gap); }
 .file-card {
   display: flex; align-items: center; gap: var(--space-3); width: min(360px, 100%); padding: var(--space-2-5) var(--space-3-5) var(--space-2-5) var(--space-2-5);
-  background: var(--card); border-radius: var(--r-xl); box-shadow: inset 0 0 0 .5px var(--line), var(--shadow-xs);
+  background: var(--well); border-radius: var(--r-well);
 }
-.file-card > .ic { width: 40px; height: 40px; padding: var(--space-2); border-radius: var(--r-lg); background: var(--pill); color: var(--fg-2); }
+.file-card > .ic { width: 40px; height: 40px; padding: var(--space-2); color: var(--fg-2); }
 .file-card .fname { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .file-card .fsub { font-size: var(--fs-sm); color: var(--muted); }
 .msg-row .notice { max-width: min(var(--bubble-w), 100%); }
@@ -161,30 +183,33 @@ button.head-bot:active { background: var(--pill-press); }
 .chat-empty { margin: auto; padding-top: 16vh; display: grid; justify-items: center; gap: var(--space-2-5); text-align: center; color: var(--muted); }
 .chat-empty h2 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); color: var(--fg); }
 .chips { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: center; margin-top: var(--space-1-5); }
+/* 建议：和次级按钮一样是一层静默填充，不描边、不浮起 */
 .chip {
-  height: 32px; padding: 0 var(--space-3-5); border-radius: var(--r-full); background: var(--card);
-  box-shadow: inset 0 0 0 .5px var(--line), var(--shadow-xs);
-  font-size: var(--fs-sm); color: var(--fg-2); transition: color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast);
+  height: 32px; padding: 0 var(--space-3-5); border-radius: var(--r-full); background: var(--pill);
+  font-size: var(--fs-sm); color: var(--fg-2); transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast);
 }
-.chip:hover { color: var(--fg); box-shadow: inset 0 0 0 .5px var(--line-strong), var(--shadow-sm); }
-.chip:active { transform: scale(var(--press)); box-shadow: inset 0 0 0 .5px var(--line-strong), var(--shadow-xs); }
+.chip:hover { background: var(--pill-hover); color: var(--fg); }
+.chip:active { background: var(--pill-press); transform: scale(var(--press)); }
 
 /* —— 回到底部：玻璃小圆钮 —— */
 .to-bottom {
-  position: absolute; z-index: var(--z-float); left: 50%; bottom: 128px; translate: -50% 0;
-  width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  position: absolute; z-index: var(--z-float); left: 50%; bottom: calc(var(--dock-pb) + var(--composer-h) + var(--space-6)); translate: -50% 0;
+  width: var(--ctl-lg); height: var(--ctl-lg); border-radius: 50%; display: grid; place-items: center;
   background: var(--grain), var(--glass-float); backdrop-filter: var(--glass-filter-sm); color: var(--fg-2); box-shadow: var(--shadow-float);
   --rise: 6px; animation: rise-in var(--dur-base) var(--ease-out);
-  transition: color var(--t-fast), box-shadow var(--t-fast), scale var(--t-fast);
+  transition: color var(--t-fast), scale var(--t-fast);
 }
-.to-bottom:hover { color: var(--fg); box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 .5px var(--line-strong), var(--shadow-md); }
+.to-bottom:hover { color: var(--fg); }
 .to-bottom:active { scale: var(--press-strong); }
-.to-bottom .new { position: absolute; top: 0; right: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-solid); box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 2.5px var(--accent-line); }
+.to-bottom .new { position: absolute; top: 0; right: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-solid); box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 2.5px var(--accent-line); }   /* 描边：圆点外的缺口和墨色细边，黄绿点才压得住白底 */
 
-/* —— 输入框：文字区 + 工具栏两行，一块浮在对话流上的玻璃。
-   状态：悬停描边加深；输入时描边更实、投影更大；拖入文件时 accent 描边 + 光晕 + 一层黄绿 —— */
+/* —— 输入框：文字区 + 工具栏两行，一块浮在对话流上的玻璃（和菜单、提示同一种材质：细边 + 投影，不额外描边）。
+   认得出它靠的是：浮起的投影、常显的占位文字（3:1）、工具栏和发送钮，以及固定在底部的位置。
+   状态：输入时浮得更高（投影更大）；拖入文件时 accent 描边 + 光晕 + 一层黄绿 —— */
+/* 底座是透明的、不接收指针；上边留得够高，输入框聚焦时的投影不会被 overflow 裁掉 */
 .composer-dock {
-  position: absolute; z-index: var(--z-float); left: 0; right: 0; bottom: 0; padding: var(--space-6) 0 var(--space-4); pointer-events: none;
+  position: absolute; z-index: var(--z-float); left: 0; right: 0; bottom: 0; padding: var(--space-12) 0 var(--dock-pb); pointer-events: none;
+  overflow: hidden; scrollbar-gutter: stable;
 }
 .composer {
   --composer-edge: var(--glass-edge);
@@ -192,23 +217,23 @@ button.head-bot:active { background: var(--pill-press); }
   --composer-shadow: var(--shadow-md);
   --composer-tint: transparent;
   pointer-events: auto; position: relative;
-  width: min(var(--col-w), calc(100% - 48px)); margin: 0 auto;
+  width: var(--col, auto); margin: 0 auto;
   display: flex; flex-direction: column;
   background: var(--grain), linear-gradient(var(--composer-tint), var(--composer-tint)), var(--glass-float);
   backdrop-filter: var(--glass-filter); border-radius: var(--r-3xl);
-  box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 var(--composer-edge-w) var(--composer-edge), var(--composer-shadow);
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 var(--composer-edge-w) var(--composer-edge), var(--composer-shadow);   /* 描边：浮层玻璃的细边；拖入文件时换成 accent */
   transition: box-shadow var(--t-base);
 }
-.composer:hover { --composer-edge: var(--line-strong); }
-.composer:focus-within { --composer-edge: var(--line-strong); --composer-edge-w: 1px; --composer-shadow: var(--shadow-lg); }
+.composer:focus-within { --composer-shadow: var(--shadow-lg); }
 .composer.drag { --composer-edge: var(--accent); --composer-edge-w: 1.5px; --composer-shadow: var(--ring), var(--shadow-md); --composer-tint: var(--accent-wash); }
 .composer textarea {
   display: block; width: 100%; min-width: 0; border: 0; outline: none; background: transparent; resize: none;
-  font-size: var(--fs-xl); line-height: 22px; padding: var(--space-3-5) var(--space-4) var(--space-1); max-height: calc(22px * 8 + 18px); overflow-y: auto; color: var(--fg);
+  font-size: var(--fs-xl); line-height: var(--composer-line); padding: var(--space-3-5) var(--space-4) var(--space-1);
+  max-height: calc(var(--composer-line) * 8 + var(--space-3-5) + var(--space-1)); overflow-y: auto; color: var(--fg);
 }
 .composer textarea::placeholder { color: var(--placeholder); }
 .composer textarea:focus-visible { outline: none; }
-.composer-bar { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1-5) var(--space-2) var(--space-2) var(--space-2-5); }
+.composer-bar { display: flex; align-items: center; gap: var(--bar-gap); padding: var(--space-1-5) var(--composer-pad) var(--composer-pad); }
 .composer-bar .grow { flex: 1; }
 .composer :is(.plus, .model-chip) {
   flex: none; height: 30px; display: inline-flex; align-items: center; justify-content: center; color: var(--ctl-fg);
@@ -228,7 +253,7 @@ button.head-bot:active { background: var(--pill-press); }
 .composer .model-chip.perm { max-width: 160px; }
 /* 发送：空的时候是中性的灰钮（不用半透明的墨色或黄绿，会发浑）；能发了才亮起品牌色，悬停时箭头往上提一点 */
 .send {
-  width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  width: var(--ctl-lg); height: var(--ctl-lg); border-radius: 50%; flex: none; display: grid; place-items: center;
   background: var(--send-bg); color: var(--send-fg); box-shadow: var(--primary-edge);
   transition: background var(--t-base), color var(--t-base), box-shadow var(--t-base), transform var(--t-fast);
 }
@@ -237,9 +262,5 @@ button.head-bot:active { background: var(--pill-press); }
 .send:hover:not(:disabled):not(.stop) .ic { transform: translateY(-1px); }
 .send:active:not(:disabled) { background: var(--primary-press); transform: scale(var(--press-strong)); }
 .send:disabled { background: var(--pill); color: var(--faint); box-shadow: none; }
-.composer-disabled { pointer-events: auto; width: min(var(--col-w), calc(100% - 48px)); margin: 0 auto var(--space-2); }
-
-@media (max-width: 1000px) {
-  .chat-col, .composer, .composer-disabled { width: calc(100% - 32px); }
-}
+.composer-disabled { pointer-events: auto; width: var(--col); margin: 0 auto var(--space-2); }
 }

@@ -10,10 +10,11 @@ import { themeMode, setThemeMode } from "../lib/theme.js";
 
 const Compare = createContext(false);
 
-// —— 解析 token 文件：取第一个规则块，"/* —— 组名：说明 —— */" 分组，行尾注释作为说明 ——
-async function loadTokens(file) {
+// —— 解析 token 文件：取第一个规则块（或 from 之后的第一个），"/* —— 组名：说明 —— */" 分组，行尾注释作为说明 ——
+async function loadTokens(file, from = "") {
   const text = await fetch(new URL(`./tokens/${file}`, import.meta.url)).then((r) => r.text());
-  const block = text.slice(text.indexOf("{") + 1, text.indexOf("\n}"));
+  const start = from ? text.indexOf(from) : 0;
+  const block = text.slice(text.indexOf("{", start) + 1, text.indexOf("\n}", start));
   const groups = [];
   let g = null;
   for (const line of block.split("\n")) {
@@ -327,7 +328,7 @@ const STATE_ROWS = [
     ...basic((c) => html`<div class="composer gal-bare"><button type="button" class=${`model-chip ${c}`}><span class="v">claude-sonnet-5-5</span><${Icon} name="chevDown" /></button></div>`),
     ["打开", () => html`<div class="composer gal-bare"><button type="button" class="model-chip" aria-expanded="true"><span class="v">claude-sonnet-5-5</span><${Icon} name="chevDown" /></button></div>`],
     ["加号 · 打开", () => html`<div class="composer gal-bare"><button type="button" class="plus" aria-expanded="true" aria-label="更多"><${Icon} name="plus" size=${15} stroke=${1.7} /></button></div>`]] },
-  { name: "模板卡", note: ".tpl · 悬停浮起 1px，选中是 accent 描边 + 一层黄绿", cells: [
+  { name: "模板卡", note: ".tpl · 一块 --well；悬停底色深一级，选中是一层黄绿 + 黄绿图标，不描边", cells: [
     ...basic((c) => html`<button type="button" class=${`tpl ${c}`} style="width: 190px"><span class="tpl-ic"><${Icon} name="chat" size=${17} /></span><span class="tpl-name">群聊日报</span><span class="tpl-desc">每天整理群消息</span></button>`),
     ["选中", () => html`<button type="button" class="tpl on" style="width: 190px"><span class="tpl-ic"><${Icon} name="chat" size=${17} /></span><span class="tpl-name">群聊日报</span><span class="tpl-desc">每天整理群消息</span></button>`]] },
   { name: "建议胶囊", note: ".chip", cells: basic((c) => html`<button type="button" class=${`chip ${c}`}>你能帮我做什么？</button>`) },
@@ -356,9 +357,13 @@ function Gallery() {
   const [prim, setPrim] = useState(null);
   const [sem, setSem] = useState(null);
   const [mot, setMot] = useState(null);
+  const [roles, setRoles] = useState(null);
+  const [radii, setRadii] = useState(null);
   useEffect(() => {
     loadTokens("primitives.css").then(setPrim);
     loadTokens("semantic.css").then(setSem);
+    loadTokens("semantic.css", "\n:root {").then(setRoles);
+    loadTokens("semantic.css", "/* 圆角角色").then(setRadii);
     loadTokens("motion.css").then(setMot);
   }, []);
   const motion = (mot || []).flatMap((g) => g.tokens);
@@ -371,7 +376,7 @@ function Gallery() {
   return html`<${Compare.Provider} value=${compare}><div class="gal">
     <nav class="gal-nav" aria-label="目录">
       <div class="brand"><${AppMark} size=${24} />设计库</div>
-      ${nav.map(([g, items]) => html`<div class="t-caption">${g}</div>${items.map(([id, label]) => html`<a href=${"#" + id}>${label}</a>`)}`)}
+      ${nav.map(([g, items]) => html`<div class="t-label">${g}</div>${items.map(([id, label]) => html`<a href=${"#" + id}>${label}</a>`)}`)}
     </nav>
     <main class="gal-main">
       <header class="gal-head">
@@ -390,6 +395,15 @@ function Gallery() {
    app         ui/css/*.css 页面样式：覆盖组件只需改 --组件-* 变量
    utilities   .t-*（文字角色）.stack .cluster .grow .truncate .tone-* */`}>
           ${() => html`<${Notice} action=${html`<a class="btn" href="#custom">看定制示例</a>`}>写新界面前先在这里找现成的 token 和组件；找不到再加，并且加在 token 文件里。<//>`}
+        <//>
+        <${Demo} col title="容器与层次" note="一组东西 = 底色深一级（--well）+ 间距；里面不再套框；描边只留给输入框（≥ 3:1）和浮层玻璃" code=${`.card { background: var(--well); border-radius: var(--r-well); }        /* 不描边、不加投影 */
+.card .cmd { font-family: var(--code); }                                /* 卡片里的命令是一行等宽字，不再套底 */
+.notice.red { --notice-bg: var(--red-wash); --notice-ic: var(--red); }  /* 提示：淡底 + 图标 + --fg 字，不描边、无色条 */`}>
+          ${() => html`<div class="card"><div class="meta">需要你的批准 · <span class="num">A7K2</span></div><div class="q">机器人想在工作区之外写入文件</div>
+              <div class="cmd">write_file  ~/Documents/周报/2026-W44.md</div>
+              <div class="actions"><${Button} variant="primary">允许（仅本次）<//><${Button}>拒绝<//></div></div>
+            <${Notice} tone="red">模型请求失败：HTTP 529 上游繁忙，请稍后重试<//>
+            <input class="field" placeholder="输入框保留自己的边" />`}
         <//>
       <//>
 
@@ -410,15 +424,18 @@ function Gallery() {
         ${prim && html`<${ScaleRows} tokens=${group(prim, "字号")} sample=${(t) => html`<span style=${{ fontSize: `var(${t.name})` }}>模型网关 Modelflare 0123</span>`} />`}
         <h3 class="t-label">文字角色</h3>
         <${Demo} col code=${`<div class="t-heading">…</div>  <p class="t-meta">…</p>`}>
-          ${() => html`${[["t-display", "引导页标题"], ["t-heading", "对话框 / 页面标题"], ["t-title", "列表标题"], ["t-prose", "对话正文：15px，行高 1.5"], ["t-body", "界面正文：13px"], ["t-control", "控件文字：12.5px"], ["t-meta", "次要说明：11.5px，muted"], ["t-label", "分组标题：11px semibold"], ["t-caption", "菜单分组：11px，字距 .04em"]].map(
+          ${() => html`${[["t-display", "引导页标题"], ["t-heading", "对话框 / 页面标题"], ["t-title", "列表标题"], ["t-prose", "对话正文：15px，行高 1.5"], ["t-body", "界面正文：13px"], ["t-control", "控件文字：12.5px"], ["t-meta", "次要说明：11.5px，muted"], ["t-label", "分组标题、菜单分组：11px semibold，不加字距"]].map(
             ([c, s]) => html`<div class="cluster"><code class="t-meta" style="width:96px">.${c}</code><span class=${c}>${s}</span></div>`,
           )}`}
         <//>
       <//>
 
-      <${Section} id="space" title="间距与尺寸" lead="间距以 4 为步长；圆角嵌套时内层 = 外层 − 内边距；控件高度 6 档。">
-        ${prim && html`<h3 class="t-label">间距</h3><${ScaleRows} tokens=${group(prim, "间距")} sample=${(t) => html`<div class="gal-bar" style=${{ "--w": `var(${t.name})` }}></div>`} />
+      <${Section} id="space" title="间距与尺寸" lead="间距以 4 为步长；页面和组件优先用按用途命名的间距角色，一个角色只用一个值；圆角嵌套时内层 = 外层 − 内边距；控件高度 6 档。">
+        ${prim && html`<h3 class="t-label">间距</h3><${ScaleRows} tokens=${group(prim, "间距")} sample=${(t) => html`<div class="gal-bar" style=${{ "--w": `var(${t.name})` }}></div>`} />`}
+        ${roles && roles.map((g) => html`<h3 class="t-label">间距角色 · ${g.name}</h3><${ScaleRows} tokens=${g.tokens.map((t) => ({ ...t, src: t.src.replace(/^var\((--[\w-]+)\)$/, "$1") }))} sample=${(t) => html`<div class="gal-bar" style=${{ "--w": `var(${t.name})` }}></div>`} />`)}
+        ${prim && html`
           <h3 class="t-label">圆角</h3><${ScaleRows} tokens=${group(prim, "圆角")} sample=${(t) => html`<div class="gal-radius" style=${{ "--r": `var(${t.name})` }}></div>`} />
+          ${radii && html`<h3 class="t-label">圆角角色（同一种面只用一个圆角）</h3><${ScaleRows} tokens=${radii.flatMap((g) => g.tokens).map((t) => ({ ...t, src: t.src.replace(/^var\((--[\w-]+)\)$/, "$1") }))} sample=${(t) => html`<div class="gal-radius" style=${{ "--r": `var(${t.name})` }}></div>`} />`}
           <h3 class="t-label">控件高度</h3><${ScaleRows} tokens=${group(prim, "控件高度")} sample=${(t) => html`<div class="gal-height" style=${{ "--h": `var(${t.name})` }}></div>`} />`}
       <//>
 
@@ -470,7 +487,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
       <//>
 
       <${Section} id="inputs" title="输入">
-        <${Demo} col title=".field" note="聚焦：accent 描边 + --ring 光晕" code=${`<input class="field mono err" />  <div class="field-wrap"><input class="field" /><span class="tail">…</span></div>`}>
+        <${Demo} col title=".field" note="唯一常驻描边的控件：--ctl-edge 对所在表面 ≥ 3:1；聚焦：accent 描边 + --ring 光晕" code=${`<input class="field mono err" />  <div class="field-wrap"><input class="field" /><span class="tail">…</span></div>`}>
           ${() => html`<${FieldDemo} />`}
         <//>
       <//>
@@ -499,7 +516,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <//>
       <//>
 
-      <${Section} id="lists" title="列表行" lead="设置页的基本单元：一张 .list 卡片，每行说明在左、控件在右，改动即保存。">
+      <${Section} id="lists" title="列表行" lead="设置页的基本单元：一组 .list（--well 底色、不描边），每行说明在左、控件在右，行与行之间一条细线，改动即保存。">
         <${Demo} flush>
           ${() => html`<div class="list">
             <div class="row"><div class="who"><div class="name">外观</div><div class="sub">跟随系统、浅色或深色</div></div><div class="ctl"><${SegDemo} /></div></div>
@@ -549,17 +566,17 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
       <//>
 
       <${Section} id="custom" title="定制" lead="不改组件源码：在上下文里覆盖组件变量；需要一块不同主题的区域时，加 data-theme。">
-        <${Demo} title="覆盖组件变量" code=${`.notice .btn { --btn-h: var(--ctl-sm); --btn-bg: var(--card); }      /* 上下文覆盖 */
+        <${Demo} title="覆盖组件变量" code=${`.notice .btn { --btn-h: var(--ctl-sm); --btn-px: var(--space-2-5); }      /* 上下文覆盖 */
 <button class="btn" style="--btn-bg: var(--green-soft); --btn-fg: var(--green)">…</button>
 .thread .badge.count { --badge-bg: var(--amber-soft); --badge-fg: var(--amber); }`}>
           ${() => html`<button type="button" class="btn" style="--btn-bg: var(--green-soft); --btn-fg: var(--green); --btn-bg-hover: var(--green-soft)">绿色按钮</button>
             <button type="button" class="btn primary" style="--btn-r: var(--r-full); --btn-px: var(--space-5)">胶囊主按钮</button>
-            <span class="badge" style="--badge-bg: var(--accent-soft); --badge-fg: var(--accent)">自定义徽标</span>
+            <span class="badge" style="--badge-fg: var(--accent)">自定义状态点</span>
             <div class="seg" style="--seg-thumb: var(--card); --seg-on: var(--fg)"><span class="thumb" style="width:52px;transform:translateX(0)"></span><button type="button" class="on">中性</button><button type="button">分段</button></div>`}
         <//>
         <${Demo} title="局部主题" code=${`<div data-theme="dark">…</div>   /* 子树换一套语义 token */`}>
           ${() => html`<div data-theme="dark" class="cluster" style="padding: var(--space-3); border-radius: var(--r-xl)"><${Button} variant="primary">深色区域<//><${Badge} s="running" /><span class="t-meta">--bg / --fg 自动切换</span></div>
-            <div data-theme="light" class="cluster" style="padding: var(--space-3); border-radius: var(--r-xl); box-shadow: inset 0 0 0 1px var(--line)"><${Button} variant="primary">浅色区域<//><${Badge} s="running" /></div>`}
+            <div data-theme="light" class="cluster" style="padding: var(--space-3); border-radius: var(--r-xl)"><${Button} variant="primary">浅色区域<//><${Badge} s="running" /></div>`}
         <//>
       <//>
       </div>

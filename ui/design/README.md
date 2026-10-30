@@ -12,7 +12,7 @@ ui/design/
   index.css              入口：声明层顺序并按层引入下面所有文件
   tokens/
     primitives.css       L1 原始值：品牌/状态色板，间距、字号、圆角、控件高度、层级等尺度
-    semantic.css         L2 语义 token：按用途命名、按主题取值（浅色 + 深色）
+    semantic.css         L2 语义 token：按用途命名、按主题取值（浅色 + 深色）；另有与主题无关的间距角色
     motion.css           动效 token：时长、缓动、位移量、--motion 开关
   base/
     reset.css            重置、焦点环、可选中规则
@@ -46,14 +46,50 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 |---|---|
 | 颜色 | 页面和组件**只用语义色**。原始色板只在 `semantic.css` 里引用。新颜色先加语义 token（两个主题都要给值），再用。 |
 | 字号 | 9 级 `--fs-2xs … --fs-4xl`（11 / 11.5 / 12.5 / 13 / 14 / 15 / 17 / 20 / 24）。新界面优先用文字角色 `.t-*`。 |
-| 圆角 | `--r-xs … --r-3xl`、`--r-full`。嵌套时内层 = 外层 − 内边距（`.seg`、`.pop` 里的列表项就是这样算的）。圆形用 `50%`。 |
-| 间距 | 4 的倍数 `--space-1 … --space-16`，另有 `-0-5 / -1-5 / -2-5 / -3-5` 半步。组件内部的精调像素可以保留。 |
+| 圆角 | `--r-xs … --r-3xl`、`--r-full`。同一种面用同一个圆角角色：`--r-well`（内容里的一组）、`--r-pane`（面板与浮层）、`--r-bubble`（消息气泡），见「容器与层次」。嵌套时内层 = 外层 − 内边距（`.seg`、`.pop` 里的列表项就是这样算的）。圆形用 `50%`。 |
+| 间距 | 4 的倍数 `--space-1 … --space-16`，另有 `-0-5 / -1-5 / -2-5 / -3-5` 半步。页面和组件先用按用途命名的间距角色（见下文「间距」）。写死的像素只允许 0、≤1px 的细线，以及同一行带 `/* 微调：… */` 注释的光学微调。 |
 | 控件高度 | `--ctl-xs … --ctl-2xl`（22 / 24 / 28 / 32 / 36 / 44）。 |
-| 投影 | `--shadow-xs / sm / md / lg`；`--shadow-pane`（浮在环境光上的面板）、`--shadow-tile`（侧栏选中项）、`--shadow-float` / `--shadow-pop`（玻璃的边 + 投影）、`--primary-edge`、`--seg-edge`。深色下更重，都是主题 token。 |
+| 层次 | `--well` / `--well-hover` / `--well-press`（内容里的一组，只有这一层）；`--line-2`（行间细线）；`--ctl-edge` / `--ctl-edge-hover`（输入框的边，≥ 3:1）；`--red-wash` / `--amber-wash`（提示行的淡底）。规则见「容器与层次」。 |
+| 投影 | `--shadow-xs / sm / md / lg`；`--shadow-pane`（浮在环境光上的面板）、`--shadow-tile`（侧栏选中项，只有投影）、`--shadow-float` / `--shadow-pop`（玻璃的边 + 投影）、`--primary-edge`、`--seg-edge`（分段 thumb、开关圆钮，只有投影）。深色下更重，都是主题 token。内容里的组不加投影。 |
 | 层级 | 只用 `--z-*`；同一窗格内的浮动件用 `calc(var(--z-float) ± 1)`。 |
 | 焦点 | 输入框：accent 描边（浅色墨、深色黄绿）+ `box-shadow: var(--ring)` 黄绿光晕（错误时 `--ring-danger`）；其他控件：全局 `:focus-visible` 2px 描边、外移 2px，装在会裁切的容器里时用 `--focus-offset` 往里收。 |
 
 现有语义色名（`--bg --card --pill --line --fg --muted --accent …`）沿用 magpie 的叫法，分组见 `semantic.css` 里的 `/* —— 组 —— */` 注释。
+
+## 间距
+
+页面和组件先用**间距角色**（`semantic.css` 里与主题无关的 `:root` 块，样例页「间距与尺寸」里有表），没有合适的角色时才直接用 `--space-*`。**一个角色只用一个值**：同一种用途不要这里 10、那里 12、别处 14。
+
+| 角色 | token | 值 | 用在哪 |
+|---|---|---|---|
+| 面板间隙 | `--pane-gap` | 8 | 主区、信息面板离窗口边缘；弹出层离窗口边缘 |
+| 面板内容边距 | `--pane-px` | 16 | 信息面板的标题与行文字、对话顶栏的头像 |
+| 顶栏边距 | `--head-px` | 10 | 对话、信息面板、新建页的顶栏到首尾按钮 |
+| 工具栏间隙 | `--bar-gap` | 4 | 一排图标按钮：顶栏、输入框工具栏、消息操作 |
+| 侧栏边距 | `--side-inset` | 8 | 侧栏的行、搜索框、顶部按钮、账户离侧栏边缘 |
+| 侧栏行内边距 | `--side-row-px` | 10 | 机器人行、设置导航、账户、返回、搜索框 |
+| 侧栏行间隙 | `--side-row-gap` | 2 | 相邻两行 |
+| 内容列边距 | `--page-gutter` | 24（窗口窄于 1000px 时 16） | 对话列、输入框、设置页、新建页、引导页两侧至少留这么多 |
+| 页面上 / 下边距 | `--page-top` / `--page-bottom` | 48 / 64 | 设置页、新建页、引导页 |
+| 分组间距 | `--section-gap` / `--section-gap-sm` | 32 / 20 | 页面里 / 窄面板里分组标题的上方 |
+| 标题到内容 | `--heading-gap` | 10 | 页面分组标题的下方 |
+| 卡片内边距 | `--card-pad` | 16 | 提问 / 审批卡、引导页卡片、侧栏空状态、模板卡 |
+| 对话框内边距 | `--sheet-pad` | 20 | `.sheet` |
+| 按钮组间隙 | `--ctl-gap` | 8 | 对话框、卡片、展开编辑区里的一组操作 |
+| 浮层离窗口 | `--float-inset` | 16 | 提示胶囊、命令面板、对话框 |
+| 弹出层离锚点 | `--pop-offset` | 6 | `usePopPosition`（JS 读 token 的像素值，不写死） |
+
+**对齐的线**，改间距时守住：
+
+- **顶部中线**：侧栏顶部先让出 `--pane-gap` 再放 `--head-h`，新建按钮和主区、信息面板的顶栏按钮在同一条水平线上；搜索框的上沿就是顶栏的下沿。
+- **底边**：侧栏的账户行离窗口下沿 `--pane-gap`，和主区、信息面板的下沿对齐；"已保存"浮在账户行上方一个 `--side-inset`，左边和侧栏的行对齐。
+- **侧栏竖线**：行、搜索框、账户的边离侧栏边缘 `--side-inset`；头像、导航图标、搜索图标、返回箭头都在 `--side-inset + --side-row-px`（18）；搜索框的文字和设置导航的文字对齐。
+- **面板竖线**：信息面板的标题、分组标题、行文字、展开编辑区、待审批说明都在 `--pane-px`（16）；对话顶栏是 `--head-px` + 按钮自带的 6，头像也落在 16。
+- **居中列**：对话列和输入框同宽 `min(--col-w, 100% − 2 × --page-gutter)`，设置页、新建页、引导页两侧也至少 `--page-gutter`。对话列的下边距和"回到底部"的位置由输入框高度 `--composer-h` 算出来。
+- **弹出层**：列表离边缘 `--pop-pad`（4），项再缩进 8，于是项的文字、分组名、分隔线、搜索图标、空状态都在离边缘 12 的线上。
+- **行**：默认行上下 6，"标题 + 说明"两行的行和一行的行一样高（48）；`.row.compact` 只是矮一些，左右和默认行一样；`.row-edit` 的左右也和行一样，输入框和上面那行的文字对齐。
+
+**写死的像素**只允许三种：`0`；≤1px 的细线（比如 `right: -1px` 压住描边）；同一行带 `/* 微调：理由 */` 注释的光学微调，守卫测试认这个注释。尺寸（宽、高、控件大小）不算间距，但 `calc()` 里加减的像素算（`calc(100% - 48px)` 其实是两侧的边距）。
 
 ## 品牌色
 
@@ -93,7 +129,39 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 
 - **填充、悬停、描边都是半透明的一层**（`--pill*`、`--side-*`、`--line*`、`--sel*`），放在玻璃和实色上都对。不要在玻璃上用实色灰。
 - **`backdrop-filter` 会让元素变成 `position: fixed` 子元素的包含块**。里面会渲染菜单、对话框的容器（侧栏、主区、`.chat`）不要加，模糊只加在叶子级的浮层上。
-- 系统开了"降低透明度"（`prefers-reduced-transparency`），材质自动换成接近实色，层次靠描边和投影。
+- 系统开了"降低透明度"（`prefers-reduced-transparency`），材质自动换成接近实色，层次靠浮层的细边和投影。
+- **模糊只给浮层**：对话框、命令面板后面的遮罩只压暗、不模糊——对话框自己的玻璃已经模糊了一层，两层叠在一起既糊又费 GPU。
+
+## 容器与层次
+
+一句话：**成组靠底色和间距，不靠描边；一组里面不再套一组。**
+
+| 层 | 是什么 | 怎么画 |
+|---|---|---|
+| 面板 | 主区、信息面板（浮在环境光上） | `--surface` / `--glass-panel` + `--shadow-pane`（带 .5px 的边：浅色下面板和环境光只差 1.1:1）、`--r-pane` |
+| 一组（只有这一层） | 设置分组 `.list`、对话里的提问 / 审批卡 `.card`、代码块、文件、模板卡、行内提示、信息面板里展开的编辑区和待审批 | `--well` 底色 + `--r-well`，**不描边、不加投影**；可点的组悬停 `--well-hover`、按下 `--well-press` |
+| 组里的东西 | 行、命令、选项、按钮、输入框 | 直接排在组里：行与行之间一条 `--line-2` 细线（真需要分开时才加）；命令就是一行等宽字；选项是可悬停的行 |
+| 浮层 | 对话输入框、回到底部、菜单、命令面板、对话框、提示胶囊、引导页卡片 | 玻璃材质（见「材质」）：`--glass-edge` 细边 + 投影是浮层自己的边，不另加描边 |
+
+- **不嵌套**：`--well` 里不再放 `--well`、卡片或描边框。审批卡里的 `write_file …` 就是一行等宽字；选项字母平时只是一列字，选中才填成一块（这是状态，不是容器）；图标不套底片（模板卡选中时图标亮成黄绿片，也是状态）。对话框里不再套卡片："更换密钥"的表单直接排在对话框的内边距里。信息面板上的行直接排在面板上，只有展开的编辑区和待审批是一层 `--well`。
+- **描边只给两种东西**：
+  1. 文字输入框 `.field`：`--ctl-edge`，对它可能落在的每一种表面（主区、信息面板、对话框、`--well`）都 ≥ 3:1（两个主题都约 3.2:1），底色透明；悬停 `--ctl-edge-hover`，聚焦换 accent + `--ring`。这是界面里唯一常驻的边——看到边就知道"这里能打字"。
+  2. 浮层玻璃的细边 `--glass-edge`，以及黄绿填充面的墨色细边 `--accent-line`（黄绿在白底上只有 1.15:1：应用标志、"已保存"、选中模板的图标）。
+- **分隔线**只用在行与行之间（列表行、表格行、菜单分隔、正文 `hr`、"用时"下面），≤ 1px 的 `--line-2`（表头下沿用 `--line`）。表格不画格子：没有外框、竖线和表头底色，第一列贴着正文左边。
+- **不加侧边色条**：提示 `.notice` 是一行淡底（`--red-wash` / `--amber-wash` / `--well`）+ 左边一个图标 + `--fg` 的字（在淡底上 ≥ 14:1）；语气靠图标颜色，不要"淡红底 + 红边 + 左侧粗红条"，也不要淡红底上的红字（对比度不够）。引文 `blockquote` 的灰色竖线是排版记号，可以留。
+- **描边和投影不叠在同一个元素上**：内容里的组两样都不要；浮层只有"玻璃细边 + 投影"这一种写法；侧栏选中项、分段 thumb、开关圆钮只有投影。
+- **状态用点，不用彩色胶囊**：`.badge` 是"状态点 + 文字"（和设置页的「● 已连接」同一种写法）；只有计数 `.badge.count` 保留一小块底。
+- **小标签**：分组名、菜单分组一律 `.t-label`（11px semibold、`--muted`），不全大写、不加字距、不用 `--faint`（读不清）。
+- **同一种面同一个圆角**：`--r-well`（12）、`--r-pane`（14）、`--r-bubble`（20）。
+- **不用装饰性 emoji**：服务端用 `⚠️` 标记出错的消息（微信、飞书里只能这样），界面里显示前去掉，语气交给 `Notice` 的图标。
+
+**可交互的东西要认得出来**（非文字对比度 ≥ 3:1，或者有等效的提示）：
+
+- 输入框：`--ctl-edge` 本身 ≥ 3:1。
+- 对话输入框是浮层，认得出它靠浮起的投影、常显的占位文字（`--placeholder`，3:1）、工具栏和发送钮、固定在底部的位置，输入时投影变大；侧栏搜索框靠放大镜图标 + 占位文字 + 底色，聚焦时 accent 描边 + 光晕。
+- 按钮、分段、开关、下拉靠文字和填充；键盘焦点一律 2px accent 描边（`:focus-visible`），输入框是 accent 描边 + `--ring`。
+
+真的需要一道边时，在**同一行**写 `/* 描边：理由 */`，守卫测试认这个注释（`ui/` 下除 token 文件外的所有 CSS）。
 
 ## 状态
 
@@ -101,11 +169,11 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 
 | 状态 | 怎么表现 | 用什么 |
 |---|---|---|
-| 悬停 | 叠一层半透明，静默控件的字从 `--ctl-fg` 变 `--fg`；卡片类（模板、胶囊、提示里的按钮）是描边加深 + 投影变大 | `--pill` → `--pill-hover`；侧栏里是更亮的一层玻璃 `--side-hover` |
+| 悬停 | 叠一层半透明，静默控件的字从 `--ctl-fg` 变 `--fg`；可点的组（模板卡）底色深一级，不浮起、不加描边 | `--pill` → `--pill-hover`，`--well` → `--well-hover`；侧栏里是更亮的一层玻璃 `--side-hover` |
 | 按下 | 再深一级，并轻微缩小（`--press` / `--press-strong`）；列表行只变色不缩放 | `--pill-press`、`--sel-press`、`--side-press` |
 | 键盘焦点 | `:focus-visible` 2px `--accent` 描边；输入框是描边 + 光晕 | `--focus-offset`、`--ring` |
 | 打开 | 菜单展开时触发它的按钮保持"按住"的样子，箭头翻转，加号转成叉 | `[aria-expanded="true"]`，`.icon-btn.on` |
-| 选中 / 当前 | 侧栏行和设置导航是浮起的玻璃片；菜单当前项打勾；模板卡 accent 描边 + `--accent-wash`，图标亮成黄绿 | `--side-active` + `--shadow-tile`，`--accent-wash` |
+| 选中 / 当前 | 侧栏行和设置导航是浮起的玻璃片；菜单当前项打勾；模板卡铺一层 `--accent-wash`、图标亮成黄绿片；头像选择是底色深一级 + 名字变实（头像在"听"）。都不描边 | `--side-active` + `--shadow-tile`，`--accent-wash`，`--pill-press` |
 | 禁用 | `--o-disabled`，不响应悬停和按下；主按钮和发送钮退成中性灰（半透明的墨色或黄绿会发浑） | `:disabled` |
 | 加载 | 转圈，颜色不变，只是不可点（`aria-busy`） | `Button loading` |
 | 错误 | 红描边，聚焦时红光晕 | `.err` / `aria-invalid`，`--ring-danger` |
@@ -125,7 +193,7 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 
 ```css
 .btn.primary { --btn-bg: var(--accent-solid); --btn-fg: var(--on-accent); … }   /* 变体 */
-.notice .btn { --btn-h: var(--ctl-sm); --btn-bg: var(--card); }                  /* 上下文 */
+.notice .btn { --btn-h: var(--ctl-sm); --btn-px: var(--space-2-5); }            /* 上下文 */
 ```
 
 | 组件 | 类名 API | 变量 |
@@ -134,15 +202,15 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 | 毛玻璃 | `.glass`（组件自己是玻璃时直接写三行，见「材质」） | `--glass-bg --glass-blur --glass-shadow` |
 | 图标按钮 | `.icon-btn [xs] [on]` | `--ib-size --ib-r --ib-fg --ib-fg-hover --ib-bg-hover --ib-bg-on --ib-bg-press` |
 | 文字按钮 | `.text [danger\|accent]` | — |
-| 输入框 | `.field [mono] [err]`，`.field-wrap > .field + .tail` | `--field-h --field-px --field-r --field-bg --field-edge --field-edge-hover --field-edge-focus --field-ring` |
-| 徽标 / 点 | `.badge [ok\|err\|warn\|off] [count]`，`.dot [ok\|err\|warn]` | `--badge-bg --badge-fg`，`--dot-bg` |
-| 列表行 | `.list > .row [compact] [clickable] [off] [flash]`，`.row-edit`，`.list-head` | `--row-h --row-py --row-pl --row-pr --row-gap` |
+| 输入框 | `.field [mono] [err]`，`.field-wrap > .field + .tail`；边是 `--ctl-edge`（≥ 3:1），底透明 | `--field-h --field-px --field-r --field-bg --field-edge --field-edge-hover --field-edge-focus --field-ring` |
+| 状态 / 计数 / 点 | `.badge [ok\|err\|warn\|off]`（状态点 + 文字），`.badge.count [warn]`（计数，唯一带底的徽标），`.dot [ok\|err\|warn]` | `--badge-fg`（点的颜色；计数的字色）`--badge-bg`（只对计数），`--dot-bg` |
+| 列表行 | `.list > .row [compact] [clickable] [off] [flash]`，`.row-edit`，`.list-head`；`.list` 是一块 `--well`，行间 `--line-2` | `--row-h --row-py --row-pl --row-pr --row-gap` |
 | 分段 | `Seg` 组件（`.seg > .thumb + button`），两个以上的选项 | `--seg-r --seg-pad --seg-thumb --seg-on` |
 | 开关 | `Switch` 组件（`button.switch[role=switch] [sm]`），只有开 / 关 | `--switch-w --switch-h --switch-pad --switch-track --switch-track-hover --switch-dot --switch-stretch` |
 | 菜单 | `.pick`，`.pop [up]`，`.palette`，`Menu` / `MenuButton` / `Popover` | `--pop-r --pop-pad` |
 | 对话框 | `Sheet` / `confirmSheet()`（`.scrim > .sheet [wide]`） | `--sheet-w --sheet-r` |
 | 提示胶囊 | `toast()` / `saved()` / `failed()`（`.toast [ok\|err\|warn]`） | `--toast-bg --toast-fg --toast-edge` |
-| 行内提示 | `Notice` / `.notice [amber\|red]` | `--notice-bg --notice-fg --notice-edge` |
+| 行内提示 | `Notice`（自带图标）/ `.notice [amber\|red]`：淡底 + 图标 + `--fg` 字，不描边 | `--notice-bg --notice-ic` |
 | 加载 | `Spinner`、`Skeleton`（`.skel [circle]`）、`.empty-state` | — |
 | 头像 | `BotAvatar [bot\|char] [state] [cue] [lively] [pokeable] [greet] [neutral]`、`AvatarPicker`、`AppMark`；6 个内置角色，见下文「头像」 | `--avatar-aura --avatar-shadow`（主题），角色颜色 `--bot-*`（原画色，两个主题相同） |
 
@@ -187,7 +255,7 @@ JS 组件（`ui/components/ui.js`）只是给常用组合一个带逻辑的写�
 ## 新增或修改
 
 1. 先在样例页里找现成的 token、组件、文字角色。
-2. 缺颜色 → `semantic.css` 加语义 token（浅色、深色各一个值）；缺尺度 → `primitives.css`。
+2. 缺颜色 → `semantic.css` 加语义 token（浅色、深色各一个值）；缺间距 → 先找同一用途的间距角色，没有再在 `semantic.css` 的间距块里加一个（取值来自 `--space-*`）；缺尺度 → `primitives.css`。
 3. 新组件 → `components/<name>.css`，开放 `--<name>-*` 变量，在 `index.css` 按层引入；需要逻辑时在 `ui/components/ui.js` 加 JS 写法；在 `gallery.js` 加样例。
 4. 页面专属样式写在 `ui/css/*.css` 的 `@layer app` 里，只引用 token。
 5. 跑 `npm test`。
@@ -199,7 +267,12 @@ JS 组件（`ui/components/ui.js`）只是给常用组合一个带逻辑的写�
 - `border-radius` 写死 ≥ 3px（1–2px 的细节、`50%` 不算）
 - `transition` / `animation` 里写死时长或缓动（`linear`、`steps()` 可以）
 - `z-index` 写死数字
-- JS 内联样式里写死颜色或字号
+- 间距写死 px：`margin` / `padding` / `gap` / `inset` / `top|right|bottom|left` / `scroll-margin|padding`，以及 `--*-gap|pad|px|py|pl|pr|pt|pb|inset|gutter` 这类间距变量；`calc()` 里加减写死的 px。0、≤1px 细线、同一行带 `/* 微调：… */` 注释的除外
+- JS 内联样式里写死颜色、字号或间距
+- 描边容器：`border` / `outline` 带宽度，或 `box-shadow`（包括自定义属性的值）里画一圈 `0 0 0 <宽>` 的边，而同一行没有 `/* 描边：… */`；`:focus*` 选择器里的焦点描边除外
+- 侧边色条：左右两侧 ≥ 2px 的 `border`，或 `box-shadow: inset Npx 0 0`；以及上下 > 1px 的分隔线
+- JS 内联样式里画边框
+- `text-transform: uppercase` 和正的 `letter-spacing`（小标签不全大写、不加字距）
 - 引用了没定义的 `var(--x)`（带回退值的除外）
 - 有组件或基础样式文件没在 `index.css` 里引入
 

@@ -212,4 +212,19 @@ button.thread:active { background: var(--side-press); }
 @media (max-width: 900px) {
   :root { --side-w: 240px; }
 }
+
+/* "建议安装 PowerShell 7"（components/pwsh-hint.js）：一条 .notice（淡底 + 图标 + 字，不描边），文字之下多一行等宽的
+   安装命令（就是一行字，不再套底）和一排操作。对话空状态与设置 → 常规共用 */
+.notice.pwsh-hint { align-items: flex-start; padding: var(--space-3); text-align: left; }
+.notice.pwsh-hint > .ic { margin-top: 3px; }   /* 微调：图标对齐第一行文字（14px 图标 / 约 20px 行高） */
+.pwsh-body { flex: 1; min-width: 0; display: grid; gap: var(--space-2); }
+.pwsh-body b { display: block; margin-bottom: var(--space-0-5); font-weight: var(--fw-semibold); }
+.pwsh-cmd { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pwsh-cmd .t-meta, .pwsh-cmd .copy { flex: none; }
+.pwsh-cmd code { min-width: 0; font-family: var(--code); font-size: var(--fs-xs); color: var(--fg); user-select: text; -webkit-user-select: text; overflow-wrap: anywhere; }
+.pwsh-cmd .copy { margin-left: calc(-1 * var(--space-1)); }
+.pwsh-actions { display: flex; align-items: center; gap: var(--ctl-gap); flex-wrap: wrap; }
+.chat-empty .pwsh-hint { width: min(100%, 560px); margin-top: var(--space-4); }
+.set-body > .pwsh-hint { margin-top: var(--space-6); }
+.set-body > .pwsh-hint + .list { margin-top: var(--space-3); }
 }

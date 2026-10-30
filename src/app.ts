@@ -17,6 +17,7 @@ import { initFileLog, logFilePath, logger, mask, registerSecret } from "./log.js
 import { AgentManager } from "./agent/manager.js";
 import { normalizeSettings } from "./agent/settings.js";
 import { locateDshRuntime } from "./agent/host.js";
+import { pwshProbe } from "./agent/pwsh.js";
 import { findAppRoot } from "./magpie/supervisor.js";
 import {
   MODELFLARE_LINES,
@@ -363,6 +364,8 @@ export class App {
       this.picksTimer = setInterval(() => void this.syncModelPicks(), 3600_000);
       this.picksTimer.unref();
     }
+    // Windows：找 PowerShell 7（只看文件，异步）；代理进程启动时和界面的提示都用这个结果
+    if (pwshProbe.applicable) void pwshProbe.check();
     void this.prewarmAgent();
     if (this.magpie && !this.opts.noWeb) {
       // 余额与低余额提醒：启动后读一次，之后每 5 分钟一次

@@ -180,6 +180,7 @@ export class App {
   /**
    * 让每个 Modelflare 连接启用的模型等于 Modelflare 当前列出的全部对话模型（见 setModelPicks）：
    * 0.1.8 及以前连接的补上，新上架的加入，下架的移出。读不到列表时什么都不改，下次再试。
+   * 顺带给 0.1.8 及以前的连接补上 Responses 和 Messages 地址（ensureModelflareApis）。
    */
   private async syncModelPicks(): Promise<void> {
     const magpie = this.magpie;
@@ -190,6 +191,7 @@ export class App {
       const key = magpie.providerKey(id);
       if (!key) continue;
       try {
+        await magpie.ensureModelflareApis(id);
         const r = await verifyModelflareKey(baseUrl, key, { line: this.config.modelflare.line });
         if (r.ok) await magpie.setModelPicks(id, r.chatModels);
       } catch (e) {

@@ -87,6 +87,15 @@ export function modelflareBaseUrl(line: ModelflareLine, env: NodeJS.ProcessEnv =
   return line === "cn" ? MODELFLARE_LINES.cn : MODELFLARE_LINES.global;
 }
 
+/**
+ * 交给内置网关的三种对话接口地址：Chat Completions、Responses 都在 {base}（…/v1）下，Anthropic Messages
+ * 的地址是根（网关自己拼 /v1/messages）。网关按模型挑：Claude 走 Messages（提示缓存和思考过程只有它保留），
+ * 其余走 Chat；上游说某个模型不在这个接口上时，网关换另一个接口再试并记住。
+ */
+export function modelflareApiBases(baseUrl: string): { chat: string; responses: string; anthropic: string } {
+  return { chat: baseUrl, responses: baseUrl, anthropic: baseUrl.replace(/\/v1\/?$/, "") };
+}
+
 export type VerifyFailure = "invalid_key" | "forbidden" | "rate_limited" | "upstream" | "network" | "bad_response";
 
 export type VerifyResult =

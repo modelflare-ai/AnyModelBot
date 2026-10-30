@@ -5,7 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../log.js";
-import { BOT_PROVIDER_PREFIX, MODELFLARE_PROVIDER, botProviderId, keyTail } from "../modelflare.js";
+import { BOT_PROVIDER_PREFIX, MODELFLARE_PROVIDER, botProviderId, keyTail, modelflareApiBases } from "../modelflare.js";
 
 const log = logger("magpie");
 
@@ -401,13 +401,22 @@ export class MagpieSupervisor {
       if (add.code !== 0) throw new Error(`创建 Modelflare 连接失败：${(add.stderr || add.stdout).trim().slice(0, 300)}`);
       id = this.hasProvider(wantId) ? wantId : await this.findProviderId(wantId);
     }
-    await this.saveProvider(id, { chat: baseUrl, key: apiKey.trim(), headers, ...(picks.length ? { models: picks } : {}) });
+    await this.saveProvider(id, { ...modelflareApiBases(baseUrl), key: apiKey.trim(), headers, ...(picks.length ? { models: picks } : {}) });
   }
 
   /** 切换线路：只改地址，key 不变（机器人自己的 provider 一起切） */
   async setModelflareUrl(baseUrl: string, allowed: string[]): Promise<void> {
     if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
-    for (const id of [this.modelflareId(), ...this.botProviderIds()]) if (id) await this.saveProvider(id, { chat: baseUrl });
+    for (const id of [this.modelflareId(), ...this.botProviderIds()]) if (id) await this.saveProvider(id, modelflareApiBases(baseUrl));
+  }
+
+  /** 0.1.8 及以前的连接只写了 Chat 地址：补上 Responses 和 Messages（跟 Chat 同一条线路） */
+  async ensureModelflareApis(id: string): Promise<void> {
+    const p = this.readProviderRaw(id);
+    const chat = typeof p?.chat === "string" ? p.chat : "";
+    if (!chat) return;
+    const want = modelflareApiBases(chat);
+    if (p?.responses !== want.responses || p?.anthropic !== want.anthropic) await this.saveProvider(id, want);
   }
 
   /** 断开 Modelflare：删除共用连接和所有机器人自己的 provider */

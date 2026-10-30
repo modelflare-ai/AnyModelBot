@@ -53,7 +53,7 @@
   --white: #ffffff;
   --black: #000000;
 
-  /* —— 间距：4 的倍数，另有 2/6/10/14 半步 —— */
+  /* —— 间距：4 的倍数，另有 2/6/10/14 半步。页面和组件优先用 semantic.css 里按用途命名的间距角色 —— */
   --space-0-5: 2px;
   --space-1: 4px;
   --space-1-5: 6px;
@@ -91,8 +91,7 @@
   --lh-relaxed: 1.55;
 
   --tracking-tighter: -.02em;
-  --tracking-tight: -.01em;
-  --tracking-caps: .04em;
+  --tracking-tight: -.01em;   /* 只收紧大字；不给小标签加字距，也不用全大写 */
 
   /* —— 圆角：嵌套时内层 = 外层 − 内边距（.seg 8 → thumb 6） —— */
   --r-xs: 4px;
@@ -127,8 +126,7 @@
   /* —— 毛玻璃：背景模糊半径与饱和度增强。材质的颜色在 semantic.css —— */
   --blur-sm: 12px;     /* 小浮件：回到底部、提示胶囊 */
   --blur-md: 24px;     /* 顶栏、输入框 */
-  --blur-lg: 40px;     /* 菜单、命令面板、对话框 */
-  --blur-scrim: 6px;   /* 对话框后面的遮罩 */
+  --blur-lg: 40px;     /* 菜单、命令面板、对话框。遮罩只压暗不模糊：对话框自己已经模糊了一层 */
   --glass-sat: 180%;   /* 透出来的颜色更饱满，玻璃才不发灰 */
   --glass-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
   --glass-filter-lg: blur(var(--blur-lg)) saturate(var(--glass-sat));
@@ -141,5 +139,5 @@
   --bubble-w: 600px;   /* 用户气泡最大宽度 */
   --head-h: 52px;      /* 对话顶栏、信息面板顶栏 */
   --page-w: 680px;     /* 设置页、机器人设置的内容列 */
-  --pane-gap: 8px;     /* 主区、信息面板与窗口边缘的间隙：它们是浮在环境光上的面板 */
+  --titlebar-inset: 84px;   /* macOS 桌面版：侧栏顶部给红绿灯让出的宽度 */
 }

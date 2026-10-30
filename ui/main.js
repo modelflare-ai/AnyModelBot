@@ -2,7 +2,7 @@
 // 未连接 Modelflare → 整页引导；已连接 → 侧栏 + 对话（信息面板按需），设置与机器人设置占满主区。
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, DialogHost, Toasts } from "./components/ui.js";
+import { html, Icon, DialogHost, Notice, Toasts } from "./components/ui.js";
 import { Sidebar } from "./screens/sidebar.js";
 import { ChatScreen } from "./screens/chat.js";
 import { InfoPanel } from "./screens/info-panel.js";
@@ -170,7 +170,7 @@ function App() {
       .then((d) => {
         const latest = {};
         for (const c of d.conversations || []) if (!latest[c.botId] || c.updatedAt > latest[c.botId].updatedAt) latest[c.botId] = c;
-        setPreviews(Object.fromEntries(Object.entries(latest).map(([k, c]) => [k, { text: (c.lastMessage || "").replace(/\s+/g, " "), at: c.updatedAt }])));
+        setPreviews(Object.fromEntries(Object.entries(latest).map(([k, c]) => [k, { text: (c.lastMessage || "").replace(/^⚠️\s*/, "").replace(/\s+/g, " "), at: c.updatedAt }])));
       })
       .catch(() => {});
     api("/approvals?status=pending")
@@ -273,7 +273,7 @@ function App() {
     return html`<main class="onboard" data-screen=${mfErr ? "error" : "loading"}>
       ${mfErr
         ? html`<div class="onboard-col"><div class="onboard-hero"><${BotAvatar} char=${MAIN_CHAR} size=${88} state="sleep" lively pokeable /></div>
-            <div class="notice red"><span class="notice-text">无法连接本机服务：${mfErr}</span><button type="button" class="btn" onClick=${reloadMf}>重试</button></div></div>`
+            <${Notice} tone="red" action=${html`<button type="button" class="btn" onClick=${reloadMf}>重试</button>`}>无法连接本机服务：${mfErr}<//></div>`
         : html`<${BotAvatar} char=${MAIN_CHAR} size=${72} state="thinking" lively />`}
     </main>`;
   }

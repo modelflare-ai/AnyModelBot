@@ -6,6 +6,10 @@
    主区和信息面板是浮在环境光上的面板；顶栏、输入框、菜单、对话框是盖在内容上的玻璃。
    所以填充、悬停、描边都是半透明的一层，放在玻璃和实色上都对。
 
+   容器（见 README「容器与层次」）：内容里的一组东西靠底色深一级（--well）和间距成组，不画描边、不加投影，
+   也不在一组里面再套一组；行与行之间需要分开时只用一条细线（--line-2）。描边只留给两种东西：
+   文字输入框（--ctl-edge，对所在表面 ≥ 3:1）和浮在内容上的玻璃（--glass-edge）。
+
    主题可以局部生效：任何元素加 data-theme="light|dark"，它的子树就换一套取值。
    <html data-theme> 总是解析后的值，由 index.html 在首帧前设置、lib/theme.js 保持同步。 */
 :root, [data-theme="light"] {
@@ -31,9 +35,11 @@
   --glass-hi: rgba(255, 255, 255, .8);       /* 玻璃顶边的高光 */
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.035'/%3E%3C/svg%3E");  /* 磨砂颗粒 */
 
-  /* —— 表面：卡片与静默填充。填充都是半透明的一层 —— */
-  --card: #ffffff;            /* 卡片、输入框 */
-  --card-2: rgba(0, 0, 0, .022);  /* 卡片里的次级面、代码块 */
+  /* —— 表面：分组的底色与静默填充。填充都是半透明的一层 —— */
+  --card: #ffffff;            /* 实色面：聚焦的侧栏搜索框、样例页的演示区 */
+  --well: rgba(0, 0, 0, .04);         /* 内容里的一组（只有这一层）：设置分组、对话里的卡片、代码块、行内提示、文件、模板卡 */
+  --well-hover: rgba(0, 0, 0, .06);   /* 可点的一组：悬停 */
+  --well-press: rgba(0, 0, 0, .08);   /* 可点的一组：按下 */
   --pill: rgba(0, 0, 0, .045);    /* 次级按钮、标签、静默填充；也是控件的悬停层 */
   --pill-hover: rgba(0, 0, 0, .075);
   --pill-press: rgba(0, 0, 0, .1);
@@ -51,9 +57,10 @@
   --scroll-thumb-hover: rgba(0, 0, 0, .3);
 
   /* —— 线 —— */
-  --line: rgba(0, 0, 0, .1);          /* 输入框边、卡片边 */
-  --line-2: rgba(0, 0, 0, .06);       /* 卡片内分隔线 */
-  --line-strong: rgba(0, 0, 0, .2);   /* 悬停的输入框、聚焦的对话输入框 */
+  --line: rgba(0, 0, 0, .1);          /* 表格表头的下沿、正文里的分隔线 hr */
+  --line-2: rgba(0, 0, 0, .06);       /* 行与行之间的细线：列表行、表格行、菜单里的分隔 */
+  --ctl-edge: rgba(0, 0, 0, .44);     /* 文字输入框的边：对主区、信息面板、对话框和 --well 都 ≥ 3:1（3.2:1） */
+  --ctl-edge-hover: rgba(0, 0, 0, .6);
 
   /* —— 文字 —— */
   --fg: #1a1a1a;
@@ -94,6 +101,8 @@
   --on-danger: var(--white);
   --amber: var(--amber-700);
   --amber-soft: var(--amber-50);
+  --red-wash: color-mix(in srgb, var(--red-600) 8%, transparent);     /* 出错的提示行：只铺一层淡红，字用 --fg，图标用 --red */
+  --amber-wash: color-mix(in srgb, var(--amber-700) 8%, transparent); /* 需要注意的提示行 */
 
   /* —— 投影：xs/sm 贴面，md 浮起的胶囊，lg 弹出层与对话框，pane 浮在环境光上的面板 —— */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, .05);
@@ -101,8 +110,8 @@
   --shadow-md: 0 2px 6px rgba(0, 0, 0, .05), 0 10px 28px rgba(0, 0, 0, .09);
   --shadow-lg: 0 4px 12px rgba(0, 0, 0, .06), 0 24px 60px rgba(0, 0, 0, .16);
   --shadow-pane: 0 0 0 .5px rgba(0, 0, 0, .1), 0 1px 3px rgba(0, 0, 0, .04), 0 8px 30px rgba(0, 0, 0, .04);
-  --shadow-tile: 0 0 0 .5px rgba(0, 0, 0, .07), 0 1px 2px rgba(0, 0, 0, .06);   /* 侧栏选中项：浮起的玻璃片 */
-  --seg-edge: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .08);
+  --shadow-tile: 0 1px 2px rgba(0, 0, 0, .07);   /* 侧栏选中项：浮起的玻璃片（只有投影，不描边） */
+  --seg-edge: 0 1px 2px rgba(0, 0, 0, .14);      /* 分段 thumb、开关圆钮：只有投影，不描边 */
 
   /* —— 机器人头像：角色颜色在 primitives 的 --bot-*，这里只给随主题变的光晕和影子 —— */
   --avatar-aura: 30%;         /* 工作中头像背后的辉光（角色辉光色的混合比例） */
@@ -120,6 +129,45 @@
   --glass-ring: inset 0 1px 0 var(--glass-hi), 0 0 0 .5px var(--glass-edge);   /* 玻璃的边：顶边高光 + 细描边 */
   --shadow-float: var(--glass-ring), var(--shadow-md);   /* 浮在内容上的玻璃：输入框、回到底部、提示 */
   --shadow-pop: var(--glass-ring), var(--shadow-lg);     /* 菜单、命令面板、对话框 */
+}
+/* 间距角色：按用途命名，取值都来自 primitives.css 的 --space-*，与主题无关（见 README「间距」）。
+   一个角色只用一个值，兄弟表面靠它们对齐：侧栏顶部、对话顶栏、信息面板顶栏在同一条中线上；
+   侧栏的行、搜索框、账户落在同一条竖线上；对话列、输入框、设置页、新建页共用同一个居中列的边距。 */
+:root {
+  /* —— 窗口：浮起的面板与它们的顶栏 —— */
+  --pane-gap: var(--space-2);       /* 主区、信息面板与窗口边缘的间隙；弹出层离窗口边缘也是这么远 */
+  --pane-px: var(--space-4);        /* 面板里内容的左右边距：信息面板的标题与行文字、对话顶栏的头像 */
+  --head-px: var(--space-2-5);      /* 顶栏到首尾按钮；按钮自带 6px 内边距，里面的头像、文字正好落在 --pane-px */
+  --bar-gap: var(--space-1);        /* 一排图标按钮之间：顶栏、输入框工具栏、消息操作 */
+
+  /* —— 侧栏：行、搜索框、顶部按钮、账户都离侧栏边缘 --side-inset —— */
+  --side-inset: var(--pane-gap);    /* 和面板间隙一样：侧栏的行与主区之间也是这么宽 */
+  --side-row-px: var(--space-2-5);  /* 行的左右内边距：头像、导航图标、搜索图标、返回箭头落在同一条竖线上 */
+  --side-row-gap: var(--space-0-5); /* 相邻两行 */
+
+  /* —— 页面：居中的内容列（对话列、输入框、设置页、新建页、引导页） —— */
+  --page-gutter: var(--space-6);    /* 内容列两侧至少留这么多；窗口窄于 1000px 时 16 */
+  --page-top: var(--space-12);      /* 设置页标题、新建页、引导页离上沿 */
+  --page-bottom: var(--space-16);   /* 滚到底时下面留的空 */
+  --section-gap: var(--space-8);    /* 页面里两个分组之间（分组标题的上方） */
+  --section-gap-sm: var(--space-5); /* 窄面板里两个分组之间：信息面板、默认的 .list-head */
+  --heading-gap: var(--space-2-5);  /* 页面分组标题到它下面的内容 */
+
+  /* —— 卡片与浮层 —— */
+  --card-pad: var(--space-4);       /* 内容卡片：对话里的提问 / 审批卡、引导页卡片、侧栏空状态、模板卡 */
+  --sheet-pad: var(--space-5);      /* 对话框 */
+  --ctl-gap: var(--space-2);        /* 一组按钮之间：对话框、卡片、展开编辑区的操作 */
+  --float-inset: var(--space-4);    /* 提示胶囊、命令面板、对话框离窗口边缘 */
+  --pop-offset: var(--space-1-5);   /* 弹出层离锚点（ui.js 的 usePopPosition 读它） */
+}
+@media (max-width: 1000px) {
+  :root { --page-gutter: var(--space-4); }
+}
+/* 圆角角色：同一种面只用一个圆角（见 README「容器与层次」），取值来自 primitives.css 的 --r-* */
+:root {
+  --r-well: var(--r-xl);    /* 内容里的一组：设置分组、对话里的卡片、代码块、行内提示、文件、模板卡、展开编辑区 */
+  --r-pane: var(--r-2xl);   /* 浮起的面板与浮层：主区、信息面板、对话框、命令面板、引导页卡片 */
+  --r-bubble: var(--r-3xl); /* 消息气泡：对话里的用户消息、会话记录里的双方消息 */
 }
 :root.win {
   --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
@@ -148,7 +196,9 @@
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.05'/%3E%3C/svg%3E");
 
   --card: rgba(255, 255, 255, .045);
-  --card-2: rgba(255, 255, 255, .025);
+  --well: rgba(255, 255, 255, .045);
+  --well-hover: rgba(255, 255, 255, .07);
+  --well-press: rgba(255, 255, 255, .095);
   --pill: rgba(255, 255, 255, .065);
   --pill-hover: rgba(255, 255, 255, .095);
   --pill-press: rgba(255, 255, 255, .125);
@@ -166,7 +216,8 @@
 
   --line: rgba(255, 255, 255, .1);
   --line-2: rgba(255, 255, 255, .065);
-  --line-strong: rgba(255, 255, 255, .22);
+  --ctl-edge: rgba(255, 255, 255, .36);   /* 3.2:1 */
+  --ctl-edge-hover: rgba(255, 255, 255, .5);
 
   --fg: #ececec;
   --fg-2: #b4b4b4;
@@ -202,13 +253,15 @@
   --on-danger: var(--red-950);
   --amber: var(--amber-300);
   --amber-soft: var(--amber-900);
+  --red-wash: color-mix(in srgb, var(--red-300) 9%, transparent);
+  --amber-wash: color-mix(in srgb, var(--amber-300) 8%, transparent);
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 3px 10px rgba(0, 0, 0, .25);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, .3), 0 12px 32px rgba(0, 0, 0, .42);
   --shadow-lg: 0 4px 14px rgba(0, 0, 0, .35), 0 28px 70px rgba(0, 0, 0, .6);
   --shadow-pane: 0 0 0 .5px rgba(255, 255, 255, .08), 0 8px 30px rgba(0, 0, 0, .35);
-  --shadow-tile: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 .5px rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-tile: inset 0 1px 0 rgba(255, 255, 255, .05), 0 1px 2px rgba(0, 0, 0, .3);
   --seg-edge: inset 0 .5px 0 rgba(255, 255, 255, .1), 0 1px 2px rgba(0, 0, 0, .3);
 
   --avatar-aura: 52%;

@@ -1,6 +1,6 @@
 /* 文字角色：新界面优先用这些类，不要再挑字号。放在 utilities 层，加在组件上也能生效。
-   已有组件直接引用 --fs-* / --fw-* token，效果与对应角色一致。 */
-.t-caption { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-caps); color: var(--faint); }
+   已有组件直接引用 --fs-* / --fw-* token，效果与对应角色一致。
+   小标签（分组名、菜单分组）一律 .t-label：不全大写、不加字距、不用 --faint（对比度不够读）。 */
 .t-label { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--muted); }
 .t-meta { font-size: var(--fs-xs); color: var(--muted); line-height: var(--lh-normal); }
 .t-control { font-size: var(--fs-sm); }

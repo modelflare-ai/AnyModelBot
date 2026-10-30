@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "../src/config.js";
 import { App } from "../src/app.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
-import { logger } from "../src/log.js";
+import { initFileLog, logFilePath, logger, registerSecret, setConsoleLog } from "../src/log.js";
 
 const log = logger("desktop");
 const SMOKE = process.env.AMB_ELECTRON_SMOKE; // 冒烟测试：截图到该路径后退出
@@ -119,10 +119,13 @@ function setAutostart(on: boolean): void {
 async function boot(): Promise<void> {
   const dataDir = process.env.AMB_DATA_DIR ? path.resolve(process.env.AMB_DATA_DIR) : path.join(app.getPath("userData"), "data");
   fs.mkdirSync(dataDir, { recursive: true });
+  // 尽早打开日志文件：配置读取失败、启动失败也能留下记录
+  initFileLog(path.join(dataDir, "logs"));
   const config = loadConfig({ dataDir });
   // 桌面版：仅回环 + 每次启动随机令牌；端口沿用配置（默认 3600，被占用时自动换随机端口）
   config.ui.host = "127.0.0.1";
   if (!config.ui.token) config.ui.token = crypto.randomBytes(24).toString("base64url");
+  registerSecret(config.ui.token);
   core = new App(config);
   core.desktop = {
     autostart: () => ({ supported: canAutostart, on: canAutostart && app.getLoginItemSettings().openAtLogin }),
@@ -169,6 +172,25 @@ async function smoke(out: string): Promise<void> {
     app.quit(); // 任何一步失败也退出，不让冒烟测试挂到超时
   }
 }
+
+// Windows 安装版是 GUI 程序：stdout/stderr 要么不存在，要么是别人的管道（读端关掉 = EPIPE，读端不读 = 同步写入卡住
+// 主进程）。日志只写文件（设置 → 故障排查里能看），需要控制台输出时设 AMB_LOG_STDOUT=1。
+if (process.platform === "win32" && app.isPackaged && process.env.AMB_LOG_STDOUT !== "1") setConsoleLog(false);
+
+// 未捕获异常：Electron 默认弹一个同步的错误框，在用户关掉它之前整个主进程（本机服务、模型桥、所有对话）都卡住，
+// 界面上就是一直"思考中"。这里改成记日志 + 非阻塞提示；stdio 写失败（EPIPE 等）只记日志不提示。
+let lastErrorBox = 0;
+process.on("uncaughtException", (e) => {
+  const err = e as NodeJS.ErrnoException;
+  log.error(`uncaught exception: ${err?.stack || String(e)}`);
+  if (["EPIPE", "EBADF", "EOF", "ERR_STREAM_DESTROYED"].includes(String(err?.code))) return;
+  if (Date.now() - lastErrorBox < 60_000 || !app.isReady()) return;
+  lastErrorBox = Date.now();
+  void dialog
+    .showMessageBox({ type: "error", title: PRODUCT, message: `${PRODUCT} 出错了`, detail: `${err?.message ?? String(e)}\n\n详细信息见日志：${logFilePath() ?? "（未启用）"}` })
+    .catch(() => {});
+});
+process.on("unhandledRejection", (e) => log.warn(`unhandled rejection: ${(e as Error)?.stack || String(e)}`));
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

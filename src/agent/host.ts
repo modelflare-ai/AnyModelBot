@@ -2,13 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { logger } from "../log.js";
+import { lineLogger, logger } from "../log.js";
 import type { Store } from "../store/db.js";
 import type { AgentBridge } from "./bridge.js";
 import os from "node:os";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { adaptSkill, mcpPatchLines, resolveComputerUse, type CuResolved } from "./computer-use.js";
-import { cuaConfig, cuaMcpEnv, discoverApps } from "./cua-driver.js";
+import { cuaConfig, cuaMcpEnv, discoverAppsCached, type CuaApp } from "./cua-driver.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 
 const log = logger("agent.host");
@@ -131,9 +131,47 @@ export interface AgentHostOptions {
   settings?: () => BotSettings;
   /** 单回合上限，超时则重启子进程（SDK 无中断接口） */
   turnTimeoutMs?: number;
+  /** 需要让用户看到的提示（界面通知） */
+  onNotice?: (text: string) => void;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
+
+/** 传给 Windows 上代理子进程的系统变量（都不是密钥；值来自本进程环境） */
+export const WIN_SYSTEM_ENV = [
+  "SystemRoot",
+  "SystemDrive",
+  "windir",
+  "ComSpec",
+  "PATHEXT",
+  "TEMP",
+  "TMP",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  "ProgramW6432",
+  "CommonProgramFiles",
+  "CommonProgramFiles(x86)",
+  "CommonProgramW6432",
+  "ALLUSERSPROFILE",
+  "PUBLIC",
+  "OS",
+  "PROCESSOR_ARCHITECTURE",
+  "PROCESSOR_IDENTIFIER",
+  "NUMBER_OF_PROCESSORS",
+  "USERNAME",
+  "USERDOMAIN",
+  "COMPUTERNAME",
+];
+
+/** 子进程生命周期事件（故障排查的"测试代理"按它判断卡在哪一步） */
+export type HostEvent =
+  | { type: "spawned"; pid: number | undefined }
+  | { type: "initialized"; pid: number | undefined; ms: number }
+  | { type: "failed"; message: string }
+  | { type: "exit"; pid: number | undefined; code: number | null; signal: string | null };
 
 const MODEL_LIMITS: Array<[RegExp, number, number]> = [
   [/grok-4/i, 256_000, 32_000],
@@ -209,6 +247,20 @@ export class AgentHost {
   private stopped = false;
   /** callId → 工具调用（供审批提示展示命令） */
   readonly calls = new Map<string, { name: string; args: string; at: number }>();
+  /** DSH 子进程 stderr 的最后几十行（已脱敏），故障排查页展示 */
+  readonly stderrTail: string[] = [];
+  /** 最近一次子进程退出 */
+  lastExit: { pid: number | undefined; code: number | null; signal: string | null; at: number } | undefined;
+  /** 当前子进程启动完成的时间 */
+  startedAt = 0;
+  /** 正在启动：开始时间与当前阶段（故障排查页显示进度） */
+  startingSince = 0;
+  initStage = "";
+  /** 最近一次成功初始化（子进程拉起到 initialize 返回）的耗时 */
+  lastInitMs = 0;
+  private initFailures = 0;
+  private retryAfter = 0;
+  private listeners = new Set<(e: HostEvent) => void>();
 
   constructor(private o: AgentHostOptions) {}
 
@@ -225,7 +277,39 @@ export class AgentHost {
     return this.harness?.client?.child?.pid;
   }
 
-  private writePatch(model: string): string {
+  /** 订阅生命周期事件；返回取消函数 */
+  on(fn: (e: HostEvent) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  private emit(e: HostEvent): void {
+    for (const fn of this.listeners) {
+      try {
+        fn(e);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  /** 接上子进程的 stderr（逐行写日志 + 保留尾部）与退出事件。sdk-client 自己也在读 stderr，两边互不影响。 */
+  private watchChild(child: any): void {
+    if (!child) return;
+    const pid: number | undefined = child.pid;
+    const lines = lineLogger(`dsh:${this.o.botId}`, "info", (line) => {
+      this.stderrTail.push(line);
+      if (this.stderrTail.length > 80) this.stderrTail.splice(0, this.stderrTail.length - 80);
+    });
+    child.stderr?.on?.("data", (d: Buffer | string) => lines.push(d));
+    child.once?.("exit", (code: number | null, signal: string | null) => {
+      lines.flush();
+      this.lastExit = { pid, code, signal, at: Date.now() };
+      log.info("dsh process exited", { bot: this.o.botId, pid, code, signal });
+      this.emit({ type: "exit", pid, code, signal });
+    });
+  }
+
+  private writePatch(model: string, apps: CuaApp[] = []): string {
     const lim = MODEL_LIMITS.find(([re]) => re.test(model)) ?? [/./, 128_000, 16_000];
     const plugin = path.join(this.o.runtimeDir, "plugins", "amb-bridge.mjs");
     const memory = path.join(this.o.runtimeDir, "plugins", "amb-memory.mjs");
@@ -262,7 +346,7 @@ export class AgentHost {
       "      name: '@deepseek-ai/dsh-tool-ask-user'",
       "    - id: amb-present",
       "      name: '@deepseek-ai/dsh-tool-present'",
-      ...this.computerUseLines(),
+      ...this.computerUseLines(apps),
       "",
     ].join("\n");
     const f = path.join(this.home, "amb.patch.yml");
@@ -285,7 +369,7 @@ export class AgentHost {
    * Computer Use：插入 mcp-client（Cua Driver 经 amb-cua-mcp.mjs，或 macOS 上的 Codex 桥；都用宿主自己的
    * node/Electron 运行），并写入对应的 SKILL.md。默认所有操作自动执行；只有设置为 ask-input 时才加载审批闸门。
    */
-  private computerUseLines(): string[] {
+  private computerUseLines(apps: CuaApp[]): string[] {
     const skillDir = path.join(this.home, "skills", "computer-use");
     const st = this.computerUseActive();
     this.cuReadTools = st ? st.readTools.join(",") : "";
@@ -301,7 +385,7 @@ export class AgentHost {
         lines = mcpPatchLines(st.codex, process.execPath, yamlStr);
       } else {
         fs.writeFileSync(path.join(skillDir, "SKILL.md"), CUA_SKILL);
-        lines = this.cuaLines(st);
+        lines = this.cuaLines(st, apps);
       }
     } catch (e) {
       log.warn("computer-use setup failed", { err: String(e) });
@@ -314,10 +398,10 @@ export class AgentHost {
   }
 
   /** Cua Driver：写配置（清单在 amb-cua-mcp.mjs 启动时按本平台实有工具生成），返回 mcp-client 配置行。 */
-  private cuaLines(st: CuResolved): string[] {
+  private cuaLines(st: CuResolved, apps: CuaApp[]): string[] {
     const dir = path.join(this.home, "cua");
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const cfg = cuaConfig(st.cua, dir, { readonly: this.settings().permission === "readonly", apps: discoverApps() });
+    const cfg = cuaConfig(st.cua, dir, { readonly: this.settings().permission === "readonly", apps });
     const cfgFile = path.join(dir, "config.json");
     fs.writeFileSync(cfgFile, JSON.stringify(cfg, null, 2), { mode: 0o600 });
     const env = cuaMcpEnv(process.env, os.homedir(), cfgFile);
@@ -333,6 +417,10 @@ export class AgentHost {
       ...Object.entries(env).map(([k, v]) => `          ${k}: ${yamlStr(v)}`),
       "        toolCallTimeoutMs: 120000",
       "        failOnStartupError: false",
+      // 默认最多重连 10 次（约 2.5 分钟）：驱动起不来时每次都要重新拉起 cua-driver，3 次足够分辨偶发与必然
+      "        reconnect:",
+      "          maxAttempts: 3",
+      "          initialDelayMs: 2000",
     ];
   }
 
@@ -399,6 +487,15 @@ exec "$REAL" "$@"
       AMB_BRIDGE_TOKEN: this.o.bridge.token,
       AMB_BOT_ID: this.o.botId,
     };
+    if (process.platform === "win32") {
+      // Windows：系统目录类变量不是密钥，但工具进程离不开（npm/pip 找 APPDATA，脚本找 ProgramFiles、ComSpec…）。
+      // libuv 只自动补 SystemRoot/TEMP/USERPROFILE 等少数几个。TZ 只认 POSIX 写法，不设，用系统时区。
+      for (const k of WIN_SYSTEM_ENV) {
+        const v = process.env[k];
+        if (v) env[k] = v;
+      }
+      if (!process.env.TZ) delete env.TZ;
+    }
     if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
     if (process.env.AMB_DSH_LOG_LEVEL) env.DSH_LOG_LEVEL = process.env.AMB_DSH_LOG_LEVEL;
     return env;
@@ -430,7 +527,7 @@ exec "$REAL" "$@"
     let cmd = "";
     try {
       if (process.platform === "linux") cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " ");
-      else if (process.platform === "darwin") cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" });
+      else if (process.platform === "darwin") cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     } catch {
       /* ignore */
     }
@@ -446,6 +543,10 @@ exec "$REAL" "$@"
 
   async ensure(model: string): Promise<SdkHarness> {
     if (this.stopped) throw new Error("agent host stopped");
+    // 连续启动失败后不再每条消息都重试一遍（每次都要等满初始化超时）：直到手动重启或冷却结束
+    if (!this.harness && !this.starting && this.state === "error" && Date.now() < this.retryAfter) {
+      throw new Error(`代理进程启动失败，${Math.ceil((this.retryAfter - Date.now()) / 60_000)} 分钟后再试（或在 设置 → 故障排查 里重启代理进程）：${this.lastError}`);
+    }
     if (this.harness && this.model !== model && this.active === 0) {
       log.info("model changed, restarting dsh", { bot: this.o.botId, model });
       await this.closeHarness();
@@ -459,6 +560,30 @@ exec "$REAL" "$@"
     return this.starting;
   }
 
+  /** 本机上一次成功启动的耗时；没有记录 = 第一次启动（冷启动：杀毒软件逐个扫描运行时文件，可能要几分钟） */
+  private get initRecordFile(): string {
+    return path.join(this.o.dataDir, "dsh", ".init.json");
+  }
+  private readInitRecord(): { ms: number; at: number } | undefined {
+    try {
+      const j = JSON.parse(fs.readFileSync(this.initRecordFile, "utf8"));
+      return Number(j?.ms) > 0 ? { ms: Number(j.ms), at: Number(j.at) || 0 } : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  /** 初始化超时：第一次 10 分钟，之后 3 分钟（AMB_DSH_INIT_TIMEOUT_MS 可覆盖） */
+  initTimeoutMs(): number {
+    const env = Number(process.env.AMB_DSH_INIT_TIMEOUT_MS);
+    if (env > 0) return env;
+    return this.readInitRecord() ? 180_000 : 600_000;
+  }
+
+  private stage(name: string, t0: number, extra: Record<string, unknown> = {}): void {
+    this.initStage = name;
+    log.info(`dsh start: ${name}`, { bot: this.o.botId, ms: Date.now() - t0, ...extra });
+  }
+
   private async spawn(model: string): Promise<SdkHarness> {
     const wait = this.nextStartAt - Date.now();
     if (wait > 0) {
@@ -466,57 +591,110 @@ exec "$REAL" "$@"
       await new Promise((r) => setTimeout(r, wait));
     }
     this.state = "starting";
-    fs.mkdirSync(this.home, { recursive: true, mode: 0o700 });
-    fs.mkdirSync(this.workspace, { recursive: true });
-    this.reapStale();
-    await this.o.bridge.start();
-    const sdk = await loadSdk(this.o.runtimeDir);
-    const patch = this.writePatch(model);
-    this.sig = this.settingsSig();
-    const h = new sdk.DeepSeekHarness({
-      profile: "sdk",
-      patches: [patch],
-      dshHome: this.home,
-      env: this.env(),
-      cwd: this.workspace,
-      processCwd: this.workspace,
-      provider: "magpie",
-      model,
-      initializeTimeoutMs: 90_000,
-      shutdownTimeoutMs: 3000,
-    });
+    this.startingSince = Date.now();
+    this.initStage = "prepare";
+    const t0 = Date.now();
+    let h: SdkHarness | undefined;
+    let watchdog: NodeJS.Timeout | undefined;
     try {
-      await h.start();
-    } catch (e) {
-      this.onFailure(e as Error);
+      fs.mkdirSync(this.home, { recursive: true, mode: 0o700 });
+      fs.mkdirSync(this.workspace, { recursive: true });
+      this.reapStale();
+      await this.o.bridge.start();
+      this.stage("bridge ready", t0, { port: this.o.bridge.port });
+      const sdk = await loadSdk(this.o.runtimeDir);
+      this.stage("sdk loaded", t0);
+      // 应用清单（Computer Use 的能力清单用）异步扫描并缓存，不阻塞主进程
+      const cu = this.computerUseActive();
+      const apps = cu && cu.backend === "cua" ? await discoverAppsCached() : [];
+      const patch = this.writePatch(model, apps);
+      this.sig = this.settingsSig();
+      const timeoutMs = this.initTimeoutMs();
+      this.stage("patch written", t0, { computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs });
+      h = new sdk.DeepSeekHarness({
+        profile: "sdk",
+        patches: [patch],
+        dshHome: this.home,
+        env: this.env(),
+        cwd: this.workspace,
+        processCwd: this.workspace,
+        provider: "magpie",
+        model,
+        initializeTimeoutMs: timeoutMs,
+        shutdownTimeoutMs: 3000,
+      });
+      // start() 同步拉起子进程，然后才等 initialize：此时就能接上 stderr，启动阶段的报错也不会漏
+      const tSpawn = Date.now();
+      const started = h.start();
+      const spawned = h.client?.child;
+      this.watchChild(spawned);
+      this.stage("child spawned", t0, { pid: spawned?.pid, model, runtime: this.o.runtimeDir });
+      this.initStage = "initializing";
+      this.emit({ type: "spawned", pid: spawned?.pid });
+      // 初始化迟迟不回来时每 15 秒记一条，带上最近的 stderr：冷启动慢还是卡住，日志里一眼能看出来
+      watchdog = setInterval(
+        () => log.warn("dsh still initializing", { bot: this.o.botId, pid: spawned?.pid, waitedMs: Date.now() - tSpawn, timeoutMs, lastStderr: this.stderrTail.at(-1) }),
+        15_000,
+      );
+      await started;
+      clearInterval(watchdog);
+      const initMs = Date.now() - tSpawn;
+      this.lastInitMs = initMs;
+      this.emit({ type: "initialized", pid: spawned?.pid, ms: initMs });
       try {
-        await h.close();
+        fs.writeFileSync(this.initRecordFile, JSON.stringify({ ms: initMs, at: Date.now() }));
       } catch {
         /* ignore */
       }
+      const child = h.client?.child;
+      if (child?.pid) fs.writeFileSync(this.pidFile, String(child.pid));
+      const harness = h;
+      child?.once?.("exit", (code: number | null, sig: string | null) => {
+        if (this.harness !== harness) return;
+        this.harness = undefined;
+        this.opened.clear();
+        if (this.stopped) return;
+        this.onFailure(new Error(`dsh exited (code=${code} signal=${sig})`));
+      });
+      this.harness = h;
+      this.model = model;
+      this.state = "running";
+      this.initStage = "";
+      this.lastError = "";
+      this.initFailures = 0;
+      this.startedAt = Date.now();
+      log.info("dsh started", { bot: this.o.botId, pid: child?.pid, model, ms: Date.now() - t0, initMs });
+      return h;
+    } catch (e) {
+      clearInterval(watchdog);
+      this.emit({ type: "failed", message: (e as Error).message });
+      this.initFailures++;
+      this.onFailure(e as Error);
+      if (h) {
+        try {
+          await h.close();
+        } catch {
+          /* ignore */
+        }
+      }
       throw e;
+    } finally {
+      this.startingSince = 0;
     }
-    const child = h.client?.child;
-    if (child?.pid) fs.writeFileSync(this.pidFile, String(child.pid));
-    child?.once?.("exit", (code: number | null, sig: string | null) => {
-      if (this.harness !== h) return;
-      this.harness = undefined;
-      this.opened.clear();
-      if (this.stopped) return;
-      this.onFailure(new Error(`dsh exited (code=${code} signal=${sig})`));
-    });
-    this.harness = h;
-    this.model = model;
-    this.state = "running";
-    this.lastError = "";
-    log.info("dsh started", { bot: this.o.botId, pid: child?.pid, model });
-    return h;
   }
 
   private onFailure(e: Error): void {
     this.failures++;
     this.restarts++;
     this.lastError = e.message.slice(0, 500);
+    if (this.initFailures >= 2) {
+      // 连续两次起不来：先停 10 分钟（期间纯对话照常），不再每条消息都等一遍初始化
+      this.state = "error";
+      this.retryAfter = Date.now() + 10 * 60_000;
+      log.error("dsh failed to start twice; agent paused for 10 minutes (plain chat still works)", { bot: this.o.botId, message: this.lastError });
+      this.o.onNotice?.(`代理进程连续两次启动失败，已暂停 10 分钟（期间用纯对话回复）。可在 设置 → 故障排查 查看原因并重启代理进程。原因：${this.lastError.slice(0, 200)}`);
+      return;
+    }
     const delay = Math.min(30_000, 1000 * 2 ** Math.min(this.failures - 1, 5));
     this.nextStartAt = Date.now() + delay;
     this.state = "backoff";
@@ -614,6 +792,43 @@ exec "$REAL" "$@"
 
   status(): Record<string, unknown> {
     return { state: this.state, pid: this.pid, model: this.model, restarts: this.restarts, lastError: this.lastError, workspace: this.workspace, activeTurns: this.active };
+  }
+
+  /** 故障排查用的完整状态（含 stderr 尾部与最近一次退出） */
+  diagnostics(): Record<string, unknown> {
+    const rec = this.readInitRecord();
+    return {
+      ...this.status(),
+      startingForMs: this.startingSince ? Date.now() - this.startingSince : undefined,
+      initStage: this.initStage || undefined,
+      initTimeoutMs: this.initTimeoutMs(),
+      lastInitMs: this.lastInitMs || rec?.ms,
+      firstStart: !rec,
+      retryInMs: this.state === "error" ? Math.max(0, this.retryAfter - Date.now()) : undefined,
+      startedAt: this.startedAt || undefined,
+      lastExit: this.lastExit,
+      nextStartInMs: this.state === "backoff" ? Math.max(0, this.nextStartAt - Date.now()) : undefined,
+      stderrTail: this.stderrTail.slice(-50),
+    };
+  }
+
+  /** 清掉失败退避与暂停（故障排查时立即重试，不等退避时间） */
+  resetBackoff(): void {
+    this.nextStartAt = 0;
+    this.retryAfter = 0;
+    if (this.state === "error") this.state = "stopped";
+  }
+
+  /** 手动重启：关掉子进程、清掉退避与暂停，下一条消息（或 ensure）重新拉起。 */
+  async restart(): Promise<void> {
+    await this.starting?.catch(() => undefined);
+    await this.closeHarness();
+    this.failures = 0;
+    this.initFailures = 0;
+    this.retryAfter = 0;
+    this.nextStartAt = 0;
+    this.state = "stopped";
+    log.info("dsh restarted by user", { bot: this.o.botId });
   }
 
   async stop(): Promise<void> {

@@ -6,7 +6,8 @@ import { createRequire } from "node:module";
 import { appVersion, type App } from "../app.js";
 import type { InboundEvent, OutboundOp, ReplySession } from "../core/types.js";
 import { findAppRoot } from "../magpie/supervisor.js";
-import { logger, mask } from "../log.js";
+import { logFilePath, logger, mask, readLogTail, registerSecret } from "../log.js";
+import { diagnosticsReport, safeStatus, testAgent, testModel } from "../diagnostics.js";
 import { ZOOMS, normalizeLowBalance, saveConfigFile } from "../config.js";
 import { ApiError } from "../account/client.js";
 import { OAuthError } from "../account/oauth.js";
@@ -164,6 +165,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     fs.writeFileSync(f, token, { mode: 0o600 });
     log.warn(`UI 监听在非回环地址 ${host}，访问需带令牌：见 ${f}（打开 /?token=<令牌> 一次即可）`);
   }
+  registerSecret(token);
 
   let boundPort = 0;
   const allowedHosts = () => new Set([`127.0.0.1:${boundPort}`, `localhost:${boundPort}`, `[::1]:${boundPort}`]);
@@ -352,6 +354,35 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       return send(res, 200, { ok: true });
     }
     if (p === "/agent" && m === "GET") return send(res, 200, app.agent.status());
+    // —— 故障排查（设置 → 故障排查）：所有输出都已脱敏 ——
+    if (seg[0] === "diagnostics") {
+      const sub = seg.slice(1).join("/");
+      if (sub === "" && m === "GET") return send(res, 200, safeStatus(app));
+      if (sub === "logs" && m === "GET") {
+        const n = Math.min(Math.max(Number(url.searchParams.get("lines")) || 200, 1), 2000);
+        return send(res, 200, { file: logFilePath() ?? "", lines: readLogTail(n) });
+      }
+      if (sub === "report" && m === "GET") return send(res, 200, { text: diagnosticsReport(app, Math.min(Math.max(Number(url.searchParams.get("lines")) || 200, 1), 2000)) });
+      if (sub === "test-model" && m === "POST") {
+        const b = await readJson(req);
+        const botId = b.botId ? String(b.botId) : undefined;
+        if (botId && !app.store.getBot(botId)) throw new HttpError(404, "机器人不存在");
+        return send(res, 200, await testModel(app, { botId, model: b.model ? String(b.model) : undefined, timeoutMs: b.timeoutMs ? Number(b.timeoutMs) : undefined }));
+      }
+      if (sub === "test-agent" && m === "POST") {
+        const b = await readJson(req);
+        const botId = b.botId ? String(b.botId) : undefined;
+        if (botId && !app.store.getBot(botId)) throw new HttpError(404, "机器人不存在");
+        return send(res, 200, await testAgent(app, { botId, model: b.model ? String(b.model) : undefined, timeoutMs: b.timeoutMs ? Number(b.timeoutMs) : undefined }));
+      }
+      if (sub === "restart-agent" && m === "POST") {
+        const b = await readJson(req);
+        const restarted = await app.agent.restartHosts(b.botId ? String(b.botId) : undefined);
+        log.info("agent hosts restarted from troubleshooting", { restarted });
+        return send(res, 200, { restarted, agent: (safeStatus(app) as any).agent });
+      }
+      throw new HttpError(404, "not found");
+    }
     if (seg[0] === "approvals") {
       if (seg.length === 1 && m === "GET") {
         const status = url.searchParams.get("status") || undefined;

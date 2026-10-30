@@ -5,13 +5,13 @@
 .switch {
   --switch-w: 34px;
   --switch-h: 20px;
-  --switch-pad: 2px;
+  --switch-pad: var(--space-0-5);
   --switch-track: var(--switch-off);
   --switch-track-hover: var(--switch-off-hover);
   --switch-dot: var(--switch-knob);
   --switch-stretch: 3px;   /* 按下时圆钮拉长多少 */
   position: relative; flex: none; width: var(--switch-w); height: var(--switch-h); border-radius: var(--r-full);
-  background: var(--switch-track); box-shadow: inset 0 0 0 .5px var(--line-2);
+  background: var(--switch-track);
   transition: background var(--t-base);
 }
 .switch::after {

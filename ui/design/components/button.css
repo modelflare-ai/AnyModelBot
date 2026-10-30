@@ -63,9 +63,9 @@
 .icon-btn:disabled { opacity: var(--o-disabled); }
 .icon-btn.xs { --ib-size: 18px; --ib-r: var(--r-sm); }
 
-/* —— 文字按钮 .text [danger | accent] —— */
+/* —— 文字按钮 .text [danger | accent]：悬停底和旁边 26 高的图标按钮差不多高 —— */
 .text {
-  font-size: var(--fs-sm); color: var(--ctl-fg); padding: 3px 7px; border-radius: var(--r-sm); white-space: nowrap;
+  font-size: var(--fs-sm); color: var(--ctl-fg); padding: var(--space-1) var(--space-2); border-radius: var(--r-sm); white-space: nowrap;
   transition: background var(--t-fast), color var(--t-fast);
 }
 .text:hover:not(:disabled) { background: var(--pill); color: var(--fg); }

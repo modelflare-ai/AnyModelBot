@@ -52,8 +52,9 @@ function createWindow(): void {
     icon: iconPath(),
     show: !SMOKE,
     autoHideMenuBar: true,
-    // macOS：无标题栏，红绿灯嵌进侧栏顶部（界面在 Electron + Mac 下给它留位）；其他系统用系统标题栏
-    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 15 } } : {}),
+    // macOS：无标题栏，红绿灯嵌进侧栏顶部（界面在 Electron + Mac 下给它留位）；其他系统用系统标题栏。
+    // 侧栏顶部先让出 --pane-gap（8）再放 52 高的顶栏，和主区顶栏同一条中线，所以红绿灯也比顶栏原来的位置低 8
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 23 } } : {}),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   const origin = new URL(entryUrl).origin;

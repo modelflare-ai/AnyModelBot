@@ -22,11 +22,17 @@ async function body(req: http.IncomingMessage): Promise<any> {
   return s ? JSON.parse(s) : {};
 }
 
-/** 模拟 OpenAI 兼容端点：/v1/models + 流式 /v1/chat/completions（回声 + 模型名） */
+/** Anthropic 的 content 可以是字符串或内容块数组：取出文字 */
+const textOf = (c: any): string => (typeof c === "string" ? c : Array.isArray(c) ? c.map((b) => (b?.type === "text" ? b.text : "")).join("") : "");
+
+/**
+ * 模拟 Modelflare 的对话接口：/v1/models、流式 /v1/chat/completions，以及 Claude 用的 /v1/messages
+ * （Anthropic 格式）。回声 + 模型名；calls[].api 记下走的是哪个接口。
+ */
 export async function mockOpenAI(opts: { models?: string[]; key?: string | string[]; reply?: (msgs: any[], model: string) => string; kinds?: Record<string, string> } = {}) {
   const models = opts.models ?? ["mock-a", "mock-b"];
   const keys = opts.key === undefined ? undefined : ([] as string[]).concat(opts.key);
-  const calls: Array<{ model: string; messages: any[]; auth?: string; skill?: string }> = [];
+  const calls: Array<{ model: string; messages: any[]; auth?: string; skill?: string; api: "chat" | "messages" }> = [];
   const stats = { aborted: 0 };
   const srv = await listen(async (req, res) => {
     if (keys && !keys.some((k) => req.headers.authorization === `Bearer ${k}`)) {
@@ -41,7 +47,7 @@ export async function mockOpenAI(opts: { models?: string[]; key?: string | strin
     }
     if (req.url?.endsWith("/chat/completions") && req.method === "POST") {
       const b = await body(req);
-      calls.push({ model: b.model, messages: b.messages, auth: req.headers.authorization, skill: req.headers["x-modelflare-skill"] as string | undefined });
+      calls.push({ model: b.model, messages: b.messages, auth: req.headers.authorization, skill: req.headers["x-modelflare-skill"] as string | undefined, api: "chat" });
       const last = b.messages[b.messages.length - 1]?.content ?? "";
       const text = opts.reply ? opts.reply(b.messages, b.model) : `[${b.model}] 你说：${last}`;
       if (!b.stream) {
@@ -60,6 +66,29 @@ export async function mockOpenAI(opts: { models?: string[]; key?: string | strin
         await new Promise((r) => setTimeout(r, 2));
       }
       res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+    if (req.url?.split("?")[0].endsWith("/v1/messages") && req.method === "POST") {
+      const b = await body(req);
+      const messages = (b.messages ?? []).map((m: any) => ({ role: m.role, content: textOf(m.content) }));
+      calls.push({ model: b.model, messages, auth: req.headers.authorization, skill: req.headers["x-modelflare-skill"] as string | undefined, api: "messages" });
+      const text = opts.reply ? opts.reply(messages, b.model) : `[${b.model}] 你说：${messages.at(-1)?.content ?? ""}`;
+      const usage = { input_tokens: 1, output_tokens: 1 };
+      if (!b.stream) {
+        res.writeHead(200, { "content-type": "application/json" }).end(
+          JSON.stringify({ id: "msg_mock", type: "message", role: "assistant", model: b.model, content: [{ type: "text", text }], stop_reason: "end_turn", stop_sequence: null, usage }),
+        );
+        return;
+      }
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      const ev = (type: string, data: object) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+      ev("message_start", { message: { id: "msg_mock", type: "message", role: "assistant", model: b.model, content: [], stop_reason: null, stop_sequence: null, usage: { ...usage, output_tokens: 0 } } });
+      ev("content_block_start", { index: 0, content_block: { type: "text", text: "" } });
+      for (const p of text.match(/.{1,4}/gsu) ?? []) ev("content_block_delta", { index: 0, delta: { type: "text_delta", text: p } });
+      ev("content_block_stop", { index: 0 });
+      ev("message_delta", { delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 1 } });
+      ev("message_stop", {});
       res.end();
       return;
     }

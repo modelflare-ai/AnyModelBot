@@ -50,7 +50,10 @@ npm run electron:dev     # 开发运行
 npm run electron:smoke   # 冒烟测试（Linux 无显示器时自动用 xvfb-run）
 npm run dist             # 打包当前平台（magpie 随附在 resources/magpie/）
 npm run dist:linux | dist:mac | dist:win
+npm run test:dsh-bundle  # 用 Electron 跑真实 DSH 集成测试，加载打包后的 build/dsh（需先 prepare:dsh + bundle:dsh）
 ```
+
+- DSH 代理运行时：`scripts/prepare-dsh.mjs` 按目标平台安装 `dsh-runtime/`，`scripts/bundle-dsh.mjs` 把它打成 `resources/dsh/dsh.asar`（全部 JS，一个文件）加上 `resources/dsh/node_modules/`（只有原生包，约 55 个文件）。Electron 主进程和 `ELECTRON_RUN_AS_NODE` 子进程直接读 asar，无需首启解压；安装包因此只需解出几百个文件（Windows 上解压与杀毒逐个扫描是安装慢的主因）。开发时仍直接用 `dsh-runtime/`。
 
 - 数据目录：`<userData>/data`（macOS `~/Library/Application Support/anymodel bot/data`，Windows `%APPDATA%\anymodel bot\data`，Linux `~/.config/anymodel bot/data`）
 - 单实例；关闭窗口默认隐藏到托盘（设置 → 常规 可改为退出）；托盘菜单：打开 / 在浏览器中打开 / 开机自启（macOS、Windows）/ 打开数据目录 / 退出

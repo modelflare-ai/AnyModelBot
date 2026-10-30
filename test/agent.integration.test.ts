@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import module from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { App } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
@@ -14,6 +15,15 @@ import { listen } from "./helpers.js";
  * 验证：插件加载、bridge 注入密钥、bash 沙箱、审批流程（API 批准/拒绝）、读围栏、回环 API 防护。
  */
 const runtime = locateDshRuntime(findAppRoot());
+/** workflow 脚本先剥离 TS 类型；Electron 自带的 Node 支持，部分发行版的系统 Node 不带 amaro。 */
+const canStripTypes = (() => {
+  try {
+    (module as any).stripTypeScriptTypes("let a: number = 1");
+    return true;
+  } catch {
+    return false;
+  }
+})();
 const hasBwrap = fs.existsSync("/usr/bin/bwrap");
 
 async function body(req: http.IncomingMessage): Promise<any> {
@@ -39,7 +49,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): { tool?: { name: string; args: any }; text?: string } {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
@@ -50,6 +60,13 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       [/READFILE/, [{ name: "read", args: { file_path: path.join(dataDir, "config.json") } }, { name: "read", args: { file_path: "qs.py" } }]],
       [/PRESENT/, [{ name: "bash", args: { description: "run", command: "printf 'hello deliverable' > report.txt" } }, { name: "present", args: { files: [{ path: "report.txt", description: "报告" }, { path: "/etc/hostname" }] } }]],
       [/ASKQ/, [{ name: "ask_user_question", args: { questions: [{ id: "lang", question: "用哪种语言？", options: [{ label: "Python" }, { label: "Go" }] }] } }]],
+      // 原生依赖与子进程：ripgrep（grep/glob）、PTC 的 Node 子进程（workflow）
+      [/NATIVES/, [
+        { name: "bash", args: { description: "run", command: "printf 'needle-4711\\n' > hay.txt && printf 'x' > dot.png" } },
+        { name: "grep", args: { pattern: "needle-47" } },
+        { name: "glob", args: { pattern: "*.png" } },
+        ...(canStripTypes ? [{ name: "workflow", args: { script: "return { answer: 6 * 7 }", meta: { name: "calc", description: "multiply" } } }] : []),
+      ]],
       [/LOOPBACK/, [{ name: "bash", args: { description: "run", command: `python3 -c "import urllib.request as u\ntry:\n  print('API', u.urlopen('${base}/amb/api/status').status)\nexcept Exception as e:\n  print('API', getattr(e,'code',e))"` } }]],
     ];
     for (const [re, steps] of scripts) {
@@ -188,6 +205,16 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(r.prompts[0]?.prompt).toContain("1. Python");
     expect(r.prompts[0]?.prompt).toContain("2. Go");
     expect(r.reply).toContain("Go");
+  }, 120_000);
+
+  it("runs tools backed by native modules and Node subprocesses", async () => {
+    const r = await chat("NATIVES check");
+    const parts = r.reply.replace(/^RESULT<<|>>$/g, "").split("|");
+    expect(parts).toHaveLength(canStripTypes ? 4 : 3);
+    expect(parts[1]).toContain("hay.txt");
+    expect(parts[1]).toContain("needle-4711");
+    expect(parts[2]).toContain("dot.png");
+    if (canStripTypes) expect(parts[3]).toContain("42");
   }, 120_000);
 
   it("blocks loopback management API calls from the agent", async () => {

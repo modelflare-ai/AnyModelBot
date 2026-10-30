@@ -2,7 +2,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import type { AddressInfo } from "node:net";
-import { logger } from "../log.js";
+import { logger, redactText, registerSecret } from "../log.js";
 
 const log = logger("agent.bridge");
 
@@ -20,6 +20,12 @@ export interface BridgeHandlers {
   media?(body: any): Promise<unknown>;
 }
 
+/** 模型代理的一次请求（故障排查的"测试代理"用它判断模型调用这一步） */
+export type ProxyEvent =
+  | { phase: "request"; id: number; path: string; model?: string; tools?: string[]; lastUser?: string }
+  | { phase: "response"; id: number; path: string; status: number; ms: number; error?: string }
+  | { phase: "error"; id: number; path: string; ms: number; error: string };
+
 /**
  * 仅回环的内部桥：DSH 子进程用每次启动随机生成的令牌访问。
  * - /v1/*：模型代理，替换 Authorization 为真实网关密钥（子进程环境里没有任何真实密钥）
@@ -29,8 +35,27 @@ export class AgentBridge {
   readonly token = crypto.randomBytes(24).toString("base64url");
   private server: http.Server | undefined;
   port = 0;
+  private seq = 0;
+  private proxyListeners = new Set<(e: ProxyEvent) => void>();
 
-  constructor(private h: BridgeHandlers) {}
+  constructor(private h: BridgeHandlers) {
+    registerSecret(this.token);
+  }
+
+  /** 订阅模型代理事件；返回取消函数 */
+  onProxy(fn: (e: ProxyEvent) => void): () => void {
+    this.proxyListeners.add(fn);
+    return () => this.proxyListeners.delete(fn);
+  }
+  private emitProxy(e: ProxyEvent): void {
+    for (const fn of this.proxyListeners) {
+      try {
+        fn(e);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 
   get url(): string {
     return `http://127.0.0.1:${this.port}`;
@@ -93,16 +118,52 @@ export class AgentBridge {
     }
     if (up.apiKey) headers.authorization = `Bearer ${up.apiKey}`;
     const body = req.method === "GET" || req.method === "HEAD" ? undefined : await this.readBody(req);
+    const id = ++this.seq;
+    const p = url.split("?")[0];
+    const t0 = Date.now();
+    if (this.proxyListeners.size) this.emitProxy({ phase: "request", id, path: p, ...requestInfo(body) });
     const ac = new AbortController();
     res.on("close", () => ac.abort());
-    const r = await fetch(target, { method: req.method, headers, body: body ? new Uint8Array(body) : undefined, signal: ac.signal });
+    // 上游迟迟不回响应头时每分钟记一条：代理"一直转圈"多半是这里卡住（代理自己要等 5 分钟才判超时并重试）
+    const slow = setInterval(() => log.warn("model request still waiting for upstream response", { path: p, waitedMs: Date.now() - t0 }), 60_000);
+    let r: Response;
+    try {
+      r = await fetch(target, { method: req.method, headers, body: body ? new Uint8Array(body) : undefined, signal: ac.signal });
+    } catch (e) {
+      const error = (e as Error).message;
+      this.emitProxy({ phase: "error", id, path: p, ms: Date.now() - t0, error });
+      throw e;
+    } finally {
+      clearInterval(slow);
+    }
     const out: Record<string, string> = {};
     r.headers.forEach((v, k) => {
       if (!["content-encoding", "content-length", "transfer-encoding", "connection", "set-cookie"].includes(k)) out[k] = v;
     });
+    if (r.status >= 400) {
+      // 上游报错：读完错误体（不大）记日志，再原样转给子进程
+      const text = await r.text().catch(() => "");
+      const error = redactText(text.slice(0, 1000));
+      log.warn("model request rejected by upstream", { path: p, status: r.status, ms: Date.now() - t0, body: error });
+      this.emitProxy({ phase: "response", id, path: p, status: r.status, ms: Date.now() - t0, error });
+      res.writeHead(r.status, out);
+      return void res.end(text);
+    }
+    const headersMs = Date.now() - t0;
+    this.emitProxy({ phase: "response", id, path: p, status: r.status, ms: headersMs });
     res.writeHead(r.status, out);
     if (!r.body) return void res.end();
-    Readable.fromWeb(r.body as any).on("error", () => res.destroy()).pipe(res);
+    const stream = Readable.fromWeb(r.body as any);
+    let bytes = 0;
+    stream.on("data", (c: Buffer) => (bytes += c.length));
+    stream.on("end", () => log.info("model request done", { path: p, status: r.status, headersMs, totalMs: Date.now() - t0, bytes }));
+    stream.on("error", (e) => {
+      // 子进程读完 [DONE] 就断开时上游流会被中止（res close → abort），这不是错误
+      if (ac.signal.aborted) log.debug("model response closed by the agent", { path: p, ms: Date.now() - t0, bytes });
+      else log.warn("model response stream failed", { path: p, ms: Date.now() - t0, bytes, error: e.message });
+      res.destroy();
+    });
+    stream.pipe(res);
   }
 
   private async dsh(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
@@ -118,5 +179,20 @@ export class AgentBridge {
     else if (url === "/dsh/media" && this.h.media) out = await this.h.media(body);
     else return void res.writeHead(404).end();
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
+  }
+}
+
+/** 请求体里的模型名、工具名与第一条用户消息开头（只在有人订阅时解析；解析失败就不给） */
+function requestInfo(body: Buffer | undefined): { model?: string; tools?: string[]; lastUser?: string } {
+  if (!body || body.length > 8 * 1024 * 1024) return {};
+  try {
+    const j = JSON.parse(body.toString("utf8"));
+    const tools = Array.isArray(j?.tools) ? j.tools.map((t: any) => String(t?.function?.name ?? t?.name ?? "")).filter(Boolean) : undefined;
+    const users = Array.isArray(j?.messages) ? j.messages.filter((m: any) => m?.role === "user") : [];
+    const text = (c: unknown): string => (typeof c === "string" ? c : Array.isArray(c) ? c.map((p: any) => (typeof p === "string" ? p : String(p?.text ?? ""))).join("") : "");
+    const lastUser = users.length ? users.map((m: any) => text(m.content).slice(0, 2000)).join("\n") : undefined;
+    return { model: typeof j?.model === "string" ? j.model : undefined, tools, lastUser };
+  } catch {
+    return {};
   }
 }

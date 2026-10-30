@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -166,13 +166,22 @@ export function detectCua(roots: string[], probe: CuaProbe = defaultCuaProbe()):
   return off("需要在已登录用户的交互式会话中运行（检测到服务或非交互会话）");
 }
 
+/** 进程的 SessionId 不会变：只查一次（每次查都要同步起一个 PowerShell，冷启动时会卡住主进程好几秒）。 */
+let sessionIdCache: { v: number | undefined } | undefined;
+
 /** Windows：当前进程的 SessionId（交互式用户会话 > 0；服务/Session 0 = 0）。失败返回 undefined。 */
 export function queryWindowsSessionId(): number | undefined {
+  sessionIdCache ??= { v: querySessionIdOnce() };
+  return sessionIdCache.v;
+}
+
+function querySessionIdOnce(): number | undefined {
   try {
     const out = execFileSync(
       "powershell.exe",
       ["-NoProfile", "-NonInteractive", "-Command", "(Get-Process -Id $PID).SessionId"],
-      { encoding: "utf8", timeout: 5000, windowsHide: true },
+      // stdio 显式：execFileSync 默认把子进程 stderr 转写到本进程 stderr（GUI 程序里可能是坏管道）
+      { encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] },
     ).trim();
     const n = Number(out);
     return Number.isInteger(n) && n >= 0 ? n : undefined;
@@ -259,7 +268,7 @@ export function macApps(homedir: string): CuaApp[] {
       try {
         const raw = fs.readFileSync(plist);
         if (raw.subarray(0, 6).toString() === "bplist") {
-          id = execFileSync("/usr/bin/plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", plist], { encoding: "utf8", timeout: 5000 }).trim();
+          id = execFileSync("/usr/bin/plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", plist], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim();
         } else {
           id = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(raw.toString("utf8"))?.[1]?.trim() ?? "";
         }
@@ -272,33 +281,84 @@ export function macApps(homedir: string): CuaApp[] {
   return [...out].sort().map((bundle_id) => ({ bundle_id }));
 }
 
-/** Windows：开始菜单快捷方式指向的 .exe + 几个系统自带程序（未在真机验证）。 */
-export function windowsApps(env: Record<string, string | undefined>): CuaApp[] {
-  const out = new Set<string>();
-  const win = env.SystemRoot || env.WINDIR || "C:\\Windows";
-  for (const p of ["notepad.exe", "mspaint.exe", "write.exe", "explorer.exe"].map((x) => (x === "explorer.exe" ? path.win32.join(win, x) : path.win32.join(win, "System32", x)))) {
-    if (fs.existsSync(p)) out.add(p);
-  }
+const WIN_SHORTCUTS_PS =
+  "$s=New-Object -ComObject WScript.Shell;" +
+  "$d=@([Environment]::GetFolderPath('CommonStartMenu'),[Environment]::GetFolderPath('StartMenu'));" +
+  "Get-ChildItem -Path $d -Recurse -Filter *.lnk -ErrorAction SilentlyContinue|ForEach-Object{try{$s.CreateShortcut($_.FullName).TargetPath}catch{}}";
+
+/** 真实路径（Windows 上 realpath.native 给出盘上的大小写与长文件名）；失败时原样返回。 */
+function canonicalPath(p: string): string {
   try {
-    const ps =
-      "$s=New-Object -ComObject WScript.Shell;" +
-      "$d=@([Environment]::GetFolderPath('CommonStartMenu'),[Environment]::GetFolderPath('StartMenu'));" +
-      "Get-ChildItem -Path $d -Recurse -Filter *.lnk -ErrorAction SilentlyContinue|ForEach-Object{try{$s.CreateShortcut($_.FullName).TargetPath}catch{}}";
-    const text = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", timeout: 20000, windowsHide: true });
-    for (const line of text.split(/\r?\n/)) {
-      const p = line.trim();
-      if (/\.exe$/i.test(p) && fs.existsSync(p)) out.add(p);
-    }
+    return fs.realpathSync.native(p);
   } catch {
-    /* PowerShell 不可用时只用系统程序 */
+    return p;
   }
-  return [...out].sort().map((executable) => ({ executable }));
 }
 
-export function discoverApps(platform: NodeJS.Platform = process.platform, env = process.env, homedir = os.homedir()): CuaApp[] {
-  const self = process.execPath;
-  const apps = platform === "linux" ? linuxDesktopApps(env, homedir) : platform === "darwin" ? macApps(homedir) : platform === "win32" ? windowsApps(env) : [];
-  return apps.filter((a) => !("executable" in a) || a.executable !== self).slice(0, 800);
+/**
+ * 按"身份"去重：Windows 路径不分大小写。cua-driver 的能力清单里同一个程序出现两次（例如系统自带的
+ * C:\Windows\System32\notepad.exe 和开始菜单快捷方式指向的 C:\WINDOWS\system32\notepad.exe）时，
+ * `cua-driver mcp` 会以 "application resources repeat an identity" 拒绝启动——v0.1.5 在 Windows 上
+ * 就是这样陷入 MCP 重连循环、不停弹出控制台窗口的。
+ */
+export function uniqueApps(apps: CuaApp[], platform: NodeJS.Platform = process.platform): CuaApp[] {
+  const seen = new Set<string>();
+  const out: CuaApp[] = [];
+  for (const a of apps) {
+    const key = "executable" in a ? `x:${platform === "win32" || platform === "darwin" ? a.executable.toLowerCase() : a.executable}` : `b:${a.bundle_id.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(a);
+  }
+  return out;
+}
+
+/** Windows：几个系统自带程序 + PowerShell 列出的开始菜单快捷方式目标（只留存在的 .exe，按路径不分大小写去重）。 */
+export function windowsAppsFrom(
+  env: Record<string, string | undefined>,
+  shortcutTargets: string,
+  exists: (p: string) => boolean = fs.existsSync,
+  canon: (p: string) => string = canonicalPath,
+): CuaApp[] {
+  const found: string[] = [];
+  const win = env.SystemRoot || env.WINDIR || "C:\\Windows";
+  for (const p of ["notepad.exe", "mspaint.exe", "write.exe", "explorer.exe"].map((x) => (x === "explorer.exe" ? path.win32.join(win, x) : path.win32.join(win, "System32", x)))) {
+    if (exists(p)) found.push(canon(p));
+  }
+  for (const line of shortcutTargets.split(/\r?\n/)) {
+    const p = line.trim();
+    if (/\.exe$/i.test(p) && exists(p)) found.push(canon(p));
+  }
+  const apps = found.sort((a, b) => a.localeCompare(b)).map((executable) => ({ executable }));
+  return uniqueApps(apps, "win32");
+}
+
+/** Windows：开始菜单快捷方式指向的 .exe + 几个系统自带程序（未在真机验证）。异步，不阻塞主进程。 */
+export async function windowsApps(env: Record<string, string | undefined>): Promise<CuaApp[]> {
+  const text = await new Promise<string>((resolve) =>
+    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", WIN_SHORTCUTS_PS], { encoding: "utf8", timeout: 20000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) =>
+      resolve(err ? "" : String(stdout)), // PowerShell 不可用时只用系统程序
+    ),
+  );
+  return windowsAppsFrom(env, text);
+}
+
+export async function discoverApps(platform: NodeJS.Platform = process.platform, env = process.env, homedir = os.homedir()): Promise<CuaApp[]> {
+  const self = platform === "win32" ? process.execPath.toLowerCase() : process.execPath;
+  const apps = platform === "linux" ? linuxDesktopApps(env, homedir) : platform === "darwin" ? macApps(homedir) : platform === "win32" ? await windowsApps(env) : [];
+  return uniqueApps(apps, platform)
+    .filter((a) => !("executable" in a) || (platform === "win32" ? a.executable.toLowerCase() : a.executable) !== self)
+    .slice(0, 800);
+}
+
+let appsCache: { at: number; apps: Promise<CuaApp[]> } | undefined;
+/** 已安装应用清单（10 分钟内复用）：每次重启代理进程都重扫一遍开始菜单太慢。 */
+export function discoverAppsCached(ttlMs = 10 * 60_000): Promise<CuaApp[]> {
+  if (!appsCache || Date.now() - appsCache.at > ttlMs) {
+    const apps = discoverApps().catch(() => [] as CuaApp[]);
+    appsCache = { at: Date.now(), apps };
+  }
+  return appsCache.apps;
 }
 
 export interface CuaConfig {

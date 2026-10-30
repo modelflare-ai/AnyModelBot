@@ -194,4 +194,27 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const r = await chat("LOOPBACK check");
     expect(r.reply).toContain("API 403");
   }, 120_000);
+
+  it("troubleshooting: test agent passes every stage, restart respawns the host", async () => {
+    const post = async (p: string, body: unknown = {}) =>
+      (await (await fetch(`${base}/amb/api/diagnostics/${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json()) as any;
+    const t = await post("test-agent", { timeoutMs: 60_000 });
+    expect(t.stages.map((s: any) => `${s.id}:${s.status}`)).toEqual(["queue:ok", "spawn:ok", "plugins:ok", "model:ok", "reply:ok"]);
+    expect(t.reply).toBe("好的");
+    // 诊断会话不进聊天记录
+    const convs = ((await (await fetch(`${base}/amb/api/conversations?bot=default`)).json()) as any).conversations;
+    expect(convs.some((c: any) => String(c.id).includes("diag"))).toBe(false);
+    const status = ((await (await fetch(`${base}/amb/api/diagnostics`)).json()) as any).agent.hosts.default;
+    expect(status).toMatchObject({ state: "running" });
+    expect(Array.isArray(status.stderrTail)).toBe(true);
+
+    const r = await post("restart-agent");
+    expect(r.restarted).toEqual(["default"]);
+    expect(r.agent.hosts.default.state).toBe("stopped");
+    // 重启后下一条消息重新拉起代理进程（脚本化模型按会话历史回答，这里只看不是错误）
+    const again = await chat("hello after restart");
+    expect(again.reply).toBeTruthy();
+    expect(again.reply).not.toContain("⚠️");
+    expect(app.agent.host("default").state).toBe("running");
+  }, 180_000);
 });

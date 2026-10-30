@@ -83,9 +83,12 @@ export class BotRuntime {
     const routed = this.opts.route ? this.opts.route(bot.id, model) : model;
 
     const agent = this.opts.agent;
+    let note = "";
     if (agent?.available) {
       const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, bot.systemPrompt, out);
-      if (handled) return;
+      if (handled === true) return;
+      // 代理进程还在启动（第一次可能要几分钟）：这条消息先由模型直接回答，不让用户干等
+      if (handled === "starting") note = "（代理还在启动，这条消息先由模型直接回答；启动完成后会自动用回代理。）";
     }
 
     store.addMessage(conv.id, "user", text);
@@ -104,7 +107,7 @@ export class BotRuntime {
       });
       const finalText = full || acc || "（模型没有返回内容）";
       store.addMessage(conv.id, "assistant", finalText);
-      await out.apply({ type: "stream.finish", text: finalText });
+      await out.apply({ type: "stream.finish", text: note ? `${note}\n\n${finalText}` : finalText });
     } catch (e) {
       const err = e as Error & { status?: number };
       if (opts.signal?.aborted) {
@@ -122,11 +125,31 @@ export class BotRuntime {
 
   /** 渠道在进入每会话串行队列之前调用：处理审批回复（y 1234 / n 1234）与提问回答。 */
   interceptReply(ev: InboundEvent): { handled: boolean; ack?: string } {
-    const agent = this.opts.agent;
-    if (!agent) return { handled: false };
     const text = eventText(ev);
     const convId = `${ev.botId}:${ev.channel}:${ev.conversation.id}`;
+    // /status、/help 只读、不碰模型和代理进程：不进会话队列，不会排在一个卡住或正在启动代理的回合后面
+    const cmd = text.trim().toLowerCase();
+    if (cmd === "/status" || cmd === "/help") {
+      const bot = this.opts.store.getBot(ev.botId);
+      if (bot) return { handled: true, ack: cmd === "/help" ? HELP : this.statusText(bot.id, convId, this.opts.store.getConversation(convId)?.model ?? "", bot.defaultModel) };
+    }
+    const agent = this.opts.agent;
+    if (!agent) return { handled: false };
     return agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`);
+  }
+
+  /** /status 的内容：只读本地状态，立即返回 */
+  statusText(botId: string, convId: string, convModel: string, botModel: string): string {
+    const m = convModel || botModel || this.opts.defaultModel() || "（自动：第一个可用模型）";
+    const a = this.opts.agent;
+    const mode = a?.available ? "代理模式（DeepSeek Harness，工作区沙箱）" : "纯对话模式";
+    const pend = a ? a.approvals.pending(convId).map((r) => `${r.kind === "approval" ? "待批准" : "待回答"} ${r.code}`) : [];
+    const cui = a?.available ? a.computerUse(botId) : undefined;
+    const cu = cui ? [`电脑操作：${cui.backend === "codex" ? "Codex 桥" : "Cua Driver"}，${cui.active ? "已启用" : "未启用"}——${cui.reason}`, ...(cui.notice && cui.enabled ? [cui.notice] : [])] : [];
+    const host = a?.available ? [a.hostSummary(botId)] : [];
+    const turn = a?.turnsInProgress.get(convId);
+    const busy = turn ? [`本会话上一条消息还在处理（已 ${Math.round((Date.now() - turn.since) / 1000)} 秒），新消息会排在它后面`] : [];
+    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...host, ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
   }
 
   /** 卡片按钮回调：批准/拒绝/选择选项。 */
@@ -146,8 +169,11 @@ export class BotRuntime {
     return { toast: "未知操作", ok: false };
   }
 
-  /** 代理回合；返回 false 表示宿主不可用且尚无任何输出，调用方回退到纯对话。 */
-  private async handleAgent(agent: AgentManager, botId: string, convId: string, text: string, model: string, systemPrompt: string, out: ReplySession): Promise<boolean> {
+  /**
+   * 代理回合；返回 false 表示宿主不可用且尚无任何输出（调用方回退到纯对话），
+   * "starting" 表示代理进程在等待时限内没有启动好（同样回退，启动在后台继续）。
+   */
+  private async handleAgent(agent: AgentManager, botId: string, convId: string, text: string, model: string, systemPrompt: string, out: ReplySession): Promise<boolean | "starting"> {
     const { store } = this.opts;
     let visible = false;
     const unbind = agent.approvals.bindSink(convId, async (row) => {
@@ -156,7 +182,39 @@ export class BotRuntime {
     });
     await out.apply({ type: "typing", on: true });
     await out.apply({ type: "stream.start" });
+    // 代理进程还没就绪（第一次启动可能要几分钟）：先说清楚在等什么，而不是一直"思考中"。最终回复会替换这段文字
+    const host = agent.host(botId);
+    let startup: NodeJS.Timeout | undefined;
+    if (host.state !== "running") {
+      const since = Date.now();
+      const show = () => {
+        if (host.state === "running") {
+          clearInterval(startup);
+          return void out.apply({ type: "stream.update", text: "代理已就绪，正在处理…" });
+        }
+        const s = Math.round((Date.now() - since) / 1000);
+        const first = (host.diagnostics() as any).firstStart;
+        void out.apply({ type: "stream.update", text: `代理正在启动…${s >= 5 ? `（已 ${s} 秒）` : ""}${first ? "首次启动可能需要几分钟。" : ""}` });
+      };
+      show();
+      startup = setInterval(show, 5000);
+    }
     try {
+      if (host.state !== "running") {
+        const waitMs = Number(process.env.AMB_AGENT_START_WAIT_MS) || 90_000;
+        let timer: NodeJS.Timeout | undefined;
+        const ready = await Promise.race([
+          host.ensure(model).then(
+            () => true,
+            () => false,
+          ),
+          new Promise<boolean>((r) => (timer = setTimeout(() => r(false), waitMs))),
+        ]).finally(() => clearTimeout(timer));
+        if (!ready && (host.state as string) !== "running") {
+          log.warn("agent host not ready, answering with plain chat", { bot: botId, state: host.state, waitedMs: waitMs });
+          return host.state === "starting" ? "starting" : false;
+        }
+      }
       const input = store.getAgentSession(convId) ? text : firstInput(agent, botId, convId, systemPrompt, text);
       const r = await agent.runTurn(botId, {
         conversationId: convId,
@@ -168,7 +226,7 @@ export class BotRuntime {
             visible = true;
           },
         },
-      });
+      }).finally(() => clearInterval(startup));
       store.addMessage(convId, "user", text);
       const finalText = r.text.trim() || "（已完成，没有文字回复）";
       store.addMessage(convId, "assistant", finalText);
@@ -192,6 +250,7 @@ export class BotRuntime {
       await out.apply({ type: "stream.finish", text: `⚠️ 代理执行失败：${err.message.slice(0, 300)}` });
       return true;
     } finally {
+      clearInterval(startup);
       unbind();
       await out.apply({ type: "typing", on: false });
     }
@@ -219,15 +278,8 @@ export class BotRuntime {
         }
         return "✅ 已开始新的一段对话（旧对话已归档并留下交接便条，长期记忆保留）";
       }
-      case "/status": {
-        const m = convModel || botModel || this.opts.defaultModel() || "（自动：第一个可用模型）";
-        const a = this.opts.agent;
-        const mode = a?.available ? "代理模式（DeepSeek Harness，工作区沙箱）" : "纯对话模式";
-        const pend = a ? a.approvals.pending(convId).map((r) => `${r.kind === "approval" ? "待批准" : "待回答"} ${r.code}`) : [];
-        const cui = a?.available ? a.computerUse(botId) : undefined;
-        const cu = cui ? [`电脑操作：${cui.backend === "codex" ? "Codex 桥" : "Cua Driver"}，${cui.active ? "已启用" : "未启用"}——${cui.reason}`, ...(cui.notice && cui.enabled ? [cui.notice] : [])] : [];
-        return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
-      }
+      case "/status":
+        return this.statusText(botId, convId, convModel, botModel);
       case "/model": {
         let list: string[];
         try {

@@ -80,7 +80,9 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 - 余额：侧栏左下角和 设置 → Modelflare 显示账户钱包余额（只用 API Key 时读 `/v1/dashboard/billing/credit_grants`）；「充值」打开 Modelflare 网页，回到窗口时自动刷新。余额低于提醒线（默认 $1，可改或关闭）时在应用里提醒一次，也可以设置让机器人发到你的微信 / 飞书。
 - 登录后还能在 设置 → Modelflare 查看按天、按模型的用量，Modelflare 发来的通知，以及复制邀请链接。
 - 机器人预算（需要登录）：机器人设置 → 预算，开启后这个机器人用自己的 Key（内置网关里单独的 provider），最多花设定的美元数；关闭后回到共用的 Key。
-- 生图 / 生视频：代理模式下机器人有 `generate_image`、`generate_video` 工具，由本程序带着该机器人用的 Key 调 Modelflare，结果存进机器人工作区的 `media/`，再交付到聊天。
+- 生图 / 生视频：代理模式下机器人有 `media_models`（可用模型、默认模型、参数范围、参考价）、`media_docs`（从 docs.modelflare.dev 实时读该模型的请求格式）、`generate_image`、`generate_video` 四个工具，并自带一份 media 技能说明。各模型的参数格式不同，机器人按文档写请求体，工作区里的参考图写成 `workspace:路径` 即可；Key 始终只在本程序里，由本程序带着该机器人用的 Key 调 Modelflare，结果存进机器人工作区的 `media/`，再交付到聊天。
+- 生成前确认：每次生成图片或视频之前都会在聊天里问你这次用哪个模型（附提示词、参数和参考价），可以确认、换成别的模型或取消；微信回复编号或模型名，飞书 / 网页点选。10 分钟内没回答就不生成。
+- 默认图片 / 视频模型：首次设置时和默认文本模型一起选，之后在 设置 → Modelflare 修改；选「自动」时用推荐顺序里第一个不需要参考素材的模型。
 - 模型选择器里显示上下文长度、视觉 / 工具 / 推理能力，以及每百万 tokens 输入 / 输出的起步参考价（来自公开价格目录，以账单为准）。
 - 调用归因：经 Modelflare 的请求都带 `X-Modelflare-Skill: anymodel-bot/<版本>`，链接都带 `utm_source=anymodelbot`。
 - 线路：默认国际线路 `https://modelflare.dev/v1`；中国大陆可在「高级」或 设置 → Modelflare → 线路 选「中国大陆优化」（`https://origin.modelflare.dev/v1`）。线路由你选定，不自动切换。

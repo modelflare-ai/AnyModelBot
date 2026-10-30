@@ -32,6 +32,8 @@ export interface AppConfig {
     externalApiKey: string;
   };
   llm: { defaultModel: string; contextMessages: number; contextChars: number };
+  /** 默认的图片 / 视频模型（生成前确认时默认选中）；空 = 按推荐顺序的第一个 */
+  media: { imageModel: string; videoModel: string };
   feishu: { throttleMs: number };
   weixin: { apiBaseUrl: string };
   /** 代理宿主：dsh = DeepSeek Harness（工具/沙箱/审批）；off = 纯对话 */
@@ -86,6 +88,10 @@ export function loadConfig(overrides: { dataDir?: string; env?: NodeJS.ProcessEn
       defaultModel: env.AMB_DEFAULT_MODEL || file.llm?.defaultModel || "",
       contextMessages: num(env.AMB_CONTEXT_MESSAGES, file.llm?.contextMessages ?? 40),
       contextChars: num(env.AMB_CONTEXT_CHARS, file.llm?.contextChars ?? 24000),
+    },
+    media: {
+      imageModel: typeof file.media?.imageModel === "string" ? file.media.imageModel : "",
+      videoModel: typeof file.media?.videoModel === "string" ? file.media.videoModel : "",
     },
     feishu: { throttleMs: num(env.AMB_FEISHU_THROTTLE_MS, file.feishu?.throttleMs ?? 400) },
     weixin: { apiBaseUrl: env.AMB_WEIXIN_API_BASE || file.weixin?.apiBaseUrl || "https://ilinkai.weixin.qq.com" },

@@ -35,7 +35,7 @@ import {
 import { AccountManager } from "./account/manager.js";
 import { AccountVault, type SecretBox } from "./account/vault.js";
 import { loadModelInfo, type ModelInfo } from "./account/model-info.js";
-import { MediaService } from "./agent/media.js";
+import { MediaService, pickDefault } from "./agent/media.js";
 import type { BotSettings } from "./agent/settings.js";
 
 const log = logger("app");
@@ -169,6 +169,8 @@ export class App {
             keyFor: (botId) => this.botKey(botId),
             headers: () => this.requestHeaders(),
             workspace: (botId) => path.join(config.dataDir, "workspaces", botId),
+            defaults: () => ({ image: this.config.media.imageModel, video: this.config.media.videoModel }),
+            pricingUrl: () => `${modelflareIssuer()}/api/pricing`,
           })
         : undefined,
       onNotice: (text) => this.notice("warn", text),
@@ -443,6 +445,30 @@ export class App {
   setDefaultModel(model: string): void {
     this.config.llm.defaultModel = model;
     saveConfigFile(this.config.dataDir, (f) => (f.llm = { ...(f.llm ?? {}), defaultModel: model }));
+  }
+
+  /** 默认的图片 / 视频模型；空字符串 = 自动（推荐顺序的第一个） */
+  setMediaModels(patch: { imageModel?: string; videoModel?: string }): void {
+    Object.assign(this.config.media, patch);
+    saveConfigFile(this.config.dataDir, (f) => (f.media = { ...(f.media ?? {}), ...patch }));
+  }
+
+  /** 设置页与首次设置用：共用 Key 能用的图片 / 视频模型（按推荐顺序）与自动时会选的那个 */
+  async mediaModels(): Promise<{ image: string[]; video: string[]; recommended: { image: string; video: string }; error?: string }> {
+    const media = this.agent.media;
+    const key = this.magpie?.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER) ?? "";
+    const empty = { image: [], video: [], recommended: { image: "", video: "" } };
+    if (!media || !key) return empty;
+    try {
+      const [image, video] = await Promise.all([media.available(key, "image"), media.available(key, "video")]);
+      return {
+        image: image.map((m) => m.id),
+        video: video.map((m) => m.id),
+        recommended: { image: pickDefault(image, "")?.id ?? "", video: pickDefault(video, "")?.id ?? "" },
+      };
+    } catch (e) {
+      return { ...empty, error: (e as Error).message };
+    }
   }
 
   private seedDefaultBot(): void {

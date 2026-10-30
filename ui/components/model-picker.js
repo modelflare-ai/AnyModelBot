@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Popover, Icon } from "./ui.js";
 import { api } from "../lib/api.js";
 import { createStore, useStore } from "../lib/store.js";
-import { groupModels, modelFamily, normModel, sameModel } from "../lib/models.js";
+import { groupModels, modelFamily, normModel, sameModel, shortModel } from "../lib/models.js";
 
 export { groupModels, normModel, sameModel, shortModel } from "../lib/models.js";
 
@@ -153,4 +153,18 @@ export function ModelPicker({ anchor, models, error, current, onPick, onClose, r
     </ul>
     ${foot && html`<div class="foot"><button type="button" disabled=${foot.disabled} onClick=${() => { onClose(); foot.onClick(); }}>${foot.label}</button></div>`}
   <//>`;
+}
+
+/**
+ * 菜单按钮 + 模型选择器（设置页、首次设置用）。value 为空时按钮显示 resetLabel；
+ * 给了 resetLabel 时列表顶部有一项"恢复默认"，选它 onChange("")。
+ */
+export function PickModel({ value, models, modelsError, reloadModels, onChange, resetLabel, align = "right", label = "选择模型" }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  return html`<button type="button" class="pick" ref=${ref} aria-haspopup="listbox" aria-expanded=${open} aria-label=${label} onClick=${() => setOpen((v) => !v)}>
+      <span class="v">${value ? shortModel(value) : resetLabel || label}</span><${Icon} name="chevDown" />
+    </button>
+    ${open && html`<${ModelPicker} anchor=${ref.current} align=${align} models=${models} error=${modelsError} onRetry=${reloadModels} current=${value}
+      onPick=${onChange} onClose=${() => setOpen(false)} reset=${resetLabel ? { label: resetLabel, onSelect: () => onChange("") } : undefined} />`}`;
 }

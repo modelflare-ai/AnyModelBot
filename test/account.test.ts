@@ -12,7 +12,7 @@ import { discover, startLogin, pkcePair } from "../src/account/oauth.js";
 import { AccountManager, summarizeUsage, type AccountHooks } from "../src/account/manager.js";
 import { AccountVault } from "../src/account/vault.js";
 import { referencePrice } from "../src/account/model-info.js";
-import { MediaService } from "../src/agent/media.js";
+import { MediaService, docSection } from "../src/agent/media.js";
 import { AgentManager } from "../src/agent/manager.js";
 import { locateDshRuntime } from "../src/agent/host.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
@@ -291,6 +291,102 @@ describe("生图 / 生视频", () => {
       await srv.close();
     }
   });
+
+  it("按文档写的请求体原样发出：填上 model，工作区文件换成 data URL / Base64，工作区外的文件不让引用", async () => {
+    const bodies: Array<{ path: string; body: any }> = [];
+    const srv = await listen(async (req, res) => {
+      const u = new URL(req.url!, "http://x");
+      const json = (o: unknown) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(o));
+      if (u.pathname === "/v1/models") {
+        return json({ data: u.searchParams.get("kind") === "image" ? [{ id: "gemini-img", kind: "image", image_route: "gemini-generate-content" }, { id: "gpt-image", kind: "image", image_route: "images" }] : [{ id: "kling-x", kind: "video" }] });
+      }
+      if (req.method !== "POST") return res.writeHead(404).end();
+      bodies.push({ path: u.pathname, body: await readJson(req) });
+      if (u.pathname.endsWith(":generateContent")) return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: png.toString("base64") } }] } }] });
+      if (u.pathname === "/v1/images/edits") return json({ data: [{ b64_json: png.toString("base64") }] });
+      if (u.pathname === "/v1/videos") return json({ id: "t1" });
+      res.writeHead(404).end();
+    });
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "amb-media-"));
+    fs.mkdirSync(path.join(ws, "media"));
+    fs.writeFileSync(path.join(ws, "media", "ref.png"), png);
+    try {
+      const media = new MediaService({ baseUrl: () => srv.url + "/v1", keyFor: () => "sk", headers: () => ({}), workspace: () => ws, pollMs: 5, videoTimeoutMs: 1 });
+      await media.run("b1", "image", {
+        prompt: "换成水彩",
+        model: "gemini-img",
+        body: { model: "ignored", contents: [{ role: "user", parts: [{ text: "换成水彩" }, { inline_data: { mime_type: "image/png", data: "workspace-base64:media/ref.png" } }] }] },
+      });
+      expect(bodies[0].path).toBe("/v1/models/gemini-img:generateContent");
+      expect(bodies[0].body).toEqual({ contents: [{ role: "user", parts: [{ text: "换成水彩" }, { inline_data: { mime_type: "image/png", data: png.toString("base64") } }] }] });
+
+      await media.run("b1", "image", { prompt: "加一顶帽子", model: "gpt-image", endpoint: "edits", body: JSON.stringify({ prompt: "加一顶帽子", images: [{ image_url: "workspace:media/ref.png" }] }) });
+      expect(bodies[1]).toEqual({ path: "/v1/images/edits", body: { prompt: "加一顶帽子", images: [{ image_url: `data:image/png;base64,${png.toString("base64")}` }], model: "gpt-image" } });
+
+      // 视频：body 原样带上 model 发出（这个 mock 不回答轮询，只看建任务的请求）
+      await expect(media.run("b1", "video", { prompt: "猫", body: { contents: [{ type: "prompt", text: "猫" }], settings: { duration: 5 } } })).rejects.toThrow();
+      expect(bodies[2]).toEqual({ path: "/v1/videos", body: { contents: [{ type: "prompt", text: "猫" }], settings: { duration: 5 }, model: "kling-x" } });
+
+      await expect(media.run("b1", "image", { prompt: "x", model: "gemini-img", body: { a: "workspace:../../etc/passwd" } })).rejects.toThrow(/工作区/);
+      await expect(media.run("b1", "image", { prompt: "x", model: "gemini-img", body: "{oops" })).rejects.toThrow(/JSON/);
+      expect(bodies).toHaveLength(3);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("默认模型：设置里选的优先；没选时按价格目录的推荐顺序，跳过必须带参考素材的；确认时附参考价", async () => {
+    const srv = await listen(async (req, res) => {
+      const u = new URL(req.url!, "http://x");
+      const json = (o: unknown) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(o));
+      if (u.pathname === "/v1/models") return json({ data: [{ id: "a-i2v", kind: "video" }, { id: "b-t2v", kind: "video" }, { id: "c-pro", kind: "video" }] });
+      if (u.pathname === "/api/pricing") {
+        return json({
+          group_ratio: { Media: 1 },
+          usable_group: { Media: "" },
+          data: [
+            { model_name: "a-i2v", enable_groups: ["Media"], media_options: { video: { requires_reference: true, resolutions: ["720p"] } } },
+            { model_name: "b-t2v", enable_groups: ["Media"], video_resolution_price: { "720p": 0.05, "1080p": 0.1 }, media_options: { video: { default_resolution: "720p", seconds: [-1, 4, 10] } } },
+            { model_name: "c-pro", enable_groups: ["Media"], display_priority: 5 },
+          ],
+        });
+      }
+      res.writeHead(404).end();
+    });
+    const defaults = { image: "", video: "" };
+    try {
+      const media = new MediaService({ baseUrl: () => srv.url + "/v1", keyFor: () => "sk", headers: () => ({}), workspace: () => os.tmpdir(), defaults: () => defaults, pricingUrl: () => srv.url + "/api/pricing" });
+      const list = await media.models("b1", "video");
+      expect(list.map((m) => m.id)).toEqual(["c-pro", "b-t2v", "a-i2v"]);
+      expect(list[1].price).toBe("$0.05/秒（720p）");
+      let plan = await media.prepare("b1", "video", { prompt: "海浪" });
+      expect(plan.model.id).toBe("c-pro");
+      expect(plan.candidates.map((m) => m.id)).toEqual(["b-t2v"]);
+      defaults.video = "b-t2v";
+      plan = await media.prepare("b1", "video", { prompt: "海浪", body: { duration: 10, ratio: "16:9", content: [{ image_url: { url: "workspace:media/x.png" } }] } });
+      expect(plan.model.id).toBe("b-t2v");
+      expect(plan.custom).toBe(true);
+      // 带了参考素材，必须带参考素材的模型也列进可选
+      expect(plan.candidates.map((m) => m.id)).toEqual(["c-pro", "a-i2v"]);
+      expect(plan.summary).toContain("10 秒");
+      expect(plan.summary).toContain("1 个参考素材");
+      expect(plan.summary).toContain("参考价：$0.05/秒（720p）");
+      expect(await media.listText("b1", "video")).toMatch(/- b-t2v（默认） — \$0\.05\/秒（720p） — 时长 4–10 秒/);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("文档：从全文里取出该模型那一节", () => {
+    const full = [
+      "# Overview\n\nSource: https://docs.x/\n\nhello",
+      "# kling-3.0 API\n\nSource: https://docs.x/models/video/kling-3-0/\n\nbody A",
+      "# kling-3.0-turbo API\n\nSource: https://docs.x/models/video/kling-3-0-turbo/\n\nbody B\n\n## Params\n\n| a |",
+    ].join("\n\n---\n\n");
+    expect(docSection(full, "https://docs.x", "video", "kling-3.0")).toBe("# kling-3.0 API\n\nSource: https://docs.x/models/video/kling-3-0/\n\nbody A");
+    expect(docSection(full, "https://docs.x", "video", "kling-3.0-turbo")).toMatch(/^# kling-3\.0-turbo API[\s\S]*\| a \|$/);
+    expect(docSection(full, "https://docs.x", "image", "kling-3.0")).toBe("");
+  });
 });
 
 describe("amb-media 插件与 bridge", () => {
@@ -308,12 +404,74 @@ describe("amb-media 插件与 bridge", () => {
       const plugin = await import(path.join(runtime!, "plugins", "amb-media.mjs"));
       const tools: any[] = [];
       plugin.apply({ tools: { register: (t: any) => tools.push(t) } });
-      expect(tools.map((t) => t.name)).toEqual(["generate_image", "generate_video"]);
-      expect(await tools[0].execute({ prompt: "猫" }, { agent: { session: { id: "s1" } }, signal: AbortSignal.timeout(5000) })).toEqual({ text: "ok" });
-      expect(seen).toEqual([{ url: "/dsh/media", auth: "Bearer tok", body: { botId: "b1", sessionId: "s1", op: "image", args: { prompt: "猫" } } }]);
+      expect(tools.map((t) => t.name)).toEqual(["media_models", "media_docs", "generate_image", "generate_video"]);
+      const image = tools.find((t) => t.name === "generate_image");
+      const body = { contents: [{ parts: [{ text: "猫" }, { inline_data: { mime_type: "image/png", data: "workspace-base64:media/a.png" } }] }] };
+      expect(await image.execute({ prompt: "猫", body }, { agent: { session: { id: "s1" } }, signal: AbortSignal.timeout(5000) })).toEqual({ text: "ok" });
+      expect(seen).toEqual([{ url: "/dsh/media", auth: "Bearer tok", body: { botId: "b1", sessionId: "s1", op: "image", args: { prompt: "猫", body } } }]);
     } finally {
       process.env = env;
       await bridge.close();
+    }
+  });
+
+  it("每次生成前都向用户确认模型：确认、换模型、按新模型文档重写后免确认、取消、回复别的话", async () => {
+    const store = new Store(":memory:");
+    const M1 = { id: "m1", kind: "image", price: "$0.03/张" };
+    const M2 = { id: "m2", kind: "image", price: "" };
+    const ran: string[] = [];
+    const media = {
+      prepare: async (_b: string, op: string, args: any) => ({ kind: op, model: args.model === "m2" ? M2 : M1, default: M1, candidates: [M2], all: [M1, M2], custom: !!args.body, summary: "提示词：猫" }),
+      execute: async (_b: string, model: { id: string }) => (ran.push(model.id), `done ${model.id}`),
+    } as unknown as MediaService;
+    const mgr = new AgentManager({ store, dataDir: fs.mkdtempSync(path.join(os.tmpdir(), "amb-mgr-")), runtimeDir: undefined, upstream: () => ({ baseUrl: "", apiKey: "" }), enabled: false, media });
+    // 模拟机器人 b1 在会话 c1 里有回合进行中
+    (mgr as any).hosts.set("b1", {});
+    (mgr as any).activeConvs.set("b1", new Set(["c1"]));
+    await mgr.bridge.start();
+    const call = (args: Record<string, unknown>) =>
+      fetch(`${mgr.bridge.url}/dsh/media`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${mgr.bridge.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ botId: "b1", sessionId: "s1", op: "image", args }),
+      }).then((r) => r.json());
+    const answer = async (a: { selected?: string[]; custom?: string }) => {
+      for (let i = 0; i < 100; i++) {
+        const q = mgr.approvals.pending("c1", "question")[0];
+        if (q) {
+          const [item] = JSON.parse(q.payload);
+          mgr.approvals.answer(q.id, { answers: [{ id: "model", selected: a.selected ?? [], ...(a.custom ? { custom: a.custom } : {}) }] }, "test");
+          return item;
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      throw new Error("没有等到确认");
+    };
+    try {
+      let [r, q] = await Promise.all([call({ prompt: "猫" }), answer({ selected: ["m1"] })]);
+      expect(q.question).toBe("这次用 m1 生成图片吗？");
+      expect(q.options.map((o: any) => o.label)).toEqual(["m1", "m2", "取消"]);
+      expect(q.options[0].description).toBe("默认 · $0.03/张");
+      expect(r).toEqual({ text: "done m1" });
+
+      [r] = await Promise.all([call({ prompt: "猫" }), answer({ selected: ["m2"] })]);
+      expect(r).toEqual({ text: "done m2" });
+
+      // 请求体是按 m1 的文档写的：换成 m2 时先让代理按 m2 的文档重写，重写后的那一次不再确认
+      [r] = await Promise.all([call({ prompt: "猫", body: { a: 1 } }), answer({ custom: "用 M2" })]);
+      expect(r.text).toMatch(/media_docs 查 m2/);
+      expect(await call({ prompt: "猫", model: "m2", body: { b: 1 } })).toEqual({ text: "done m2" });
+
+      [r] = await Promise.all([call({ prompt: "猫" }), answer({ selected: ["取消"] })]);
+      expect(r.text).toMatch(/取消/);
+      [r] = await Promise.all([call({ prompt: "猫" }), answer({ custom: "好的" })]);
+      expect(r).toEqual({ text: "done m1" });
+      [r] = await Promise.all([call({ prompt: "猫" }), answer({ custom: "换成竖屏的" })]);
+      expect(r.text).toMatch(/「换成竖屏的」/);
+      expect(ran).toEqual(["m1", "m2", "m2", "m1"]);
+    } finally {
+      await mgr.bridge.stop();
+      store.close();
     }
   });
 

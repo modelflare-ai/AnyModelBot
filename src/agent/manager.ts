@@ -4,8 +4,8 @@ import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
 import { AgentHost, callDetail, type TurnObserver, type TurnUsage } from "./host.js";
-import type { MediaService } from "./media.js";
-import { ApprovalCenter, type QuestionItem } from "./approvals.js";
+import type { MediaModel, MediaPlan, MediaService } from "./media.js";
+import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import { DEFAULT_SETTINGS, type BotSettings } from "./settings.js";
 import {
@@ -41,6 +41,9 @@ export interface AgentManagerOptions {
   onNotice?: (text: string) => void;
 }
 
+/** 生成确认里"取消"那一项 */
+const CANCEL = "取消";
+
 function deferred<T>() {
   let resolve!: (v: T) => void;
   const promise = new Promise<T>((r) => (resolve = r));
@@ -67,6 +70,8 @@ export class AgentManager {
   private compactDone = new Map<string, (v: unknown) => void>();
   private judgedAt = new Map<string, number>();
   private reviewTimers = new Map<string, NodeJS.Timeout>();
+  /** 会话 → 用户在生成确认里换了模型、代理要按新模型文档重写请求：重写后的那一次免确认 */
+  private mediaGrants = new Map<string, { kind: string; model: string; at: number }>();
   /** 最近一次管家/整理结果（状态页展示） */
   readonly stewardLog: Array<{ at: number; conversationId: string; action: string; detail: string }> = [];
 
@@ -82,6 +87,11 @@ export class AgentManager {
       media: (b) => this.mediaOp(b),
     });
     this.memory = new MemoryStore(path.join(o.dataDir, "memory"));
+  }
+
+  /** 生图 / 生视频服务；未接内置网关时没有 */
+  get media(): MediaService | undefined {
+    return this.o.media;
   }
 
   /** 是否可用（已启用且找到 DSH 运行时）。 */
@@ -106,6 +116,7 @@ export class AgentManager {
         turnTimeoutMs: this.o.turnTimeoutMs,
         settings: () => this.settings(botId),
         onNotice: this.o.onNotice,
+        media: !!this.o.media,
       });
       this.hosts.set(botId, h);
     }
@@ -338,20 +349,90 @@ export class AgentManager {
     return res;
   }
 
-  /** 插件 → 宿主：remember / forget / recall。 */
-  /** 生图 / 生视频：只在该机器人有回合进行中时受理（工具调用只会发生在回合里） */
+  /**
+   * 生图 / 生视频：只在该机器人有回合进行中时受理（工具调用只会发生在回合里）。
+   * models / docs 直接回答；image / video 每次都先向用户确认这次用哪个模型，确认后才花钱。
+   */
   private async mediaOp(b: any): Promise<{ text?: string; error?: string }> {
     const botId = String(b?.botId ?? "");
     if (!this.hosts.has(botId) || !this.activeConvs.get(botId)?.size) return { error: "unknown bot" };
-    if (!this.o.media) return { error: "生成图片和视频需要连接 Modelflare" };
+    const media = this.o.media;
+    if (!media) return { error: "生成图片和视频需要连接 Modelflare" };
+    const op = String(b?.op ?? "");
+    const args = (b?.args ?? {}) as Record<string, unknown>;
     try {
-      return { text: await this.o.media.run(botId, String(b?.op ?? ""), (b?.args ?? {}) as Record<string, unknown>) };
+      if (op === "models") return { text: await media.listText(botId, args.kind) };
+      if (op === "docs") return { text: await media.docs(args.model) };
+      const plan = await media.prepare(botId, op, args);
+      const sessionId = String(b?.sessionId ?? "");
+      const conv = this.resolveConversation(botId, sessionId);
+      if (!conv) return { error: "找不到这次对话，没法向用户确认，没有生成" };
+      const tool = plan.kind === "image" ? "generate_image" : "generate_video";
+      let model = plan.model;
+      const grant = this.mediaGrants.get(conv);
+      if (grant?.kind === plan.kind && grant.model === model.id && Date.now() - grant.at < (this.o.approvalTtlMs ?? APPROVAL_TTL_MS)) {
+        this.mediaGrants.delete(conv);
+      } else {
+        const r = await this.confirmMedia(botId, conv, sessionId, plan, tool);
+        if (r.cancel) return { text: "用户取消了这次生成（或没有及时确认），没有生成文件，也没有扣费。不要自行重试；需要的话问用户想怎么改。" };
+        if (r.reply !== undefined) return { text: `用户没有确认，而是回复：「${r.reply}」。按用户的意思调整后再调用 ${tool}（会再次确认）。` };
+        if (r.model && r.model.id !== model.id) {
+          if (plan.custom) {
+            // 请求体是按原模型的文档写的，换了模型就得按新模型的文档重写；重写后的那一次不再确认
+            this.mediaGrants.set(conv, { kind: plan.kind, model: r.model.id, at: Date.now() });
+            return { text: `用户选择改用 ${r.model.id}。各模型的请求格式不同：先用 media_docs 查 ${r.model.id} 的文档，按它重写 body，再调用 ${tool}（model 填 ${r.model.id}）。这一次不会再要求确认。` };
+          }
+          model = r.model;
+        }
+      }
+      return { text: await media.execute(botId, model, args) };
     } catch (e) {
-      log.warn("media tool failed", { bot: botId, message: (e as Error).message.slice(0, 300) });
+      log.warn("media tool failed", { bot: botId, op, message: (e as Error).message.slice(0, 300) });
       return { error: (e as Error).message };
     }
   }
 
+  /** 生成前的确认：问用户这次用哪个模型（本次的、默认的和几个推荐的，或回复别的模型名），等到回答、取消或过期 */
+  private async confirmMedia(botId: string, conv: string, sessionId: string, plan: MediaPlan, tool: string): Promise<{ model?: MediaModel; cancel?: boolean; reply?: string }> {
+    const name = plan.kind === "image" ? "图片" : "视频";
+    const opt = (m: MediaModel, tag = "") => ({ label: m.id, description: [tag, m.price].filter(Boolean).join(" · ") || undefined });
+    const q: QuestionItem = {
+      id: "model",
+      header: `生成${name}`,
+      question: `这次用 ${plan.model.id} 生成${name}吗？`,
+      detail: `${plan.summary}\n也可以直接回复其他模型名。`,
+      options: [opt(plan.model, plan.model === plan.default ? "默认" : "机器人选的"), ...plan.candidates.map((m) => opt(m, m === plan.default ? "默认" : "")), { label: CANCEL, description: "这次不生成" }],
+    };
+    const row = this.approvals.create({ kind: "question", botId, conversationId: conv, sessionId, tool, detail: q.question, reason: "", payload: JSON.stringify([q]) });
+    const deadline = Date.now() + (this.o.approvalTtlMs ?? APPROVAL_TTL_MS) + 10_000;
+    let cur = row;
+    while (cur.status === "pending") {
+      if (Date.now() > deadline) {
+        this.approvals.cancel(row.id, "timeout");
+        return { cancel: true };
+      }
+      const next = await this.approvals.wait(row.id, 60_000);
+      if (!next) return { cancel: true };
+      cur = next;
+    }
+    if (cur.status !== "answered") return { cancel: true };
+    let a: { selected?: string[]; custom?: string } | undefined;
+    try {
+      a = (JSON.parse(cur.result) as { answers?: Array<{ selected?: string[]; custom?: string }> }).answers?.[0];
+    } catch {
+      a = undefined;
+    }
+    const pick = (a?.selected?.[0] ?? "").trim();
+    const text = (a?.custom ?? "").trim();
+    if (pick === CANCEL || /^(取消|不要?|不用|算了|no?|cancel)$/i.test(text)) return { cancel: true };
+    if (!pick && /^(好的?|行|可以|确认|确定|是的?|对|嗯|ok(ay)?|y(es)?|生成吧?|就用它)$/i.test(text)) return { model: plan.model };
+    const want = (pick || text).replace(/^(用|换成|改用)\s*/, "");
+    const hit = plan.all.find((m) => m.id.toLowerCase() === want.toLowerCase());
+    if (hit) return { model: hit };
+    return text ? { reply: text } : { cancel: true };
+  }
+
+  /** 插件 → 宿主：remember / forget / recall。 */
   private async memoryOp(b: any): Promise<{ text?: string; error?: string }> {
     const botId = String(b?.botId ?? "");
     if (!this.hosts.has(botId)) return { error: "unknown bot" };
@@ -423,6 +504,7 @@ export class AgentManager {
   resetConversation(conversationId: string): void {
     this.o.store.clearAgentSession(conversationId);
     this.o.store.setKV(`seed:${conversationId}`, "");
+    this.mediaGrants.delete(conversationId);
     for (const r of this.approvals.pending(conversationId)) this.approvals.cancel(r.id, "reset");
   }
 

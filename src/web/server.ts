@@ -252,6 +252,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       await app.setModelflareLine(normalizeLine(b.line));
       return send(res, 200, app.modelflareStatus());
     }
+    if (p === "/media/models" && m === "GET") return send(res, 200, await app.mediaModels());
     if (p === "/models/info" && m === "GET") {
       if (!app.magpie) return send(res, 200, { models: {} });
       return send(res, 200, { models: await app.modelInfo(url.searchParams.get("refresh") === "1") });
@@ -308,6 +309,12 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       if (m === "PUT") {
         const b = await readJson(req);
         if (b.defaultModel !== undefined) app.setDefaultModel(String(b.defaultModel));
+        if (b.imageModel !== undefined || b.videoModel !== undefined) {
+          app.setMediaModels({
+            ...(b.imageModel !== undefined ? { imageModel: String(b.imageModel) } : {}),
+            ...(b.videoModel !== undefined ? { videoModel: String(b.videoModel) } : {}),
+          });
+        }
         if (b.closeToTray !== undefined) {
           cfg.ui.closeToTray = !!b.closeToTray;
           saveConfigFile(cfg.dataDir, (f) => (f.ui = { ...(f.ui ?? {}), closeToTray: cfg.ui.closeToTray }));
@@ -326,6 +333,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       } else if (m !== "GET") throw new HttpError(405, "method not allowed");
       return send(res, 200, {
         defaultModel: cfg.llm.defaultModel,
+        imageModel: cfg.media.imageModel,
+        videoModel: cfg.media.videoModel,
         closeToTray: cfg.ui.closeToTray,
         zoom: cfg.ui.zoom,
         autostart: app.desktop ? app.desktop.autostart() : { supported: false, on: false },

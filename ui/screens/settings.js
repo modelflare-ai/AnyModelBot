@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Icon, Seg, Switch, Sheet, CopyButton, Skeleton } from "../components/ui.js";
 import { AccountButton } from "./sidebar.js";
-import { ModelPicker, shortModel } from "../components/model-picker.js";
+import { PickModel, shortModel } from "../components/model-picker.js";
 import { KeyForm, LINE_OPTIONS } from "./onboarding.js";
 import { LoginSheet, NotificationsSheet, UsageSheet } from "./account.js";
 import { api } from "../lib/api.js";
@@ -42,16 +42,6 @@ function Row({ id, name, sub, title, children, flash, off }) {
     <div class="who"><div class="name">${name}</div>${sub && html`<div class="sub">${sub}</div>`}</div>
     <div class="ctl">${children}</div>
   </div>`;
-}
-
-function PickModel({ value, models, modelsError, reloadModels, onChange, resetLabel }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  return html`<button type="button" class="pick" ref=${ref} aria-haspopup="listbox" aria-expanded=${open} onClick=${() => setOpen((v) => !v)}>
-      <span class="v">${value ? shortModel(value) : resetLabel}</span><${Icon} name="chevDown" />
-    </button>
-    ${open && html`<${ModelPicker} anchor=${ref.current} align="right" models=${models} error=${modelsError} onRetry=${reloadModels} current=${value}
-      onPick=${onChange} onClose=${() => setOpen(false)} reset=${{ label: resetLabel, onSelect: () => onChange("") }} />`}`;
 }
 
 function NoticesSheet({ onClose }) {
@@ -99,9 +89,18 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
   const [flash, setFlash] = useState("");
   const mode = useStore(themeMode);
 
+  // 图片 / 视频模型（共用 Key 能用的，按推荐顺序）：连上 Modelflare 后取
+  const [media, setMedia] = useState(null);
+  const loadMedia = () =>
+    api("/media/models")
+      .then(setMedia)
+      .catch((e) => setMedia({ image: [], video: [], recommended: {}, error: e.message }));
   useEffect(() => {
     api("/settings").then(setS).catch(failed);
   }, []);
+  useEffect(() => {
+    if (mf && mf.connected) loadMedia();
+  }, [mf && mf.connected]);
   useEffect(() => {
     if (bots && bots[0]) api(`/bots/${encodeURIComponent(bots[0].id)}/settings`).then((d) => setCu(d.computerUse)).catch(() => {});
   }, [bots && bots[0] && bots[0].id]);
@@ -229,6 +228,14 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       { tab: "modelflare", id: "default-model", name: "默认模型", sub: "机器人没有单独指定时使用", keys: "模型 model",
         ctl: html`<${PickModel} value=${s.defaultModel} models=${models} modelsError=${modelsError} reloadModels=${reloadModels} resetLabel="自动（列表第一个）"
           onChange=${(m) => put({ defaultModel: m }, { defaultModel: m })} />` },
+      managed && mf.connected && { tab: "modelflare", id: "image-model", name: "默认图片模型", sub: "机器人生成图片时默认选它，每次生成前都会让你确认", keys: "图片 生图 画图 image 模型",
+        ctl: html`<${PickModel} value=${s.imageModel} models=${media ? media.image : null} modelsError=${media && media.error} reloadModels=${loadMedia}
+          resetLabel=${media && media.recommended.image ? `自动（${shortModel(media.recommended.image)}）` : "自动"} label="默认图片模型"
+          onChange=${(m) => put({ imageModel: m }, { imageModel: m })} />` },
+      managed && mf.connected && { tab: "modelflare", id: "video-model", name: "默认视频模型", sub: "机器人生成视频时默认选它，每次生成前都会让你确认", keys: "视频 生视频 video 模型",
+        ctl: html`<${PickModel} value=${s.videoModel} models=${media ? media.video : null} modelsError=${media && media.error} reloadModels=${loadMedia}
+          resetLabel=${media && media.recommended.video ? `自动（${shortModel(media.recommended.video)}）` : "自动"} label="默认视频模型"
+          onChange=${(m) => put({ videoModel: m }, { videoModel: m })} />` },
       { tab: "modelflare", id: "models", name: "可用模型", sub: modelsError ? `获取失败：${modelsError}` : "这个 Key 所在分组开放的模型", keys: "列表 刷新",
         ctl: html`<span class="val num">${models ? `${models.length} 个` : "…"}</span><button type="button" class="text" onClick=${() => reloadModels().then(() => saved())}>刷新</button>` },
       { tab: "modelflare", id: "console", name: "Modelflare 控制台", sub: "账单、发票与 API Key 管理", keys: "控制台 账单 console",

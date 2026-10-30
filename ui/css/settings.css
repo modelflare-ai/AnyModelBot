@@ -140,6 +140,8 @@
 .onboard details summary:hover { color: var(--fg); }
 /* "高级"里的行直接排在卡片里，左右贴着卡片的内容边，不再套一块玻璃 */
 .onboard details .row { --row-pl: 0; --row-pr: 0; margin-top: var(--space-1); }
+.onboard .media-pick { display: grid; gap: var(--space-1); }
+.onboard .media-pick .row { --row-pl: 0; --row-pr: 0; }
 .onboard .connected { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
 .login-cta { display: grid; gap: var(--space-2-5); }
 .login-wait { display: flex; align-items: center; justify-content: center; gap: var(--space-2); font-size: var(--fs-md); color: var(--fg-2); }

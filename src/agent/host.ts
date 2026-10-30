@@ -135,6 +135,8 @@ export interface AgentHostOptions {
   turnTimeoutMs?: number;
   /** 需要让用户看到的提示（界面通知） */
   onNotice?: (text: string) => void;
+  /** 能生图 / 生视频（已连接 Modelflare）：写入 media 技能说明 */
+  media?: boolean;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
@@ -315,6 +317,7 @@ export class AgentHost {
     const lim = MODEL_LIMITS.find(([re]) => re.test(model)) ?? [/./, 128_000, 16_000];
     const plugin = path.join(this.o.runtimeDir, "plugins", "amb-bridge.mjs");
     const memory = path.join(this.o.runtimeDir, "plugins", "amb-memory.mjs");
+    this.writeMediaSkill();
     const text = [
       "# 由 anymodel bot 每次启动生成；请勿手改。",
       "- id: llm-pi-ai",
@@ -341,7 +344,7 @@ export class AgentHost {
       `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-permission.mjs"))}`,
       "    - id: amb-memory",
       `      name: ${yamlStr(memory)}`,
-      // 生图 / 生视频：宿主带着本机器人的 Key 调 Modelflare，文件存进工作区 media/
+      // 生图 / 生视频：宿主带着本机器人的 Key 调 Modelflare，文件存进工作区 media/；技能说明在 skills/media
       "    - id: amb-media",
       `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-media.mjs"))}`,
       // sdk 配置默认不带这两个工具：ask_user_question 走 user-questions → 插件 → 审批中心；
@@ -356,6 +359,20 @@ export class AgentHost {
     const f = path.join(this.home, "amb.patch.yml");
     fs.writeFileSync(f, text, { mode: 0o600 });
     return f;
+  }
+
+  /** media 技能：怎么挑模型、读文档、写请求体、交付结果。没有连接 Modelflare 时删掉。 */
+  private writeMediaSkill(): void {
+    const dir = path.join(this.home, "skills", "media");
+    try {
+      if (!this.o.media) fs.rmSync(dir, { recursive: true, force: true });
+      else {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, "SKILL.md"), MEDIA_SKILL);
+      }
+    } catch (e) {
+      log.warn("media skill setup failed", { err: String(e) });
+    }
   }
 
   /** 当前机器上本机器人所选后端的可用性（不看本机器人的开关）。 */
@@ -868,3 +885,30 @@ Tools are named \`mcp__computer-use__<tool>\`. Actions run automatically; no app
 - On Linux, reading window contents needs AT-SPI; on Wayland only the foreground window can be driven. On macOS the app needs Accessibility and Screen Recording permission; if \`check_permissions\` reports them missing, tell the user how to grant them.
 `;
 
+
+/** 生图 / 生视频的技能说明（由 anymodel bot 编写；不含 Key、不让代理自己调接口，参数格式以 Modelflare 文档为准）。 */
+const MEDIA_SKILL = `---
+name: media
+description: Generate or edit images and generate videos with Modelflare image and video models through the media_models, media_docs, generate_image and generate_video tools. Use when the user asks to draw, create, edit or restyle a picture, animate an image, or make a video.
+---
+
+# Images and videos (Modelflare)
+
+You have no Modelflare key and must not call the API yourself (no curl, no scripts): the tools call it with this bot's key. Every generation costs the user money, so the user confirms the model before anything is generated.
+
+## Steps
+1. \`media_models\` (kind \`image\` or \`video\`) lists the models this bot may use, the default one, their parameter ranges and reference prices. Use the default unless the user named a model or the request needs something the default cannot do (a reference image, a ratio or length it does not support).
+2. Plain text-to-image or text-to-video with default settings: call \`generate_image\` / \`generate_video\` with a detailed \`prompt\` only.
+3. Anything else (ratio, resolution, size, length, quality, audio, reference images, first/last frames, editing an image): call \`media_docs\` for the chosen model, then pass \`body\` in exactly the format its page shows, without \`model\`. Every family is different (for example Seedance uses \`content[]\`, Kling \`contents\` and \`settings\`, Wan \`input\` and \`parameters\`, Gemini \`contents[].parts[]\` with \`generationConfig\`), so never reuse field names from another model's page. For OpenAI Images models whose page sends references to \`/v1/images/edits\`, also pass \`endpoint: "edits"\`. Keep \`prompt\` the same as the prompt inside \`body\`: the user sees \`prompt\` in the confirmation.
+4. Reference media: a file in the workspace is written as \`"workspace:media/x.png"\` (sent as a data URL) or \`"workspace-base64:media/x.png"\` (raw Base64, e.g. Gemini \`inline_data.data\`), up to 20 MB each. A public https URL can be used as is. Models marked 必须带参考素材 (image-to-video, reference-to-video) only work with references; many models accept reference videos only as public URLs, see the docs. Images the user sent in chat are not in the workspace: if you have no file or link for a reference, ask the user for one.
+5. The tool result says what happened:
+   - Generated: the file is under \`media/\`; deliver it with \`present\`.
+   - The user picked another model while you had passed a \`body\`: read that model's page with \`media_docs\`, rewrite \`body\` for it and call again with \`model\` set to it. That call is not confirmed again.
+   - The user answered something else: adjust as they said and call again (they will be asked again).
+   - Cancelled or not confirmed in time: nothing was generated or charged; do not retry on your own.
+6. Videos take minutes and cost much more than images: only make a video when the user asks for one, and do not generate extra variants unless asked.
+
+## Errors
+- 这把 Key 不能用这个模型 (model_not_found): this account cannot use that model; pick another one from \`media_models\`.
+- Any other 4xx names the problem: fix the body according to the model's page instead of sending the same request again. If the balance is empty, tell the user to top up on Modelflare.
+`;

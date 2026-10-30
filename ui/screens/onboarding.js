@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Icon, Notice, Seg, Spinner, CopyButton } from "../components/ui.js";
 import { BotAvatar, MAIN_CHAR } from "../components/avatar.js";
-import { FamilyHead, groupModels, useFamilies } from "../components/model-picker.js";
+import { FamilyHead, PickModel, groupModels, useFamilies } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
 import { MF_CONSOLE, MF_DOCS, MF_KEYS } from "../lib/links.js";
 
@@ -173,10 +173,27 @@ function ModelStep({ models, initial, onDone }) {
   const groups = useMemo(() => groupModels(models, q), [models, q]);
   const { isOpen, toggle } = useFamilies(groups, cur);
   const folding = !q.trim() && groups.length > 1;
+  // 默认的图片 / 视频模型：之前选过且还能用就沿用，否则用推荐的
+  const [media, setMedia] = useState(null);
+  const [img, setImg] = useState("");
+  const [vid, setVid] = useState("");
+  useEffect(() => {
+    Promise.all([api("/media/models"), api("/settings").catch(() => ({}))])
+      .then(([d, st]) => {
+        setMedia(d);
+        setImg(d.image.includes(st.imageModel) ? st.imageModel : d.recommended.image || "");
+        setVid(d.video.includes(st.videoModel) ? st.videoModel : d.recommended.video || "");
+      })
+      .catch(() => setMedia({ image: [], video: [] }));
+  }, []);
+  const hasMedia = media && (media.image.length > 0 || media.video.length > 0);
   const start = async () => {
     setBusy(true);
     try {
-      await api("/settings", { method: "PUT", body: { defaultModel: cur } });
+      await api("/settings", {
+        method: "PUT",
+        body: { defaultModel: cur, ...(media && media.image.length ? { imageModel: img } : {}), ...(media && media.video.length ? { videoModel: vid } : {}) },
+      });
       onDone();
     } catch (e) {
       setErr(e.message);
@@ -199,7 +216,18 @@ function ModelStep({ models, initial, onDone }) {
             return html`<button type="button" class="fam" aria-expanded=${open} onClick=${() => toggle(g)}><${FamilyHead} name=${g} count=${ms.length} current=${hit?.[1]} /></button>${open && rows}`;
           })}
           ${!groups.length && html`<p class="hint">没有匹配的模型</p>`}
-        </div>`
+        </div>
+        ${hasMedia && html`<div class="media-pick">
+          <p class="hint">生成图片和视频时默认用的模型。每次生成前都会先问你，也可以当场换。</p>
+          ${media.image.length > 0 && html`<div class="row compact">
+            <div class="who"><div class="name">图片</div></div>
+            <${PickModel} value=${img} models=${media.image} onChange=${setImg} label="默认图片模型" />
+          </div>`}
+          ${media.video.length > 0 && html`<div class="row compact">
+            <div class="who"><div class="name">视频</div></div>
+            <${PickModel} value=${vid} models=${media.video} onChange=${setVid} label="默认视频模型" />
+          </div>`}
+        </div>`}`
       : html`<${Notice} tone="amber" action=${html`<a class="btn" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">去控制台 ↗</a>`}>这个 Key 所在的分组暂无可用模型。可以在控制台给分组开放模型后再回来刷新。<//>`}
     ${err && html`<div class="err-text" role="alert">${err}</div>`}
     <button type="button" class="btn primary lg block" disabled=${busy} onClick=${start}>${busy ? html`<${Spinner} /> 正在保存…` : models.length ? "开始对话" : "仍然开始"}</button>

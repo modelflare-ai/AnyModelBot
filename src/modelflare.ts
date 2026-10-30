@@ -13,6 +13,69 @@ export const MODELFLARE_LINES: Record<Exclude<ModelflareLine, "auto">, string> =
 
 export const MODELFLARE_PROVIDER = "modelflare";
 
+/** Modelflare 官网：登录、注册、充值、控制台都在这里（国内线路只开放 /v1，不提供网页） */
+export const MODELFLARE_WEB = "https://modelflare.dev";
+
+/**
+ * 账户登录（OIDC 授权码 + PKCE，RFC 8252 原生应用）。client_id 是公开值：本程序是公共客户端，
+ * 没有也不需要客户端密钥；回调到本机 127.0.0.1 的临时端口。
+ */
+export const MODELFLARE_CLIENT_ID = "anymodel-bot";
+export const MODELFLARE_SCOPES = "openid profile offline_access account api_keys";
+
+/** 注册来源（Modelflare 后台按 utm_source 统计从本程序来的注册） */
+export const UTM = { utm_source: "anymodelbot", utm_medium: "app" } as const;
+
+/** 开发/测试：AMB_MODELFLARE_ISSUER 把登录与账户接口指向本地 mock（界面无法设置） */
+export function modelflareIssuer(env: NodeJS.ProcessEnv = process.env): string {
+  return (env.AMB_MODELFLARE_ISSUER?.trim() || MODELFLARE_WEB).replace(/\/+$/, "");
+}
+
+/** 官网页面链接，带上来源参数 */
+export function webUrl(pathname: string, campaign?: string): string {
+  const u = new URL(pathname, MODELFLARE_WEB);
+  for (const [k, v] of Object.entries(UTM)) u.searchParams.set(k, v);
+  if (campaign) u.searchParams.set("utm_campaign", campaign);
+  return u.toString();
+}
+
+export const SIGNUP_URL = webUrl("/sign-up", "signup");
+export const TOPUP_URL = webUrl("/billing", "topup");
+export const CONSOLE_URL = webUrl("/dashboard/overview", "console");
+
+/**
+ * 调用归因：每个经 Modelflare 的请求都带 X-Modelflare-Skill（Modelflare 只记到用量日志，
+ * 用来统计各集成的调用量）。版本必须是纯数字的 1–3 段。
+ */
+export function skillHeader(version: string): Record<string, string> {
+  return /^\d{1,4}(\.\d{1,4}){0,2}$/.test(version) ? { "X-Modelflare-Skill": `anymodel-bot/${version}` } : {};
+}
+
+/** 每个开启了预算的机器人有自己的内置网关 provider（自己的 API Key） */
+export const BOT_PROVIDER_PREFIX = "mfb-";
+export const botProviderId = (botId: string) => BOT_PROVIDER_PREFIX + botId;
+
+const QUALIFIED = /^(modelflare|mfb-[A-Za-z0-9_-]+)\//;
+
+/** 去掉内置网关的 provider 前缀：modelflare/openai/x、mfb-abc/openai/x → openai/x */
+export function bareModel(model: string): string {
+  return model.replace(QUALIFIED, "");
+}
+
+/** 某个机器人专属 provider 列出的模型（模型列表里不展示，避免同一模型出现多次） */
+export function isBotProviderModel(model: string): boolean {
+  return model.startsWith(BOT_PROVIDER_PREFIX) && model.includes("/");
+}
+
+/**
+ * 把模型 id 限定到某个 provider。每个请求都显式带 provider：多个 provider 提供同名模型时，
+ * 不带前缀的 id 会被内置网关当成一组在它们之间路由，预算就管不住了。
+ */
+export function routeModel(model: string, providerId: string): string {
+  const bare = bareModel(model.trim());
+  return bare ? `${providerId}/${bare}` : bare;
+}
+
 export function normalizeLine(v: unknown): ModelflareLine {
   return v === "global" || v === "cn" ? v : "auto";
 }
@@ -81,4 +144,28 @@ function safeHost(url: string): string {
 /** 只用于展示的密钥尾号 */
 export function keyTail(key: string): string {
   return key.length > 4 ? key.slice(-4) : "";
+}
+
+export interface KeyBalance {
+  available: number;
+  used: number;
+  /** USD（Modelflare 以美元计价）；站点改了显示单位时原样带回 */
+  unit: string;
+}
+
+/**
+ * 只有 API Key（没有登录账户）时的余额：GET {base}/dashboard/billing/credit_grants。
+ * 返回的是整个账户钱包，不是这一把 Key 的额度；国内线路也开放这个 /v1 路径。
+ */
+export async function fetchKeyBalance(baseUrl: string, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<KeyBalance> {
+  const res = await fetchImpl(`${baseUrl}/dashboard/billing/credit_grants`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`读取余额失败（HTTP ${res.status}）`);
+  const body = (await res.json()) as { total_available?: unknown; total_used?: unknown; unit?: unknown };
+  const available = Number(body.total_available);
+  const used = Number(body.total_used);
+  if (!Number.isFinite(available)) throw new Error("Modelflare 返回了无法识别的余额");
+  return { available, used: Number.isFinite(used) ? used : 0, unit: typeof body.unit === "string" && body.unit ? body.unit : "USD" };
 }

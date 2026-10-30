@@ -253,6 +253,9 @@ export class AgentHost {
       `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-permission.mjs"))}`,
       "    - id: amb-memory",
       `      name: ${yamlStr(memory)}`,
+      // 生图 / 生视频：宿主带着本机器人的 Key 调 Modelflare，文件存进工作区 media/
+      "    - id: amb-media",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-media.mjs"))}`,
       // sdk 配置默认不带这两个工具：ask_user_question 走 user-questions → 插件 → 审批中心；
       // present 只声明交付文件，由宿主在回合结束后经渠道发送。
       "    - id: amb-tool-ask-user",

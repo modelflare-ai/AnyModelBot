@@ -13,7 +13,7 @@ import { BotAvatar, MAIN_CHAR, charOf } from "./components/avatar.js";
 import { Onboarding } from "./screens/onboarding.js";
 import { api } from "./lib/api.js";
 import { setThemeMode } from "./lib/theme.js";
-import { failed } from "./lib/store.js";
+import { failed, toast } from "./lib/store.js";
 
 // —— 路由：#/chat/<bot> · #/new · #/settings/<tab>[/<row>] · #/bot/<bot>/settings[/<section>] ——
 function parseHash() {
@@ -126,6 +126,9 @@ function App() {
   const connected = !!(mf && (mf.mode === "external" || mf.connected));
   const [botsData, botsErr, reloadBots] = useLoader(() => (connected ? api("/bots") : Promise.resolve(null)), [connected]);
   const [modelsData, , loadModels] = useLoader(() => (connected ? api("/models") : Promise.resolve(null)), [connected]);
+  // Modelflare 账户与余额：后端每 5 分钟读一次；界面每分钟取快照，切回窗口时请后端立刻刷新
+  const [account, , , setAccount] = useLoader(() => api("/account"), [connected]);
+  const managed = !!(mf && mf.mode === "managed");
   const [previews, setPreviews] = useState({});
   const [pending, setPending] = useState({});
   const [agentWorking, setAgentWorking] = useState({});
@@ -140,6 +143,23 @@ function App() {
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
+
+  useInterval(() => api("/account").then(setAccount).catch(() => {}), 60_000, connected && managed);
+  useEffect(() => {
+    if (!connected || !managed) return;
+    const on = () => document.visibilityState === "visible" && api("/account/refresh", { method: "POST", body: {} }).then(setAccount).catch(() => {});
+    window.addEventListener("focus", on);
+    return () => window.removeEventListener("focus", on);
+  }, [connected, managed]);
+  // 授权在网页上被撤销时后端会断开连接：回到登录页；余额跌破提醒线时提示一次
+  const prevAccount = useRef(null);
+  useEffect(() => {
+    const prev = prevAccount.current;
+    prevAccount.current = account;
+    if (!prev || !account) return;
+    if (prev.state === "signed_in" && account.state !== "signed_in") reloadMf();
+    if (!prev.lowBalance && account.lowBalance) toast(`Modelflare 余额只剩 ${account.balanceUsd.toFixed(2)} 美元`, "err");
+  }, [account]);
 
   const bots = botsData ? botsData.bots : null;
   const wanted = route.botId || lastBot;
@@ -292,9 +312,9 @@ function App() {
   return html`<div class=${`app${panelBot ? " with-panel" : ""}`} style=${{ "--aura-hue": String(auraHue) }}>
     ${view === "settings"
       ? html`<${SettingsSide} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} onTab=${(t) => openSettings(t)} onBack=${() => openChat()}
-          username=${status && status.username} />`
+          username=${status && status.username} account=${managed ? account : null} />`
       : html`<${Sidebar} bots=${bots} botsError=${botsErr} reloadBots=${reloadBots} selectedId=${bot && bot.id} view=${view === "chat" && bots && !bots.length ? "new" : view}
-          previews=${previews} pending=${pending} working=${working} username=${status && status.username}
+          previews=${previews} pending=${pending} working=${working} username=${status && status.username} account=${managed ? account : null}
           onNew=${newBot} onSelect=${openChat} onDeleted=${onDeleted} onOpenSettings=${() => openSettings()} />`}
     <main class="main">
       ${view === "chat" && bot && html`<${ChatScreen} key=${bot.id} bot=${bot} models=${models} modelsError=${modelsError} reloadModels=${reloadModels}
@@ -304,9 +324,10 @@ function App() {
         onCreated=${(b) => { reloadBots(); openChat(b.id); }} onCancel=${bots && bots.length ? () => openChat() : null} />`}
       ${view === "settings" && html`<${SettingsScreen} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} focusRow=${route.row}
         mf=${mf} onMfChanged=${reloadMf} onSettings=${setSettings} models=${models} modelsError=${modelsError} reloadModels=${reloadModels}
-        status=${status} bots=${bots} onOpenBotSettings=${openBotSettings} />`}
+        status=${status} bots=${bots} onOpenBotSettings=${openBotSettings} account=${managed ? account : null} onAccount=${setAccount} />`}
       ${view === "bot-settings" && routedBot && html`<${BotSettingsScreen} key=${routedBot.id} bot=${routedBot} section=${route.section}
         models=${models} modelsError=${modelsError} reloadModels=${reloadModels} defaultModel=${settings && settings.defaultModel}
+        account=${managed ? account : null} onOpenSettings=${openSettings}
         onBack=${() => openChat(routedBot.id)} onBotUpdated=${onBotUpdated} onDeleted=${() => onDeleted(routedBot.id)} />`}
       ${view === "bot-settings" && bots && !routedBot && html`<div class="empty-state"><b>机器人不存在</b><button type="button" class="text" onClick=${() => openChat()}>返回对话</button></div>`}
     </main>

@@ -185,6 +185,14 @@ export class Store {
   setKV(key: string, value: string): void {
     this.db.prepare("INSERT INTO kv(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
   }
+  deleteKV(key: string): void {
+    this.db.prepare("DELETE FROM kv WHERE key = ?").run(key);
+  }
+  /** 以 prefix 开头的全部键值 */
+  listKV(prefix: string): Array<[string, string]> {
+    const rows = this.db.prepare("SELECT key, value FROM kv WHERE substr(key, 1, ?) = ? ORDER BY key").all(prefix.length, prefix) as Row[];
+    return rows.map((r) => [String(r.key), String(r.value)]);
+  }
 
   // ---------- bots ----------
   private toBot(r: Row): Bot {

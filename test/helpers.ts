@@ -1,4 +1,5 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import type { AddressInfo } from "node:net";
 import type { FeishuMessageEvent, FeishuTransport } from "../src/channels/feishu/transport.js";
 
@@ -22,12 +23,13 @@ async function body(req: http.IncomingMessage): Promise<any> {
 }
 
 /** 模拟 OpenAI 兼容端点：/v1/models + 流式 /v1/chat/completions（回声 + 模型名） */
-export async function mockOpenAI(opts: { models?: string[]; key?: string; reply?: (msgs: any[], model: string) => string } = {}) {
+export async function mockOpenAI(opts: { models?: string[]; key?: string | string[]; reply?: (msgs: any[], model: string) => string } = {}) {
   const models = opts.models ?? ["mock-a", "mock-b"];
-  const calls: Array<{ model: string; messages: any[]; auth?: string }> = [];
+  const keys = opts.key === undefined ? undefined : ([] as string[]).concat(opts.key);
+  const calls: Array<{ model: string; messages: any[]; auth?: string; skill?: string }> = [];
   const stats = { aborted: 0 };
   const srv = await listen(async (req, res) => {
-    if (opts.key && req.headers.authorization !== `Bearer ${opts.key}`) {
+    if (keys && !keys.some((k) => req.headers.authorization === `Bearer ${k}`)) {
       res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "bad key" } }));
       return;
     }
@@ -37,7 +39,7 @@ export async function mockOpenAI(opts: { models?: string[]; key?: string; reply?
     }
     if (req.url?.endsWith("/chat/completions") && req.method === "POST") {
       const b = await body(req);
-      calls.push({ model: b.model, messages: b.messages, auth: req.headers.authorization });
+      calls.push({ model: b.model, messages: b.messages, auth: req.headers.authorization, skill: req.headers["x-modelflare-skill"] as string | undefined });
       const last = b.messages[b.messages.length - 1]?.content ?? "";
       const text = opts.reply ? opts.reply(b.messages, b.model) : `[${b.model}] 你说：${last}`;
       if (!b.stream) {
@@ -190,4 +192,109 @@ export async function until(fn: () => boolean | Promise<boolean>, ms = 5000, ste
     await new Promise((r) => setTimeout(r, step));
   }
   throw new Error("until: timeout");
+}
+
+// —— Modelflare 账户（OIDC + connected-app）——
+
+async function readForm(req: http.IncomingMessage): Promise<URLSearchParams> {
+  let body = "";
+  for await (const c of req) body += c;
+  return new URLSearchParams(body);
+}
+export async function readJson(req: http.IncomingMessage): Promise<any> {
+  let body = "";
+  for await (const c of req) body += c;
+  return body ? JSON.parse(body) : {};
+}
+
+/** 模拟 Modelflare：发现文档、授权码 + PKCE（公共客户端）、refresh 轮换、撤销、connected-app 接口 */
+export async function mockModelflare() {
+  const s = {
+    pending: new Map<string, { challenge: string; redirect: string }>(),
+    refresh: new Set<string>(),
+    access: new Set<string>(),
+    revoked: [] as string[],
+    tokenForms: [] as Record<string, string>[],
+    keys: [] as Array<{ id: number; name: string; limit_usd: number | null; used_usd: number }>,
+    balance: 12.5,
+    revokeAll: false,
+  };
+  let base = "";
+  let n = 0;
+  const issue = (res: http.ServerResponse) => {
+    const access = `at-${++n}`;
+    const refresh = `rt-${n}`;
+    s.access.add(access);
+    s.refresh.add(refresh);
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: access, refresh_token: refresh, token_type: "Bearer", expires_in: 900, scope: "account api_keys offline_access openid profile" }));
+  };
+  const oauthError = (res: http.ServerResponse, code: string) => res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: code }));
+  const srv = await listen(async (req, res) => {
+    const u = new URL(req.url!, "http://x");
+    const json = (o: unknown, status = 200) => res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(o));
+    if (u.pathname === "/.well-known/openid-configuration") {
+      return json({ issuer: base, authorization_endpoint: `${base}/oauth/authorize`, token_endpoint: `${base}/oauth/token`, revocation_endpoint: `${base}/oauth/revoke` });
+    }
+    if (u.pathname === "/oauth/token" && req.method === "POST") {
+      const f = Object.fromEntries(await readForm(req));
+      s.tokenForms.push(f);
+      if (f.client_id !== "anymodel-bot" || f.client_secret) return json({ error: "invalid_client" }, 401);
+      if (f.grant_type === "authorization_code") {
+        const p = s.pending.get(f.code);
+        s.pending.delete(f.code);
+        if (!p || p.redirect !== f.redirect_uri) return oauthError(res, "invalid_grant");
+        const challenge = crypto.createHash("sha256").update(f.code_verifier ?? "").digest("base64url");
+        if (challenge !== p.challenge) return oauthError(res, "invalid_grant");
+        return issue(res);
+      }
+      if (f.grant_type === "refresh_token") {
+        if (s.revokeAll || !s.refresh.delete(f.refresh_token)) return oauthError(res, "invalid_grant");
+        return issue(res);
+      }
+      return oauthError(res, "unsupported_grant_type");
+    }
+    if (u.pathname === "/oauth/revoke" && req.method === "POST") {
+      const f = await readForm(req);
+      s.revoked.push(f.get("token") ?? "");
+      s.refresh.delete(f.get("token") ?? "");
+      s.keys = [];
+      return res.writeHead(200).end();
+    }
+    if (u.pathname.startsWith("/api/connected-app/")) {
+      const token = String(req.headers.authorization ?? "").replace(/^Bearer /, "");
+      if (s.revokeAll || !s.access.has(token)) return json({ error: "invalid_token" }, 401);
+      const p = u.pathname.slice("/api/connected-app".length);
+      if (p === "/account") return json({ success: true, data: { display_name: "Ada", username: "ada", group: "default", balance_usd: s.balance, used_usd: 3, billed_to_enterprise: false, quota_per_unit: 500000 } });
+      if (p === "/api-keys" && req.method === "POST") {
+        const b = await readJson(req);
+        const k = { id: s.keys.length + 1, name: b.name, limit_usd: b.limit_usd ?? null, used_usd: 0 };
+        s.keys.push(k);
+        return json({ success: true, data: { ...k, key: `sk-key-${k.id}`, key_tail: `y-${k.id}`, status: "enabled", unlimited: k.limit_usd === null, remain_usd: k.limit_usd } });
+      }
+      if (p === "/api-keys" && req.method === "GET") return json({ success: true, data: s.keys.map((k) => ({ ...k, status: "enabled", unlimited: k.limit_usd === null, remain_usd: k.limit_usd })) });
+      const m = p.match(/^\/api-keys\/(\d+)$/);
+      if (m && req.method === "PATCH") {
+        const k = s.keys.find((x) => x.id === Number(m[1]));
+        if (!k) return json({ success: false, message: "not found" }, 404);
+        Object.assign(k, { limit_usd: (await readJson(req)).limit_usd });
+        return json({ success: true, data: k });
+      }
+      if (m && req.method === "DELETE") {
+        s.keys = s.keys.filter((x) => x.id !== Number(m[1]));
+        return json({ success: true });
+      }
+    }
+    res.writeHead(404).end();
+  });
+  base = srv.url;
+  return { ...srv, s };
+}
+
+/** 模拟浏览器：用户在授权页同意后，Modelflare 把授权码带回本机回调地址 */
+export async function approveInBrowser(mf: Awaited<ReturnType<typeof mockModelflare>>, loginUrl: string): Promise<Response> {
+  const u = new URL(loginUrl);
+  const code = `code-${crypto.randomUUID()}`;
+  const redirect = u.searchParams.get("redirect_uri")!;
+  mf.s.pending.set(code, { challenge: u.searchParams.get("code_challenge")!, redirect });
+  return fetch(`${redirect}?code=${code}&state=${encodeURIComponent(u.searchParams.get("state")!)}`);
 }

@@ -33,6 +33,24 @@
 .set-body > .list:first-child { margin-top: var(--space-6); }
 .set-none { margin: var(--section-gap) 0; font-size: var(--fs-md); color: var(--muted); }
 .mf-state { display: inline-flex; align-items: center; gap: var(--space-1-5); font-size: var(--fs-sm); color: var(--fg-2); }
+.balance { font-size: var(--fs-lg); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+.balance.low { color: var(--red); }
+.settings input.field.num-in { width: 96px; --field-h: var(--ctl-md); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 用量：近 N 天的日柱状图 + 模型排行 */
+.usage-days { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: end; gap: var(--space-1); height: 120px; padding: var(--space-2) 0; }
+.usage-days .bar { display: grid; align-content: end; justify-items: center; gap: var(--space-1); height: 100%; font-size: var(--fs-2xs); color: var(--faint); }
+.usage-days .bar i { display: block; width: 100%; min-height: 2px; border-radius: var(--r-sm) var(--r-sm) 0 0; background: var(--accent-solid); }
+.usage-models { display: grid; gap: var(--space-1); font-size: var(--fs-sm); }
+.usage-models div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.usage-models .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-models .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.notif { display: grid; gap: var(--space-1); padding: var(--space-3) 0; border-bottom: .5px solid var(--line); }
+.notif:last-child { border-bottom: 0; }
+.notif b { font-weight: var(--fw-semibold); }
+.notif.unread b::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: var(--space-1-5); border-radius: 50%; background: var(--accent-solid); vertical-align: middle; }
+.notif p { font-size: var(--fs-sm); color: var(--fg-2); white-space: pre-wrap; }
+.notif time { font-size: var(--fs-2xs); color: var(--faint); }
 
 /* 机器人设置：身份是带标签的输入框（参考 Codex 的编辑页） */
 .set-field { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); }
@@ -105,6 +123,8 @@
 /* "高级"里的行直接排在卡片里，左右贴着卡片的内容边，不再套一块玻璃 */
 .onboard details .row { --row-pl: 0; --row-pr: 0; margin-top: var(--space-1); }
 .onboard .connected { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.login-wait .connected { font-size: var(--fs-md); line-height: var(--lh-snug); }
+.login-links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .picklist { max-height: 300px; overflow-y: auto; margin: 0 calc(-1 * var(--space-1-5)); padding: 0 var(--space-1-5); }
 .picklist > .hint { padding: var(--space-2); }
 .picklist .group { padding: var(--space-2) var(--space-2) var(--space-1); font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--muted); }

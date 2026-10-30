@@ -50,6 +50,8 @@ export interface FeishuTransport {
   replyText(replyToMessageId: string, text: string): Promise<void>;
   /** 上传本地文件并作为图片/文件消息回复（present 交付物） */
   replyFile?(replyToMessageId: string, filePath: string): Promise<void>;
+  /** 主动发一条文本到会话（不是回复某条消息；用于余额提醒） */
+  sendText?(chatId: string, text: string): Promise<void>;
 }
 
 export const CARD_ELEMENT_ID = "md";
@@ -258,5 +260,13 @@ export class LarkTransport implements FeishuTransport {
       data: { msg_type: "text", content: JSON.stringify({ text }) },
     });
     check(res, "im.message.reply(text)");
+  }
+
+  async sendText(chatId: string, text: string): Promise<void> {
+    const res: any = await this.client.im.v1.message.create({
+      params: { receive_id_type: "chat_id" },
+      data: { receive_id: chatId, msg_type: "text", content: JSON.stringify({ text }) },
+    });
+    check(res, "im.message.create(text)");
   }
 }

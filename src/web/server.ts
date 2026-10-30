@@ -7,7 +7,9 @@ import { appVersion, type App } from "../app.js";
 import type { InboundEvent, OutboundOp, ReplySession } from "../core/types.js";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { logger, mask } from "../log.js";
-import { ZOOMS, saveConfigFile } from "../config.js";
+import { ZOOMS, normalizeLowBalance, saveConfigFile } from "../config.js";
+import { ApiError } from "../account/client.js";
+import { OAuthError } from "../account/oauth.js";
 import { normalizeLine } from "../modelflare.js";
 import { SseReply } from "./sse-reply.js";
 import { connectionFromPids } from "../agent/peer-guard.js";
@@ -134,6 +136,17 @@ function publicApproval(r: ApprovalRow) {
   return { ...rest, questions };
 }
 
+/** 账户操作的错误：Modelflare 返回的状态码原样带给界面（没有状态码的网络错误按 502） */
+async function accountCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ApiError) throw new HttpError(e.status >= 400 && e.status < 500 ? e.status : 502, e.message);
+    if (e instanceof OAuthError) throw new HttpError(502, e.message);
+    throw e;
+  }
+}
+
 function isLoopback(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
@@ -225,7 +238,9 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         return send(res, 200, { ...app.modelflareStatus(), models: r.models });
       }
       if (m === "DELETE") {
-        await app.disconnectModelflare();
+        // 登录状态下断开 = 退出登录：先撤销授权，服务端会删除本机签发的 Key
+        if (app.account.signedIn) await app.account.logout();
+        else await app.disconnectModelflare();
         return send(res, 200, app.modelflareStatus());
       }
     }
@@ -233,6 +248,58 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       const b = await readJson(req);
       await app.setModelflareLine(normalizeLine(b.line));
       return send(res, 200, app.modelflareStatus());
+    }
+    if (p === "/models/info" && m === "GET") {
+      if (!app.magpie) return send(res, 200, { models: {} });
+      return send(res, 200, { models: await app.modelInfo(url.searchParams.get("refresh") === "1") });
+    }
+    if (seg[0] === "account") {
+      const sub = seg.slice(1).join("/");
+      if (m !== "GET" && !app.magpie) throw new HttpError(409, "外部模型端点模式下不管理 Modelflare 账户");
+      // 浏览器登录的回调落在本程序所在机器的 127.0.0.1；界面监听在非本机地址（Docker、远程部署）时，
+      // 用户的浏览器访问不到它，只能粘贴 API Key
+      const loginAvailable = isLoopback(host);
+      const status = () => ({ ...app.account.status(), loginAvailable });
+      if (sub === "" && m === "GET") return send(res, 200, status());
+      if (sub === "refresh" && m === "POST") {
+        // 切回窗口时界面会来刷新；20 秒内刚读过就直接返回
+        if (Date.now() - app.account.status().updatedAt >= 20_000) await app.account.refresh();
+        return send(res, 200, status());
+      }
+      if (sub === "login" && m === "POST") {
+        if (!loginAvailable) throw new HttpError(409, "Docker 或远程部署时无法用浏览器登录，请改用 API Key");
+        const loginUrl = await accountCall(() => app.account.startLogin());
+        app.desktop?.openExternal(loginUrl);
+        return send(res, 200, { ...status(), loginUrl, opened: !!app.desktop });
+      }
+      if (sub === "login/cancel" && m === "POST") {
+        app.account.cancelLogin();
+        return send(res, 200, status());
+      }
+      if (sub === "logout" && m === "POST") {
+        const r = await app.account.logout();
+        return send(res, 200, { ...status(), revoked: r.revoked });
+      }
+      if (sub === "alerts" && m === "PUT") {
+        const b = await readJson(req);
+        const mf = cfg.modelflare;
+        if (b.lowBalanceUsd !== undefined) {
+          const v = normalizeLowBalance(b.lowBalanceUsd);
+          if (v !== Number(b.lowBalanceUsd)) throw new HttpError(400, "提醒线要在 0 到 1000 美元之间");
+          mf.lowBalanceUsd = v;
+        }
+        if (b.lowBalancePush !== undefined) mf.lowBalancePush = !!b.lowBalancePush;
+        saveConfigFile(cfg.dataDir, (f) => (f.modelflare = { ...(f.modelflare ?? {}), lowBalanceUsd: mf.lowBalanceUsd, lowBalancePush: mf.lowBalancePush }));
+        return send(res, 200, status());
+      }
+      if (sub === "usage" && m === "GET") {
+        // Modelflare 一次最多给 30 天的用量
+        const days = Math.min(30, Math.max(1, Math.floor(Number(url.searchParams.get("days") || 7)) || 7));
+        return send(res, 200, await accountCall(() => app.account.usage(days)));
+      }
+      if (sub === "notifications" && m === "GET") return send(res, 200, { data: await accountCall(() => app.account.notifications()) });
+      if (sub === "invite" && m === "GET") return send(res, 200, await accountCall(() => app.account.invite()));
+      if (sub === "budgets" && m === "GET") return send(res, 200, { budgets: await accountCall(() => app.account.botBudgets()) });
     }
     if (p === "/settings") {
       if (m === "PUT") {
@@ -348,9 +415,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           return send(res, 200, { bot: publicBot(next) });
         }
         if (m === "DELETE") {
-          await app.stopBot(id);
-          await app.agent.stopBot(id);
-          app.store.deleteBot(id);
+          await app.deleteBot(id);
           return send(res, 200, { ok: true });
         }
       }
@@ -372,6 +437,13 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         });
         const next = app.store.updateBot(id, { settings: merged })!;
         return send(res, 200, { settings: next.settings, computerUse: app.agent.computerUse(id) });
+      }
+      if (sub === "budget" && m === "PUT") {
+        const b = await readJson(req);
+        const limitUsd = Number(b.limitUsd ?? bot.settings.budget.limitUsd);
+        if (!Number.isFinite(limitUsd) || limitUsd < 0 || limitUsd > 100_000) throw new HttpError(400, "预算要在 0 到 100000 美元之间");
+        const next = await accountCall(() => app.setBotBudget(id, normalizeSettings({ budget: { enabled: !!b.enabled, limitUsd } }).budget));
+        return send(res, 200, { settings: next.settings });
       }
       if (sub === "memory" && m === "GET") {
         const scopes = [

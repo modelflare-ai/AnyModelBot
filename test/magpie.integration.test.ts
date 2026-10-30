@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { App } from "../src/app.js";
+import { App, appVersion } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { resolveMagpieBinary } from "../src/magpie/supervisor.js";
 import { FakeFeishu, mockOpenAI, until } from "./helpers.js";
@@ -20,7 +20,7 @@ d("内置 magpie 集成", () => {
   let dataDir: string;
 
   beforeAll(async () => {
-    llm = await mockOpenAI({ key: "mf-upstream-key-a1b2", models: ["up-model"] });
+    llm = await mockOpenAI({ key: ["mf-upstream-key-a1b2", "mf-bot-key-c3d4"], models: ["up-model"] });
     // 仅测试：把 Modelflare 基址指向本地 mock（界面无法设置这个变量）
     process.env.AMB_MODELFLARE_BASE_URL = llm.url + "/v1";
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-int-"));
@@ -82,7 +82,26 @@ d("内置 magpie 集成", () => {
     const chat = await api("/bots/default/chat", "POST", { text: "经过网关" });
     expect(chat.json.reply).toContain("你说：经过网关");
     expect(llm.calls.at(-1)!.auth).toBe("Bearer mf-upstream-key-a1b2");
+    // 调用归因：内置网关把 provider 上配置的请求头带给 Modelflare
+    expect(llm.calls.at(-1)!.skill).toBe(`anymodel-bot/${appVersion()}`);
   }, 30_000);
+
+  it("开了预算的机器人走它自己的 Key；模型列表不重复；关掉后回到共用 Key", async () => {
+    const baseUrl = process.env.AMB_MODELFLARE_BASE_URL!;
+    await app.magpie!.setBotProvider("default", "mf-bot-key-c3d4", baseUrl, [baseUrl], app.requestHeaders());
+    expect(app.routeModel("default", "up-model")).toBe("mfb-default/up-model");
+    await until(async () => {
+      const r = await api("/bots/default/chat", "POST", { text: "预算 Key" });
+      return String(r.json.reply).includes("你说：预算 Key") && llm.calls.at(-1)!.auth === "Bearer mf-bot-key-c3d4";
+    }, 15_000, 300);
+    expect(llm.calls.at(-1)!.skill).toMatch(/^anymodel-bot\//);
+    expect((await api("/models")).json.models.every((m: string) => !m.startsWith("mfb-"))).toBe(true);
+    await app.magpie!.removeBotProvider("default");
+    expect(app.routeModel("default", "up-model")).toBe("modelflare/up-model");
+    const back = await api("/bots/default/chat", "POST", { text: "共用 Key" });
+    expect(back.json.reply).toContain("你说：共用 Key");
+    expect(llm.calls.at(-1)!.auth).toBe("Bearer mf-upstream-key-a1b2");
+  }, 40_000);
 
   it("切换线路写入 config.json，Key 保持不变", async () => {
     const r = await api("/modelflare/line", "PUT", { line: "cn" });

@@ -1,13 +1,13 @@
-// 首次启动 / 断开后：只有一个动作——粘贴 Modelflare API Key。不是向导路由，而是"未连接"时的整页空态。
+// 首次启动 / 退出登录后："未连接"时的整页空态。主操作是登录 / 注册 Modelflare（在系统浏览器里完成，
+// 回来后自动签发本机 Key 并连接）；也可以展开后直接粘贴一个 API Key。不是向导路由。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, Notice, Seg, Spinner } from "../components/ui.js";
+import { html, Icon, Notice, Seg, Spinner, CopyButton } from "../components/ui.js";
 import { BotAvatar, MAIN_CHAR } from "../components/avatar.js";
 import { groupModels } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
+import { MF_CONSOLE, MF_DOCS, MF_KEYS } from "../lib/links.js";
 
-// 控制台 API Keys 页还没有稳定的深链地址，先指向官网首页（登录后可进控制台）
-export const MF_CONSOLE = "https://modelflare.dev";
-export const MF_DOCS = "https://docs.modelflare.dev";
+export { MF_CONSOLE, MF_DOCS };
 export const LINE_OPTIONS = [
   ["auto", "自动"],
   ["global", "国际"],
@@ -102,6 +102,70 @@ export function KeyForm({ line: initialLine = "auto", onConnected, onFace, showL
   </form>`;
 }
 
+/**
+ * 登录 / 注册 Modelflare：桌面版由主进程在系统浏览器里打开授权页；浏览器版在新标签页打开（被拦截时
+ * 用下面的链接）。等待期间每秒读一次账户状态，登录完成（本机 Key 已接上）后 onSignedIn(status)。
+ */
+export function AccountLogin({ onSignedIn, onFace, label = "登录 / 注册 Modelflare", hint = true }) {
+  const [waiting, setWaiting] = useState(false);
+  const [url, setUrl] = useState("");
+  const [err, setErr] = useState("");
+  useEffect(() => onFace?.(waiting ? "thinking" : "idle"), [waiting]);
+  useEffect(() => {
+    if (!waiting) return;
+    let stop = false;
+    const t = setInterval(async () => {
+      const s = await api("/account").catch(() => null);
+      if (!s || stop) return;
+      if (s.state === "signed_in") {
+        stop = true;
+        setWaiting(false);
+        onSignedIn(s);
+      } else if (s.state !== "signing_in") {
+        stop = true;
+        setWaiting(false);
+        if (s.error) {
+          setErr(s.error);
+          onFace?.("error");
+        }
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [waiting]);
+  const start = async () => {
+    setErr("");
+    try {
+      const r = await api("/account/login", { method: "POST", body: {} });
+      setUrl(r.loginUrl);
+      setWaiting(true);
+      if (!r.opened) window.open(r.loginUrl, "_blank", "noopener");
+    } catch (e) {
+      setErr(e.message);
+      onFace?.("error");
+    }
+  };
+  const cancel = () => {
+    setWaiting(false);
+    api("/account/login/cancel", { method: "POST", body: {} }).catch(() => {});
+  };
+  if (waiting) {
+    return html`<div class="list login-wait" role="status">
+      <div class="connected"><${Spinner} /> 请在浏览器里登录或注册 Modelflare，并点「继续」授权</div>
+      <p class="hint">完成后会自动回到这里。浏览器没有打开？</p>
+      <div class="login-links">
+        <a class="btn" href=${url} target="_blank" rel="noopener noreferrer">打开登录页 ↗</a>
+        <${CopyButton} text=${url} label="复制登录链接" />
+        <button type="button" class="text" onClick=${cancel}>取消</button>
+      </div>
+    </div>`;
+  }
+  return html`<div class="list">
+    <button type="button" class="btn primary lg block" onClick=${start}>${label}</button>
+    ${err && html`<div class="err-text" role="alert">${err}</div>`}
+    ${hint && html`<p class="hint">在浏览器里用 Modelflare 账户登录（没有账户可以当场注册），授权后本机会自动获得一把专用 API Key。</p>`}
+  </div>`;
+}
+
 function ModelStep({ models, initial, onDone }) {
   const [q, setQ] = useState("");
   const [cur, setCur] = useState(initial && models.includes(initial) ? initial : models[0] || "");
@@ -138,23 +202,52 @@ function ModelStep({ models, initial, onDone }) {
 
 export function Onboarding({ status, gateway, defaultModel, onDone }) {
   const [models, setModels] = useState(null);
+  const [useKey, setUseKey] = useState(false);
+  // Docker / 远程部署：浏览器登录的回调到不了本程序，只能用 API Key
+  const [loginAvailable, setLoginAvailable] = useState(true);
+  // 授权在网页上被撤销后会回到这里：说明原因
+  const [why, setWhy] = useState("");
+  useEffect(() => {
+    api("/account")
+      .then((a) => {
+        if (a.error) setWhy(a.error);
+        if (a.loginAvailable === false) {
+          setLoginAvailable(false);
+          setUseKey(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [face, setFace] = useState("idle");
   const [cue, setCue] = useState(null);
   const onFace = (f) => (f === "error" ? setCue({ kind: "error", at: Date.now() }) : setFace(f));
+  const loadModels = () =>
+    api("/models")
+      .then((d) => setModels(d.models || []))
+      .catch(() => setModels([]));
   return html`<main class="onboard" data-screen="onboarding">
     <div class="onboard-col">
       <div class="onboard-hero">
         <${BotAvatar} char=${MAIN_CHAR} size=${88} state=${face} cue=${cue} lively pokeable greet />
         <h1>用 Modelflare 开始</h1>
-        <p>粘贴 API Key，GPT、Claude、Grok、Gemini 等模型会自动列出。</p>
+        <p>登录后 GPT、Claude、Grok、Gemini 等模型会自动列出，余额和用量也能在这里看。</p>
       </div>
       ${gateway && gateway.mode === "managed" && gateway.state === "failed" && html`<${Notice} tone="red">内置模型网关没有启动：${gateway.lastError || "未知原因"}。修复后重启应用再连接。<//>`}
-      ${models === null
-        ? html`<${KeyForm} line=${status.line} onFace=${onFace} onConnected=${(r) => (setFace("idle"), setModels(r.models || []))} />
-          <div class="links">
-            <a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">还没有 Key？去 Modelflare 控制台创建 ↗</a>
-          </div>`
-        : html`<${ModelStep} models=${models} initial=${defaultModel} onDone=${onDone} />`}
+      ${why && models === null && html`<${Notice} tone="amber">${why}<//>`}
+      ${models !== null
+        ? html`<${ModelStep} models=${models} initial=${defaultModel} onDone=${onDone} />`
+        : useKey
+          ? html`<${KeyForm} line=${status.line} onFace=${onFace} onConnected=${(r) => (setFace("idle"), setModels(r.models || []))} />
+            <div class="links">
+              <a href=${MF_KEYS} target="_blank" rel="noopener noreferrer">在 Modelflare 控制台创建 Key ↗</a>
+              ${loginAvailable
+                ? html`<button type="button" class="text" onClick=${() => setUseKey(false)}>改用账户登录</button>`
+                : html`<span>当前是 Docker 或远程部署，无法用浏览器登录</span>`}
+            </div>`
+          : html`<${AccountLogin} onFace=${onFace} onSignedIn=${loadModels} />
+            <div class="links">
+              <button type="button" class="text" onClick=${() => setUseKey(true)}>我有 API Key</button>
+            </div>`}
     </div>
   </main>`;
 }

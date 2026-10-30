@@ -1,7 +1,7 @@
 # AnyModelBot
 
 任意模型的个人 AI 助手：一个机器人 = 人设 + 默认模型 + 渠道（飞书 / 微信）。
-模型来自 **[Modelflare](https://modelflare.dev)**：首次启动粘贴一个 Modelflare API Key，GPT、Claude、Grok、Gemini 等模型自动列出。
+模型来自 **[Modelflare](https://modelflare.dev)**：首次启动登录（或注册）Modelflare 账户，GPT、Claude、Grok、Gemini 等模型自动列出；也可以直接粘贴一个 API Key。
 请求经过内置的 [magpie](https://github.com/yetone/magpie) 网关转发（实现细节，界面里不出现）。
 
 - 飞书：官方机器人，长连接（WSClient）接收事件，CardKit 流式卡片回复
@@ -19,7 +19,8 @@ src/
   magpie/      内置 magpie 守护：隔离目录、空闲端口、自动生成密钥、健康检查、崩溃重启、干净退出
   channels/    feishu/（长连接 + CardKit）  weixin/（iLink，MIT 声明见 LICENSE.openclaw-weixin）
   store/       SQLite（node:sqlite，无需原生编译）
-  modelflare.ts  Modelflare 线路与密钥校验（GET /v1/models）
+  modelflare.ts  Modelflare 线路、密钥校验（GET /v1/models）、模型路由与归因
+  account/     Modelflare 账户：PKCE 回环登录、令牌轮换、余额与提醒、机器人预算 Key、模型能力与参考价
   web/         管理界面服务（JSON API + 流式对话 SSE）
   cli/         init 首次设置向导、weixin-login
   main.ts      命令行入口
@@ -36,7 +37,7 @@ vendor/magpie  magpie 源码（git 子模块，构建时编译）
 ```bash
 npm install
 npm run setup        # 拉取 vendor/magpie 子模块并编译到 build/bin/
-npm run init         # 可选：终端里的首次设置（Modelflare API Key、飞书凭据）
+npm run init         # 可选：终端里的首次设置（登录 Modelflare 账户或粘贴 API Key、飞书凭据）
 npm start            # 启动全部：内置网关 + 机器人 + 管理界面 http://127.0.0.1:3600/
 ```
 
@@ -70,13 +71,21 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 
 ## 模型（Modelflare）
 
-- 首次启动只有一个页面：粘贴 Modelflare API Key → 校验（`GET https://modelflare.dev/v1/models`）→ 选默认模型 → 开始对话。还没有 Key 可去 [Modelflare](https://modelflare.dev) 控制台创建。
+- 首次启动只有一个页面，主按钮是「登录 / 注册 Modelflare」：在系统浏览器里登录（没有账户可当场注册）并点「继续」授权，回到本程序后自动为这台电脑签发一把专用 API Key 并连接 → 选默认模型 → 开始对话。也可以点「我有 API Key」直接粘贴一个 Key（校验 `GET https://modelflare.dev/v1/models`）。
+- 登录方式：OIDC 授权码 + PKCE（RFC 7636），按 RFC 8252 作为原生应用——本程序是公共客户端（`client_id` 为 `anymodel-bot`，没有也不需要客户端密钥），授权结果回调到本机 `127.0.0.1` 的临时端口。在 Modelflare 网页个人资料页的「已授权的应用」里可以随时撤销；撤销后本程序会发现并回到登录页。
+- 账户凭据（refresh token）存在数据目录的 `modelflare-account.json`（权限 600），桌面版用系统钥匙串加密（Electron safeStorage）；界面只拿到账户名称。「退出登录」会撤销这台电脑的授权，Modelflare 同时删除登录时为它和各机器人签发的 Key。
+- 余额：侧栏左下角和 设置 → Modelflare 显示账户钱包余额（只用 API Key 时读 `/v1/dashboard/billing/credit_grants`）；「充值」打开 Modelflare 网页，回到窗口时自动刷新。余额低于提醒线（默认 $1，可改或关闭）时在应用里提醒一次，也可以设置让机器人发到你的微信 / 飞书。
+- 登录后还能在 设置 → Modelflare 查看按天、按模型的用量，Modelflare 发来的通知，以及复制邀请链接。
+- 机器人预算（需要登录）：机器人设置 → 预算，开启后这个机器人用自己的 Key（内置网关里单独的 provider），最多花设定的美元数；关闭后回到共用的 Key。
+- 生图 / 生视频：代理模式下机器人有 `generate_image`、`generate_video` 工具，由本程序带着该机器人用的 Key 调 Modelflare，结果存进机器人工作区的 `media/`，再交付到聊天。
+- 模型选择器里显示上下文长度、视觉 / 工具 / 推理能力，以及每百万 tokens 输入 / 输出的起步参考价（来自公开价格目录，以账单为准）。
+- 调用归因：经 Modelflare 的请求都带 `X-Modelflare-Skill: anymodel-bot/<版本>`，链接都带 `utm_source=anymodelbot`。
 - 线路：默认国际线路 `https://modelflare.dev/v1`；中国大陆可在「高级」或 设置 → Modelflare → 线路 选「中国大陆优化」（`https://origin.modelflare.dev/v1`）。线路由你选定，不自动切换。
-- 设置 → Modelflare：查看连接状态（只显示 Key 尾号）、更换密钥、断开（机器人与会话保留，断开后回到首次连接页）、默认模型、刷新模型列表；用量与账单以 Modelflare 控制台为准。
+- 设置 → Modelflare：账户、余额与充值、余额提醒、用量、通知、邀请；连接状态（只显示 Key 尾号）；未登录时可更换密钥或断开（机器人与会话保留，断开后回到首次连接页）；默认模型、刷新模型列表。
 - 对话中输入框右侧的模型按钮可为当前会话切换模型（也可设为机器人默认）；`/model`、`/reset`、`/new`、`/status`、`/help` 照常可用。
 - 内置网关：magpie 以 `--gateway` 模式运行，使用本程序数据目录内独立的 HOME/配置目录；**不读取**你电脑上已有的 Claude/Codex 等订阅凭据，**不改写**任何 agent 配置，关闭自动更新与账户发现。它只供本进程内部调用，界面不再反代它的页面或 `/v1`。
 - API Key 只保存在内置网关的隔离配置中，不经过命令行参数、不写日志，前端只拿到尾号。
-- 开发/测试：设置 `AMB_MAGPIE_BASE_URL` 可直接使用一个 OpenAI 兼容端点（不启动内置网关，界面视为已连接）；`AMB_MODELFLARE_BASE_URL` 可把 Modelflare 基址指向本地 mock。
+- 开发/测试：设置 `AMB_MAGPIE_BASE_URL` 可直接使用一个 OpenAI 兼容端点（不启动内置网关，界面视为已连接，账户功能不可用）；`AMB_MODELFLARE_BASE_URL` 可把 Modelflare 基址指向本地 mock，`AMB_MODELFLARE_ISSUER` 把登录与账户接口指向本地 mock。
 
 ## 界面
 

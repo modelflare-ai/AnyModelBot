@@ -16,6 +16,8 @@ export interface BridgeHandlers {
   memory?(body: any): Promise<unknown>;
   /** amb-memory 插件：上下文管家判定 / 压缩回报 */
   steward?(body: any): Promise<unknown>;
+  /** amb-media 插件：生图 / 生视频 */
+  media?(body: any): Promise<unknown>;
 }
 
 /**
@@ -113,6 +115,7 @@ export class AgentBridge {
     else if (url === "/dsh/cancel") out = (await this.h.cancel(body), { ok: true });
     else if (url === "/dsh/memory" && this.h.memory) out = await this.h.memory(body);
     else if (url === "/dsh/steward" && this.h.steward) out = await this.h.steward(body);
+    else if (url === "/dsh/media" && this.h.media) out = await this.h.media(body);
     else return void res.writeHead(404).end();
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
   }

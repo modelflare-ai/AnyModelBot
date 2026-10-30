@@ -4,6 +4,7 @@ import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
 import { AgentHost, callDetail, type TurnObserver, type TurnUsage } from "./host.js";
+import type { MediaService } from "./media.js";
 import { ApprovalCenter, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import { DEFAULT_SETTINGS, type BotSettings } from "./settings.js";
@@ -30,10 +31,12 @@ export interface AgentManagerOptions {
   enabled: boolean;
   turnTimeoutMs?: number;
   approvalTtlMs?: number;
-  /** 后台小模型调用（管家判定、交接便条、记忆整理）；缺省则这些功能静默跳过 */
-  complete?: (model: string, system: string, user: string) => Promise<string>;
+  /** 后台小模型调用（管家判定、交接便条、记忆整理）；缺省则这些功能静默跳过。botId 用来把请求记到该机器人的 Key 上 */
+  complete?: (botId: string, model: string, system: string, user: string) => Promise<string>;
   /** 回合后记忆整理的防抖延迟 */
   reviewDelayMs?: number;
+  /** 生图 / 生视频（amb-media 插件经 bridge 调用）；缺省时工具返回不可用 */
+  media?: MediaService;
 }
 
 function deferred<T>() {
@@ -74,6 +77,7 @@ export class AgentManager {
       cancel: async (b) => void this.approvals.cancel(String(b?.id ?? ""), "agent"),
       memory: (b) => this.memoryOp(b),
       steward: (b) => this.stewardCall(b),
+      media: (b) => this.mediaOp(b),
     });
     this.memory = new MemoryStore(path.join(o.dataDir, "memory"));
   }
@@ -214,7 +218,7 @@ export class AgentManager {
       const group = this.o.store.getConversation(conv)?.kind === "group";
       let action: "switch" | "compact" | undefined;
       try {
-        const out = await this.o.complete!(this.utilityModel(botId, model), STEWARD_SYSTEM, stewardRequest(this.transcript(conv), group));
+        const out = await this.o.complete!(botId, this.utilityModel(botId, model), STEWARD_SYSTEM, stewardRequest(this.transcript(conv), group));
         action = parseDecision(out);
       } catch (e) {
         log.warn("steward judge failed", { message: (e as Error).message.slice(0, 200) });
@@ -245,7 +249,7 @@ export class AgentManager {
     let handoff = "";
     if (this.o.complete) {
       try {
-        handoff = (await this.o.complete(this.utilityModel(botId, model), HANDOFF_SYSTEM, recentTranscript(lines))).trim();
+        handoff = (await this.o.complete(botId, this.utilityModel(botId, model), HANDOFF_SYSTEM, recentTranscript(lines))).trim();
       } catch (e) {
         log.warn("handoff failed, using raw tail", { message: (e as Error).message.slice(0, 200) });
       }
@@ -282,7 +286,7 @@ export class AgentManager {
     const scope: Scope = c?.kind === "group" ? { kind: "group", id: conv } : { kind: "bot", id: botId };
     const current = this.memory.snapshot([scope]) || "（空）";
     const lines: Line[] = msgs.map((m) => ({ role: m.role as "user" | "assistant", text: m.content }));
-    const out = await this.o.complete(this.utilityModel(botId, model), REVIEW_SYSTEM, `当前记忆：\n${current}\n\n最近对话（旧→新）：\n${recentTranscript(lines, 12_000)}`);
+    const out = await this.o.complete(botId, this.utilityModel(botId, model), REVIEW_SYSTEM, `当前记忆：\n${current}\n\n最近对话（旧→新）：\n${recentTranscript(lines, 12_000)}`);
     const ops = parseReview(out);
     for (const r of ops.remove) {
       try {
@@ -307,6 +311,19 @@ export class AgentManager {
   }
 
   /** 插件 → 宿主：remember / forget / recall。 */
+  /** 生图 / 生视频：只在该机器人有回合进行中时受理（工具调用只会发生在回合里） */
+  private async mediaOp(b: any): Promise<{ text?: string; error?: string }> {
+    const botId = String(b?.botId ?? "");
+    if (!this.hosts.has(botId) || !this.activeConvs.get(botId)?.size) return { error: "unknown bot" };
+    if (!this.o.media) return { error: "生成图片和视频需要连接 Modelflare" };
+    try {
+      return { text: await this.o.media.run(botId, String(b?.op ?? ""), (b?.args ?? {}) as Record<string, unknown>) };
+    } catch (e) {
+      log.warn("media tool failed", { bot: botId, message: (e as Error).message.slice(0, 300) });
+      return { error: (e as Error).message };
+    }
+  }
+
   private async memoryOp(b: any): Promise<{ text?: string; error?: string }> {
     const botId = String(b?.botId ?? "");
     if (!this.hosts.has(botId)) return { error: "unknown bot" };

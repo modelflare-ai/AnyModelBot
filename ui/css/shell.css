@@ -135,6 +135,13 @@ button.thread:active { background: var(--side-press); }
   font-weight: var(--fw-semibold); font-size: var(--fs-sm); color: var(--fg-2);
 }
 .account .who { flex: 1; min-width: 0; font-size: var(--fs-lg); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account .who .bal { display: block; font-size: var(--fs-2xs); color: var(--muted); }
+.account .who .bal.low { color: var(--red); }
+.low-balance {
+  flex: none; margin: 0 var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--r-lg);
+  font-size: var(--fs-sm); color: var(--red); background: var(--side-hover); text-decoration: none;
+}
+.low-balance:hover { background: var(--side-press); }
 .account > .ic { color: var(--muted); transition: color var(--t-fast); }
 .account:hover > .ic { color: var(--fg); }
 

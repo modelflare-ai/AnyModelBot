@@ -7,6 +7,7 @@ import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
 import { promptText, type QuestionItem } from "../agent/approvals.js";
 import { MEMORY_GUIDE } from "../agent/steward.js";
+import { isBotProviderModel } from "../modelflare.js";
 import type { ApprovalRow } from "../store/db.js";
 
 const log = logger("runtime");
@@ -19,6 +20,11 @@ export interface RuntimeOptions {
   contextChars: number;
   /** DSH 代理宿主；缺省或不可用时走纯对话路径 */
   agent?: AgentManager;
+  /**
+   * 发给模型网关前把模型 id 限定到该机器人用的 Key（共用 Key 或它自己的预算 Key）。
+   * 会话与界面里保存的仍是不带 provider 的 id。缺省原样发送。
+   */
+  route?: (botId: string, model: string) => string;
 }
 
 const HELP = [
@@ -38,7 +44,8 @@ export class BotRuntime {
 
   async listModels(force = false): Promise<string[]> {
     if (!force && this.modelCache && Date.now() - this.modelCache.at < 30_000) return this.modelCache.list;
-    const list = await this.opts.models.listModels();
+    // 机器人预算 Key 的 provider 列出同一批模型，只展示共用连接的那份
+    const list = (await this.opts.models.listModels()).filter((m) => !isBotProviderModel(m));
     this.modelCache = { at: Date.now(), list };
     return list;
   }
@@ -73,10 +80,11 @@ export class BotRuntime {
       return "";
     });
     if (!model) return;
+    const routed = this.opts.route ? this.opts.route(bot.id, model) : model;
 
     const agent = this.opts.agent;
     if (agent?.available) {
-      const handled = await this.handleAgent(agent, bot.id, conv.id, text, model, bot.systemPrompt, out);
+      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, bot.systemPrompt, out);
       if (handled) return;
     }
 
@@ -90,7 +98,7 @@ export class BotRuntime {
     await out.apply({ type: "stream.start" });
     let acc = "";
     try {
-      const full = await this.opts.models.streamChat({ model, messages, signal: opts.signal }, (delta) => {
+      const full = await this.opts.models.streamChat({ model: routed, messages, signal: opts.signal }, (delta) => {
         acc += delta;
         void out.apply({ type: "stream.update", text: acc });
       });

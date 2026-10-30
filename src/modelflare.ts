@@ -90,7 +90,16 @@ export function modelflareBaseUrl(line: ModelflareLine, env: NodeJS.ProcessEnv =
 export type VerifyFailure = "invalid_key" | "forbidden" | "rate_limited" | "upstream" | "network" | "bad_response";
 
 export type VerifyResult =
-  | { ok: true; models: string[] }
+  | {
+      ok: true;
+      models: string[];
+      /**
+       * 能对话的模型（Modelflare 标为 kind=text 的；旧版网关没有 kind 时为全部）。
+       * 连接时把它们全部写进内置网关的 picks：网关对超过 24 个模型、又没有 picks 的服务商
+       * 只放出列表前 24 个，而 Modelflare 的列表按字母排，后面的模型会被截掉。
+       */
+      chatModels: string[];
+    }
   | { ok: false; code: VerifyFailure; status?: number; message: string; suggestLine?: ModelflareLine };
 
 /** 校验密钥：只发一次 GET /models，不重试、不换线路。 */
@@ -120,9 +129,15 @@ export async function verifyModelflareKey(
   if (res.status === 429) return { ok: false, code: "rate_limited", status: 429, message: `Modelflare 暂时不可用（HTTP 429）${retryAfter(res)}` };
   if (!res.ok) return { ok: false, code: "upstream", status: res.status, message: `Modelflare 暂时不可用（HTTP ${res.status}）` };
   try {
-    const body = (await res.json()) as { data?: Array<{ id?: unknown }> };
+    const body = (await res.json()) as { data?: Array<{ id?: unknown; kind?: unknown }> };
     if (!Array.isArray(body.data)) throw new Error("no data[]");
-    return { ok: true, models: body.data.map((m) => String(m.id ?? "")).filter(Boolean).sort() };
+    const rows = body.data.map((m) => ({ id: String(m.id ?? ""), kind: typeof m.kind === "string" ? m.kind : "" })).filter((m) => m.id);
+    const classified = rows.some((m) => m.kind);
+    return {
+      ok: true,
+      models: rows.map((m) => m.id).sort(),
+      chatModels: rows.filter((m) => !classified || m.kind === "text").map((m) => m.id).sort(),
+    };
   } catch {
     return { ok: false, code: "bad_response", status: res.status, message: "Modelflare 返回了无法识别的模型列表" };
   }

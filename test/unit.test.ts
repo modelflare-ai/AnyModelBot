@@ -249,10 +249,14 @@ describe("Modelflare", () => {
     });
     try {
       const base = srv.url + "/v1";
-      expect(await verifyModelflareKey(base, "k1")).toEqual({ ok: true, models: ["a", "b"] });
+      // 没有 kind 的旧版网关：全部算对话模型
+      expect(await verifyModelflareKey(base, "k1")).toEqual({ ok: true, models: ["a", "b"], chatModels: ["a", "b"] });
       expect(auth.at(-1)).toBe("Bearer k1");
+      // 有 kind 时只有 text 是对话模型（生图、生视频、决策模型不算）
+      body = JSON.stringify({ data: [{ id: "t", kind: "text" }, { id: "i", kind: "image" }, { id: "v", kind: "video" }, { id: "d" }] });
+      expect(await verifyModelflareKey(base, "k1")).toEqual({ ok: true, models: ["d", "i", "t", "v"], chatModels: ["t"] });
       body = JSON.stringify({ data: [] });
-      expect(await verifyModelflareKey(base, "k1")).toEqual({ ok: true, models: [] });
+      expect(await verifyModelflareKey(base, "k1")).toEqual({ ok: true, models: [], chatModels: [] });
       status = 401;
       expect(await verifyModelflareKey(base, "k")).toMatchObject({ ok: false, code: "invalid_key", status: 401 });
       status = 403;

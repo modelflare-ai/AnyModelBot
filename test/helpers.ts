@@ -23,7 +23,7 @@ async function body(req: http.IncomingMessage): Promise<any> {
 }
 
 /** 模拟 OpenAI 兼容端点：/v1/models + 流式 /v1/chat/completions（回声 + 模型名） */
-export async function mockOpenAI(opts: { models?: string[]; key?: string | string[]; reply?: (msgs: any[], model: string) => string } = {}) {
+export async function mockOpenAI(opts: { models?: string[]; key?: string | string[]; reply?: (msgs: any[], model: string) => string; kinds?: Record<string, string> } = {}) {
   const models = opts.models ?? ["mock-a", "mock-b"];
   const keys = opts.key === undefined ? undefined : ([] as string[]).concat(opts.key);
   const calls: Array<{ model: string; messages: any[]; auth?: string; skill?: string }> = [];
@@ -34,7 +34,9 @@ export async function mockOpenAI(opts: { models?: string[]; key?: string | strin
       return;
     }
     if (req.url?.endsWith("/models") && req.method === "GET") {
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: models.map((id) => ({ id, object: "model" })) }));
+      res.writeHead(200, { "content-type": "application/json" }).end(
+        JSON.stringify({ object: "list", data: models.map((id) => ({ id, object: "model", ...(opts.kinds?.[id] !== undefined ? { kind: opts.kinds[id] } : {}) })) }),
+      );
       return;
     }
     if (req.url?.endsWith("/chat/completions") && req.method === "POST") {

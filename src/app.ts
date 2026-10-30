@@ -109,6 +109,7 @@ export class App {
   account!: AccountManager;
   private notices: Array<{ at: number; level: "info" | "warn"; text: string }> = [];
   private accountTimer: NodeJS.Timeout | undefined;
+  private picksTimer: NodeJS.Timeout | undefined;
   private modelInfoCache: { at: number; data: Record<string, ModelInfo> } | undefined;
 
   constructor(readonly config: AppConfig, readonly opts: AppOptions = {}) {
@@ -176,6 +177,27 @@ export class App {
     return routeModel(model, this.magpie.hasProvider(own) ? own : (this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER));
   }
 
+  /**
+   * 让每个 Modelflare 连接启用的模型等于 Modelflare 当前列出的全部对话模型（见 setModelPicks）：
+   * 0.1.8 及以前连接的补上，新上架的加入，下架的移出。读不到列表时什么都不改，下次再试。
+   */
+  private async syncModelPicks(): Promise<void> {
+    const magpie = this.magpie;
+    if (!magpie || magpie.state !== "running") return;
+    const baseUrl = modelflareBaseUrl(this.config.modelflare.line);
+    const ids = [magpie.modelflareProviderId, ...magpie.botProviderIds()].filter((id): id is string => !!id);
+    for (const id of ids) {
+      const key = magpie.providerKey(id);
+      if (!key) continue;
+      try {
+        const r = await verifyModelflareKey(baseUrl, key, { line: this.config.modelflare.line });
+        if (r.ok) await magpie.setModelPicks(id, r.chatModels);
+      } catch (e) {
+        log.warn("sync model picks failed", { provider: id, message: (e as Error).message });
+      }
+    }
+  }
+
   /** 该机器人请求 Modelflare 用的 Key（只在本进程内使用） */
   private botKey(botId: string): string {
     if (!this.magpie) return "";
@@ -202,7 +224,10 @@ export class App {
         disconnect: () => this.disconnectModelflare(),
         setBotKey: async (botId, key) => {
           if (!this.magpie) throw new Error("外部模型端点模式下不管理 Modelflare 连接");
-          await this.magpie.setBotProvider(botId, key, modelflareBaseUrl(this.config.modelflare.line), this.allowedModelflareUrls(), this.requestHeaders());
+          const baseUrl = modelflareBaseUrl(this.config.modelflare.line);
+          const r = await verifyModelflareKey(baseUrl, key, { line: this.config.modelflare.line });
+          if (!r.ok) throw new Error(r.message);
+          await this.magpie.setBotProvider(botId, key, baseUrl, this.allowedModelflareUrls(), this.requestHeaders(), r.chatModels);
         },
         removeBotKey: async (botId) => {
           await this.magpie?.removeBotProvider(botId);
@@ -293,6 +318,12 @@ export class App {
     this.seedDefaultBot();
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
     if (!this.opts.noWeb) this.web = await startWebServer(this);
+    if (this.magpie) {
+      // 启动时和之后每小时核对一次启用的模型（新上架的加入，下架的移出）
+      void this.syncModelPicks();
+      this.picksTimer = setInterval(() => void this.syncModelPicks(), 3600_000);
+      this.picksTimer.unref();
+    }
     if (this.magpie && !this.opts.noWeb) {
       // 余额与低余额提醒：启动后读一次，之后每 5 分钟一次
       const tick = () => {
@@ -306,6 +337,7 @@ export class App {
 
   async stop(): Promise<void> {
     if (this.accountTimer) clearInterval(this.accountTimer);
+    if (this.picksTimer) clearInterval(this.picksTimer);
     this.account?.cancelLogin();
     await this.web?.close();
     for (const id of [...this.channels.keys()]) await this.stopBot(id);
@@ -340,7 +372,7 @@ export class App {
     const baseUrl = modelflareBaseUrl(line);
     const r = await verifyModelflareKey(baseUrl, apiKey.trim(), { line });
     if (!r.ok) return r;
-    await this.magpie.connectModelflare(apiKey, baseUrl, this.allowedModelflareUrls(), this.requestHeaders());
+    await this.magpie.connectModelflare(apiKey, baseUrl, this.allowedModelflareUrls(), this.requestHeaders(), r.chatModels);
     this.modelInfoCache = undefined;
     this.setModelflareLineConfig(line);
     await this.runtime.listModels(true).catch(() => []);

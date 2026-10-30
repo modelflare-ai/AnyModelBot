@@ -1,0 +1,27 @@
+/* 提示胶囊（"已保存"）：.toasts > .toast [ok | err | warn] [leaving]。
+   改编自 yetone/magpie internal/gui/assets/app.css 的状态胶囊（MIT，© 2026 yetone）。 */
+.toasts {
+  position: fixed; z-index: var(--z-toast); left: var(--space-4); bottom: var(--space-4);
+  display: grid; gap: var(--space-1-5); justify-items: start; pointer-events: none;
+}
+.toast {
+  --toast-bg: var(--glass-pop);
+  --toast-fg: var(--fg);
+  --toast-edge: var(--glass-edge);
+  pointer-events: auto; font-size: var(--fs-sm); line-height: 16px; font-weight: var(--fw-medium);
+  padding: var(--space-1) 11px; border-radius: var(--r-full);
+  max-width: min(480px, calc(100vw - 32px));
+  background: var(--grain), var(--toast-bg); color: var(--toast-fg); backdrop-filter: var(--glass-filter-sm);
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 .5px var(--toast-edge), var(--shadow-md);
+  display: flex; gap: var(--space-2); align-items: center;
+  --rise: 6px;
+  animation: rise-in var(--dur-base) var(--ease-out);
+}
+.toast.ok { --toast-bg: var(--accent-solid); --toast-fg: var(--on-accent); --toast-edge: var(--accent-line); }   /* "已保存"：黄绿信号 */
+.toast.err { --toast-bg: color-mix(in srgb, var(--red-soft) 88%, transparent); --toast-fg: var(--red); --toast-edge: color-mix(in srgb, var(--red) 30%, transparent); }
+.toast.warn { --toast-bg: color-mix(in srgb, var(--amber-soft) 88%, transparent); --toast-fg: var(--amber); --toast-edge: color-mix(in srgb, var(--amber) 25%, transparent); }
+.toast.leaving { --rise: 4px; animation: sink-out var(--dur-base) var(--ease-in) forwards; }
+.toast .icon-btn {
+  --ib-fg: currentColor; --ib-fg-hover: currentColor;
+  --ib-bg-hover: color-mix(in srgb, currentColor 12%, transparent); --ib-bg-press: color-mix(in srgb, currentColor 20%, transparent);
+}

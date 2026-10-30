@@ -1,0 +1,29 @@
+/* 开关：只有"开 / 关"两态的设置用它，两个以上的选项用 Seg。
+   打开 = 主操作色（浅色墨、深色黄绿），圆钮带一点弹性滑过去。
+   状态：悬停轨道加深一级；按下圆钮被"按扁"拉长；键盘焦点外描边；禁用变淡。
+   结构：<button role="switch" class="switch" aria-checked="true|false">，圆钮是 ::after。 */
+.switch {
+  --switch-w: 34px;
+  --switch-h: 20px;
+  --switch-pad: 2px;
+  --switch-track: var(--switch-off);
+  --switch-track-hover: var(--switch-off-hover);
+  --switch-dot: var(--switch-knob);
+  --switch-stretch: 3px;   /* 按下时圆钮拉长多少 */
+  position: relative; flex: none; width: var(--switch-w); height: var(--switch-h); border-radius: var(--r-full);
+  background: var(--switch-track); box-shadow: inset 0 0 0 .5px var(--line-2);
+  transition: background var(--t-base);
+}
+.switch::after {
+  content: ""; position: absolute; top: var(--switch-pad); left: var(--switch-pad);
+  width: calc(var(--switch-h) - 2 * var(--switch-pad)); height: calc(var(--switch-h) - 2 * var(--switch-pad)); border-radius: var(--r-full);
+  background: var(--switch-dot); box-shadow: var(--seg-edge);
+  transition: transform var(--dur-moderate) var(--ease-spring), width var(--dur-moderate) var(--ease-spring), background var(--t-base);
+}
+.switch:hover:not(:disabled) { background: var(--switch-track-hover); }
+.switch[aria-checked="true"] { --switch-track: var(--primary); --switch-track-hover: var(--primary-hover); --switch-dot: var(--switch-knob-on); }
+.switch[aria-checked="true"]::after { transform: translateX(calc(var(--switch-w) - var(--switch-h))); }
+.switch:active:not(:disabled)::after { width: calc(var(--switch-h) - 2 * var(--switch-pad) + var(--switch-stretch)); }
+.switch[aria-checked="true"]:active:not(:disabled)::after { transform: translateX(calc(var(--switch-w) - var(--switch-h) - var(--switch-stretch))); }
+.switch:disabled { opacity: var(--o-disabled); }
+.switch.sm { --switch-w: 28px; --switch-h: 16px; --switch-stretch: 2px; }

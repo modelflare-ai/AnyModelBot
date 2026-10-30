@@ -169,9 +169,14 @@ describe("Web 界面 / API", () => {
     expect(seen.size).toBeGreaterThan(15);
   });
   it("机器人 CRUD + 飞书凭据（secret 不回显）+ 测试对话", async () => {
-    const c = await api("/bots", { method: "POST", body: { name: "测试机器人", systemPrompt: "你是测试", defaultModel: "mock-b" } });
+    const c = await api("/bots", { method: "POST", body: { name: "测试机器人", systemPrompt: "你是测试", defaultModel: "mock-b", avatar: "red" } });
     expect(c.status).toBe(201);
     const id = c.json.bot.id;
+    // 头像角色：创建时带上，设置里可以改，未知值被忽略
+    expect(c.json.bot.settings.avatar).toBe("red");
+    expect((await api(`/bots/${id}/settings`, { method: "PUT", body: { avatar: "purple" } })).json.settings.avatar).toBe("purple");
+    expect((await api(`/bots/${id}/settings`, { method: "PUT", body: { avatar: "pink" } })).json.settings.avatar).toBe("");
+    expect((await api("/bots/default")).json.bot.settings.avatar).toBe("blue");
     const f = await api(`/bots/${id}/feishu`, { method: "PUT", body: { appId: "cli_x", appSecret: "very-secret-value" } });
     expect(f.status).toBe(200);
     const g = await api(`/bots/${id}`);

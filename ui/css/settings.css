@@ -1,63 +1,118 @@
-/* Settings (magpie's settings page: tabs + find, white .list cards, a control per row, saved on change). */
-.settings { flex: 1; min-height: 0; overflow-y: auto; background: var(--bg); }
+/* 设置页与机器人设置（参考 Codex）：白底，大标题，分组标题是正文色的小标题，白色圆角 .list 一行一项，开关用 Switch。
+   设置分页在侧栏（shell.css 的 .side-nav）。 */
+@layer app {
+.settings { flex: 1; min-height: 0; overflow-y: auto; }
 .set-head {
-  position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 6px;
-  padding: 14px max(20px, calc((100% - 720px) / 2)) 10px;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  -webkit-backdrop-filter: saturate(1.6) blur(16px); backdrop-filter: saturate(1.6) blur(16px);
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-12) max(24px, calc((100% - var(--page-w)) / 2)) var(--space-2);
   -webkit-app-region: drag;
 }
 .set-head > * { -webkit-app-region: no-drag; }
-.set-head.stuck { box-shadow: 0 1px 0 var(--line-2); }
-:root.mac-app .set-head { padding-top: 16px; }
-.set-title { display: flex; align-items: center; gap: 8px; width: 100%; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
-.set-title .grow { flex: 1; }
-.warm-tabs { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; row-gap: 2px; min-width: 0; flex: 1; margin-left: -7px; }
-.warm-tabs button { height: 22px; padding: 0 7px; border-radius: 6px; font-size: 11.5px; font-weight: 600; color: var(--muted); transition: color .12s, background-color .12s; white-space: nowrap; }
-.warm-tabs button:hover:not(.on) { color: var(--fg-2); }
-.warm-tabs button.on { color: var(--fg); background: var(--pill); }
-.set-find { flex: 0 1 180px; min-width: 120px; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); font-size: 12px; outline: none; }
-.set-find:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.set-find::placeholder { color: var(--placeholder); }
-.set-body { padding: 6px max(20px, calc((100% - 720px) / 2)) 40px; }
-.set-part { margin: 14px 2px 6px; font-size: 11px; font-weight: 600; color: var(--muted); }
-.set-part:first-child { margin-top: 4px; }
-.set-none { margin: 18px 2px; font-size: 13px; color: var(--muted); text-align: center; }
-.settings .row .sub { max-width: 440px; }
-.mf-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); }
+.set-title { font-size: var(--fs-4xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tighter); line-height: var(--lh-tight); }
+.set-titles { min-width: 0; display: grid; gap: var(--space-0-5); }
+.set-titles .set-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-sub { font-size: var(--fs-md); color: var(--muted); }
+.set-back { --ib-size: 32px; --ib-r: var(--r-full); --ib-fg: var(--ctl-fg); margin-left: calc(-1 * var(--space-1-5)); }
+.set-body { padding: var(--space-2) max(24px, calc((100% - var(--page-w)) / 2)) var(--space-16); }
 
-/* bot settings page */
-.bot-head { display: flex; align-items: center; gap: 10px; width: 100%; }
-.bot-head .grow { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.inline-input { width: 220px; height: 26px; padding: 0 8px; border-radius: 7px; border: 1px solid transparent; background: var(--pill); outline: none; font-size: 12.5px; text-align: right; }
-.inline-input:hover { background: var(--pill-hover); }
-.inline-input:focus { border-color: var(--accent); background: var(--card); box-shadow: 0 0 0 3px var(--accent-soft); text-align: left; }
-.prompt-edit { padding: 0 14px 12px; }
-.prompt-edit textarea { min-height: 88px; font-size: 13px; }
+/* 分组标题与卡片 */
+.settings .list-head { margin: var(--space-8) var(--space-0-5) var(--space-2-5); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); }
+.settings .list-head:first-child { margin-top: var(--space-6); }
+.settings .list { border-radius: var(--r-2xl); }
+.settings .list + .list { margin-top: var(--space-3); }
+.settings .row { --row-h: 60px; --row-py: var(--space-3); --row-pl: var(--space-4); --row-pr: var(--space-4); --row-gap: var(--space-4); }
+.settings .row .name { font-size: var(--fs-lg); }
+.settings .row .sub { font-size: var(--fs-sm); line-height: var(--lh-snug); margin-top: var(--space-0-5); max-width: 460px; white-space: normal; }
+.settings .row .ctl { gap: var(--space-1-5); }
+.settings .pick { height: var(--ctl-md); padding: 0 var(--space-2) 0 var(--space-3); border-radius: var(--r-lg); }
+.settings .seg { --seg-r: var(--r-lg); }
+.settings .seg button { height: var(--ctl-sm); }
+.set-part { margin: var(--space-8) var(--space-0-5) var(--space-2-5); font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.set-part:first-child { margin-top: var(--space-6); }
+.set-body > .list:first-child { margin-top: var(--space-6); }
+.set-none { margin: var(--space-8) var(--space-0-5); font-size: var(--fs-md); color: var(--muted); }
+.mf-state { display: inline-flex; align-items: center; gap: var(--space-1-5); font-size: var(--fs-sm); color: var(--fg-2); }
+
+/* 机器人设置：身份是带标签的输入框（参考 Codex 的编辑页） */
+.set-field { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); }
+.set-field .k { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--fg-2); }
+.set-field .k .hint { font-weight: var(--fw-regular); }
+.set-field .field { --field-h: var(--ctl-xl); --field-px: var(--space-3-5); --field-r: var(--r-xl); font-size: var(--fs-lg); }
+.set-field textarea.field { min-height: 120px; padding: var(--space-3) var(--field-px); line-height: var(--lh-relaxed); }
+
+/* 新建机器人（参考 Grok Bot 的创建页）：居中的表单，下面是模板卡片 */
+.new-bot { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.new-bot .head-bot.static:hover { background: none; }
+.new-body { flex: 1; min-height: 0; overflow-y: auto; display: grid; justify-items: center; align-content: start; gap: var(--space-12); padding: var(--space-12) var(--space-6) var(--space-16); }
+.new-form { width: min(460px, 100%); display: grid; justify-items: center; }
+.new-title { margin-top: var(--space-4); font-size: var(--fs-4xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tighter); line-height: var(--lh-tight); text-align: center; }
+.new-lead { margin: var(--space-2) 0 var(--space-6); font-size: var(--fs-md); color: var(--muted); line-height: var(--lh-relaxed); text-align: center; }
+.new-form .set-field { width: 100%; }
+.new-form .btn { min-width: 140px; }
+.new-sugg { width: min(720px, 100%); }
+.new-sugg .list-head { margin: 0 var(--space-0-5) var(--space-3); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(216px, 1fr)); gap: var(--space-3); }
+/* 模板卡：悬停浮起 1px（描边加深、投影变大），按下压回去，选中是 accent 描边 + 一层黄绿，图标亮成黄绿片 */
+.tpl {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-3); row-gap: var(--space-0-5); align-content: start;
+  padding: var(--space-3-5) var(--space-4); border-radius: var(--r-2xl); text-align: left;
+  background: var(--card); box-shadow: inset 0 0 0 .5px var(--line), var(--shadow-xs);
+  transition: background var(--t-fast), box-shadow var(--t-base), transform var(--t-base);
+}
+.tpl:hover { box-shadow: inset 0 0 0 .5px var(--line-strong), var(--shadow-sm); transform: translateY(-1px); }
+.tpl:active { box-shadow: inset 0 0 0 .5px var(--line-strong), var(--shadow-xs); transform: scale(var(--press)); transition-duration: var(--dur-fast); }
+.tpl.on { background: linear-gradient(var(--accent-wash), var(--accent-wash)), var(--card); box-shadow: inset 0 0 0 1.5px var(--accent), var(--shadow-xs); }
+.tpl-ic {
+  grid-row: span 2; width: 36px; height: 36px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--pill); color: var(--fg-2);
+  transition: background var(--t-base), color var(--t-base), box-shadow var(--t-base);
+}
+.tpl:hover .tpl-ic { background: var(--pill-hover); color: var(--fg); }
+.tpl.on .tpl-ic { background: var(--accent-solid); color: var(--on-accent); box-shadow: inset 0 0 0 .5px var(--accent-line); }
+.tpl-name { font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.tpl-desc { font-size: var(--fs-sm); color: var(--muted); line-height: var(--lh-snug); }
 
 /* onboarding */
-.onboard { flex: 1; min-height: 0; overflow-y: auto; background: var(--bg); display: grid; justify-items: center; align-content: center; padding: 48px 16px; -webkit-app-region: drag; }
+.onboard {
+  flex: 1; min-height: 0; height: 100vh; overflow-y: auto;
+  display: grid; justify-items: center; align-content: center; padding: var(--space-12) var(--space-4);
+  -webkit-app-region: drag;
+}
 .onboard > * { -webkit-app-region: no-drag; }
-.onboard-col { width: min(400px, 100%); display: grid; gap: 14px; animation: view-in .24s var(--ease); }
-.onboard-hero { display: grid; justify-items: center; gap: 10px; text-align: center; margin-bottom: 6px; }
-.onboard-hero h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
-.onboard-hero p { font-size: 13px; color: var(--muted); line-height: 1.55; }
-.onboard .list { padding: 16px; display: grid; gap: 10px; }
-.onboard label.k { font-size: 12px; font-weight: 600; color: var(--fg-2); }
-.onboard .err-text { font-size: 12px; color: var(--red); line-height: 1.5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.onboard .slow { font-size: 12px; color: var(--muted); }
-.onboard .links { display: grid; gap: 8px; justify-items: center; font-size: 12.5px; color: var(--muted); }
+.onboard-col { width: min(400px, 100%); display: grid; gap: var(--space-3-5); --rise: 4px; animation: rise-in var(--dur-moderate) var(--ease-out); }
+.onboard-hero { display: grid; justify-items: center; gap: var(--space-2-5); text-align: center; margin-bottom: var(--space-1-5); }
+.onboard-hero h1 { font-size: var(--fs-3xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tighter); }
+.onboard-hero p { font-size: var(--fs-md); color: var(--muted); line-height: var(--lh-relaxed); }
+.onboard .list {
+  padding: var(--space-4); display: grid; gap: var(--space-2-5); border: 0; border-radius: var(--r-3xl);
+  background: var(--grain), var(--glass-sheet); box-shadow: var(--shadow-pop);
+}
+.onboard label.k { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--fg-2); }
+.onboard .err-text { font-size: var(--fs-sm); color: var(--red); line-height: var(--lh-normal); display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.onboard .slow { font-size: var(--fs-sm); color: var(--muted); }
+.onboard .links { display: grid; gap: var(--space-2); justify-items: center; font-size: var(--fs-sm); color: var(--muted); }
 .onboard details { width: 100%; }
-.onboard details summary { list-style: none; cursor: default; display: flex; justify-content: center; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.onboard details summary { list-style: none; cursor: default; display: flex; justify-content: center; align-items: center; gap: var(--space-1); font-size: var(--fs-sm); color: var(--muted); }
 .onboard details summary::-webkit-details-marker { display: none; }
+.onboard details summary .ic { transition: transform var(--t-base); }
 .onboard details[open] summary .ic { transform: rotate(180deg); }
-.onboard details .row { margin-top: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-.onboard .connected { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
-.picklist { max-height: 300px; overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
-.picklist .group { padding: 8px 4px 3px; font-size: 10.5px; font-weight: 600; color: var(--faint); letter-spacing: .04em; }
-.picklist button { display: flex; align-items: center; width: 100%; height: 32px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; text-align: left; gap: 8px; }
-.picklist button:hover { background: var(--pill); }
-.picklist button.cur { background: var(--sel); }
+.onboard details summary { transition: color var(--t-fast); }
+.onboard details summary:hover { color: var(--fg); }
+.onboard details .row { margin-top: var(--space-2); background: var(--grain), var(--glass-sheet); box-shadow: var(--glass-ring); border-radius: var(--r-xl); }
+.onboard .connected { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.picklist { max-height: 300px; overflow-y: auto; margin: 0 calc(-1 * var(--space-1-5)); padding: 0 var(--space-1-5); }
+.picklist > .hint { padding: var(--space-2); }
+.picklist .group { padding: var(--space-2) var(--space-1) 3px; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--faint); letter-spacing: var(--tracking-caps); }
+.picklist button {
+  --focus-offset: -2px;
+  display: flex; align-items: center; width: 100%; height: var(--ctl-lg); padding: 0 var(--space-2); border-radius: var(--r-md);
+  font-size: var(--fs-sm); text-align: left; gap: var(--space-2); transition: background var(--t-fast);
+}
+.picklist button:hover { background: var(--sel); }
+.picklist button:active { background: var(--sel-press); }
+.picklist button.cur { background: var(--sel); font-weight: var(--fw-medium); }
 .picklist button .v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .picklist button .check { color: var(--accent); }
+
+/* 头像角色（components/avatar.js 的 AvatarPicker）：新建页在介绍语下面一排，机器人设置里是"身份"的第一项 */
+.new-form .avatar-picker { justify-content: center; margin: calc(var(--space-2) * -1) 0 var(--space-6); }
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AnyModelBot 设计库</title>
+  <link rel="icon" href="data:," />
+  <script>
+    // 与 ui/index.html 相同：首帧前解析主题与平台
+    (function () {
+      var root = document.documentElement;
+      var m = "system";
+      try { m = localStorage.getItem("amb-theme") || "system"; } catch (_) {}
+      var dark = m === "dark" || (m !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      root.setAttribute("data-theme", dark ? "dark" : "light");
+      if (/Windows/.test(navigator.userAgent)) root.classList.add("win");
+    })();
+  </script>
+  <link rel="stylesheet" href="/amb/static/design/index.css" />
+  <link rel="stylesheet" href="/amb/static/css/shell.css" />
+  <link rel="stylesheet" href="/amb/static/css/chat.css" />
+  <link rel="stylesheet" href="/amb/static/css/settings.css" />
+  <link rel="stylesheet" href="/amb/static/design/gallery.css" />
+  <script type="importmap">
+    { "imports": { "preact": "/amb/vendor/preact.mjs", "preact/hooks": "/amb/vendor/hooks.mjs", "htm": "/amb/vendor/htm.mjs" } }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/amb/static/design/gallery.js"></script>
+</body>
+</html>

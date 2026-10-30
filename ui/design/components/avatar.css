@@ -1,0 +1,513 @@
+/* 机器人头像：6 个内置毛绒角色，精灵图 ui/design/bots/<角色>.webp 由 scripts/build-bot-avatars.py 拆层生成。
+   结构  .bot-face > .bf-shadow + .bf-aura + .bf-body（持续状态）> .bf-shot（一次性反应）> .bf-look（看指针）
+         > 耳朵 / 配件（.bf-part > .bf-pin > .bf-img + .bf-glow）+ 头 + 腮红 + 眼睛 SVG + 粒子
+   属性  data-char 角色；data-state 持续状态；data-shot 一次性反应；data-eyes 当前表情（都由 avatar.js 写）
+   分工  外层 .bf-part 放持续状态的循环（transform）和姿势（rotate，比如竖耳朵、耷拉），内层 .bf-pin 放一次性反应，
+         两者叠加互不覆盖。空闲的列表头像不自己动：只在指针靠近时看过去、悬停时抖一下天线；lively（大头像）才会呼吸、眨眼、张望。
+   角色颜色（--bot-*）是原画的颜色，两个主题相同，所以直接用 primitives；随主题变的只有光晕和影子（--avatar-*）。 */
+.bot-face {
+  --look-x: 0;
+  --look-y: 0;
+  --bf-eye: var(--bot-blue-eye);
+  --bf-glow: var(--bot-blue-glow);
+  /* 循环周期 */
+  --bf-blink: 4.2s;       /* 眨眼间隔 */
+  --bf-blink-spread: -4s; /* 按 --bf-seed 错开，几个头像不会一起眨眼 */
+  --bf-breathe: 3.4s;     /* 大头像空闲时的呼吸 */
+  --bf-glance: 7s;        /* 大头像空闲时四处看 */
+  --bf-nod: 1.6s;         /* 你在输入时点头 */
+  --bf-ponder: 2.6s;      /* 思考：歪头、眼睛看左上右上 */
+  --bf-read: 1.4s;        /* 回复：眼睛像读行一样左右扫 */
+  --bf-bob: .9s;          /* 工作中上下浮动 */
+  --bf-hop: 2.4s;         /* 等你批准：跳两下停一下 */
+  --bf-snore: 3.6s;       /* 睡觉 */
+  --bf-perk: .9s;         /* 悬停时天线弹一下 */
+  --bf-ring: 1.5s;        /* 小蓝的天线信号 */
+  --bf-ring-gap: .5s;
+  --bf-sway: .55s;        /* 天线、角左右晃 */
+  --bf-twinkle: 1.3s;     /* 小萌的星星、紫钻的闪光 */
+  --bf-flutter: .9s;      /* 绿草的叶子 */
+  --bf-beat: .6s;         /* 红魔的灯带节拍 */
+  --bf-spin: 3.2s;        /* 紫钻的宝石转动 */
+  --bf-float: 2.2s;       /* 紫钻的宝石悬浮 */
+  --bf-sweep: 2.2s;       /* 探险者护目镜的反光 */
+  --bf-scan: 1.6s;        /* 探险者四处搜寻 */
+  --bf-dot: 1.2s;         /* 思考气泡里的点 */
+  --bf-bang: 1.2s;
+  --bf-z: 3s;
+  --bf-orbit: .9s;
+  position: relative; flex: none; width: var(--s); height: var(--s);
+  -webkit-user-select: none; user-select: none;
+}
+.bot-face[data-char="yellow"] { --bf-eye: var(--bot-yellow-eye); --bf-glow: var(--bot-yellow-glow); }
+.bot-face[data-char="green"] { --bf-eye: var(--bot-green-eye); --bf-glow: var(--bot-green-glow); }
+.bot-face[data-char="red"] { --bf-eye: var(--bot-red-eye); --bf-glow: var(--bot-red-glow); }
+.bot-face[data-char="purple"] { --bf-eye: var(--bot-purple-eye); --bf-glow: var(--bot-purple-glow); }
+.bot-face[data-char="orange"] { --bf-eye: var(--bot-orange-eye); --bf-glow: var(--bot-orange-glow); }
+.bot-face.pokeable { cursor: pointer; }
+.bot-face.neutral { filter: grayscale(1) contrast(.85) brightness(1.06); opacity: .5; }
+
+/* —— 图层 —— */
+.bf-shadow, .bf-body, .bf-shot, .bf-look, .bf-part, .bf-pin, .bf-img, .bf-glow { position: absolute; inset: 0; }
+.bf-body, .bf-shot { transform-origin: 50% 89%; }
+.bf-look {
+  transform-origin: 50% 60%;
+  transform: translate(calc(var(--look-x) * var(--s) * .03), calc(var(--look-y) * var(--s) * .018)) rotate(calc(var(--look-x) * 3deg));
+  transition: transform var(--dur-moderate) var(--ease-out);
+}
+.bf-img, .bf-glow { background: var(--bf-sprite) 0 0 / 800% 100% no-repeat; }
+.bf-ear-l .bf-img { background-position-x: calc(100% / 7); }
+.bf-ear-r .bf-img { background-position-x: calc(200% / 7); }
+.bf-top .bf-img { background-position-x: calc(300% / 7); }
+.bf-head .bf-glow { background-position-x: calc(400% / 7); }
+.bf-ear-l .bf-glow { background-position-x: calc(500% / 7); }
+.bf-ear-r .bf-glow { background-position-x: calc(600% / 7); }
+.bf-top .bf-glow { background-position-x: 100%; }
+.bf-glow { opacity: 0; mix-blend-mode: plus-lighter; filter: drop-shadow(0 0 calc(var(--s) * .03) var(--bf-glow)); }
+.bot-face:not([data-char="red"], [data-char="purple"]) .bf-glow { display: none; }   /* 只有红魔、紫钻有发光层 */
+.bf-ear-l, .bf-ear-l .bf-pin { transform-origin: var(--o-el); }
+.bf-ear-r, .bf-ear-r .bf-pin { transform-origin: var(--o-er); }
+.bf-top, .bf-top .bf-pin, .bf-top .bf-img { transform-origin: var(--o-top); }
+.bf-part { transition: rotate var(--dur-slow) var(--ease-back), filter var(--dur-moderate) var(--ease-out); }
+
+.bf-aura {
+  position: absolute; inset: -14%; border-radius: 50%; opacity: 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--bf-glow) var(--avatar-aura), transparent) 35%, transparent);
+  transition: opacity var(--dur-moderate) var(--ease-out);
+}
+.bf-shadow {
+  inset: auto 23% 3% 23%; height: 8%; border-radius: 50%;
+  background: radial-gradient(closest-side, var(--avatar-shadow), transparent);
+}
+
+/* 腮红：开心时在面罩上亮起来 */
+.bf-blush {
+  position: absolute; width: 9%; height: 4.4%; translate: -50% -50%; border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--bot-blush) 70%, var(--bf-glow)), transparent);
+  opacity: 0; scale: .5;
+  transition: opacity var(--dur-base) var(--ease-out), scale var(--dur-moderate) var(--ease-back);
+}
+.bot-face:is([data-eyes="happy"], [data-eyes="heart"]) .bf-blush { opacity: .9; scale: 1; }
+
+/* 探险者的护目镜：镜片上扫过一道反光 */
+.bf-lens { position: absolute; width: var(--lens); aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; overflow: hidden; }
+.bf-lens::after {
+  content: ""; position: absolute; inset: -30%; translate: -110% 0;
+  background: linear-gradient(115deg, transparent 38%, var(--bot-glint) 50%, transparent 62%);
+}
+
+/* —— 眼睛与表情：坐标同 viewBox 0–100，每只眼睛以自己的中心为原点，右眼是镜像 —— */
+.bf-eyes { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 calc(var(--s) * .028) var(--bf-glow)); }
+.bf-gaze { transform: translate(calc(var(--look-x) * 2.4px), calc(var(--look-y) * 1.6px)); transition: transform var(--dur-fast) var(--ease-out); }
+.bf-glance { transition: transform var(--dur-moderate) var(--ease-out); }
+.bf-lid { transform-box: view-box; transform-origin: 0 0; transition: scale var(--dur-base) var(--ease-back); }
+.bf-eyes .e {
+  fill: var(--bf-eye); opacity: 0; scale: .3;
+  transform-box: view-box; transform-origin: 0 0;
+  transition: opacity var(--dur-fast) var(--ease-out), scale var(--dur-base) var(--ease-back);
+}
+.bf-eyes .line { fill: none; stroke: var(--bf-eye); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.bf-eyes .thin { stroke-width: 1.15; }
+.bot-face[data-eyes="open"] .e-open,
+.bot-face[data-eyes="happy"] .e-happy,
+.bot-face[data-eyes="closed"] .e-closed,
+.bot-face[data-eyes="heart"] .e-heart,
+.bot-face[data-eyes="spiral"] .e-spiral { opacity: 1; scale: 1; }
+.bot-face[data-eyes="spiral"] .e-spiral { animation: spin var(--dur-spin) linear infinite; }
+.bot-face[data-eyes="heart"] .e-heart { animation: bf-heartbeat var(--bf-beat) var(--ease-in-out) infinite alternate; }
+.bot-face[data-eyes="error"] .e-x { animation: bf-eye-x var(--bot-error) var(--ease-out) both; }
+.bot-face[data-eyes="error"] .e-sad { animation: bf-eye-sad var(--bot-error) var(--ease-out) both; }
+@keyframes bf-eye-x { 0%, 42% { opacity: 1; scale: 1; } 52%, 100% { opacity: 0; scale: .3; } }
+@keyframes bf-eye-sad { 0%, 44% { opacity: 0; scale: .3; rotate: -14deg; } 58%, 100% { opacity: 1; scale: 1; rotate: -14deg; } }
+@keyframes bf-heartbeat { to { scale: 1.25; } }
+@keyframes bf-blink { 0%, 91%, 100% { transform: none; } 94.5% { transform: scaleY(.08); } }
+
+/* —— 持续状态 —— */
+/* 眨眼：大头像空闲时，以及所有"醒着做事"的状态 */
+.bot-face.lively .bf-lid,
+.bot-face:is([data-state="listening"], [data-state="thinking"], [data-state="replying"], [data-state="working"], [data-state="waiting"]) .bf-lid {
+  animation: bf-blink var(--bf-blink) var(--ease-in-out) calc(var(--bf-seed) * var(--bf-blink-spread)) infinite;
+}
+
+/* 空闲（lively）：呼吸、偶尔看看左右、天线轻轻晃 */
+.bot-face.lively { --avatar-aura: 18%; }
+.bot-face.lively .bf-aura { opacity: .7; }
+.bot-face.lively[data-state="idle"] .bf-body { animation: bf-breathe var(--bf-breathe) var(--ease-in-out) infinite; }
+.bot-face.lively[data-state="idle"] .bf-glance { animation: bf-glance-idle var(--bf-glance) var(--ease-in-out) calc(var(--bf-seed) * var(--bf-blink-spread)) infinite; }
+.bot-face.lively[data-state="idle"] .bf-top { animation: bf-sway-soft var(--bf-breathe) var(--ease-in-out) infinite alternate; }
+@keyframes bf-breathe { 50% { transform: translateY(-1.2%) scale(.994, 1.012); } }
+@keyframes bf-glance-idle {
+  0%, 34%, 56%, 74%, 94%, 100% { transform: none; }
+  38%, 52% { transform: translate(-2px, .4px); }
+  78%, 90% { transform: translate(2px, -.8px); }
+}
+@keyframes bf-sway-soft { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+
+/* 你在输入：竖起耳朵、眼睛看向输入框、轻轻点头 */
+.bot-face[data-state="listening"] .bf-body { animation: bf-nod var(--bf-nod) var(--ease-in-out) infinite; }
+.bot-face[data-state="listening"] .bf-glance { transform: translate(0, 1.4px); }
+.bot-face[data-state="listening"] .bf-ear-l { rotate: 7deg; }
+.bot-face[data-state="listening"] .bf-ear-r { rotate: -7deg; }
+@keyframes bf-nod { 0%, 45%, 100% { transform: none; } 15% { transform: translateY(1.6%) scale(1.01, .98); } 30% { transform: translateY(-.6%); } }
+
+/* 思考（还没出字）：歪着头，眼睛在左上和右上之间找答案，背后发光，头上冒思考泡泡 */
+.bot-face[data-state="thinking"] .bf-body { animation: bf-ponder var(--bf-ponder) var(--ease-in-out) infinite; }
+.bot-face[data-state="thinking"] .bf-glance { animation: bf-glance-think var(--bf-ponder) var(--ease-in-out) infinite; }
+@keyframes bf-ponder { 0%, 100% { transform: rotate(-4deg); } 50% { transform: translateY(-1.5%) rotate(4deg); } }
+@keyframes bf-glance-think {
+  0%, 40%, 100% { transform: translate(-1.8px, -1.5px); }
+  52%, 88% { transform: translate(1.8px, -1.5px); }
+}
+
+/* 回复 / 工作中：上下浮动，眼睛眯起来专注地左右扫 */
+.bot-face:is([data-state="replying"], [data-state="working"]) .bf-body { animation: bf-bob var(--bf-bob) var(--ease-in-out) infinite; }
+.bot-face:is([data-state="replying"], [data-state="working"]) .bf-glance { animation: bf-glance-read var(--bf-read) linear infinite; }
+.bot-face:is([data-state="replying"], [data-state="working"]) .bf-lid { scale: 1 .62; }
+@keyframes bf-bob { 50% { transform: translateY(-3.5%); } }
+@keyframes bf-glance-read {
+  0%, 100% { transform: translate(-1.8px, 0); }
+  72% { transform: translate(1.8px, 0); }
+  84% { transform: translate(1.8px, .8px); }
+}
+
+/* 思考、回复、工作、等待：背后的辉光一起一伏 */
+.bot-face:is([data-state="thinking"], [data-state="replying"], [data-state="working"], [data-state="waiting"]) .bf-aura {
+  opacity: 1; animation: bf-aura-pulse var(--bf-ponder) var(--ease-in-out) infinite;
+}
+@keyframes bf-aura-pulse { 0%, 100% { opacity: .55; transform: scale(.9); } 50% { opacity: 1; transform: scale(1.04); } }
+
+/* 等你批准：睁大眼睛看着你，跳两下停一下，头顶一个感叹号 */
+.bot-face[data-state="waiting"] .bf-body { animation: bf-hop var(--bf-hop) var(--ease-out) infinite; }
+.bot-face[data-state="waiting"] .bf-shadow { animation: bf-shadow-hop var(--bf-hop) var(--ease-out) infinite; }
+.bot-face[data-state="waiting"] .bf-lid { scale: 1.2; }
+.bot-face[data-state="waiting"] .bf-ear-l { rotate: 12deg; }
+.bot-face[data-state="waiting"] .bf-ear-r { rotate: -12deg; }
+@keyframes bf-hop {
+  0%, 44%, 100% { transform: none; }
+  6% { transform: scale(1.06, .92); }
+  14% { transform: translateY(-11%) scale(.96, 1.05); }
+  22% { transform: scale(1.05, .94); }
+  29% { transform: translateY(-6%); }
+  36% { transform: scale(1.02, .98); }
+}
+@keyframes bf-shadow-hop { 0%, 44%, 100% { transform: none; } 14% { transform: scale(.7); opacity: .5; } 29% { transform: scale(.85); } }
+
+/* 睡觉：闭眼、歪头、耳朵和配件耷拉下来，冒 z */
+.bot-face[data-state="sleep"] .bf-body { rotate: -6deg; animation: bf-snore var(--bf-snore) var(--ease-in-out) infinite; }
+.bot-face[data-state="sleep"] .bf-ear-l { rotate: -9deg; }
+.bot-face[data-state="sleep"] .bf-ear-r { rotate: 9deg; }
+.bot-face[data-state="sleep"] .bf-top { rotate: 14deg; }
+.bot-face[data-state="sleep"] .bf-eyes { filter: none; opacity: .75; }
+@keyframes bf-snore { 50% { transform: scale(1.025, .975); } }
+
+/* —— 一次性反应（.bf-shot 每次重新挂载，动画从头播） —— */
+.bot-face[data-shot="hello"] .bf-shot { animation: bf-hello var(--bot-hello) var(--ease-out) both; }
+.bot-face[data-shot="done"] .bf-shot { animation: bf-done var(--bot-done) var(--ease-out) both; }
+.bot-face[data-shot="error"] .bf-shot { animation: bf-error var(--bot-error) var(--ease-out) both; }
+.bot-face[data-shot="poke"] .bf-shot { animation: bf-poke var(--bot-poke) var(--ease-out) both; }
+.bot-face[data-shot="love"] .bf-shot { animation: bf-love var(--bot-love) var(--ease-in-out) both; }
+.bot-face[data-shot="dizzy"] .bf-shot { animation: bf-dizzy var(--bot-dizzy) var(--ease-in-out) both; }
+.bot-face[data-shot="done"] .bf-shadow { animation: bf-shadow-done var(--bot-done) var(--ease-out) both; }
+.bot-face[data-shot="hello"] .bf-shadow { animation: bf-shadow-hello var(--bot-hello) var(--ease-out) both; }
+.bot-face:is([data-shot="hello"], [data-shot="done"], [data-shot="love"]) .bf-aura { opacity: 1; animation: bf-aura-flash var(--bot-done) var(--ease-out) both; }
+@keyframes bf-hello {
+  0% { opacity: 0; transform: translateY(14%) scale(0); }
+  22% { opacity: 1; transform: scale(1.14, .88); }
+  34% { transform: translateY(-9%) scale(.94, 1.08); }
+  46% { transform: none; }
+  58% { transform: rotate(-9deg); }
+  70% { transform: rotate(8deg); }
+  82% { transform: rotate(-5deg); }
+  92% { transform: rotate(2deg); }
+  100% { transform: none; }
+}
+@keyframes bf-done {
+  0%, 100% { transform: none; }
+  14% { transform: scale(1.12, .84); }
+  36% { transform: translateY(-24%) scale(.92, 1.1) rotate(-5deg); }
+  52% { transform: translateY(-26%) rotate(5deg); }
+  70% { transform: scale(1.12, .86); }
+  84% { transform: scale(.96, 1.05); }
+}
+@keyframes bf-error {
+  0%, 100% { transform: none; }
+  8% { transform: translateX(-8%) rotate(-7deg); }
+  18% { transform: translateX(7%) rotate(6deg); }
+  28% { transform: translateX(-5%) rotate(-4deg); }
+  38% { transform: translateX(3%) rotate(2deg); }
+  48% { transform: none; }
+  62%, 86% { transform: translateY(3%) scale(1.03, .95); }
+}
+@keyframes bf-poke {
+  0%, 100% { transform: none; }
+  16% { transform: scale(1.18, .8); }
+  38% { transform: translateY(-8%) scale(.9, 1.12); }
+  58% { transform: scale(1.05, .95); }
+  76% { transform: scale(.98, 1.02); }
+}
+@keyframes bf-love {
+  0%, 100% { transform: none; }
+  12% { transform: scale(1.1, .9); }
+  26% { transform: translateY(-6%) scale(.96, 1.05) rotate(-6deg); }
+  40% { transform: rotate(6deg); }
+  54% { transform: translateY(-4%) rotate(-5deg); }
+  68% { transform: rotate(4deg); }
+  84% { transform: rotate(-2deg); }
+}
+@keyframes bf-dizzy {
+  0%, 100% { transform: none; }
+  10% { transform: translateX(-5%) rotate(-12deg); }
+  22% { transform: translateX(5%) rotate(11deg); }
+  34% { transform: translateX(-4%) rotate(-10deg); }
+  46% { transform: translateX(3%) rotate(8deg); }
+  58% { transform: translateX(-2%) rotate(-6deg); }
+  70% { transform: rotate(4deg); }
+  82% { transform: rotate(-2deg); }
+}
+@keyframes bf-shadow-done { 0%, 100% { transform: none; } 36%, 52% { transform: scale(.55); opacity: .4; } 70% { transform: scale(1.1); } }
+@keyframes bf-shadow-hello { 0% { transform: scale(0); } 22% { transform: scale(1.1); } 34% { transform: scale(.8); } 46%, 100% { transform: none; } }
+@keyframes bf-aura-flash { 0% { opacity: 0; transform: scale(.6); } 30% { opacity: 1; transform: scale(1.12); } 100% { opacity: 0; transform: scale(1); } }
+
+/* 耳朵和配件跟着一次性反应动：天线弹簧、耳朵扇两下；悬停时也弹一下（打招呼） */
+@keyframes bf-spring {
+  0%, 100% { transform: none; }
+  14% { transform: rotate(-16deg); }
+  30% { transform: rotate(13deg); }
+  46% { transform: rotate(-8deg); }
+  62% { transform: rotate(5deg); }
+  78% { transform: rotate(-2deg); }
+}
+@keyframes bf-flap-l { 0%, 100% { transform: none; } 25% { transform: rotate(16deg); } 50% { transform: rotate(-6deg); } 75% { transform: rotate(5deg); } }
+@keyframes bf-flap-r { 0%, 100% { transform: none; } 25% { transform: rotate(-16deg); } 50% { transform: rotate(6deg); } 75% { transform: rotate(-5deg); } }
+.bot-face.pokeable:hover:not([data-shot]) .bf-top .bf-pin,
+.bot-hover:hover .bot-face:not([data-shot]) .bf-top .bf-pin { animation: bf-spring var(--bf-perk) var(--ease-out); }
+.bot-face.pokeable:hover:not([data-shot]) .bf-ear-l .bf-pin,
+.bot-hover:hover .bot-face:not([data-shot]) .bf-ear-l .bf-pin { animation: bf-flap-l var(--bf-perk) var(--ease-out); }
+.bot-face.pokeable:hover:not([data-shot]) .bf-ear-r .bf-pin,
+.bot-hover:hover .bot-face:not([data-shot]) .bf-ear-r .bf-pin { animation: bf-flap-r var(--bf-perk) var(--ease-out); }
+.bot-face:is([data-shot="hello"], [data-shot="done"], [data-shot="poke"], [data-shot="love"], [data-shot="dizzy"]) .bf-top .bf-pin { animation: bf-spring var(--bot-done) var(--ease-out); }
+.bot-face:is([data-shot="hello"], [data-shot="done"], [data-shot="poke"], [data-shot="love"]) .bf-ear-l .bf-pin { animation: bf-flap-l var(--bot-poke) var(--ease-out); }
+.bot-face:is([data-shot="hello"], [data-shot="done"], [data-shot="poke"], [data-shot="love"]) .bf-ear-r .bf-pin { animation: bf-flap-r var(--bot-poke) var(--ease-out); }
+.bot-face[data-shot="error"] .bf-ear-l { rotate: -10deg; }
+.bot-face[data-shot="error"] .bf-ear-r { rotate: 10deg; }
+.bot-face[data-shot="error"] .bf-top { rotate: 12deg; }
+
+/* —— 角色的招牌动作 —— */
+/* 小蓝：天线左右晃、天线球亮起来、一圈圈发出信号；完成时天线球闪一下 */
+.bot-face[data-char="blue"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-sway var(--bf-sway) var(--ease-in-out) infinite alternate; }
+.bot-face[data-char="blue"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top .bf-img { animation: bf-bulb var(--bf-ring) var(--ease-in-out) infinite; }
+.bot-face[data-char="blue"]:is([data-shot="done"], [data-shot="hello"]) .bf-top .bf-img { animation: bf-bulb var(--bot-poke) var(--ease-out) 2; }
+@keyframes bf-sway { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+@keyframes bf-bulb { 0%, 100% { filter: none; } 40% { filter: brightness(1.45) drop-shadow(0 0 calc(var(--s) * .05) var(--bf-glow)); } }
+
+/* 小萌：星星一闪一闪、身边冒小星星；完成时星星像硬币一样转两圈 */
+.bot-face[data-char="yellow"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-twinkle var(--bf-twinkle) var(--ease-in-out) infinite; }
+.bot-face[data-char="yellow"]:is([data-shot="done"], [data-shot="hello"], [data-shot="love"]) .bf-top .bf-pin { animation: bf-coin var(--bot-done) var(--ease-out); }
+@keyframes bf-twinkle {
+  0%, 100% { transform: none; filter: none; }
+  30% { transform: rotate(-10deg) scale(1.08); filter: brightness(1.25) drop-shadow(0 0 calc(var(--s) * .04) var(--bf-glow)); }
+  60% { transform: rotate(8deg) scale(1.03); }
+}
+@keyframes bf-coin {
+  0% { transform: perspective(calc(var(--s) * 2)) translateY(0) rotateY(0); }
+  60% { transform: perspective(calc(var(--s) * 2)) translateY(-5%) rotateY(720deg); }
+  100% { transform: perspective(calc(var(--s) * 2)) translateY(0) rotateY(720deg); }
+}
+
+/* 绿草：叶子像被风吹一样扑簌；完成时嫩芽长高一截、飘下一片叶子；出错时蔫了 */
+.bot-face[data-char="green"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-flutter var(--bf-flutter) var(--ease-in-out) infinite; }
+.bot-face[data-char="green"]:is([data-shot="done"], [data-shot="hello"]) .bf-top .bf-pin { animation: bf-grow var(--bot-done) var(--ease-out); }
+.bot-face[data-char="green"][data-shot="error"] .bf-top { rotate: 22deg; scale: 1 .86; }
+@keyframes bf-flutter { 0%, 100% { transform: rotate(-6deg) skewX(3deg); } 50% { transform: rotate(6deg) skewX(-3deg); } }
+@keyframes bf-grow {
+  0%, 100% { transform: none; }
+  30% { transform: scale(1.3) rotate(-6deg); }
+  50% { transform: scale(.92) rotate(4deg); }
+  68% { transform: scale(1.1); }
+  84% { transform: scale(.98); }
+}
+
+/* 红魔：耳机灯带跟着节拍亮（左耳 → 角 → 右耳），耳机一下一下地震；完成时灯带闪三下；出错时灯带乱闪 */
+.bot-face[data-char="red"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-glow { animation: bf-beat var(--bf-beat) var(--ease-out) infinite; }
+.bot-face[data-char="red"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top .bf-glow { animation-delay: calc(var(--bf-beat) / 3); }
+.bot-face[data-char="red"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-ear-r .bf-glow { animation-delay: calc(var(--bf-beat) * 2 / 3); }
+.bot-face[data-char="red"]:is([data-state="replying"], [data-state="working"]) .bf-ear-l { animation: bf-thump var(--bf-beat) var(--ease-out) infinite; }
+.bot-face[data-char="red"]:is([data-state="replying"], [data-state="working"]) .bf-ear-r { animation: bf-thump var(--bf-beat) var(--ease-out) infinite; }
+.bot-face[data-char="red"][data-state="thinking"] .bf-top { animation: bf-sway var(--bf-sway) var(--ease-in-out) infinite alternate; }
+.bot-face[data-char="red"]:is([data-shot="done"], [data-shot="hello"]) .bf-glow { animation: bf-flash3 var(--bot-done) linear both; }
+.bot-face[data-char="red"][data-shot="error"] .bf-glow { animation: bf-flicker var(--bot-error) steps(1) both; }
+@keyframes bf-beat { 0%, 100% { opacity: .1; } 18% { opacity: 1; } }
+@keyframes bf-thump { 0%, 100% { transform: none; } 18% { transform: scale(1.05); } }
+@keyframes bf-flash3 { 0%, 30%, 62%, 100% { opacity: 0; } 14%, 46%, 78% { opacity: 1; } }
+@keyframes bf-flicker { 0%, 12%, 30%, 44%, 70% { opacity: 1; } 6%, 22%, 38%, 58%, 100% { opacity: 0; } }
+
+/* 紫钻：宝石浮起来慢慢转、霓虹线一明一暗、身边闪光；完成时宝石飞快转两圈；出错时霓虹乱闪 */
+.bot-face[data-char="purple"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-levitate var(--bf-float) var(--ease-in-out) infinite alternate; }
+.bot-face[data-char="purple"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top .bf-img { animation: bf-gem var(--bf-spin) linear infinite; }
+.bot-face[data-char="purple"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-glow { animation: bf-neon var(--bf-float) var(--ease-in-out) infinite alternate; }
+.bot-face[data-char="purple"]:is([data-shot="done"], [data-shot="hello"], [data-shot="love"]) .bf-top .bf-pin { animation: bf-coin var(--bot-done) var(--ease-out); }
+.bot-face[data-char="purple"]:is([data-shot="done"], [data-shot="hello"]) .bf-glow { animation: bf-flash3 var(--bot-done) linear both; }
+.bot-face[data-char="purple"][data-shot="error"] .bf-glow { animation: bf-flicker var(--bot-error) steps(1) both; }
+.bot-face[data-char="purple"][data-state="sleep"] .bf-top { rotate: 0deg; filter: brightness(.7) saturate(.6); }
+@keyframes bf-levitate { from { transform: translateY(-2%); } to { transform: translateY(-6%); } }
+@keyframes bf-gem { from { transform: perspective(calc(var(--s) * 2)) rotateY(0); } to { transform: perspective(calc(var(--s) * 2)) rotateY(360deg); } }
+@keyframes bf-neon { from { opacity: .15; } to { opacity: .9; } }
+
+/* 探险者：天线一蹦一蹦、眼睛大范围地左右搜寻、护目镜反光；完成时两只镜片一起闪 */
+.bot-face[data-char="orange"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-sway var(--bf-sway) var(--ease-back) infinite alternate; }
+.bot-face[data-char="orange"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-glance { animation: bf-scan var(--bf-scan) var(--ease-in-out) infinite alternate; }
+.bot-face[data-char="orange"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-lens::after { animation: bf-glint var(--bf-sweep) var(--ease-in-out) infinite; }
+.bot-face[data-char="orange"].lively[data-state="idle"] .bf-lens::after { animation: bf-glint var(--bf-glance) var(--ease-in-out) infinite; }
+.bot-face[data-char="orange"]:is([data-shot="done"], [data-shot="hello"]) .bf-lens::after { animation: bf-glint var(--bot-poke) var(--ease-out) both; }
+.bot-face[data-char="orange"] .bf-lens + .bf-lens::after { animation-delay: calc(var(--bf-sweep) / 12); }
+@keyframes bf-scan { from { transform: translate(-2.6px, -.3px); } to { transform: translate(2.6px, -.3px); } }
+@keyframes bf-glint { 0%, 55% { translate: -110% 0; } 85%, 100% { translate: 110% 0; } }
+
+/* —— 粒子（≥ 36px 才画） —— */
+.bot-face .fx, .bot-face .fx i { position: absolute; display: block; pointer-events: none; }
+.fx-rings { left: var(--tip-x); top: var(--tip-y); }
+.fx-rings i {
+  width: calc(var(--s) * .22); aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; opacity: 0;
+  border: calc(var(--s) * .016) solid var(--bf-glow);
+  animation: bf-ring var(--bf-ring) var(--ease-out) infinite;
+}
+.fx-rings i:nth-child(2) { animation-delay: var(--bf-ring-gap); }
+.fx-rings i:nth-child(3) { animation-delay: calc(var(--bf-ring-gap) * 2); }
+@keyframes bf-ring { 0% { opacity: .9; transform: scale(.5); } 100% { opacity: 0; transform: scale(2.4); } }
+
+.fx-twinkle { left: var(--tip-x); top: var(--tip-y); }
+.fx-twinkle i {
+  width: calc(var(--s) * .07); aspect-ratio: 1; translate: -50% -50%; scale: 0;
+  background: var(--bf-eye); filter: drop-shadow(0 0 calc(var(--s) * .02) var(--bf-glow));
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation: bf-sparkle var(--bf-twinkle) var(--ease-in-out) infinite;
+}
+.fx-twinkle i:nth-child(1) { left: calc(var(--s) * -.17); top: calc(var(--s) * -.04); }
+.fx-twinkle i:nth-child(2) { left: calc(var(--s) * .16); top: calc(var(--s) * -.09); animation-delay: calc(var(--bf-twinkle) / 3); }
+.fx-twinkle i:nth-child(3) { left: calc(var(--s) * .12); top: calc(var(--s) * .07); animation-delay: calc(var(--bf-twinkle) * 2 / 3); }
+@keyframes bf-sparkle { 0%, 100% { scale: 0; rotate: 0deg; } 50% { scale: 1; rotate: 45deg; } }
+
+/* 思考泡泡 */
+.fx-think {
+  right: -14%; top: 0; width: 38%; height: 20%; border-radius: var(--r-full);
+  display: flex; align-items: center; justify-content: center; gap: 9%;
+  background: var(--surface-solid); box-shadow: var(--shadow-sm);
+  --pop-dy: 4px; animation: fade-in var(--dur-base) var(--ease-out), pop-in var(--dur-slower) var(--ease-spring);
+}
+.bot-face .fx-think i { position: static; width: 16%; aspect-ratio: 1; border-radius: 50%; background: var(--muted); animation: bf-dot var(--bf-dot) var(--ease-in-out) infinite; }
+.fx-think i:nth-child(2) { animation-delay: calc(var(--bf-dot) / 6); }
+.fx-think i:nth-child(3) { animation-delay: calc(var(--bf-dot) / 3); }
+@keyframes bf-dot { 0%, 60%, 100% { transform: none; opacity: .5; } 30% { transform: translateY(-40%); opacity: 1; } }
+
+/* 等你批准的感叹号 */
+.fx-bang {
+  right: -6%; top: -4%; width: 28%; aspect-ratio: 1; border-radius: 50%;
+  display: grid; place-items: center; background: var(--amber); color: var(--surface-solid);
+  font-size: calc(var(--s) * .2); font-weight: var(--fw-semibold); line-height: 1;
+  box-shadow: 0 0 0 calc(var(--s) * .03) var(--surface-solid);
+  transform-origin: 50% 100%; animation: bf-bang var(--bf-bang) var(--ease-in-out) infinite;
+}
+@keyframes bf-bang { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg) scale(1.1); } }
+
+/* 睡觉的 z */
+.fx-zzz { right: 4%; top: 6%; }
+.fx-zzz i {
+  font-size: calc(var(--s) * .16); font-style: normal; font-weight: var(--fw-semibold); color: var(--muted); opacity: 0;
+  animation: bf-z var(--bf-z) var(--ease-out) infinite;
+}
+.fx-zzz i:nth-child(2) { animation-delay: calc(var(--bf-z) / 3); }
+.fx-zzz i:nth-child(3) { animation-delay: calc(var(--bf-z) * 2 / 3); }
+@keyframes bf-z {
+  0% { opacity: 0; transform: scale(.5); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(var(--s) * .2), calc(var(--s) * -.32)) scale(1.15) rotate(12deg); }
+}
+
+/* 完成 / 打招呼 / 爱心：一圈闪光炸开 */
+.fx-burst { left: 50%; top: 48%; filter: drop-shadow(0 0 calc(var(--s) * .02) var(--bf-glow)); }
+.fx-burst i {
+  width: calc(var(--s) * .1); aspect-ratio: 1; translate: -50% -50%; opacity: 0;
+  background: var(--bf-eye);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation: bf-burst var(--bot-done) var(--ease-out) both;
+}
+.fx-burst i:nth-child(odd) { --far: .7; width: calc(var(--s) * .07); }
+.bot-face[data-shot="hello"] .fx-burst i { animation-name: bf-burst-late; animation-duration: var(--bot-hello); }
+.bot-face[data-shot="love"] .fx-burst i { background: var(--bot-blush); }
+@keyframes bf-burst {
+  0% { opacity: 1; transform: rotate(var(--a)) translateY(0) scale(0); }
+  65% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--s) * -.62 * var(--far, 1))) scale(1) rotate(90deg); }
+}
+@keyframes bf-burst-late {
+  0%, 22% { opacity: 0; transform: rotate(var(--a)) translateY(0) scale(0); }
+  30% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--s) * -.62 * var(--far, 1))) scale(1) rotate(90deg); }
+}
+
+/* 绿草长高时飘下来的叶子 */
+.fx-leaf {
+  left: var(--tip-x); top: var(--tip-y); width: calc(var(--s) * .12); height: calc(var(--s) * .07);
+  border-radius: 0 100%; background: color-mix(in srgb, var(--bf-glow) 60%, var(--bf-eye));
+  animation: bf-leaf var(--bot-done) var(--ease-in-out) both;
+}
+@keyframes bf-leaf {
+  0% { opacity: 0; transform: translate(0, 0) rotate(0); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(var(--s) * .42), calc(var(--s) * .22)) rotate(200deg); }
+}
+
+/* 连戳三下：冒爱心 */
+.fx-hearts { left: 50%; top: 18%; }
+.fx-hearts i {
+  font-size: calc(var(--s) * .16); font-style: normal; line-height: 1; color: var(--bot-blush); opacity: 0;
+  animation: bf-heart-up var(--bot-love) var(--ease-out) both;
+}
+.fx-hearts i::before { content: "♥"; }
+.fx-hearts i:nth-child(1) { --hx: -1; }
+.fx-hearts i:nth-child(2) { --hx: .2; animation-delay: calc(var(--bot-love) / 6); }
+.fx-hearts i:nth-child(3) { --hx: 1; animation-delay: calc(var(--bot-love) / 3); }
+@keyframes bf-heart-up {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(.4); }
+  25% { opacity: 1; transform: translate(calc(-50% + var(--hx) * var(--s) * .1), calc(var(--s) * -.12)) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--hx) * var(--s) * .26), calc(var(--s) * -.42)) scale(.9); }
+}
+
+/* 戳晕了：头顶绕圈的小星星 */
+.fx-orbit { left: 50%; top: 22%; }
+.fx-orbit i {
+  width: calc(var(--s) * .09); aspect-ratio: 1; margin: calc(var(--s) * -.045);
+  background: var(--bot-yellow-glow);
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  animation: bf-orbit-x var(--bf-orbit) var(--ease-in-out) infinite alternate, bf-orbit-y var(--bf-orbit) var(--ease-in-out) calc(var(--bf-orbit) / -2) infinite alternate;
+}
+.fx-orbit i:nth-child(2) { animation-delay: calc(var(--bf-orbit) * -2 / 3), calc(var(--bf-orbit) * -2 / 3 - var(--bf-orbit) / 2); }
+.fx-orbit i:nth-child(3) { animation-delay: calc(var(--bf-orbit) * -4 / 3), calc(var(--bf-orbit) * -4 / 3 - var(--bf-orbit) / 2); }
+@keyframes bf-orbit-x { from { translate: calc(var(--s) * -.34) 0; } to { translate: calc(var(--s) * .34) 0; } }
+@keyframes bf-orbit-y { from { transform: translateY(calc(var(--s) * -.07)) scale(.7); } to { transform: translateY(calc(var(--s) * .07)) scale(1.1); } }
+
+/* 减少动态效果：只留表情变化，不动 */
+@media (prefers-reduced-motion: reduce) {
+  .bot-face, .bot-face * { animation: none !important; transition: none !important; }
+  .bot-face .bf-look, .bot-face .bf-gaze { transform: none; }
+  .bot-face .fx:not(.fx-bang, .fx-think) { display: none; }
+  .bot-face[data-eyes="error"] .e-sad { opacity: 1; scale: 1; rotate: -14deg; }
+}
+
+/* —— 选角色 —— */
+.avatar-picker { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.avatar-opt {
+  display: grid; justify-items: center; gap: var(--space-1); min-width: 64px; padding: var(--space-2-5) var(--space-1-5) var(--space-1-5);
+  border-radius: var(--r-lg); color: var(--muted); font-size: var(--fs-xs);
+  transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+}
+.avatar-opt:hover { background: var(--sel); color: var(--fg); }
+.avatar-opt.on { background: var(--sel); color: var(--fg); font-weight: var(--fw-medium); box-shadow: inset 0 0 0 1.5px var(--accent); }
+
+/* 应用自己的标志（不是 Modelflare 或其他任何人的 logo） */
+.app-mark {
+  display: grid; place-items: center; flex: none; border-radius: 30%;
+  background: var(--accent-solid); color: var(--on-accent); box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.app-mark svg { width: 56%; height: 56%; }

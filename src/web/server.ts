@@ -32,6 +32,7 @@ const MIME: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".webp": "image/webp",
   ".json": "application/json",
   ".woff2": "font/woff2",
 };
@@ -322,7 +323,12 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         if (m === "POST") {
           const b = await readJson(req);
           if (!String(b.name || "").trim()) throw new HttpError(400, "名称不能为空");
-          const bot = app.store.createBot({ name: String(b.name).trim(), systemPrompt: String(b.systemPrompt ?? ""), defaultModel: String(b.defaultModel ?? "") });
+          const bot = app.store.createBot({
+            name: String(b.name).trim(),
+            systemPrompt: String(b.systemPrompt ?? ""),
+            defaultModel: String(b.defaultModel ?? ""),
+            settings: normalizeSettings({ avatar: b.avatar }),
+          });
           await app.startBot(bot.id);
           return send(res, 201, { bot: publicBot(bot) });
         }
@@ -359,6 +365,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           ...cur,
           ...(b.permission !== undefined ? { permission: b.permission } : {}),
           ...(b.utilityModel !== undefined ? { utilityModel: b.utilityModel } : {}),
+          ...(b.avatar !== undefined ? { avatar: b.avatar } : {}),
           ...(b.computerUse !== undefined ? { computerUse: { ...cur.computerUse, ...b.computerUse } } : {}),
           memory: { ...cur.memory, ...(b.memory ?? {}) },
           steward: { ...cur.steward, ...(b.steward ?? {}) },

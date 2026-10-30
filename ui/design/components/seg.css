@@ -1,0 +1,29 @@
+/* 分段控件：中性的白色 thumb 按值滑动（参考 Codex / macOS）；开关类设置用 Switch。改编自 yetone/magpie internal/gui/assets/app.css 的 .seg（MIT，© 2026 yetone）。
+   圆角同心：轨道 --seg-r，thumb = 轨道 − 内边距。
+   状态：未选项悬停字变深并叠一层；按下叠深一级；键盘焦点描边往里收；禁用整体变淡。 */
+.seg {
+  --seg-r: var(--r-md);
+  --seg-pad: var(--space-0-5);
+  --seg-thumb: var(--seg-thumb-bg);
+  --seg-on: var(--fg);
+  position: relative; display: inline-flex; padding: var(--seg-pad); border-radius: var(--seg-r);
+  background: var(--seg-track); flex: none;
+}
+.seg > .thumb {
+  position: absolute; top: var(--seg-pad); left: 0; height: calc(100% - 2 * var(--seg-pad));
+  border-radius: calc(var(--seg-r) - var(--seg-pad));
+  background: var(--seg-thumb); box-shadow: var(--seg-edge);
+  transition: transform var(--t-moderate), width var(--t-moderate);
+}
+.seg > .thumb.still { transition: none; }
+.seg button {
+  --focus-offset: -2px;
+  position: relative; z-index: var(--z-raised); white-space: nowrap; height: var(--ctl-xs); padding: 0 var(--space-2-5);
+  border-radius: calc(var(--seg-r) - var(--seg-pad));
+  font-size: var(--fs-sm); color: var(--ctl-fg); transition: color var(--t-base), background var(--t-fast);
+}
+.seg button.on { color: var(--seg-on); font-weight: var(--fw-medium); }
+.seg button:hover:not(.on):not(:disabled) { color: var(--fg); background: var(--pill); }
+.seg button:active:not(.on):not(:disabled) { background: var(--pill-hover); }
+.seg button:disabled { opacity: var(--o-disabled); }
+.seg.disabled > .thumb { opacity: .5; }

@@ -1,0 +1,238 @@
+/* L2 · 语义 token：按用途命名，按主题取值。组件和页面只用这一层的颜色。
+   中性灰、圆角与动效改编自 yetone/magpie internal/gui/assets/app.css（MIT，© 2026 yetone）。
+   中性色按主题逐个精调，直接写在这里，不经过原始色板。
+
+   空间结构（见 README「材质」）：窗口最底层是环境光（--bg + 柔光），侧栏是直接盖在上面的毛玻璃，
+   主区和信息面板是浮在环境光上的面板；顶栏、输入框、菜单、对话框是盖在内容上的玻璃。
+   所以填充、悬停、描边都是半透明的一层，放在玻璃和实色上都对。
+
+   主题可以局部生效：任何元素加 data-theme="light|dark"，它的子树就换一套取值。
+   <html data-theme> 总是解析后的值，由 index.html 在首帧前设置、lib/theme.js 保持同步。 */
+:root, [data-theme="light"] {
+  color-scheme: light;
+
+  /* —— 环境：窗口最底层的柔光，玻璃透出它；色相光跟着当前机器人变（shell.css 的 .app） —— */
+  --bg: #efefed;              /* 窗口底色、引导页 */
+  --aura-brand: color-mix(in srgb, var(--lime-500) 30%, transparent);  /* 左上角的品牌黄绿光 */
+  --aura-l: .88;              /* 机器人色相光：OKLCH 亮度 */
+  --aura-c: .06;              /* 彩度 */
+  --aura-a: .85;              /* 不透明度 */
+
+  /* —— 材质：毛玻璃 = 半透明底 + 背景模糊（--glass-filter*）+ 磨砂颗粒 + 顶边高光与细描边 —— */
+  --surface: rgba(255, 255, 255, .86);     /* 主区：对话、设置。底下是平滑的环境光，不需要模糊 */
+  --surface-solid: #ffffff;                /* 主区上需要实色的地方 */
+  --glass-side: rgba(255, 255, 255, .42);  /* 侧栏 */
+  --glass-chrome: rgba(255, 255, 255, .72);  /* 盖在滚动内容上的顶栏 */
+  --glass-float: rgba(255, 255, 255, .68);   /* 输入框、回到底部 */
+  --glass-panel: rgba(255, 255, 255, .66);   /* 信息面板 */
+  --glass-pop: rgba(252, 252, 252, .74);     /* 菜单、命令面板、提示 */
+  --glass-sheet: rgba(255, 255, 255, .84);   /* 对话框 */
+  --glass-edge: rgba(0, 0, 0, .08);          /* 玻璃的细描边 */
+  --glass-hi: rgba(255, 255, 255, .8);       /* 玻璃顶边的高光 */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.035'/%3E%3C/svg%3E");  /* 磨砂颗粒 */
+
+  /* —— 表面：卡片与静默填充。填充都是半透明的一层 —— */
+  --card: #ffffff;            /* 卡片、输入框 */
+  --card-2: rgba(0, 0, 0, .022);  /* 卡片里的次级面、代码块 */
+  --pill: rgba(0, 0, 0, .045);    /* 次级按钮、标签、静默填充；也是控件的悬停层 */
+  --pill-hover: rgba(0, 0, 0, .075);
+  --pill-press: rgba(0, 0, 0, .1);
+  --seg-track: rgba(0, 0, 0, .055);
+  --seg-thumb-bg: var(--white);
+  --side-hover: rgba(255, 255, 255, .55);   /* 侧栏行：悬停是更亮的一层玻璃 */
+  --side-press: rgba(255, 255, 255, .36);
+  --side-active: rgba(255, 255, 255, .9);   /* 选中：浮起的白色玻璃片 */
+  --bubble-user: rgba(0, 0, 0, .05);        /* 用户消息气泡；机器人回复不加气泡 */
+  --bubble-ai: rgba(0, 0, 0, .035);         /* 信息面板里的会话记录等次要气泡 */
+  --qr-bg: var(--white);      /* 二维码在任何主题下都要白底 */
+  --scrim: rgba(0, 0, 0, .2);
+  --scrim-soft: rgba(0, 0, 0, .1);
+  --scroll-thumb: rgba(0, 0, 0, .16);
+  --scroll-thumb-hover: rgba(0, 0, 0, .3);
+
+  /* —— 线 —— */
+  --line: rgba(0, 0, 0, .1);          /* 输入框边、卡片边 */
+  --line-2: rgba(0, 0, 0, .06);       /* 卡片内分隔线 */
+  --line-strong: rgba(0, 0, 0, .2);   /* 悬停的输入框、聚焦的对话输入框 */
+
+  /* —— 文字 —— */
+  --fg: #1a1a1a;
+  --fg-2: #4d4d4d;
+  --muted: #737373;          /* 玻璃上的次要文字，侧栏最浅处约 4:1 */
+  --faint: #b3b3b3;
+  --ctl-fg: #5e5e5e;          /* 静默控件上的图标与文字 */
+  --placeholder: #949494;
+
+  /* —— 品牌：墨色负责操作，Modelflare 黄绿是"亮起的信号"（用法见 README「品牌色」） —— */
+  --primary: var(--olive-950);        /* 主按钮、打开的开关：浅色下是 Modelflare 墨色 */
+  --primary-hover: color-mix(in srgb, var(--olive-950) 84%, var(--white));
+  --primary-press: color-mix(in srgb, var(--olive-950) 72%, var(--white));
+  --on-primary: var(--white);
+  --primary-edge: inset 0 1px 0 rgba(255, 255, 255, .16), 0 1px 2px rgba(22, 26, 0, .28);  /* 主按钮的顶边高光 + 落影 */
+  --send-bg: var(--olive-950);        /* 发送 / 停止：墨色圆钮 + 黄绿箭头 */
+  --send-fg: var(--lime-500);
+  --accent: var(--olive-950);         /* 焦点描边、勾选、指示点、链接 */
+  --accent-solid: var(--lime-500);    /* 黄绿填充面：应用标志、"已保存"、选中模板的图标 */
+  --on-accent: var(--olive-950);      /* 黄绿面上的字，15.39:1 */
+  --accent-line: color-mix(in srgb, var(--olive-500) 35%, transparent);
+  --accent-soft: color-mix(in srgb, var(--lime-500) 45%, transparent);  /* 焦点光晕 */
+  --accent-wash: color-mix(in srgb, var(--lime-500) 14%, transparent);  /* 选中卡片的底 */
+  --mark: color-mix(in srgb, var(--lime-500) 55%, var(--white));        /* 荧光笔：文字选区、定位闪烁 */
+  --on-mark: var(--olive-950);
+  --sel: rgba(0, 0, 0, .055);         /* 菜单、命令面板的当前项（悬停或键盘） */
+  --sel-press: rgba(0, 0, 0, .09);
+  --switch-off: rgba(0, 0, 0, .13);
+  --switch-off-hover: rgba(0, 0, 0, .19);
+  --switch-knob: var(--white);
+  --switch-knob-on: var(--white);
+
+  /* —— 状态 —— */
+  --green: var(--green-600);
+  --green-soft: var(--green-50);
+  --red: var(--red-600);
+  --red-soft: var(--red-50);
+  --on-danger: var(--white);
+  --amber: var(--amber-700);
+  --amber-soft: var(--amber-50);
+
+  /* —— 投影：xs/sm 贴面，md 浮起的胶囊，lg 弹出层与对话框，pane 浮在环境光上的面板 —— */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, .05);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .05), 0 3px 10px rgba(0, 0, 0, .05);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, .05), 0 10px 28px rgba(0, 0, 0, .09);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, .06), 0 24px 60px rgba(0, 0, 0, .16);
+  --shadow-pane: 0 0 0 .5px rgba(0, 0, 0, .1), 0 1px 3px rgba(0, 0, 0, .04), 0 8px 30px rgba(0, 0, 0, .04);
+  --shadow-tile: 0 0 0 .5px rgba(0, 0, 0, .07), 0 1px 2px rgba(0, 0, 0, .06);   /* 侧栏选中项：浮起的玻璃片 */
+  --seg-edge: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .08);
+
+  /* —— 机器人头像：角色颜色在 primitives 的 --bot-*，这里只给随主题变的光晕和影子 —— */
+  --avatar-aura: 30%;         /* 工作中头像背后的辉光（角色辉光色的混合比例） */
+  --avatar-shadow: rgba(0, 0, 0, .16);  /* 大头像脚下的影子 */
+
+  /* —— 字体 —— */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --code: ui-monospace, "SF Mono", Menlo, Consolas, "Microsoft YaHei UI", monospace;
+}
+/* 由其他语义 token 推导的值：每个主题作用域都要重新计算，否则子树会继承外层主题算好的结果 */
+:root, [data-theme] {
+  --code-bg: color-mix(in srgb, var(--fg) 7%, transparent);
+  --ring: 0 0 0 3px var(--accent-soft);   /* 焦点光晕，配合 accent 色描边 */
+  --ring-danger: 0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent);
+  --glass-ring: inset 0 1px 0 var(--glass-hi), 0 0 0 .5px var(--glass-edge);   /* 玻璃的边：顶边高光 + 细描边 */
+  --shadow-float: var(--glass-ring), var(--shadow-md);   /* 浮在内容上的玻璃：输入框、回到底部、提示 */
+  --shadow-pop: var(--glass-ring), var(--shadow-lg);     /* 菜单、命令面板、对话框 */
+}
+:root.win {
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --code: "Cascadia Mono", Consolas, "Microsoft YaHei UI", "Microsoft YaHei", monospace;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0c0c0c;
+  --aura-brand: color-mix(in srgb, var(--lime-500) 8%, transparent);
+  --aura-l: .4;
+  --aura-c: .1;
+  --aura-a: .55;
+
+  --surface: rgba(20, 20, 20, .84);
+  --surface-solid: #151515;
+  --glass-side: rgba(16, 16, 16, .4);
+  --glass-chrome: rgba(22, 22, 22, .7);
+  --glass-float: rgba(42, 42, 42, .62);
+  --glass-panel: rgba(26, 26, 26, .68);
+  --glass-pop: rgba(36, 36, 36, .72);
+  --glass-sheet: rgba(30, 30, 30, .86);
+  --glass-edge: rgba(255, 255, 255, .09);
+  --glass-hi: rgba(255, 255, 255, .07);
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.05'/%3E%3C/svg%3E");
+
+  --card: rgba(255, 255, 255, .045);
+  --card-2: rgba(255, 255, 255, .025);
+  --pill: rgba(255, 255, 255, .065);
+  --pill-hover: rgba(255, 255, 255, .095);
+  --pill-press: rgba(255, 255, 255, .125);
+  --seg-track: rgba(255, 255, 255, .05);
+  --seg-thumb-bg: rgba(255, 255, 255, .14);
+  --side-hover: rgba(255, 255, 255, .045);
+  --side-press: rgba(255, 255, 255, .03);
+  --side-active: rgba(255, 255, 255, .085);
+  --bubble-user: rgba(255, 255, 255, .075);
+  --bubble-ai: rgba(255, 255, 255, .05);
+  --scrim: rgba(0, 0, 0, .48);
+  --scrim-soft: rgba(0, 0, 0, .3);
+  --scroll-thumb: rgba(255, 255, 255, .16);
+  --scroll-thumb-hover: rgba(255, 255, 255, .3);
+
+  --line: rgba(255, 255, 255, .1);
+  --line-2: rgba(255, 255, 255, .065);
+  --line-strong: rgba(255, 255, 255, .22);
+
+  --fg: #ececec;
+  --fg-2: #b4b4b4;
+  --muted: #959595;
+  --faint: #5a5a5a;
+  --ctl-fg: #a3a3a3;
+  --placeholder: #707070;
+
+  --primary: var(--lime-500);         /* 深色下主操作直接是黄绿，和 Modelflare 官网一致 */
+  --primary-hover: var(--lime-300);
+  --primary-press: var(--lime-600);
+  --on-primary: var(--olive-950);
+  --primary-edge: inset 0 1px 0 rgba(255, 255, 255, .45), 0 1px 2px rgba(0, 0, 0, .4);
+  --send-bg: var(--lime-500);
+  --send-fg: var(--olive-950);
+  --accent: var(--lime-500);
+  --accent-soft: color-mix(in srgb, var(--lime-500) 14%, transparent);
+  --accent-line: color-mix(in srgb, var(--lime-500) 30%, transparent);
+  --accent-wash: color-mix(in srgb, var(--lime-500) 7%, transparent);
+  --mark: color-mix(in srgb, var(--lime-500) 32%, transparent);
+  --on-mark: var(--fg);
+  --sel: rgba(255, 255, 255, .08);
+  --sel-press: rgba(255, 255, 255, .115);
+  --switch-off: rgba(255, 255, 255, .16);
+  --switch-off-hover: rgba(255, 255, 255, .22);
+  --switch-knob: #d4d4d4;
+  --switch-knob-on: var(--olive-950);
+
+  --green: var(--green-300);
+  --green-soft: var(--green-900);
+  --red: var(--red-300);
+  --red-soft: var(--red-900);
+  --on-danger: var(--red-950);
+  --amber: var(--amber-300);
+  --amber-soft: var(--amber-900);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 3px 10px rgba(0, 0, 0, .25);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, .3), 0 12px 32px rgba(0, 0, 0, .42);
+  --shadow-lg: 0 4px 14px rgba(0, 0, 0, .35), 0 28px 70px rgba(0, 0, 0, .6);
+  --shadow-pane: 0 0 0 .5px rgba(255, 255, 255, .08), 0 8px 30px rgba(0, 0, 0, .35);
+  --shadow-tile: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 .5px rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .3);
+  --seg-edge: inset 0 .5px 0 rgba(255, 255, 255, .1), 0 1px 2px rgba(0, 0, 0, .3);
+
+  --avatar-aura: 52%;
+  --avatar-shadow: rgba(0, 0, 0, .5);
+}
+
+/* 系统设置了"降低透明度"：玻璃换成接近实色的材质，层次靠描边和投影 */
+@media (prefers-reduced-transparency: reduce) {
+  [data-theme="light"] {
+    --surface: #fbfbfb;
+    --glass-side: #f2f2f1;
+    --glass-chrome: #fbfbfb;
+    --glass-float: #ffffff;
+    --glass-panel: #f8f8f8;
+    --glass-pop: #fcfcfc;
+    --glass-sheet: #ffffff;
+  }
+  [data-theme="dark"] {
+    --surface: #161616;
+    --glass-side: #121212;
+    --glass-chrome: #161616;
+    --glass-float: #262626;
+    --glass-panel: #1a1a1a;
+    --glass-pop: #242424;
+    --glass-sheet: #1e1e1e;
+  }
+}

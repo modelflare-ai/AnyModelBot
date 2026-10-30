@@ -15,6 +15,7 @@ import { WeixinLogin } from "./channels/weixin/login.js";
 import { startWebServer, type WebServer } from "./web/server.js";
 import { logger, mask } from "./log.js";
 import { AgentManager } from "./agent/manager.js";
+import { normalizeSettings } from "./agent/settings.js";
 import { locateDshRuntime } from "./agent/host.js";
 import { findAppRoot } from "./magpie/supervisor.js";
 import { MODELFLARE_LINES, modelflareBaseUrl, verifyModelflareKey, type ModelflareLine, type VerifyResult } from "./modelflare.js";
@@ -217,6 +218,7 @@ export class App {
       feishuAppId: process.env.FEISHU_APP_ID ?? "",
       feishuAppSecret: process.env.FEISHU_APP_SECRET ?? "",
       weixinEnabled: true,
+      settings: normalizeSettings({ avatar: "blue" }),
     });
     log.info(`created default bot ${bot.id}`, { feishuAppId: bot.feishuAppId || "(未配置)" });
   }

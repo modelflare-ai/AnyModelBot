@@ -1,0 +1,43 @@
+/* 列表卡片与行：一张 .list 白卡里放若干 .row，每行"说明在左、控件在右"。
+   改编自 yetone/magpie internal/gui/assets/app.css 的 .list / .row（MIT，© 2026 yetone）。
+   定制：覆盖 --row-h / --row-px / --row-gap。 */
+.list { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-xl); overflow: hidden; flex: none; }
+.list + .list, .list-head + .list { margin-top: var(--space-2); }
+.list-head {
+  display: flex; align-items: center; gap: var(--space-2); margin: 18px var(--space-0-5) var(--space-1-5);
+  font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--muted);
+}
+.list-head:first-child { margin-top: 0; }
+.list-head .grow { flex: 1; }
+
+.row {
+  --row-h: 48px;
+  --row-py: 7px;
+  --row-pl: var(--space-3-5);
+  --row-pr: var(--space-3);
+  --row-gap: var(--space-3);
+  display: flex; align-items: center; gap: var(--row-gap); min-height: var(--row-h);
+  padding: var(--row-py) var(--row-pr) var(--row-py) var(--row-pl);
+}
+.row + .row, .row + .row-edit, .row-edit + .row { border-top: 1px solid var(--line-2); }
+.row .who { min-width: 0; flex: 1 1 auto; }
+.row .name { font-weight: var(--fw-medium); letter-spacing: -.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .sub { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.row .sub.wrap { white-space: normal; }
+.row .ctl { display: flex; align-items: center; gap: var(--space-1); flex: none; }
+.row .val {
+  font-family: var(--code); font-size: var(--fs-xs); color: var(--fg-2); max-width: 280px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; -webkit-user-select: text;
+}
+.row.off > :not(.ctl) { opacity: .5; }
+.row.compact { --row-h: 40px; --row-py: 5px; --row-pl: 11px; --row-pr: 9px; --row-gap: 9px; }
+/* 可点的行：悬停叠一层，按下深一级，键盘焦点描边往里收（卡片会裁掉外描边） */
+.row.clickable { --focus-offset: -2px; transition: background var(--t-fast); }
+.row.clickable:hover { background: var(--pill); }
+.row.clickable:active { background: var(--pill-hover); }
+.row.flash { animation: flash var(--dur-flash) var(--ease-out); }
+
+.row-edit { padding: var(--space-3) var(--space-3-5) var(--space-3-5); background: var(--card-2); display: grid; gap: var(--space-2-5); }
+.row-edit label { display: grid; gap: 5px; font-size: var(--fs-xs); color: var(--fg-2); font-weight: var(--fw-medium); }
+.row-edit .actions { display: flex; align-items: center; gap: var(--space-1-5); flex-wrap: wrap; }
+.row-edit .hint, .hint { font-size: var(--fs-xs); color: var(--muted); line-height: var(--lh-normal); }

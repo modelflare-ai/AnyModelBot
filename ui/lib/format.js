@@ -25,6 +25,15 @@ export function fmtAgo(t) {
   return `${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
+/** 消息旁的时刻："15:33" */
+export const fmtClock = (t) => (t ? hm(new Date(t)) : "");
+
+/** 一段工作的用时："12 秒" / "1 分 24 秒" */
+export function fmtDur(ms) {
+  const s = Math.max(1, Math.round(ms / 1000));
+  return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+}
+
 export function fmtTime(t) {
   return t ? new Date(t).toLocaleString("zh-CN", { hour12: false }) : "";
 }

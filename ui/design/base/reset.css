@@ -1,0 +1,32 @@
+/* 重置、焦点环、选择规则。 */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: var(--fw-regular) var(--fs-md)/var(--lh-snug) var(--font);
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  /* 控件读起来像应用而不是网页：只有窗口里作为内容展示的东西才能选中 */
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* 局部主题作用域要自带底色和字色 */
+[data-theme]:not(:root) { background: var(--bg); color: var(--fg); }
+:where(p, pre, code, td, .selectable, .msg, .notice-text, .err-text) { user-select: text; -webkit-user-select: text; }
+h1, h2, h3, h4, p { margin: 0; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: default; appearance: none; -webkit-appearance: none; text-align: center; }
+input, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+/* 荧光笔：选中文字用品牌黄绿 */
+::selection { background: var(--mark); color: var(--on-mark); }
+code, .mono { font-family: var(--code); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+/* 键盘焦点：2px accent 描边，外移 2px（描边跟着圆角走）。
+   装在 overflow: hidden 容器里、外移会被裁掉的行内控件，把 --focus-offset 设成负值往里收。 */
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: var(--focus-offset, 2px);
+}
+/* 滚动条：细、半透明，盖在玻璃和环境光上都不突兀（macOS 的浮动滚动条不受影响） */
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+svg.ic { width: 16px; height: 16px; flex: none; display: block; }

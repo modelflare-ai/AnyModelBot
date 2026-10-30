@@ -1,0 +1,33 @@
+/* 输入框 .field [mono] [err]，带尾部按钮的 .field-wrap > .field + .tail。
+   定制：覆盖 --field-*。
+   状态：悬停描边加深；聚焦 accent 描边 + --ring 光晕；错误（.err 或 aria-invalid）红描边，聚焦时红光晕；
+   只读是次级底、聚焦不发光；禁用变淡且不响应悬停。 */
+.field {
+  --field-h: var(--ctl-lg);
+  --field-px: var(--space-2-5);
+  --field-r: var(--r-md);
+  --field-bg: var(--card);
+  --field-edge: var(--line);
+  --field-edge-hover: var(--line-strong);
+  --field-edge-focus: var(--accent);
+  --field-ring: var(--ring);
+  width: 100%; height: var(--field-h); padding: 0 var(--field-px);
+  border: 1px solid var(--field-edge); border-radius: var(--field-r);
+  background: var(--field-bg); color: var(--fg); outline: none;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
+}
+.field::placeholder { color: var(--placeholder); }
+.field:hover:not(:focus):not(:disabled):not([readonly]) { border-color: var(--field-edge-hover); }
+.field:focus { border-color: var(--field-edge-focus); box-shadow: var(--field-ring); }
+.field:focus-visible { outline: none; }
+.field.mono { font-family: var(--code); font-size: var(--fs-sm); }
+.field.err, .field[aria-invalid="true"] {
+  --field-edge: var(--red); --field-edge-hover: var(--red); --field-edge-focus: var(--red); --field-ring: var(--ring-danger);
+}
+.field[readonly] { --field-bg: var(--card-2); --field-edge-focus: var(--line-strong); --field-ring: 0 0 transparent; }
+.field:disabled { --field-bg: var(--card-2); opacity: var(--o-disabled); }
+textarea.field { height: auto; padding: var(--space-2) var(--field-px); resize: none; line-height: var(--lh-normal); }
+
+.field-wrap { position: relative; display: flex; align-items: center; }
+.field-wrap .field { padding-right: 62px; }
+.field-wrap .tail { position: absolute; right: var(--space-1); display: flex; gap: var(--space-0-5); }

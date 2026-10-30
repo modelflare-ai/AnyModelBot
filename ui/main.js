@@ -6,18 +6,21 @@ import { html, Icon, DialogHost, Toasts } from "./components/ui.js";
 import { Sidebar } from "./screens/sidebar.js";
 import { ChatScreen } from "./screens/chat.js";
 import { InfoPanel } from "./screens/info-panel.js";
-import { SettingsScreen, TABS } from "./screens/settings.js";
+import { SettingsScreen, SettingsSide, TABS } from "./screens/settings.js";
 import { BotSettingsScreen } from "./screens/bot-settings.js";
+import { NewBotScreen } from "./screens/new-bot.js";
+import { BotAvatar, MAIN_CHAR, charOf } from "./components/avatar.js";
 import { Onboarding } from "./screens/onboarding.js";
 import { api } from "./lib/api.js";
 import { setThemeMode } from "./lib/theme.js";
 import { failed } from "./lib/store.js";
 
-// —— 路由：#/chat/<bot> · #/settings/<tab>[/<row>] · #/bot/<bot>/settings[/<section>] ——
+// —— 路由：#/chat/<bot> · #/new · #/settings/<tab>[/<row>] · #/bot/<bot>/settings[/<section>] ——
 function parseHash() {
   const [kind, a, b, c] = location.hash.replace(/^#\/?/, "").split("/").map((x) => decodeURIComponent(x || ""));
   if (kind === "settings") return { view: "settings", tab: TABS.some(([t]) => t === a) ? a : "general", row: b || "" };
   if (kind === "bot" && a && b === "settings") return { view: "bot-settings", botId: a, section: c || "" };
+  if (kind === "new") return { view: "new" };
   if (kind === "models") return { view: "settings", tab: "modelflare", row: "" }; // 旧链接
   return { view: "chat", botId: kind === "chat" ? a : "" };
 }
@@ -112,6 +115,9 @@ function Palette({ commands, onClose }) {
     </div>`;
 }
 
+/** 环境光色相（OKLCH 色相角）：和头像角色的主色一致 */
+const AURA_HUE = { blue: 245, yellow: 95, green: 155, red: 25, purple: 305, orange: 55 };
+
 function App() {
   const [route, setRoute] = useState(parseHash);
   const [mf, mfErr, reloadMf] = useLoader(() => api("/modelflare"));
@@ -126,7 +132,7 @@ function App() {
   const [localWorking, setLocalWorking] = useState({});
   const [infoOpen, setInfoOpen] = useState(false);
   const [palette, setPalette] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [settingsQ, setSettingsQ] = useState("");
   const [lastBot, setLastBot] = useState(readLastBot);
 
   useEffect(() => {
@@ -164,7 +170,7 @@ function App() {
       .then((d) => {
         const latest = {};
         for (const c of d.conversations || []) if (!latest[c.botId] || c.updatedAt > latest[c.botId].updatedAt) latest[c.botId] = c;
-        setPreviews(Object.fromEntries(Object.entries(latest).map(([k, c]) => [k, (c.lastMessage || "").replace(/\s+/g, " ")])));
+        setPreviews(Object.fromEntries(Object.entries(latest).map(([k, c]) => [k, { text: (c.lastMessage || "").replace(/\s+/g, " "), at: c.updatedAt }])));
       })
       .catch(() => {});
     api("/approvals?status=pending")
@@ -207,6 +213,10 @@ function App() {
     if (id) setLastBot(id);
     go(`/chat/${encodeURIComponent(id || (bot && bot.id) || "")}`);
   };
+  const newBot = () => go("/new");
+  useEffect(() => {
+    if (route.view !== "settings") setSettingsQ("");
+  }, [route.view]);
   const openBotSettings = (id, section = "") => go(`/bot/${encodeURIComponent(id)}/settings${section ? "/" + section : ""}`);
   const onBotUpdated = () => reloadBots();
   const onDeleted = (id) => {
@@ -232,11 +242,12 @@ function App() {
         if (route.view === "chat") setInfoOpen((v) => !v);
       } else if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        setCreating(true);
+        newBot();
       } else if (e.key === "Escape" && !e.defaultPrevented) {
         const t = e.target;
         const typing = t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT");
         if (route.view === "bot-settings" && !typing) openChat(route.botId);
+        else if (route.view === "new" && !typing && bots && bots.length) openChat();
         else if (route.view === "settings" && !typing) openChat();
         else if (route.view === "chat" && infoOpen && !typing) setInfoOpen(false);
       }
@@ -247,7 +258,7 @@ function App() {
 
   const commands = [
     { label: "打开设置", kbd: isMac ? "⌘," : "Ctrl+,", keys: "settings preferences", run: () => openSettings() },
-    { label: "新建机器人", kbd: isMac ? "⌘N" : "Ctrl+N", keys: "new bot", run: () => setCreating(true) },
+    { label: "新建机器人", kbd: isMac ? "⌘N" : "Ctrl+N", keys: "new bot", run: newBot },
     ...(route.view === "chat" ? [{ label: infoOpen ? "关闭信息面板" : "打开信息面板", kbd: isMac ? "⌘⇧I" : "Ctrl+Shift+I", keys: "info panel", run: () => setInfoOpen((v) => !v) }] : []),
     ...(bot ? [{ label: `「${bot.name}」的设置`, keys: "bot settings", run: () => openBotSettings(bot.id) }] : []),
     { label: "Modelflare 设置", keys: "modelflare key 密钥 模型", run: () => openSettings("modelflare") },
@@ -260,7 +271,10 @@ function App() {
   // —— 渲染 ——
   if (!mf) {
     return html`<main class="onboard" data-screen=${mfErr ? "error" : "loading"}>
-      ${mfErr ? html`<div class="onboard-col"><div class="notice red"><span class="notice-text">无法连接本机服务：${mfErr}</span><button type="button" class="btn" onClick=${reloadMf}>重试</button></div></div>` : html`<span class="spinner" style="color:var(--muted)"></span>`}
+      ${mfErr
+        ? html`<div class="onboard-col"><div class="onboard-hero"><${BotAvatar} char=${MAIN_CHAR} size=${88} state="sleep" lively pokeable /></div>
+            <div class="notice red"><span class="notice-text">无法连接本机服务：${mfErr}</span><button type="button" class="btn" onClick=${reloadMf}>重试</button></div></div>`
+        : html`<${BotAvatar} char=${MAIN_CHAR} size=${72} state="thinking" lively />`}
     </main>`;
   }
   if (!connected) {
@@ -272,20 +286,23 @@ function App() {
   const view = route.view;
   const panelBot = view === "chat" && infoOpen && bot;
   const routedBot = view === "bot-settings" && bots ? bots.find((b) => b.id === route.botId) : null;
-  return html`<div class=${`app${panelBot ? " with-panel" : ""}`}>
-    <${Sidebar} bots=${bots} botsError=${botsErr} reloadBots=${reloadBots} selectedId=${bot && bot.id} view=${view}
-      previews=${previews} pending=${pending} working=${working} username=${status && status.username}
-      creating=${creating} setCreating=${setCreating}
-      onSelect=${openChat} onCreated=${(b) => { reloadBots(); openChat(b.id); }} onDeleted=${onDeleted} onOpenSettings=${() => openSettings()} />
+  // 环境光的色相跟着当前机器人角色的主色（设置页和新建页用缺省的冷色）
+  const auraBot = view === "chat" ? bot : view === "bot-settings" ? routedBot : null;
+  const auraHue = (auraBot && AURA_HUE[charOf(auraBot)]) || 250;
+  return html`<div class=${`app${panelBot ? " with-panel" : ""}`} style=${{ "--aura-hue": String(auraHue) }}>
+    ${view === "settings"
+      ? html`<${SettingsSide} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} onTab=${(t) => openSettings(t)} onBack=${() => openChat()}
+          username=${status && status.username} />`
+      : html`<${Sidebar} bots=${bots} botsError=${botsErr} reloadBots=${reloadBots} selectedId=${bot && bot.id} view=${view === "chat" && bots && !bots.length ? "new" : view}
+          previews=${previews} pending=${pending} working=${working} username=${status && status.username}
+          onNew=${newBot} onSelect=${openChat} onDeleted=${onDeleted} onOpenSettings=${() => openSettings()} />`}
     <main class="main">
       ${view === "chat" && bot && html`<${ChatScreen} key=${bot.id} bot=${bot} models=${models} modelsError=${modelsError} reloadModels=${reloadModels}
         defaultModel=${settings && settings.defaultModel} infoOpen=${infoOpen} onToggleInfo=${() => setInfoOpen((v) => !v)}
-        onWorking=${onWorking} onOpenSettings=${openSettings} onBotUpdated=${onBotUpdated} />`}
-      ${view === "chat" && bots && !bots.length && html`<section class="chat" data-screen="chat"><div class="chat-empty">
-        <h2>还没有机器人</h2><p>在左侧点 ＋ 新建一个，然后直接对话。</p>
-        <button type="button" class="btn primary" onClick=${() => setCreating(true)}>新建机器人</button>
-      </div></section>`}
-      ${view === "settings" && html`<${SettingsScreen} tab=${route.tab} focusRow=${route.row} onTab=${(t) => openSettings(t)}
+        onWorking=${onWorking} pending=${pending[bot.id] || 0} onOpenSettings=${openSettings} onOpenBotSettings=${openBotSettings} onBotUpdated=${onBotUpdated} />`}
+      ${(view === "new" || (view === "chat" && bots && !bots.length)) && html`<${NewBotScreen} first=${!!bots && !bots.length}
+        onCreated=${(b) => { reloadBots(); openChat(b.id); }} onCancel=${bots && bots.length ? () => openChat() : null} />`}
+      ${view === "settings" && html`<${SettingsScreen} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} focusRow=${route.row}
         mf=${mf} onMfChanged=${reloadMf} onSettings=${setSettings} models=${models} modelsError=${modelsError} reloadModels=${reloadModels}
         status=${status} bots=${bots} onOpenBotSettings=${openBotSettings} />`}
       ${view === "bot-settings" && routedBot && html`<${BotSettingsScreen} key=${routedBot.id} bot=${routedBot} section=${route.section}

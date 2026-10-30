@@ -1,0 +1,15 @@
+/* 加载与空状态：.spinner、.skel（骨架条）、.empty-state。 */
+.spinner {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: spin var(--dur-spin) linear infinite;
+}
+.skel {
+  display: block; height: 12px; border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--pill) 0%, var(--pill-hover) 50%, var(--pill) 100%); background-size: 200% 100%;
+  animation: shimmer var(--dur-shimmer) var(--ease-in-out) infinite;
+}
+.skel.circle { border-radius: 50%; }
+
+.empty-state { padding: var(--space-8) var(--space-5); text-align: center; color: var(--muted); }
+.empty-state b { display: block; color: var(--fg); font-weight: var(--fw-medium); margin-bottom: var(--space-1); }

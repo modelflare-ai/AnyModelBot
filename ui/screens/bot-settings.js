@@ -1,15 +1,10 @@
-// 机器人设置（信息面板的 ⚙）：同样的白色圆角 list + 行，改动即保存。
+// 机器人设置（信息面板的 ⚙，参考 Codex 的编辑页）：返回 + 头像 + 大标题；身份是头像角色 + 带标签的输入框，其余是白色圆角 list + 行，改动即保存。
 import { useEffect, useRef, useState } from "preact/hooks";
-import { html, Icon, Seg, MenuButton, autoGrow } from "../components/ui.js";
-import { BotAvatar } from "../components/avatar.js";
+import { html, Icon, Seg, Switch, MenuButton, Skeleton, autoGrow } from "../components/ui.js";
+import { BotAvatar, AvatarPicker, charOf } from "../components/avatar.js";
 import { ModelPicker, shortModel } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
-
-const ONOFF = [
-  [false, "关"],
-  [true, "开"],
-];
 
 function Row({ id, name, sub, title, children, off }) {
   return html`<div class=${`row${off ? " off" : ""}`} id=${`bot-${id}`} title=${title}>
@@ -33,6 +28,7 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
   const [name, setName] = useState(bot.name);
   const [prompt, setPrompt] = useState(bot.systemPrompt || "");
   const promptRef = useRef(null);
+  const [hi, setHi] = useState(null);
   useEffect(() => {
     setName(bot.name);
     setPrompt(bot.systemPrompt || "");
@@ -60,6 +56,11 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
       failed(e);
     }
   };
+  const pickAvatar = async (k) => {
+    await put({ avatar: k });
+    setHi({ kind: "hello", at: Date.now() });
+    onBotUpdated();
+  };
   const del = async () => {
     if (!(await confirmSheet({ title: `删除「${bot.name}」？`, body: "会永久删除这个机器人及其全部会话，无法恢复。", confirmLabel: "永久删除", danger: true }))) return;
     try {
@@ -80,25 +81,26 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
   const codex = cu && cu.backends && cu.backends.find((b) => b.id === "codex");
   return html`<section class="settings view" data-screen="bot-settings">
     <div class="set-head">
-      <div class="bot-head">
-        <button type="button" class="icon-btn" aria-label="返回对话" title="返回对话（Esc）" onClick=${onBack}><${Icon} name="chevLeft" /></button>
-        <${BotAvatar} name=${bot.name} id=${bot.id} size=${26} />
-        <span class="grow">${bot.name} · 设置</span>
-      </div>
+      <button type="button" class="icon-btn set-back" aria-label="返回对话" title="返回对话（Esc）" onClick=${onBack}><${Icon} name="arrowLeft" size=${16} /></button>
+      <${BotAvatar} bot=${bot} char=${s && s.avatar} size=${36} cue=${hi} pokeable />
+      <div class="set-titles"><h1 class="set-title">${bot.name}</h1><div class="set-sub">机器人设置</div></div>
     </div>
     <div class="set-body">
       <div class="list-head">身份</div>
-      <div class="list">
-        <${Row} id="name" name="名称">
-          <input class="inline-input" value=${name} aria-label="名称" maxlength="60" onInput=${(e) => setName(e.target.value)} onBlur=${commitName}
-            onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.stopPropagation(); setName(bot.name); requestAnimationFrame(() => e.target.blur()); } }} />
-        <//>
-        <${Row} id="prompt" name="人设 / 系统提示词" sub="离开输入框时保存" />
-        <div class="prompt-edit">
-          <textarea class="field" ref=${promptRef} aria-label="人设 / 系统提示词" placeholder="例如：你是一个乐于助人的中文助手，回答简洁准确。" value=${prompt}
-            onInput=${(e) => setPrompt(e.target.value)} onBlur=${() => prompt !== (bot.systemPrompt || "") && putBot({ systemPrompt: prompt })} />
-        </div>
+      <div class="set-field" id="bot-avatar">
+        <span class="k">头像<span class="hint">每个角色有自己的小动作</span></span>
+        ${s ? html`<${AvatarPicker} value=${s.avatar} fallback=${charOf(bot)} onChange=${pickAvatar} />` : html`<${Skeleton} w="60%" />`}
       </div>
+      <label class="set-field" id="bot-name">
+        <span class="k">名称</span>
+        <input class="field" value=${name} maxlength="60" onInput=${(e) => setName(e.target.value)} onBlur=${commitName}
+          onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.stopPropagation(); setName(bot.name); requestAnimationFrame(() => e.target.blur()); } }} />
+      </label>
+      <label class="set-field" id="bot-prompt">
+        <span class="k">人设 / 系统提示词<span class="hint">离开输入框时保存</span></span>
+        <textarea class="field" ref=${promptRef} placeholder="例如：你是一个乐于助人的中文助手，回答简洁准确。" value=${prompt}
+          onInput=${(e) => setPrompt(e.target.value)} onBlur=${() => prompt !== (bot.systemPrompt || "") && putBot({ systemPrompt: prompt })} />
+      </label>
 
       <div class="list-head">模型</div>
       <div class="list">
@@ -111,7 +113,7 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
         <//>
       </div>
 
-      ${!s && html`<div class="list" style="margin-top:8px"><div class="row"><span class="skel" style="width:45%"></span></div><div class="row"><span class="skel" style="width:35%"></span></div></div>`}
+      ${!s && html`<div class="list"><div class="row"><${Skeleton} w="45%" /></div><div class="row"><${Skeleton} w="35%" /></div></div>`}
       ${s && html`
         <div class="list-head">权限</div>
         <div class="list">
@@ -124,20 +126,20 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
         <div class="list-head">记忆</div>
         <div class="list">
           <${Row} id="memory" name="长期记忆" sub="remember / forget / recall">
-            <${Seg} label="长期记忆" value=${s.memory.enabled} onChange=${(v) => put({ memory: { enabled: v } })} options=${ONOFF} />
+            <${Switch} label="长期记忆" value=${s.memory.enabled} onChange=${(v) => put({ memory: { enabled: v } })} />
           <//>
           <${Row} id="memory-review" name="回合结束后自动整理" off=${!s.memory.enabled}>
-            <${Seg} label="自动整理记忆" value=${s.memory.review} disabled=${!s.memory.enabled} onChange=${(v) => put({ memory: { review: v } })} options=${ONOFF} />
+            <${Switch} label="自动整理记忆" value=${s.memory.review} disabled=${!s.memory.enabled} onChange=${(v) => put({ memory: { review: v } })} />
           <//>
           <${Row} id="memory-team" name="允许写入团队记忆" sub="所有机器人共享" off=${!s.memory.enabled}>
-            <${Seg} label="团队记忆" value=${s.memory.teamWrite} disabled=${!s.memory.enabled} onChange=${(v) => put({ memory: { teamWrite: v } })} options=${ONOFF} />
+            <${Switch} label="团队记忆" value=${s.memory.teamWrite} disabled=${!s.memory.enabled} onChange=${(v) => put({ memory: { teamWrite: v } })} />
           <//>
         </div>
 
         <div class="list-head">上下文</div>
         <div class="list">
           <${Row} id="steward" name="自动压缩或开新段" sub="上下文变长时整理，并留下交接便条">
-            <${Seg} label="上下文管家" value=${s.steward.enabled} onChange=${(v) => put({ steward: { enabled: v } })} options=${ONOFF} />
+            <${Switch} label="上下文管家" value=${s.steward.enabled} onChange=${(v) => put({ steward: { enabled: v } })} />
           <//>
         </div>
 
@@ -145,7 +147,7 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
         <div class="list">
           <${Row} id="computer" name="电脑操作" sub=${cu ? cu.reason : ""} title=${cu && cu.notice}>
             <span class=${`dot ${cu && cu.available ? "ok" : "err"}`}></span>
-            <${Seg} label="电脑操作" value=${s.computerUse.enabled} onChange=${(v) => put({ computerUse: { enabled: v } })} options=${ONOFF} />
+            <${Switch} label="电脑操作" value=${s.computerUse.enabled} onChange=${(v) => put({ computerUse: { enabled: v } })} />
           <//>
           <${Row} id="computer-backend" name="后端" off=${!s.computerUse.enabled}>
             <${MenuButton} label="电脑操作后端" value=${s.computerUse.backend} disabled=${!s.computerUse.enabled} onChange=${(v) => put({ computerUse: { backend: v } })}

@@ -96,6 +96,10 @@ describe("settings", () => {
     expect(normalizeSettings({ computerUse: { approval: "always" } }).computerUse.approval).toBe("auto");
     expect(normalizeSettings({ computerUse: { approval: "readonly-free" } }).computerUse.approval).toBe("auto");
     expect(normalizeSettings({ computerUse: { approval: "ask-input", backend: "codex" } }).computerUse).toEqual({ enabled: true, backend: "codex", approval: "ask-input" });
+    // 头像角色：只接受内置的 6 个，其他值回到"由 id 决定"
+    expect(normalizeSettings({ avatar: "red" }).avatar).toBe("red");
+    expect(normalizeSettings({ avatar: "pink" }).avatar).toBe("");
+    expect(normalizeSettings({ avatar: 3 }).avatar).toBe("");
     expect(permissionMode("readonly")).toBe("read-only");
     expect(permissionMode("workspace")).toBe("workspace-write");
   });

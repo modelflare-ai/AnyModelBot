@@ -1,8 +1,10 @@
-// 共用组件：图标、分段控件、弹出菜单、确认框、提示胶囊、复制按钮。
+// 共用组件：图标、按钮、分段控件、弹出菜单、确认框、提示胶囊、复制按钮、骨架。
+// 样式在 ui/design/components/*.css；这里的组件只是给常用组合一个带逻辑的写法，直接写 class 也可以。
 import { h } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "preact/hooks";
 import htm from "htm";
 import { useStore, toasts, dismissToast, dialog } from "../lib/store.js";
+import { usePresence } from "../design/motion.js";
 
 export const html = htm.bind(h);
 
@@ -28,11 +30,53 @@ const P = {
   refresh: "M13.25 8a5.25 5.25 0 1 1-1.54-3.71M13.25 2.75v2.5h-2.5",
   stop: "M4.5 4.5h7v7h-7z",
   more: "M4 8h.01M8 8h.01M12 8h.01",
+  panel: "M2.75 3.25h10.5c.41 0 .75.34.75.75v8c0 .41-.34.75-.75.75H2.75a.75.75 0 0 1-.75-.75V4c0-.41.34-.75.75-.75ZM10 3.25v9.5",
+  compose: "M7.5 2.75H3.75a1 1 0 0 0-1 1v8.5a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V8.5M11.6 2.4a1.4 1.4 0 0 1 2 2L8 10l-2.5.5L6 8l5.6-5.6Z",
+  clock: "M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM8 4.75V8l2.25 1.5",
+  arrowLeft: "M13 8H3.5M7.25 3.75 3 8l4.25 4.25",
+  sliders: "M2.5 4.5h6.5M12.5 4.5h1M2.5 11.5h1M7 11.5h6.5M10.75 3v3M5.25 10v3",
+  spark: "M8 1.75c.35 2.9 1.35 3.9 4.25 4.25C9.35 6.35 8.35 7.35 8 10.25 7.65 7.35 6.65 6.35 3.75 6 6.65 5.65 7.65 4.65 8 1.75ZM12.25 10.5c.15 1.15.6 1.6 1.75 1.75-1.15.15-1.6.6-1.75 1.75-.15-1.15-.6-1.6-1.75-1.75 1.15-.15 1.6-.6 1.75-1.75Z",
+  monitor: "M2.75 2.75h10.5c.41 0 .75.34.75.75v6.75c0 .41-.34.75-.75.75H2.75a.75.75 0 0 1-.75-.75V3.5c0-.41.34-.75.75-.75ZM5.75 13.75h4.5M8 11v2.75",
+  lock: "M4.25 7.25h7.5c.41 0 .75.34.75.75v5c0 .41-.34.75-.75.75h-7.5a.75.75 0 0 1-.75-.75V8c0-.41.34-.75.75-.75ZM5.5 7.25V5a2.5 2.5 0 0 1 5 0v2.25",
+  globe: "M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM2.25 8h11.5M8 2c1.55 1.65 2.35 3.65 2.35 6S9.55 12.35 8 14M8 2C6.45 3.65 5.65 5.65 5.65 8s.8 4.35 2.35 6",
+  database: "M8 5.25c2.9 0 5.25-.78 5.25-1.75S10.9 1.75 8 1.75 2.75 2.53 2.75 3.5 5.1 5.25 8 5.25ZM2.75 3.5v9c0 .97 2.35 1.75 5.25 1.75s5.25-.78 5.25-1.75v-9M2.75 8c0 .97 2.35 1.75 5.25 1.75S13.25 8.97 13.25 8",
+  info: "M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM8 7.25v3.75M8 4.9v.1",
+  chat: "M3.25 2.75h9.5c.41 0 .75.34.75.75v6.75c0 .41-.34.75-.75.75H7.25L4.5 13.25V11H3.25a.75.75 0 0 1-.75-.75V3.5c0-.41.34-.75.75-.75Z",
+  code: "M5.25 4.5 1.75 8l3.5 3.5M10.75 4.5 14.25 8l-3.5 3.5M9.1 2.75 6.9 13.25",
+  shield: "M8 1.75 2.75 3.6v4.15c0 3.05 2.2 5.4 5.25 6.5 3.05-1.1 5.25-3.45 5.25-6.5V3.6L8 1.75Z",
 };
 export function Icon({ name, size = 16, stroke = 1.6, class: cls = "" }) {
   const fill = name === "stop";
   return html`<svg class=${`ic ${cls}`} width=${size} height=${size} viewBox="0 0 16 16" fill=${fill ? "currentColor" : "none"}
     stroke="currentColor" stroke-width=${name === "more" ? 2.6 : stroke} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${P[name]} /></svg>`;
+}
+
+const cx = (...a) => a.filter(Boolean).join(" ");
+
+/** 按钮：variant = "primary" | "ghost" | "danger"；size = "sm" | "lg"；loading 时转圈并禁用 */
+export function Button({ variant, size, block, loading, icon, class: cls, type = "button", disabled, children, ...rest }) {
+  return html`<button type=${type} class=${cx("btn", variant, size, block && "block", cls)} disabled=${disabled || loading} aria-busy=${loading || undefined} ...${rest}>
+    ${loading ? html`<${Spinner} />` : icon && html`<${Icon} name=${icon} size=${14} />`}${children}
+  </button>`;
+}
+
+/** 图标按钮：必须给 label（读屏与悬停提示） */
+export function IconButton({ icon, label, size, iconSize = 14, on, class: cls, type = "button", ...rest }) {
+  return html`<button type=${type} class=${cx("icon-btn", size, on && "on", cls)} title=${label} aria-label=${label} ...${rest}>
+    <${Icon} name=${icon} size=${iconSize} />
+  </button>`;
+}
+
+/** 行内提示：tone = "amber" | "red"（缺省为品牌色）；action 放在右侧 */
+export function Notice({ tone, action, children }) {
+  return html`<div class=${cx("notice", tone)} role=${tone === "red" ? "alert" : undefined}>
+    <span class="notice-text">${children}</span>${action}
+  </div>`;
+}
+
+/** 骨架条：w / h 为任意 CSS 长度；circle 画圆 */
+export function Skeleton({ w, h: height, circle }) {
+  return html`<span class=${cx("skel", circle && "circle")} style=${{ width: w, height: height ?? (circle ? w : undefined) }} aria-hidden="true"></span>`;
 }
 
 /** 关闭 / 外部点击 / Esc */
@@ -59,7 +103,13 @@ export function useDismiss(ref, onClose, active = true, ignore) {
   }, [active, onClose]);
 }
 
-// —— 分段控件：滑动的品牌色 thumb ——
+// —— 开关：只有开 / 关两态的设置 ——
+export function Switch({ value, onChange, disabled, label, size }) {
+  return html`<button type="button" role="switch" class=${cx("switch", size)} aria-checked=${!!value} aria-label=${label} title=${label}
+    disabled=${disabled} onClick=${() => onChange(!value)}></button>`;
+}
+
+// —— 分段控件：滑动的 thumb ——
 export function Seg({ options, value, onChange, disabled, label }) {
   const ref = useRef(null);
   const thumb = useRef(null);
@@ -171,10 +221,11 @@ export function Menu({ anchor, items, onClose, width = 240, prefer, align, label
           : it.group
             ? html`<li class="group">${it.group}</li>`
             : html`<li role="menuitem" aria-disabled=${!!it.disabled}
-                class=${[sel === i ? "sel" : "", it.danger ? "danger" : "", it.disabled ? "disabled" : "", it.cur ? "cur" : "", it.note ? "explained" : ""].join(" ")}
+                class=${[sel === i ? "sel" : "", it.danger ? "danger" : "", it.disabled ? "disabled" : "", it.cur ? "cur" : "", it.note ? "rich" : ""].join(" ")}
                 onPointerMove=${() => !it.disabled && setSel(i)} onClick=${() => !it.disabled && run(it)}>
-                ${it.note ? html`<span class="v">${it.label}</span><span class="n" style="flex:none">${it.note}</span>` : html`<span class="v">${it.label}</span>`}
-                ${!it.note && html`<span class="check"><${Icon} name="check" size=${14} /></span>`}
+                ${it.icon && html`<span class="lead"><${Icon} name=${it.icon} size=${15} /></span>`}
+                ${it.note ? html`<span class="txt"><span class="v">${it.label}</span><span class="n">${it.note}</span></span>` : html`<span class="v">${it.label}</span>`}
+                <span class="check"><${Icon} name="check" size=${14} /></span>
               </li>`,
       )}
     </ul>
@@ -228,7 +279,7 @@ export const Badge = ({ s }) => {
 };
 
 /** 自绘确认框：焦点先在"取消"（安全选项），Esc 关闭，Tab 在框内循环 */
-export function Sheet({ title, onClose, children, wide, label }) {
+export function Sheet({ title, onClose, children, wide, label, leaving }) {
   const ref = useRef(null);
   useEffect(() => {
     const prev = document.activeElement;
@@ -257,7 +308,7 @@ export function Sheet({ title, onClose, children, wide, label }) {
       prev?.focus?.({ preventScroll: true });
     };
   }, []);
-  return html`<div class="scrim" onPointerDown=${(e) => e.target === e.currentTarget && onClose()}>
+  return html`<div class=${cx("scrim", leaving && "leaving")} onPointerDown=${(e) => e.target === e.currentTarget && onClose()}>
     <div class=${`sheet${wide ? " wide" : ""}`} ref=${ref} role="dialog" aria-modal="true" aria-label=${label || title}>
       ${title && html`<h2>${title}</h2>`}
       ${children}
@@ -266,17 +317,22 @@ export function Sheet({ title, onClose, children, wide, label }) {
 }
 
 export function DialogHost() {
-  const d = useStore(dialog);
-  if (!d) return null;
+  const cur = useStore(dialog);
+  const last = useRef(cur);
+  if (cur) last.current = cur;
+  const { mounted, leaving } = usePresence(!!cur);
+  if (!mounted) return null;
+  const d = last.current;
   const done = (v) => {
+    if (leaving) return;
     dialog.set(null);
     d.resolve(v);
   };
-  return html`<${Sheet} title=${d.title} onClose=${() => done(false)}>
+  return html`<${Sheet} title=${d.title} leaving=${leaving} onClose=${() => done(false)}>
     ${d.body && html`<p class="body">${d.body}</p>`}
     <div class="actions">
-      <button type="button" class="btn" data-autofocus onClick=${() => done(false)}>${d.cancelLabel || "取消"}</button>
-      <button type="button" class=${`btn ${d.danger ? "" : "primary"}`} style=${d.danger ? "background:var(--red);color:#fff" : ""} onClick=${() => done(true)}>${d.confirmLabel || "确定"}</button>
+      <${Button} data-autofocus onClick=${() => done(false)}>${d.cancelLabel || "取消"}<//>
+      <${Button} variant=${d.danger ? "danger" : "primary"} onClick=${() => done(true)}>${d.confirmLabel || "确定"}<//>
     </div>
   <//>`;
 }
@@ -286,7 +342,7 @@ export function Toasts() {
   return html`<div class="toasts" role="status" aria-live="polite">
     ${list.map((t) => html`<div key=${t.id} class=${`toast ${t.kind}${t.leaving ? " leaving" : ""}`}>
       <span>${t.text}</span>
-      ${t.kind === "err" && html`<button type="button" class="icon-btn" style="width:18px;height:18px;color:inherit" aria-label="关闭" onClick=${() => dismissToast(t.id)}><${Icon} name="close" size=${12} /></button>`}
+      ${t.kind === "err" && html`<${IconButton} icon="close" size="xs" iconSize=${12} label="关闭" onClick=${() => dismissToast(t.id)} />`}
     </div>`)}
   </div>`;
 }

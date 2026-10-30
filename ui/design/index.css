@@ -1,0 +1,29 @@
+/* AnyModelBot 设计库入口。规范见 ui/design/README.md，在线样例见 /amb/static/design/index.html。
+   层叠顺序（后面的层总是赢，与选择器权重无关）：
+     tokens → base → components → app（页面样式，ui/css/*）→ utilities
+   页面样式放在 app 层，可以随意覆盖组件，不用拼选择器权重；工具类排最后，加上就生效。 */
+@layer tokens, base, components, app, utilities;
+
+@import url("tokens/primitives.css") layer(tokens);
+@import url("tokens/semantic.css") layer(tokens);
+@import url("tokens/motion.css") layer(tokens);
+
+@import url("base/reset.css") layer(base);
+@import url("base/motion.css") layer(base);
+
+@import url("components/glass.css") layer(components);
+@import url("components/button.css") layer(components);
+@import url("components/field.css") layer(components);
+@import url("components/badge.css") layer(components);
+@import url("components/list.css") layer(components);
+@import url("components/seg.css") layer(components);
+@import url("components/switch.css") layer(components);
+@import url("components/popover.css") layer(components);
+@import url("components/sheet.css") layer(components);
+@import url("components/toast.css") layer(components);
+@import url("components/notice.css") layer(components);
+@import url("components/feedback.css") layer(components);
+@import url("components/avatar.css") layer(components);
+
+@import url("base/typography.css") layer(utilities);
+@import url("base/utilities.css") layer(utilities);

@@ -1,6 +1,6 @@
 // 信息面板：点悬浮胶囊或 ⌘⇧I 打开，面板自己的 ✕ 关闭，⚙ 进机器人设置。
 import { useCallback, useEffect, useState } from "preact/hooks";
-import { html, Icon, Badge, Sheet, Spinner } from "../components/ui.js";
+import { html, Icon, Badge, Sheet, Spinner, Skeleton } from "../components/ui.js";
 import { PromptCard } from "./chat.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, saved, toast } from "../lib/store.js";
@@ -88,7 +88,7 @@ function WeixinRow({ bot, st, reload }) {
     </div>
     ${open && html`<div class="row-edit">
       ${login && login.state !== "idle" && html`<div class="actions"><${Badge} s=${login.state} /><span class="hint">${login.message}</span></div>`}
-      ${active && login.qrDataUrl && html`<img src=${login.qrDataUrl} alt="微信登录二维码" style="width:180px;height:180px;image-rendering:pixelated;background:#fff;padding:8px;border-radius:10px;border:1px solid var(--line)" />
+      ${active && login.qrDataUrl && html`<img class="panel-qr" src=${login.qrDataUrl} alt="微信登录二维码" />
         <p class="hint">用微信扫一扫，然后在手机上确认。</p>`}
       ${login && login.state === "need_verifycode" && html`<div class="actions"><input class="field" style="width:140px" placeholder="验证码" value=${code} onInput=${(e) => setCode(e.target.value)} />
         <button type="button" class="btn" onClick=${() => call("/verify", { code }).then(() => setCode(""))}>提交</button></div>`}
@@ -120,7 +120,7 @@ function MemorySection({ botId }) {
       ${!d && html`<div class="row"><span class="hint">${err || "加载中…"}</span></div>`}
       ${d && !all.length && html`<div class="row"><span class="hint">还没有长期记忆</span></div>`}
       ${all.slice(0, 30).map(({ sc, e, topic }) => html`<div class="row compact">
-        <div class="who"><div class="sub wrap selectable" style="color:var(--fg);font-size:12.5px">${e.text}</div><div class="sub">${sc.label}${topic ? " · " + topic : ""}</div></div>
+        <div class="who"><div class="sub wrap selectable tone-fg t-control">${e.text}</div><div class="sub">${sc.label}${topic ? " · " + topic : ""}</div></div>
         <button type="button" class="icon-btn" title="删除" aria-label="删除这条记忆" onClick=${() => forget(sc, e.text, topic)}><${Icon} name="trash" size=${13} /></button>
       </div>`)}
     </div>`;
@@ -129,12 +129,12 @@ function MemorySection({ botId }) {
 function ConversationSheet({ conv, onClose }) {
   const [d] = usePoll(() => api(`/conversations/${encodeURIComponent(conv.id)}/messages`), 0, [conv.id]);
   return html`<${Sheet} title=${`${CHANNEL_NAME[conv.channel] || conv.channel} · ${conv.title || conv.peerId}`} wide onClose=${onClose}>
-    <div style="display:grid;gap:8px;max-height:60vh;overflow:auto">
+    <div class="transcript">
       ${!d && html`<span class="hint">加载中…</span>`}
       ${d && !d.messages.length && html`<span class="hint">没有消息</span>`}
-      ${d && d.messages.map((m) => html`<div style=${`justify-self:${m.role === "user" ? "end" : "start"};max-width:85%`}>
-        <div class="selectable" style=${`white-space:pre-wrap;padding:7px 11px;border-radius:14px;font-size:13px;line-height:1.5;${m.role === "user" ? "background:var(--accent-solid);color:var(--on-accent)" : "background:var(--bubble-ai)"}`}>${m.content}</div>
-        <div class="hint" style=${`text-align:${m.role === "user" ? "right" : "left"};margin-top:2px`}>${fmtTime(m.createdAt)}</div>
+      ${d && d.messages.map((m) => html`<div class=${`transcript-msg${m.role === "user" ? " user" : ""}`}>
+        <div class="bubble selectable">${m.content}</div>
+        <div class="hint">${fmtTime(m.createdAt)}</div>
       </div>`)}
     </div>
     <div class="actions"><button type="button" class="btn" data-autofocus onClick=${onClose}>关闭</button></div>
@@ -158,12 +158,12 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
       <div class="list">
         ${detail && detail.bot
           ? html`<${FeishuRow} bot=${detail.bot} st=${detail.channels.feishu} reload=${reloadDetail} /><${WeixinRow} bot=${detail.bot} st=${detail.channels.weixin} reload=${reloadDetail} />`
-          : html`<div class="row"><span class="skel" style="width:50%"></span></div><div class="row"><span class="skel" style="width:40%"></span></div>`}
+          : html`<div class="row"><${Skeleton} w="50%" /></div><div class="row"><${Skeleton} w="40%" /></div>`}
       </div>
 
       <div class="list-head">待审批${pending.length > 0 && html`<span class="badge count warn">${pending.length}</span>`}</div>
       ${pending.length
-        ? html`<div style="display:grid;gap:8px">${pending.map((a) => html`<div key=${a.id} style="display:grid;gap:4px">
+        ? html`<div class="stack">${pending.map((a) => html`<div key=${a.id} class="stack" style="--gap: var(--space-1)">
             <span class="hint">${CHANNEL_NAME[a.conversationId.split(":")[1]] || ""} · ${fmtAgo(a.createdAt)} · 截止 ${fmtTime(a.expiresAt).slice(-8, -3)}</span>
             <${PromptCard} requestId=${a.id} fallback="" />
           </div>`)}
@@ -174,7 +174,7 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
 
       <div class="list-head">最近会话</div>
       <div class="list">
-        ${!convs && html`<div class="row"><span class="skel" style="width:60%"></span></div>`}
+        ${!convs && html`<div class="row"><${Skeleton} w="60%" /></div>`}
         ${convs && !convs.conversations.length && html`<div class="row"><span class="hint">还没有会话</span></div>`}
         ${convs && convs.conversations.slice(0, 12).map((c) => html`<div class="row compact clickable" role="button" tabindex="0"
             onClick=${() => (c.channel === "web" ? onOpenChat() : setViewing(c))} onKeyDown=${(e) => e.key === "Enter" && (c.channel === "web" ? onOpenChat() : setViewing(c))}>

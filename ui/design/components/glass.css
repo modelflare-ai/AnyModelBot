@@ -1,0 +1,12 @@
+/* 毛玻璃 .glass：半透明底 + 背景模糊 + 磨砂颗粒 + 顶边高光与细描边。
+   材质由三个变量决定（缺省是浮在内容上的输入框材质）：
+     --glass-bg      材质色：--glass-chrome | --glass-float | --glass-panel | --glass-pop | --glass-sheet
+     --glass-blur    模糊：--glass-filter-sm | --glass-filter | --glass-filter-lg
+     --glass-shadow  边与投影：--shadow-float | --shadow-pop
+   组件自己就是玻璃时（.pop .palette .sheet .toast，页面里的顶栏和输入框）直接写同样三行，不必加这个类。
+   注意：backdrop-filter 会让元素成为 position: fixed 子元素的包含块——里面会渲染菜单的容器（侧栏、主区）不要加。 */
+.glass {
+  background: var(--grain), var(--glass-bg, var(--glass-float));
+  backdrop-filter: var(--glass-blur, var(--glass-filter));
+  box-shadow: var(--glass-shadow, var(--shadow-float));
+}

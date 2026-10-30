@@ -1,0 +1,124 @@
+/* 设计库样例页（/amb/static/design/index.html）的版式。它自己也遵守规范：只用 token。 */
+@layer app {
+.gal { display: grid; grid-template-columns: 196px minmax(0, 1fr); height: 100vh; background: var(--bg); }
+.gal-nav {
+  display: grid; align-content: start; gap: 1px; overflow-y: auto;
+  padding: var(--space-5) var(--space-3); background: var(--grain), var(--glass-side); border-right: .5px solid var(--line-2);
+}
+.gal-nav .brand { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2) var(--space-4); font-weight: var(--fw-semibold); }
+.gal-nav .t-caption { padding: var(--space-3) var(--space-2-5) var(--space-1); }
+.gal-nav a {
+  display: block; padding: 5px var(--space-2-5); border-radius: var(--r-md);
+  font-size: var(--fs-sm); color: var(--fg-2); transition: background var(--t-fast), color var(--t-fast);
+}
+.gal-nav a:hover { background: var(--side-hover); color: var(--fg); text-decoration: none; }
+
+.gal-main { min-width: 0; overflow-y: auto; }
+.gal-head {
+  position: sticky; top: 0; z-index: var(--z-float);
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-8);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(16px); backdrop-filter: saturate(1.6) blur(16px);
+  border-bottom: 1px solid var(--line-2);
+}
+.gal-body { max-width: 1080px; padding: var(--space-2) var(--space-8) 120px; }
+.gal-sec { padding-top: var(--space-8); scroll-margin-top: 56px; }
+.gal-sec > h2 { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tight); }
+.gal-sec > .lead { max-width: 680px; margin: var(--space-1-5) 0 var(--space-4); color: var(--muted); line-height: var(--lh-relaxed); }
+.gal-sec h3 { margin: var(--space-6) var(--space-0-5) var(--space-2); }
+
+/* —— 样例卡：标题 / 演示区（可双主题对照）/ 用法 —— */
+.gal-specimen { margin: 0 0 var(--space-3); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-xl); overflow: hidden; }
+.gal-specimen > figcaption { display: flex; align-items: baseline; gap: var(--space-2); padding: var(--space-2-5) var(--space-3-5); border-bottom: 1px solid var(--line-2); }
+.gal-specimen > figcaption b { font-weight: var(--fw-semibold); }
+.gal-pair { display: grid; grid-template-columns: 1fr 1fr; }
+.gal-pair > .gal-demo + .gal-demo { border-left: 1px solid var(--line); }
+.gal-demo { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-5); min-width: 0; }
+.gal-demo[data-theme] { background: var(--card); }
+.gal-demo.col { flex-direction: column; align-items: stretch; }
+.gal-demo.flush { padding: 0; }
+.gal-demo.flush > .list { border: 0; border-radius: 0; width: 100%; }
+.gal-code {
+  margin: 0; padding: var(--space-2-5) var(--space-3-5); border-top: 1px solid var(--line-2); background: var(--card-2);
+  font: var(--fs-xs)/var(--lh-normal) var(--code); color: var(--fg-2); white-space: pre-wrap; overflow-x: auto;
+  user-select: text; -webkit-user-select: text;
+}
+
+/* —— token 表 —— */
+.gal-rows { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-xl); overflow: hidden; }
+.gal-row {
+  display: grid; grid-template-columns: minmax(190px, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); align-items: center;
+  padding: var(--space-2) var(--space-3-5); border-top: 1px solid var(--line-2);
+}
+.gal-row:first-child { border-top: 0; }
+.gal-row.scale { grid-template-columns: minmax(190px, 1.1fr) 90px minmax(0, 2fr); }
+.gal-name { min-width: 0; }
+.gal-name code { display: block; color: var(--fg); cursor: copy; }
+.gal-name .t-meta { display: block; }
+.gal-chip { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-1); border-radius: var(--r-md); }
+.gal-chip i {
+  width: 28px; height: 28px; flex: none; border-radius: var(--r-sm); background: var(--sw);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.gal-chip code { font-size: var(--fs-2xs); color: var(--muted); overflow-wrap: anywhere; }
+.gal-bar { height: 10px; width: var(--w); border-radius: 2px; background: var(--accent-solid); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.gal-radius { width: 64px; height: 40px; border-radius: var(--r); background: var(--pill); box-shadow: inset 0 0 0 1px var(--line); }
+.gal-height { height: var(--h); width: 120px; border-radius: var(--r-sm); background: var(--pill); box-shadow: inset 0 0 0 1px var(--line); }
+.gal-elev { display: grid; place-items: end start; width: 150px; height: 84px; padding: var(--space-2-5); border-radius: var(--r-xl); background: var(--card); box-shadow: var(--sh); }
+
+/* —— 动效 —— */
+.gal-track { position: relative; flex: 1; min-width: 120px; height: 18px; border-radius: var(--r-full); background: var(--pill); }
+.gal-track i {
+  position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent);
+  transition: left var(--d, var(--dur-slow)) var(--e, var(--ease-out));
+}
+.gal-track.on i { left: calc(100% - 15px); }
+.gal-curve { width: 56px; height: 56px; flex: none; overflow: visible; }
+.gal-curve rect { fill: none; stroke: var(--line); }
+.gal-curve path { fill: none; stroke: var(--accent); stroke-width: 2; }
+.gal-anim { display: grid; justify-items: center; gap: var(--space-2); width: 120px; }
+.gal-anim-box { width: 72px; height: 48px; border-radius: var(--r-lg); background: var(--accent-solid); box-shadow: inset 0 0 0 1px var(--accent-line); }
+
+/* —— 页面模式 —— */
+.gal-chat { display: flex; flex-direction: column; width: 100%; }
+.gal-chat > .msg-row:first-child { margin-top: 0; }
+.gal-demo .composer { width: 100%; }
+
+/* —— 材质：环境光 + 底下的彩色内容 + 六块玻璃 —— */
+.gal-stage { position: relative; height: 300px; overflow: hidden; width: 100%; }
+.gal-stage-under {
+  position: absolute; inset: 0; padding: var(--space-4) var(--space-5); display: grid; align-content: start; gap: var(--space-2-5);
+  font-size: var(--fs-lg); color: var(--fg);
+}
+.gal-stage-over {
+  position: absolute; inset: 0; padding: var(--space-6) var(--space-5); display: grid; gap: var(--space-4);
+  grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: center;
+}
+.gal-stage-swatch { width: 28px; height: 28px; border-radius: var(--r-lg); background: var(--sw); flex: none; }
+.gal-mat { display: grid; gap: var(--space-0-5); align-content: start; min-height: 92px; padding: var(--space-3) var(--space-3-5); border-radius: var(--r-2xl); }
+.gal-mat b { font-weight: var(--fw-semibold); }
+
+/* —— 状态矩阵：一行一个组件，浅色 / 深色两条，画在真实的表面上 —— */
+.gal-state > .gal-strip + .gal-strip { border-top: .5px solid var(--line); }
+.gal-strip-in { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-4) var(--space-5); padding: var(--space-4) var(--space-5) var(--space-3-5); }
+.ctx-surface > .gal-strip-in { background: var(--surface); }
+.ctx-side > .gal-strip-in { background: var(--grain), var(--glass-side); }
+.gal-cell { display: grid; justify-items: start; gap: var(--space-2); }
+.gal-cell-stage { min-height: var(--ctl-lg); display: flex; align-items: center; }
+.gal-cell > .t-meta { font-size: var(--fs-2xs); }
+.gal-pop-static { position: static; width: 168px; max-height: none; animation: none; }
+.composer.gal-bare { width: auto; margin: 0; padding: var(--space-1-5); flex-direction: row; }
+.card.gal-bare-card { width: 200px; padding: var(--space-1-5) var(--space-2-5); }
+.card.gal-bare-card .opts, .card.gal-bare-card .opt { margin: 0; }
+
+@media (max-width: 900px) {
+  .gal { grid-template-columns: minmax(0, 1fr); }
+  .gal-nav { display: none; }
+  .gal-head, .gal-body { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .gal-pair { grid-template-columns: minmax(0, 1fr); }
+  .gal-stage { height: 520px; }
+  .gal-stage-over { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .gal-pair > .gal-demo + .gal-demo { border-left: 0; border-top: 1px solid var(--line); }
+}
+}

@@ -1,0 +1,59 @@
+/* 动效 token。原则：
+   - 状态反馈（悬停、按下、颜色）用 fast；出现/消失用 base；整块视图或面板用 moderate；
+     弹出层与对话框的弹性入场用 slow/slower + spring。
+   - 入场用 ease-out（或 spring），退场用 ease-in，循环用 ease-in-out 或 linear。
+   - 位移量也是 token（--rise / --slide / --pop-*），组件可以局部覆盖；关键帧把它们乘以 --motion，
+     减少动态效果时 --motion = 0，所有入场自动退化成纯淡入。 */
+:root {
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-moderate: 240ms;
+  --dur-slow: 360ms;
+  --dur-slower: 420ms;
+
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(.42, 0, .58, 1);
+  --ease-spring: cubic-bezier(.16, 1, .3, 1);
+  --ease-back: cubic-bezier(.34, 1.56, .64, 1);   /* 越过一点再回来：头像的弹跳 */
+
+  /* 时长 + 缓动的组合：transition: background var(--t-fast), color var(--t-fast) */
+  --t-fast: var(--dur-fast) var(--ease-out);
+  --t-base: var(--dur-base) var(--ease-out);
+  --t-moderate: var(--dur-moderate) var(--ease-out);
+
+  /* 循环 */
+  --dur-spin: 800ms;
+  --dur-blink: 1s;
+  --dur-shimmer: 1.2s;
+  --dur-pulse: 1.4s;
+  --dur-flash: 1.2s;
+  --dur-ambient: 1.2s;  /* 环境光换色（切换机器人时） */
+  --stagger: 150ms;
+  --dur-off: .01ms;   /* 减少动态效果时代替 0：时长为 0 的过渡不触发 transitionend */
+
+  /* 机器人头像的一次性反应（avatar.js 用 ms() 读，播完回到持续状态） */
+  --bot-hello: 1.6s;
+  --bot-done: 1.3s;
+  --bot-error: 1.5s;
+  --bot-poke: .7s;
+  --bot-love: 1.6s;
+  --bot-dizzy: 2.2s;
+
+  /* 位移量 */
+  --motion: 1;
+  --rise: 6px;
+  --slide: 12px;
+  --pop-dy: -6px;
+  --pop-scale: .94;
+  --press: .96;
+  --press-strong: .94;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 0;
+    --press: 1;
+    --press-strong: 1;
+    --dur-spin: 1.6s;
+  }
+}

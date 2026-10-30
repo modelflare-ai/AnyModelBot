@@ -1,0 +1,145 @@
+/* L1 · 原始值（primitives）：与主题无关的色板与尺度。
+   颜色：组件和页面不直接用这一层，一律通过 semantic.css 的语义 token 取色。
+   尺度（间距、字号、圆角、控件高度、层级）：组件可以直接用。
+   Modelflare 品牌色：信号黄绿 #d7ff00 + 墨色 #161a00（modelflare.dev / docs.modelflare.dev），
+   浅色前景用定价页的橄榄绿 #5f711c（黄绿在白底上只有 1.15:1）。 */
+:root {
+  /* —— 品牌：黄绿（填充）与橄榄（前景） —— */
+  --lime-100: #edf7b8;
+  --lime-200: #e9ff66;
+  --lime-300: #e6ff4d;
+  --lime-400: #daff14;
+  --lime-500: #d7ff00;
+  --lime-600: #c7ef00;
+  --olive-50: #f1f4e9;
+  --olive-500: #789600;
+  --olive-600: #5f711c;
+  --olive-700: #465612;
+  --olive-900: #31361a;
+  --olive-950: #161a00;
+
+  /* —— 状态色：50/900 是浅/深底，300/600(700) 是深/浅底上的前景 —— */
+  --green-50: #e4f6ec;
+  --green-300: #6fd99b;
+  --green-600: #189a58;
+  --green-900: #1e3a2b;
+  --red-50: #fbe9e9;
+  --red-300: #f28b82;
+  --red-600: #d64545;
+  --red-900: #45272a;
+  --red-950: #3b0d0a;
+  --amber-50: #fbf0df;
+  --amber-300: #f2b544;
+  --amber-700: #b45309;
+  --amber-900: #3f3220;
+
+  /* —— 机器人角色：取自 anymodelbot_design 原图的眼睛与辉光，两个主题相同 —— */
+  --bot-blue-eye: #6dd4fb;
+  --bot-blue-glow: #2a9dff;
+  --bot-yellow-eye: #fcfcdc;
+  --bot-yellow-glow: #ffc21a;
+  --bot-green-eye: #b5fbd6;
+  --bot-green-glow: #2ee88a;
+  --bot-red-eye: #fc9379;
+  --bot-red-glow: #ff3b2a;
+  --bot-purple-eye: #fdc1fb;
+  --bot-purple-glow: #c24dff;
+  --bot-orange-eye: #fdd77c;
+  --bot-orange-glow: #ff8c1a;
+  --bot-blush: #ff7aa8;
+  --bot-glint: rgba(255, 255, 255, .8);   /* 镜片、宝石上扫过的反光 */
+
+  /* —— 黑白 —— */
+  --white: #ffffff;
+  --black: #000000;
+
+  /* —— 间距：4 的倍数，另有 2/6/10/14 半步 —— */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-3-5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* —— 字号：8 级。桌面应用的密度，小号保留半像素 —— */
+  --fs-2xs: 11px;    /* 分组标题、徽标、快捷键 */
+  --fs-xs: 11.5px;   /* 次要说明、元信息、等宽值 */
+  --fs-sm: 12.5px;   /* 控件：按钮、菜单项、分段、输入框 */
+  --fs-md: 13px;     /* 界面正文 */
+  --fs-lg: 14px;     /* 列表标题、面板标题 */
+  --fs-xl: 15px;     /* 对话正文、对话框标题 */
+  --fs-2xl: 17px;    /* 空状态标题 */
+  --fs-3xl: 20px;    /* 引导页标题 */
+  --fs-4xl: 24px;    /* 页面大标题（设置、机器人设置） */
+
+  /* —— 字重、行高、字距 —— */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  --lh-tight: 1.3;
+  --lh-snug: 1.4;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.55;
+
+  --tracking-tighter: -.02em;
+  --tracking-tight: -.01em;
+  --tracking-caps: .04em;
+
+  /* —— 圆角：嵌套时内层 = 外层 − 内边距（.seg 8 → thumb 6） —— */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+  --r-2xl: 14px;
+  --r-3xl: 20px;
+  --r-full: 999px;
+
+  /* —— 控件高度 —— */
+  --ctl-xs: 22px;
+  --ctl-sm: 24px;
+  --ctl-md: 28px;
+  --ctl-lg: 32px;
+  --ctl-xl: 36px;
+  --ctl-2xl: 44px;
+
+  /* —— 层级：同一窗格内的浮动件 < 抽屉 < 弹出层 < 模态 < 命令面板 < 提示 —— */
+  --z-raised: 1;
+  --z-float: 5;
+  --z-drawer: 30;
+  --z-popover: 40;
+  --z-modal: 50;
+  --z-palette: 56;
+  --z-toast: 60;
+
+  /* —— 透明度 —— */
+  --o-disabled: .45;
+
+  /* —— 毛玻璃：背景模糊半径与饱和度增强。材质的颜色在 semantic.css —— */
+  --blur-sm: 12px;     /* 小浮件：回到底部、提示胶囊 */
+  --blur-md: 24px;     /* 顶栏、输入框 */
+  --blur-lg: 40px;     /* 菜单、命令面板、对话框 */
+  --blur-scrim: 6px;   /* 对话框后面的遮罩 */
+  --glass-sat: 180%;   /* 透出来的颜色更饱满，玻璃才不发灰 */
+  --glass-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
+  --glass-filter-lg: blur(var(--blur-lg)) saturate(var(--glass-sat));
+  --glass-filter-sm: blur(var(--blur-sm)) saturate(var(--glass-sat));
+
+  /* —— 版式宽度 —— */
+  --side-w: 280px;
+  --panel-w: 320px;
+  --col-w: 760px;      /* 对话阅读列：参考 Codex，回复是整列宽的正文 */
+  --bubble-w: 600px;   /* 用户气泡最大宽度 */
+  --head-h: 52px;      /* 对话顶栏、信息面板顶栏 */
+  --page-w: 680px;     /* 设置页、机器人设置的内容列 */
+  --pane-gap: 8px;     /* 主区、信息面板与窗口边缘的间隙：它们是浮在环境光上的面板 */
+}

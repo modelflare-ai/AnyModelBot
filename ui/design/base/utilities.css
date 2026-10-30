@@ -1,0 +1,10 @@
+/* 少量布局与文字工具类。只收"到处都在写"的那几种；更复杂的布局写在页面样式里。 */
+.stack { display: grid; gap: var(--gap, var(--space-2)); align-content: start; }
+.cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap, var(--space-2)); }
+.grow { flex: 1; min-width: 0; }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pre-wrap { white-space: pre-wrap; }
+.tone-fg { color: var(--fg); }
+.tone-muted { color: var(--muted); }
+.tone-danger { color: var(--red); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

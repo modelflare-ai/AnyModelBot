@@ -1,0 +1,81 @@
+/* 按钮。.text 改编自 yetone/magpie internal/gui/assets/app.css（MIT，© 2026 yetone）。
+   定制方式：在变体或上下文里覆盖 --btn-* / --ib-* 变量，不要直接改属性。
+   状态（见 README「状态」）：悬停叠一层、按下再深一级并轻微缩小、键盘焦点外描边、禁用变淡且不响应、
+   加载（aria-busy）保持本色只是不可点。 */
+
+/* —— .btn [primary | ghost | danger] [sm | lg] [block] —— */
+.btn {
+  --btn-h: var(--ctl-md);
+  --btn-px: var(--space-3);
+  --btn-r: var(--r-md);
+  --btn-fs: var(--fs-sm);
+  --btn-bg: var(--pill);
+  --btn-bg-hover: var(--pill-hover);
+  --btn-bg-press: var(--pill-press);
+  --btn-fg: var(--fg);
+  --btn-fg-hover: var(--btn-fg);
+  --btn-edge: 0 0 transparent;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1-5);
+  height: var(--btn-h); padding: 0 var(--btn-px); border-radius: var(--btn-r);
+  font-size: var(--btn-fs); font-weight: var(--fw-medium); white-space: nowrap;
+  background: var(--btn-bg); color: var(--btn-fg); box-shadow: var(--btn-edge);
+  transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast), opacity var(--t-fast);
+}
+.btn:hover:not(:disabled) { background: var(--btn-bg-hover); color: var(--btn-fg-hover); }
+.btn:active:not(:disabled) { background: var(--btn-bg-press); transform: scale(var(--press)); }
+.btn:disabled { opacity: var(--o-disabled); }
+/* 加载中：Button 的 loading 同时设 disabled 和 aria-busy——颜色不变，只是不可点 */
+.btn[aria-busy="true"] { opacity: 1; cursor: progress; }
+.btn .spinner { width: 14px; height: 14px; }
+
+/* 主按钮：浅色墨底白字，深色黄绿底墨字；带一道顶边高光 */
+.btn.primary {
+  --btn-bg: var(--primary); --btn-bg-hover: var(--primary-hover); --btn-bg-press: var(--primary-press);
+  --btn-fg: var(--on-primary); --btn-edge: var(--primary-edge);
+}
+/* 不可用时退成中性灰：半透明的墨色或黄绿都会发浑 */
+.btn.primary:disabled:not([aria-busy="true"]) { --btn-bg: var(--pill); --btn-fg: var(--faint); --btn-edge: 0 0 transparent; opacity: 1; }
+.btn.ghost { --btn-bg: transparent; --btn-bg-hover: var(--pill); --btn-bg-press: var(--pill-hover); --btn-fg: var(--ctl-fg); --btn-fg-hover: var(--fg); }
+.btn.danger {
+  --btn-bg: var(--red); --btn-bg-hover: color-mix(in srgb, var(--red) 88%, var(--fg)); --btn-bg-press: color-mix(in srgb, var(--red) 78%, var(--fg));
+  --btn-fg: var(--on-danger); --btn-edge: inset 0 1px 0 color-mix(in srgb, var(--white) 16%, transparent);
+}
+.btn.sm { --btn-h: var(--ctl-sm); --btn-px: var(--space-2-5); }
+.btn.lg { --btn-h: var(--ctl-xl); --btn-fs: var(--fs-md); --btn-r: var(--r-lg); }
+.btn.block { width: 100%; }
+
+/* —— 图标按钮 .icon-btn [xs] [on]：on / aria-expanded 是"打开着"，比悬停深一级 —— */
+.icon-btn {
+  --ib-size: 26px;
+  --ib-r: var(--r-md);
+  --ib-fg: var(--muted);
+  --ib-fg-hover: var(--fg);
+  --ib-bg-hover: var(--pill);
+  --ib-bg-on: var(--pill-hover);
+  --ib-bg-press: var(--pill-press);
+  width: var(--ib-size); height: var(--ib-size); border-radius: var(--ib-r); flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ib-fg); transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast);
+}
+.icon-btn:hover:not(:disabled) { background: var(--ib-bg-hover); color: var(--ib-fg-hover); }
+.icon-btn.on:not(:disabled), .icon-btn[aria-expanded="true"]:not(:disabled) { background: var(--ib-bg-on); color: var(--ib-fg-hover); }   /* 打开时悬停也保持打开的样子 */
+.icon-btn:active:not(:disabled) { background: var(--ib-bg-press); transform: scale(var(--press-strong)); }
+.icon-btn:disabled { opacity: var(--o-disabled); }
+.icon-btn.xs { --ib-size: 18px; --ib-r: var(--r-sm); }
+
+/* —— 文字按钮 .text [danger | accent] —— */
+.text {
+  font-size: var(--fs-sm); color: var(--ctl-fg); padding: 3px 7px; border-radius: var(--r-sm); white-space: nowrap;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.text:hover:not(:disabled) { background: var(--pill); color: var(--fg); }
+.text:active:not(:disabled) { background: var(--pill-hover); }
+.text:disabled { opacity: var(--o-disabled); }
+.text.danger { color: var(--red); }
+.text.danger:hover:not(:disabled) { background: var(--red-soft); color: var(--red); }
+.text.danger:active:not(:disabled) { background: color-mix(in srgb, var(--red) 18%, transparent); }
+.text.accent { color: var(--accent); }
+.text.accent:hover:not(:disabled) { color: var(--accent); }
+
+/* 复制成功：变绿并弹一下 */
+.icon-btn.copy.done { color: var(--green); background: var(--green-soft); animation: bump var(--dur-slow) var(--ease-out); }

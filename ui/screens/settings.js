@@ -1,7 +1,8 @@
-// 设置页（magpie 风格）：页签 + 查找设置；白色圆角 list，一行一项；改动即保存，左下角"已保存"。
-// 入口只有左下角账户按钮、⌘/Ctrl+, 和命令面板，不放齿轮。
+// 设置页（参考 Codex）：侧栏换成设置导航（返回应用 + 查找 + 分页），主区是大标题 + 白色圆角 list，一行一项；改动即保存。
+// 入口只有左下角账户按钮、⌘/Ctrl+, 和命令面板。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, Seg, Sheet, CopyButton } from "../components/ui.js";
+import { html, Icon, Seg, Switch, Sheet, CopyButton, Skeleton } from "../components/ui.js";
+import { AccountButton } from "./sidebar.js";
 import { ModelPicker, shortModel } from "../components/model-picker.js";
 import { KeyForm, LINE_OPTIONS, MF_CONSOLE, MF_DOCS } from "./onboarding.js";
 import { api } from "../lib/api.js";
@@ -9,13 +10,13 @@ import { useStore, confirmSheet, failed, saved } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
 
 export const TABS = [
-  ["general", "常规"],
-  ["modelflare", "Modelflare"],
-  ["computer", "电脑操作"],
-  ["privacy", "隐私与安全"],
-  ["network", "网络与访问"],
-  ["data", "数据"],
-  ["about", "关于"],
+  ["general", "常规", "sliders"],
+  ["modelflare", "Modelflare", "spark"],
+  ["computer", "电脑操作", "monitor"],
+  ["privacy", "隐私与安全", "lock"],
+  ["network", "网络与访问", "globe"],
+  ["data", "数据", "database"],
+  ["about", "关于", "info"],
 ];
 const ZOOMS = [
   [1, "100%"],
@@ -53,17 +54,36 @@ function NoticesSheet({ onClose }) {
   <//>`;
 }
 
-export function SettingsScreen({ tab, focusRow, onTab, mf, onMfChanged, onSettings, models, modelsError, reloadModels, status, bots, onOpenBotSettings }) {
+/** 设置时的侧栏：返回应用 | 查找设置 | 分页 | 账户 */
+export function SettingsSide({ tab, query, onQuery, onTab, onBack, username }) {
+  const searching = !!query.trim();
+  return html`<aside class="side" aria-label="设置">
+    <div class="side-top start">
+      <button type="button" class="side-back" title="返回应用（Esc）" onClick=${onBack}><${Icon} name="arrowLeft" size=${15} />返回应用</button>
+    </div>
+    <label class="side-search">
+      <${Icon} name="search" size=${14} />
+      <input type="search" placeholder="查找设置" aria-label="查找设置" value=${query} onInput=${(e) => onQuery(e.target.value)}
+        onKeyDown=${(e) => e.key === "Escape" && query && (e.stopPropagation(), onQuery(""))} />
+    </label>
+    <nav class="side-list side-nav" aria-label="设置分页">
+      ${TABS.map(([t, label, icon]) => {
+        const on = !searching && t === tab;
+        return html`<button type="button" key=${t} class=${`nav-item${on ? " sel" : ""}`} aria-current=${on ? "page" : undefined}
+          onClick=${() => { onQuery(""); onTab(t); }}><${Icon} name=${icon} size=${16} /><span>${label}</span></button>`;
+      })}
+    </nav>
+    <div class="side-foot"><${AccountButton} username=${username} on onClick=${() => onTab("general")} /></div>
+  </aside>`;
+}
+
+export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onMfChanged, onSettings, models, modelsError, reloadModels, status, bots, onOpenBotSettings }) {
   const [s, setS] = useState(null);
-  const [q, setQ] = useState("");
   const [rekey, setRekey] = useState(false);
   const [notices, setNotices] = useState(false);
   const [cu, setCu] = useState(null);
   const [flash, setFlash] = useState("");
-  const [stuck, setStuck] = useState(false);
   const mode = useStore(themeMode);
-  const body = useRef(null);
-  const find = useRef(null);
 
   useEffect(() => {
     api("/settings").then(setS).catch(failed);
@@ -126,7 +146,7 @@ export function SettingsScreen({ tab, focusRow, onTab, mf, onMfChanged, onSettin
       desktop && { tab: "general", id: "close", name: "关闭窗口时", sub: "隐藏到托盘时机器人继续在后台收发消息", keys: "托盘 退出 tray",
         ctl: html`<${Seg} label="关闭窗口时" value=${s.closeToTray} onChange=${(v) => put({ closeToTray: v }, { closeToTray: v })} options=${[[true, "隐藏到托盘"], [false, "退出"]]} />` },
       desktop && s.autostart.supported && { tab: "general", id: "autostart", name: "开机自启", sub: "登录系统后在后台启动", keys: "启动 login",
-        ctl: html`<${Seg} label="开机自启" value=${s.autostart.on} onChange=${(v) => put({ autostart: v }, { autostart: { ...s.autostart, on: v } })} options=${[[false, "关"], [true, "开"]]} />` },
+        ctl: html`<${Switch} label="开机自启" value=${s.autostart.on} onChange=${(v) => put({ autostart: v }, { autostart: { ...s.autostart, on: v } })} />` },
       desktop && { tab: "general", id: "browser", name: "在浏览器中打开", sub: "用系统浏览器打开同一个本机界面", keys: "browser",
         ctl: html`<button type="button" class="text" onClick=${() => api("/desktop/open-in-browser", { method: "POST", body: {} }).catch(failed)}>打开</button>` },
 
@@ -180,18 +200,11 @@ export function SettingsScreen({ tab, focusRow, onTab, mf, onMfChanged, onSettin
   const shown = needle ? rows.filter((r) => `${r.name} ${r.sub || ""} ${r.keys || ""}`.toLowerCase().includes(needle)) : rows.filter((r) => r.tab === tab);
   const parts = needle ? TABS.map(([t, label]) => [label, shown.filter((r) => r.tab === t)]).filter(([, l]) => l.length) : [["", shown]];
 
-  return html`<section class="settings view" data-screen="settings" ref=${body} onScroll=${(e) => setStuck(e.target.scrollTop > 2)}>
-    <div class=${`set-head${stuck ? " stuck" : ""}`}>
-      <div class="set-title">设置</div>
-      ${!needle && html`<nav class="warm-tabs" role="tablist" aria-label="设置分页">
-        ${TABS.map(([t, label]) => html`<button type="button" role="tab" aria-selected=${t === tab} class=${t === tab ? "on" : ""} onClick=${() => onTab(t)}>${label}</button>`)}
-      </nav>`}
-      ${needle && html`<span style="flex:1"></span>`}
-      <input class="set-find" ref=${find} type="search" placeholder="查找设置" aria-label="查找设置" value=${q} onInput=${(e) => setQ(e.target.value)}
-        onKeyDown=${(e) => e.key === "Escape" && q && (e.stopPropagation(), setQ(""))} />
-    </div>
+  const title = needle ? "搜索结果" : (TABS.find(([t]) => t === tab) || TABS[0])[1];
+  return html`<section class="settings view" data-screen="settings" key=${needle ? "search" : tab}>
+    <div class="set-head"><h1 class="set-title">${title}</h1></div>
     <div class="set-body">
-      ${!s && html`<div class="list"><div class="row"><span class="skel" style="width:40%"></span></div><div class="row"><span class="skel" style="width:55%"></span></div></div>`}
+      ${!s && html`<div class="list"><div class="row"><${Skeleton} w="40%" /></div><div class="row"><${Skeleton} w="55%" /></div></div>`}
       ${s && !shown.length && html`<p class="set-none">没有匹配的设置</p>`}
       ${parts.map(([label, list]) => html`${label && html`<div class="set-part">${label}</div>`}
         <div class="list">${list.map((r) => html`<${Row} key=${r.id} id=${r.id} name=${r.name} sub=${r.sub} title=${r.title || r.sub} flash=${flash === r.id}>${r.ctl}<//>`)}</div>`)}

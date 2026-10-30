@@ -1,12 +1,13 @@
-// 对话页：无顶栏，顶部居中悬浮名称胶囊（点开信息面板），960 内容列，560 气泡，底部悬浮输入胶囊。
+// 对话页（参考 Grok Bot 的顶栏、Codex 的对话与输入框）：顶栏左侧头像 + 名称，右侧新对话 / 信息面板；
+// 760 阅读列，用户消息是浅灰气泡，机器人回复是整列正文，上方一行"思考中 / 正在回复 / 用时"；底部两行输入框。
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, Menu, Popover, Badge, autoGrow } from "../components/ui.js";
+import { html, Icon, IconButton, CopyButton, Menu, Popover, Badge, Skeleton, autoGrow } from "../components/ui.js";
 import { BotAvatar } from "../components/avatar.js";
 import { Markdown, Linkified } from "../components/markdown.js";
 import { ModelPicker, shortModel, sameModel } from "../components/model-picker.js";
 import { api, streamChat } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
-import { fmtSep } from "../lib/format.js";
+import { fmtSep, fmtClock, fmtDur } from "../lib/format.js";
 
 const COMMANDS = [
   ["/model", "列出或切换模型"],
@@ -15,6 +16,11 @@ const COMMANDS = [
   ["/status", "查看当前模型与运行方式"],
   ["/help", "显示全部命令"],
 ];
+// 文件权限（输入框左下角，参考 Codex 的权限胶囊）：机器人设置里的同一项
+const PERMS = {
+  workspace: { label: "工作区可写", icon: "shield", note: "只能改这个机器人的工作区，越界操作先问你" },
+  readonly: { label: "只读", icon: "lock", note: "不能改文件，命令在只读沙箱里运行" },
+};
 const NEAR_BOTTOM = 80;
 const LINE_PX = 22;
 let seq = 0;
@@ -50,8 +56,8 @@ export function PromptCard({ requestId, fallback }) {
     return () => clearInterval(t);
   }, [row && row.status]);
 
-  if (gone || (!row && !requestId)) return html`<div class="notice"><span class="notice-text" style="white-space:pre-wrap">${fallback}</span></div>`;
-  if (!row) return html`<div class="card"><span class="skel" style="width:60%"></span><span class="skel" style="width:40%"></span></div>`;
+  if (gone || (!row && !requestId)) return html`<div class="notice"><span class="notice-text pre-wrap">${fallback}</span></div>`;
+  if (!row) return html`<div class="card"><${Skeleton} w="60%" /><${Skeleton} w="40%" /></div>`;
   const pending = row.status === "pending";
   const decide = async (ok) => {
     setBusy(true);
@@ -103,7 +109,7 @@ export function PromptCard({ requestId, fallback }) {
   const sendAll = () =>
     submit(qs.map((q, i) => ({ id: q.id, selected: picked[q.id] || [], ...(i === qs.length - 1 && custom.trim() ? { custom: custom.trim() } : {}) })));
   return html`<div class=${`card${pending ? "" : " done"}`}>
-    ${qs.map((q) => html`<div style="display:grid;gap:8px">
+    ${qs.map((q) => html`<div class="q-block">
       <div class="q">${q.question}</div>
       ${q.detail && html`<div class="q-detail">${q.detail}</div>`}
       ${(q.options || []).length > 0 && html`<div class="opts" role=${q.multiSelect ? "group" : "radiogroup"}>
@@ -130,11 +136,30 @@ export function PromptCard({ requestId, fallback }) {
 function FileCard({ name }) {
   return html`<div class="file-card">
     <${Icon} name="file" size=${32} stroke=${1.2} />
-    <div style="min-width:0">
+    <div class="grow">
       <div class="fname">${name}</div>
       <div class="fsub">已交付到机器人工作区 · 微信/飞书会直接发送</div>
     </div>
   </div>`;
+}
+
+/** 回复上方的工作状态：没出字时"思考中"，出字后"正在回复 N 秒"，结束后"用时 N 秒"（短于 3 秒不显示） */
+function WorkLine({ live, text, startedAt, workedMs }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!live) return;
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [live]);
+  const ms = live ? Date.now() - startedAt : workedMs;
+  if (!live && !(ms >= 3000)) return null;
+  const label = live ? (text ? `正在回复 ${fmtDur(ms)}` : ms >= 3000 ? `思考中 ${fmtDur(ms)}` : "思考中") : `用时 ${fmtDur(ms)}`;
+  return html`<div class=${`work-line${live ? " live" : ""}`} aria-live="off"><span class=${live ? "shimmer" : ""}>${label}</span></div>`;
+}
+
+/** 消息下方的操作：复制 + 时刻（悬停时出现，最后一条回复常显） */
+function MsgActions({ text, at }) {
+  return html`<div class="msg-actions"><${CopyButton} text=${text} label="复制这条消息" />${at && html`<span class="when num">${fmtClock(at)}</span>`}</div>`;
 }
 
 function ErrorNotice({ text, onRetry, onFixKey }) {
@@ -146,22 +171,26 @@ function ErrorNotice({ text, onRetry, onFixKey }) {
   </div>`;
 }
 
-export function ChatScreen({ bot, models, modelsError, reloadModels, defaultModel, infoOpen, onToggleInfo, onWorking, onOpenSettings, onBotUpdated }) {
+export function ChatScreen({ bot, models, modelsError, reloadModels, defaultModel, infoOpen, onToggleInfo, onWorking, onOpenSettings, onOpenBotSettings, onBotUpdated, pending = 0 }) {
   const [items, setItems] = useState(null);
   const [convModel, setConvModel] = useState("");
   const [text, setText] = useState("");
   const [generating, setGenerating] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
+  const [scrolled, setScrolled] = useState(false); // 内容滚到顶栏底下了：顶栏出现细线
   const [unseen, setUnseen] = useState(false);
-  const [menu, setMenu] = useState(null); // "plus" | "model" | null
+  const [menu, setMenu] = useState(null); // "plus" | "perm" | "model" | null
+  const [perm, setPerm] = useState("");
   const [slashSel, setSlashSel] = useState(0);
   const [slashOff, setSlashOff] = useState(false);
   const [loadErr, setLoadErr] = useState("");
+  const [cue, setCue] = useState(null); // 头像的一次性反应（出错）；完成时头像自己会播
   const scroller = useRef(null);
   const stick = useRef(true);
   const ta = useRef(null);
   const plusRef = useRef(null);
   const modelRef = useRef(null);
+  const permRef = useRef(null);
   const ctrl = useRef(null);
   const mounted = useRef(true);
   const lastUser = useRef("");
@@ -191,6 +220,9 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       mounted.current = false;
     };
   }, [load]);
+  useEffect(() => {
+    api(`/bots/${encodeURIComponent(bot.id)}/settings`).then((d) => mounted.current && setPerm(d.settings.permission)).catch(() => {});
+  }, [bot.id]);
   useEffect(() => onWorking(bot.id, generating), [generating]);
   useEffect(() => () => onWorking(bot.id, false), []);
 
@@ -206,6 +238,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM;
     stick.current = near;
     setAtBottom(near);
+    setScrolled(el.scrollTop > 2);
     if (near) setUnseen(false);
   };
   const toBottom = () => {
@@ -227,7 +260,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     stick.current = true;
     const liveId = uid();
     const isReset = /^\/reset\b/i.test(t);
-    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: t, at: Date.now(), enter: true }, { kind: "msg", id: liveId, role: "assistant", text: "", at: Date.now(), live: true }]);
+    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: t, at: Date.now(), enter: true }, { kind: "msg", id: liveId, role: "assistant", text: "", at: Date.now(), live: true, startedAt: Date.now() }]);
     const ac = new AbortController();
     ctrl.current = ac;
     setGenerating(true);
@@ -260,12 +293,13 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     if (!mounted.current) return;
     ctrl.current = null;
     setGenerating(false);
+    if (isError(finalText)) setCue({ kind: "error", at: Date.now() });
     setItems((l) => {
       const out = [];
       for (const it of l || []) {
         if (it.id !== liveId) out.push(it);
         else if (isError(finalText)) out.push({ kind: "error", id: liveId, text: errText(finalText), retry: t.startsWith("/") ? undefined : t, at: it.at });
-        else if (finalText) out.push({ ...it, text: finalText, live: false });
+        else if (finalText) out.push({ ...it, text: finalText, live: false, workedMs: Date.now() - it.startedAt });
       }
       return isReset && !isError(finalText) ? out.filter((x) => x.id === liveId) : out;
     });
@@ -315,6 +349,20 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     }
   };
 
+  // —— 文件权限 ——
+  const pickPerm = async (p) => {
+    const prev = perm;
+    setPerm(p);
+    try {
+      const d = await api(`/bots/${encodeURIComponent(bot.id)}/settings`, { method: "PUT", body: { permission: p } });
+      setPerm(d.settings.permission);
+      saved();
+    } catch (e) {
+      setPerm(prev);
+      failed(e);
+    }
+  };
+
   // —— 模型 ——
   const effective = convModel || bot.defaultModel || defaultModel || (models && models[0]) || "";
   const pickModel = async (m) => {
@@ -356,6 +404,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const rows = useMemo(() => {
     const out = [];
     let prev = null;
+    const lastAi = (items || []).findLast((x) => x.kind === "msg" && x.role === "assistant" && !x.live)?.id;
     for (const it of items || []) {
       if (it.at && (!prev?.at || new Date(it.at).toDateString() !== new Date(prev.at).toDateString() || it.at - prev.at > 15 * 60_000)) {
         out.push(html`<div class="time-sep" key=${"t" + it.id}>${fmtSep(it.at)}</div>`);
@@ -365,12 +414,12 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       const cont = prev && (prev.kind === "msg" ? prev.role : "assistant") === role;
       const cls = `msg-row ${role}${cont ? " cont" : ""}${it.enter ? " enter" : ""}`;
       if (it.kind === "msg") {
-        out.push(html`<div class=${cls} key=${it.id}>
+        out.push(html`<div class=${`${cls}${it.id === lastAi ? " last" : ""}`} key=${it.id}>
           ${it.role === "user"
-            ? html`<div class="msg"><${Linkified} text=${it.text} /></div>`
-            : it.live && !it.text
-              ? html`<div class="msg" aria-label="正在回复"><span class="typing"><i></i><i></i><i></i></span></div>`
-              : html`<div class="msg"><${Markdown} text=${it.text} />${it.live && html`<span class="caret" aria-hidden="true"></span>`}</div>`}
+            ? html`<div class="msg"><${Linkified} text=${it.text} /></div><${MsgActions} text=${it.text} at=${it.at} />`
+            : html`${(it.live || it.workedMs) && html`<${WorkLine} live=${it.live} text=${it.text} startedAt=${it.startedAt} workedMs=${it.workedMs} />`}
+              ${it.text && html`<div class="msg"><${Markdown} text=${it.text} /></div>`}
+              ${!it.live && html`<${MsgActions} text=${it.text} at=${it.at} />`}`}
         </div>`);
       } else if (it.kind === "prompt") {
         out.push(html`<div class=${cls} key=${it.id}><${PromptCard} requestId=${it.requestId} fallback=${it.prompt} /></div>`);
@@ -385,18 +434,25 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   }, [items, generating]);
 
   const empty = items && items.length === 0;
-  return html`<section class="chat" data-screen="chat" aria-label=${`和 ${bot.name} 的对话`}>
-    <div class="drag-strip"></div>
-    <button type="button" class="float-pill" aria-pressed=${infoOpen} title="信息面板（⌘⇧I）" onClick=${onToggleInfo}>
-      <${BotAvatar} name=${bot.name} id=${bot.id} size=${21} working=${generating} />
-      <span class="name">${bot.name}</span>
-    </button>
+  // 头像跟着对话走：等你批准 > 还没出字（思考）/ 出字了（回复）> 你在输入（在听）
+  const replying = generating && (items || []).some((x) => x.live && x.text);
+  const face = pending > 0 ? "waiting" : generating ? (replying ? "replying" : "thinking") : text.trim() ? "listening" : "idle";
+  return html`<section class=${`chat${scrolled ? " scrolled" : ""}`} data-screen="chat" aria-label=${`和 ${bot.name} 的对话`}>
+    <header class="chat-head">
+      <button type="button" class="head-bot bot-hover" aria-pressed=${infoOpen} title="信息面板（⌘⇧I）" onClick=${onToggleInfo}>
+        <${BotAvatar} bot=${bot} size=${22} state=${face} cue=${cue} />
+        <span class="name">${bot.name}</span>
+      </button>
+      <span class="grow"></span>
+      <${IconButton} icon="compose" iconSize=${16} label="开始新的一段对话（/new）" disabled=${generating} onClick=${() => send("/new")} />
+      <${IconButton} icon="panel" iconSize=${16} label="信息面板（⌘⇧I）" on=${infoOpen} aria-pressed=${infoOpen} onClick=${onToggleInfo} />
+    </header>
     <div class="chat-scroll" ref=${scroller} onScroll=${onScroll}>
       <div class="chat-col" role="log" aria-live="polite" aria-busy=${generating}>
-        ${loadErr && html`<div class="notice red" style="margin-top:8px"><span class="notice-text">读取历史消息失败：${loadErr}</span><button type="button" class="btn" onClick=${load}>重试</button></div>`}
-        ${items === null && html`<div style="display:grid;gap:14px;margin-top:24px"><span class="skel" style="width:40%;height:34px;border-radius:17px"></span><span class="skel" style="width:28%;height:34px;border-radius:17px;justify-self:end"></span></div>`}
+        ${loadErr && html`<div class="notice red"><span class="notice-text">读取历史消息失败：${loadErr}</span><button type="button" class="btn" onClick=${load}>重试</button></div>`}
+        ${items === null && html`<div class="chat-skel"><${Skeleton} w="40%" /><${Skeleton} w="28%" /></div>`}
         ${empty && html`<div class="chat-empty">
-          <${BotAvatar} name=${bot.name} id=${bot.id} size=${56} />
+          <${BotAvatar} bot=${bot} size=${88} state=${face} cue=${cue} lively pokeable greet />
           <h2>和 ${bot.name} 开始对话</h2>
           <p>在这里直接测试机器人；飞书和微信渠道在信息面板里配置。</p>
           <div class="chips">
@@ -410,10 +466,16 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     ${!atBottom && html`<button type="button" class="to-bottom" aria-label="回到底部" onClick=${toBottom}><${Icon} name="down" />${unseen && html`<span class="new"></span>`}</button>`}
     <div class="composer-dock">
       <div class="composer">
-        <button type="button" class="plus" ref=${plusRef} aria-label="更多操作" aria-haspopup="menu" aria-expanded=${menu === "plus"} onClick=${() => setMenu(menu === "plus" ? null : "plus")}><${Icon} name="plus" size=${14} stroke=${1.8} /></button>
-        <textarea ref=${ta} rows="1" placeholder=${`给「${bot.name}」发消息`} aria-label="消息" value=${text}
+        <textarea ref=${ta} rows="1" placeholder=${`给「${bot.name}」发消息，/ 查看命令`} aria-label="消息" value=${text}
           onInput=${(e) => { setText(e.target.value); setSlashOff(false); setSlashSel(0); autoGrow(e.target, LINE_PX * 8 + 8); }}
           onKeyDown=${onKey} />
+        <div class="composer-bar">
+        <button type="button" class="plus" ref=${plusRef} aria-label="更多操作" aria-haspopup="menu" aria-expanded=${menu === "plus"} onClick=${() => setMenu(menu === "plus" ? null : "plus")}><${Icon} name="plus" size=${15} stroke=${1.7} /></button>
+        ${PERMS[perm] && html`<button type="button" class=${`model-chip perm ${perm}`} ref=${permRef} title=${`文件权限：${PERMS[perm].note}`} aria-haspopup="menu" aria-expanded=${menu === "perm"}
+          onClick=${() => setMenu(menu === "perm" ? null : "perm")}>
+          <${Icon} name=${PERMS[perm].icon} size=${14} class="lead" /><span class="v">${PERMS[perm].label}</span><${Icon} name="chevDown" />
+        </button>`}
+        <span class="grow"></span>
         <button type="button" class="model-chip" ref=${modelRef} title=${effective ? `当前模型：${effective}` : "选择模型"} aria-haspopup="listbox" aria-expanded=${menu === "model"}
           onClick=${() => setMenu(menu === "model" ? null : "model")}>
           <span class="v">${effective ? shortModel(effective) : "选择模型"}</span><${Icon} name="chevDown" />
@@ -421,6 +483,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
         ${generating
           ? html`<button type="button" class="send stop" aria-label="停止生成（Esc）" title="停止（Esc）" onClick=${stop}><${Icon} name="stop" size=${12} /></button>`
           : html`<button type="button" class="send" aria-label="发送" title="发送（Enter）" disabled=${!text.trim()} onClick=${() => send()}><${Icon} name="up" size=${15} stroke=${2} /></button>`}
+        </div>
       </div>
     </div>
     ${slashOpen && ta.current && html`<${Popover} anchor=${ta.current} prefer="up" width=${320} keepFocus label="命令" onClose=${() => setSlashOff(true)}>
@@ -432,6 +495,13 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       </ul>
     <//>`}
     ${menu === "plus" && html`<${Menu} anchor=${plusRef.current} prefer="up" width=${240} label="更多操作" onClose=${() => setMenu(null)} items=${plusItems} />`}
+    ${menu === "perm" && html`<${Menu} anchor=${permRef.current} prefer="up" width=${280} label="文件权限" onClose=${() => setMenu(null)}
+      items=${[
+        { group: "文件权限" },
+        ...Object.entries(PERMS).map(([k, p]) => ({ label: p.label, note: p.note, icon: p.icon, cur: k === perm, onSelect: () => k !== perm && pickPerm(k) })),
+        { sep: true },
+        { label: "更多权限设置…", onSelect: () => onOpenBotSettings?.(bot.id, "permission") },
+      ]} />`}
     ${menu === "model" && html`<${ModelPicker} anchor=${modelRef.current} prefer="up" align="right" models=${models} error=${modelsError} onRetry=${reloadModels}
       current=${convModel || bot.defaultModel || defaultModel} onPick=${pickModel} onClose=${() => setMenu(null)}
       reset=${{ label: "跟随机器人默认", note: shortModel(bot.defaultModel || defaultModel) || "自动", onSelect: () => pickModel("") }}

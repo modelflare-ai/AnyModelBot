@@ -1,0 +1,24 @@
+/* 模态对话框：.scrim > .sheet [wide]。遮罩把后面的界面压暗并轻微模糊，对话框是最厚的一层玻璃。
+   退场时给 .scrim 加 .leaving（见 design/motion.js 的 usePresence）。 */
+.scrim {
+  position: fixed; inset: 0; z-index: var(--z-modal); background: var(--scrim); backdrop-filter: blur(var(--blur-scrim));
+  display: grid; place-items: center; padding: var(--space-6);
+  animation: fade-in var(--dur-base) var(--ease-out);
+}
+.sheet {
+  --sheet-w: 440px;
+  --sheet-r: var(--r-2xl);
+  width: min(var(--sheet-w), 100%); max-height: calc(100vh - 48px); overflow: auto;
+  background: var(--grain), var(--glass-sheet); backdrop-filter: var(--glass-filter-lg);
+  border-radius: var(--sheet-r); box-shadow: var(--shadow-pop);
+  padding: 18px 18px var(--space-4); display: grid; gap: var(--space-3);
+  animation: pop-in var(--dur-slow) var(--ease-spring);
+}
+.sheet.wide { --sheet-w: 640px; }
+.sheet h2 { font-size: var(--fs-xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tight); }
+.sheet .body { color: var(--fg-2); line-height: var(--lh-relaxed); }
+.sheet .actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-1); }
+.sheet pre.doc { white-space: pre-wrap; font: var(--fs-xs)/var(--lh-normal) var(--code); color: var(--fg-2); margin: 0; max-height: 60vh; overflow: auto; }
+
+.scrim.leaving { animation: fade-out var(--dur-base) var(--ease-in) forwards; pointer-events: none; }
+.scrim.leaving .sheet { animation: pop-out var(--dur-base) var(--ease-in) forwards; }

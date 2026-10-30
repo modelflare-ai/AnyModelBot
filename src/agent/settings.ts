@@ -2,6 +2,9 @@
 export type PermissionPreset = "readonly" | "workspace";
 export type CuBackend = "cua" | "codex";
 export type CuApproval = "auto" | "ask-input";
+/** 内置头像角色（ui/components/avatar.js 的 BOT_CHARS）；blue 是主角 */
+export const BOT_AVATARS = ["blue", "yellow", "green", "red", "purple", "orange"] as const;
+export type BotAvatarKey = (typeof BOT_AVATARS)[number];
 
 export interface BotSettings {
   /** 权限预设：readonly = 只读（不能改文件、命令只读沙箱）；workspace = 可写本机器人工作区（默认），越界操作需审批 */
@@ -26,6 +29,8 @@ export interface BotSettings {
   };
   /** 后台小任务（记忆整理、上下文管家、交接摘要）用的模型；空 = 用对话模型 */
   utilityModel: string;
+  /** 头像角色；空 = 由机器人 id 决定 */
+  avatar: BotAvatarKey | "";
 }
 
 export const DEFAULT_SETTINGS: BotSettings = {
@@ -34,6 +39,7 @@ export const DEFAULT_SETTINGS: BotSettings = {
   steward: { enabled: true },
   computerUse: { enabled: true, backend: "cua", approval: "auto" },
   utilityModel: "",
+  avatar: "",
 };
 
 export function normalizeSettings(raw: unknown): BotSettings {
@@ -57,6 +63,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
       approval: cu.approval === "ask-input" ? "ask-input" : "auto",
     },
     utilityModel: typeof r.utilityModel === "string" ? r.utilityModel.trim().slice(0, 200) : "",
+    avatar: (BOT_AVATARS as readonly string[]).includes(r.avatar) ? r.avatar : "",
   };
 }
 

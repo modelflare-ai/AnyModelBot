@@ -1,0 +1,13 @@
+/* 文字角色：新界面优先用这些类，不要再挑字号。放在 utilities 层，加在组件上也能生效。
+   已有组件直接引用 --fs-* / --fw-* token，效果与对应角色一致。 */
+.t-caption { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-caps); color: var(--faint); }
+.t-label { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--muted); }
+.t-meta { font-size: var(--fs-xs); color: var(--muted); line-height: var(--lh-normal); }
+.t-control { font-size: var(--fs-sm); }
+.t-body { font-size: var(--fs-md); line-height: var(--lh-snug); }
+.t-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
+.t-heading { font-size: var(--fs-xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tight); }
+.t-display { font-size: var(--fs-3xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tighter); }
+.t-page { font-size: var(--fs-4xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tighter); line-height: var(--lh-tight); }
+.t-prose { font-size: var(--fs-xl); line-height: var(--lh-normal); }
+.num { font-variant-numeric: tabular-nums; }

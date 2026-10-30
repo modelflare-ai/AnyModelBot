@@ -1,125 +1,198 @@
-/* Shell: sidebar 280 | main 1fr | info panel 320 (on demand). No top bar. */
+/* Shell：sidebar 280 | main 1fr | info panel 320（按需）。没有顶栏。
+   窗口最底层是环境光（--bg + 左上的品牌黄绿光 + 跟着当前机器人变的色相光），
+   侧栏是直接盖在环境光上的毛玻璃；主区和信息面板是浮在上面的圆角面板（--pane-gap 间隙）。 */
+@property --aura-hue { syntax: "<number>"; inherits: true; initial-value: 250; }
+@layer app {
 #app { height: 100%; }
+
+/* —— 环境光：.app、引导页、设计库样例（.aura-bg）共用。--aura-hue 由 main.js 按当前机器人设置，换机器人时慢慢过渡 —— */
+.app, .onboard, .aura-bg {
+  --aura: oklch(var(--aura-l) var(--aura-c) var(--aura-hue) / var(--aura-a));
+  --aura-2: oklch(var(--aura-l) calc(var(--aura-c) * .7) calc(var(--aura-hue) + 70) / calc(var(--aura-a) * .55));
+  background:
+    radial-gradient(70% 50% at 0% 0%, var(--aura-brand), transparent 72%),
+    radial-gradient(60% 75% at 0% 100%, var(--aura), transparent 72%),
+    radial-gradient(55% 60% at 100% 0%, var(--aura-2), transparent 70%),
+    var(--bg);
+  transition: --aura-hue var(--dur-ambient) var(--ease-in-out);
+}
 .app {
   display: grid; height: 100vh;
   grid-template-columns: var(--side-w) minmax(0, 1fr);
-  background: var(--chat-bg);
 }
 /* "已保存" sits in the window's bottom-left corner, over the sidebar above the account button,
    so it never covers the floating composer */
 .app .toasts { bottom: 68px; }
 .app.with-panel { grid-template-columns: var(--side-w) minmax(0, 1fr) var(--panel-w); }
-.main { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.view { animation: view-in .24s var(--ease); }
+/* 主区：浮在环境光上的面板。不要给它加 backdrop-filter / transform——里面的菜单是 position: fixed */
+.main {
+  position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  margin: var(--pane-gap) var(--pane-gap) var(--pane-gap) 0;
+  border-radius: var(--r-2xl); background: var(--surface); box-shadow: var(--shadow-pane); overflow: hidden;
+}
+.view { --rise: 4px; animation: rise-in var(--dur-moderate) var(--ease-out); }
 
-/* —— Sidebar —— */
+/* —— Sidebar（参考 Grok Bot）：新建按钮 | 常驻搜索 | 机器人行 | 账户。
+   行的状态：悬停是更亮的一层玻璃，按下稍暗，选中是浮起的玻璃片（--side-active + --shadow-tile） —— */
 .side {
+  --ib-bg-hover: var(--side-hover);
+  --ib-bg-press: var(--side-press);
+  --ib-bg-on: var(--side-active);
   min-height: 0; display: flex; flex-direction: column;
-  background: var(--side-bg); border-right: 1px solid var(--side-active);
+  background: var(--grain), var(--glass-side);
 }
 .side-top {
-  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-  height: 60px; padding: 12px 17px 0 16px; flex: none;
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1);
+  height: var(--head-h); padding: 0 var(--space-3) 0 var(--space-4); flex: none;
   -webkit-app-region: drag;
 }
 .side-top > * { -webkit-app-region: no-drag; }
-.round-btn {
-  width: 36px; height: 36px; border-radius: 50%; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--card); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line);
-  transition: background .12s, transform .12s var(--ease);
+.side-top.start { justify-content: flex-start; padding-left: var(--space-2); }
+.side-back {
+  display: inline-flex; align-items: center; gap: var(--space-1-5); height: var(--ctl-lg); padding: 0 var(--space-2-5) 0 var(--space-2);
+  border-radius: var(--r-lg); font-size: var(--fs-md); color: var(--ctl-fg); transition: background var(--t-fast), color var(--t-fast);
 }
-.round-btn:hover { background: var(--card-2); }
-.round-btn:active { transform: scale(.96); }
-.round-btn.on { background: var(--side-active); }
-.side-search { flex: 1; min-width: 0; height: 36px; border-radius: 18px; padding: 0 14px; border: 0; outline: none; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); }
-.side-search:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); }
-.side-search::placeholder { color: var(--placeholder); }
+.side-back:hover { background: var(--side-hover); color: var(--fg); }
+.side-back:active { background: var(--side-press); }
+.side-top .icon-btn { --ib-size: 30px; --ib-fg: var(--ctl-fg); }
+.side-top .icon-btn.on { box-shadow: var(--shadow-tile); }
+.side-search {
+  flex: none; display: flex; align-items: center; gap: var(--space-2); height: 34px; margin: 0 var(--space-3) var(--space-2-5); padding: 0 var(--space-3);
+  border-radius: var(--r-lg); background: var(--pill); color: var(--muted);
+  box-shadow: inset 0 0 0 .5px var(--line-2);
+  transition: box-shadow var(--t-fast), background var(--t-fast), color var(--t-fast);
+}
+.side-search:hover { background: var(--pill-hover); }
+.side-search:focus-within { background: var(--card); color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--accent), var(--ring); }
+.side-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font-size: var(--fs-md); color: var(--fg); }
+.side-search input::placeholder { color: var(--muted); }
+.side-search input::-webkit-search-cancel-button { display: none; }
 
-.side-hero { display: grid; justify-items: center; gap: 8px; padding: 2px 16px 18px; flex: none; }
-.side-hero .name { font-size: 13px; font-weight: 500; color: var(--fg); }
-
-.side-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 8px; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 4px; }
+.side-list {
+  flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-0-5) var(--space-2) var(--space-2);
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--space-0-5);
+}
+.side-list > .hint { padding: var(--space-2) var(--space-2-5); }
+/* 设置时的侧栏：分页导航 */
+.side-nav { gap: var(--space-0-5); --rise: 3px; animation: rise-in var(--dur-moderate) var(--ease-out); }
+.nav-item {
+  --focus-offset: -2px;
+  display: flex; align-items: center; gap: var(--space-2-5); height: var(--ctl-xl); padding: 0 var(--space-2-5);
+  border-radius: var(--r-lg); font-size: var(--fs-lg); color: var(--fg-2); text-align: left;
+  transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+}
+.nav-item .ic { color: var(--muted); transition: color var(--t-fast); }
+.nav-item:hover { background: var(--side-hover); color: var(--fg); }
+.nav-item:active { background: var(--side-press); }
+.nav-item.sel { background: var(--side-active); box-shadow: var(--shadow-tile); color: var(--fg); font-weight: var(--fw-medium); }
+.nav-item.sel .ic, .nav-item:hover .ic { color: var(--fg); }
 .thread {
+  --focus-offset: -2px;
   min-width: 0;
-  display: flex; align-items: center; gap: 11px; width: 100%; height: 54px; padding: 0 9px;
-  border-radius: 14px; text-align: left; position: relative;
-  transition: background .12s;
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; height: 60px; padding: 0 var(--space-2-5);
+  border-radius: var(--r-xl); text-align: left; position: relative;
+  transition: background var(--t-fast), box-shadow var(--t-fast);
 }
 .thread:hover { background: var(--side-hover); }
-.thread.sel { background: var(--side-active); }
-.thread .body { min-width: 0; flex: 1; }
-.thread .title { font-size: 14px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
-.thread .snip { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; }
-.thread .badge.count { background: var(--amber-soft); color: var(--amber); }
+button.thread:active { background: var(--side-press); }
+.thread.sel, button.thread.sel:active { background: var(--side-active); box-shadow: var(--shadow-tile); }
+.thread .body { min-width: 0; flex: 1; display: grid; gap: 1px; }
+.thread .line { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.thread .title { flex: 1; min-width: 0; font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: var(--lh-tight); }
+.thread .when { flex: none; font-size: var(--fs-xs); color: var(--muted); }
+.thread .snip { flex: 1; min-width: 0; font-size: var(--fs-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.thread.sel .snip { color: var(--fg-2); }
+.thread .badge.count { --badge-bg: var(--amber-soft); --badge-fg: var(--amber); align-self: center; }
 .thread .avatar-wrap { position: relative; flex: none; }
 .thread .working-dot {
-  position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 0 2px var(--side-bg);
-  animation: breathe 1.4s ease-in-out infinite;
+  position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 0 2px var(--surface-solid);
+  animation: breathe var(--dur-pulse) var(--ease-in-out) infinite;
 }
-.thread.sel .working-dot { box-shadow: 0 0 0 2px var(--side-active); }
-@keyframes breathe { 0%, 100% { opacity: .45; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
-.thread-new { display: flex; gap: 6px; align-items: center; padding: 6px 2px 6px 4px; }
-.thread-new .field { height: 34px; border-radius: 10px; }
-.side-empty { margin: 12px 4px; padding: 18px 14px; border-radius: 12px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); text-align: center; display: grid; gap: 10px; justify-items: center; color: var(--muted); }
+.thread-skel { flex: 1; display: grid; gap: var(--space-1-5); }
+.thread .field { --field-h: 30px; }
+.side-empty {
+  margin: var(--space-3) var(--space-1); padding: 18px var(--space-3-5); border-radius: var(--r-xl);
+  background: var(--card); box-shadow: inset 0 0 0 .5px var(--line), var(--shadow-xs);
+  text-align: center; display: grid; gap: var(--space-2-5); justify-items: center; color: var(--muted);
+}
 
-.side-foot { flex: none; display: flex; align-items: center; padding: 8px 17px 16px 16px; }
+.side-foot { flex: none; display: flex; align-items: center; padding: var(--space-2) var(--space-2) var(--space-3); }
 .account {
-  display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; height: 44px; padding: 0 8px 0 0;
-  border-radius: 22px; text-align: left; transition: background .12s;
+  --focus-offset: -2px;
+  display: flex; align-items: center; gap: var(--space-2-5); min-width: 0; flex: 1; height: var(--ctl-2xl); padding: 0 var(--space-3) 0 var(--space-2);
+  border-radius: var(--r-xl); text-align: left; transition: background var(--t-fast), box-shadow var(--t-fast);
 }
 .account:hover { background: var(--side-hover); }
-.account.on { background: var(--side-active); }
+.account:active { background: var(--side-press); }
+.account.on { background: var(--side-active); box-shadow: var(--shadow-tile); }
 .account .me {
-  width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center;
-  background: var(--card); box-shadow: inset 0 0 0 1px var(--line); font-weight: 600; font-size: 14px; color: var(--fg-2);
+  width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: var(--card); box-shadow: inset 0 0 0 .5px var(--line), var(--shadow-xs);
+  font-weight: var(--fw-semibold); font-size: var(--fs-sm); color: var(--fg-2);
 }
-.account .who { font-size: 14px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account .who { flex: 1; min-width: 0; font-size: var(--fs-lg); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account > .ic { color: var(--muted); transition: color var(--t-fast); }
+.account:hover > .ic { color: var(--fg); }
 
-/* macOS desktop: traffic lights live in the sidebar's top-left */
+/* macOS desktop: traffic lights live in the sidebar's top-left.
+   拖动窗口只靠侧栏顶部和各页顶栏；不要把 .app 整个设成拖动区——盖在上面的命令面板、对话框、提示会跟着变成拖动区 */
 :root.mac-app .side-top { padding-left: 84px; }
 
-/* —— Info panel —— */
+/* —— Info panel（参考 Grok Bot 的详情栏）：一块更通透的玻璃面板，分组直接是列表行，不再套卡片 —— */
 .panel {
   min-height: 0; display: flex; flex-direction: column;
-  background: var(--bg); border-left: 1px solid var(--line);
-  animation: panel-in .24s var(--ease);
+  margin: var(--pane-gap) var(--pane-gap) var(--pane-gap) 0;
+  border-radius: var(--r-2xl); background: var(--grain), var(--glass-panel); box-shadow: var(--shadow-pane); overflow: hidden;
+  animation: slide-in var(--dur-moderate) var(--ease-out);
 }
-@keyframes panel-in { from { opacity: 0; transform: translateX(12px); } }
 .panel-head {
-  height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px;
+  height: var(--head-h); flex: none; display: flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-2-5) 0 var(--space-4);
   -webkit-app-region: drag;
 }
 .panel-head > * { -webkit-app-region: no-drag; }
-.panel-head .title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.panel-body { flex: 1; overflow-y: auto; padding: 0 12px 16px; }
-.panel-body .row { min-height: 44px; padding: 6px 10px 6px 12px; gap: 10px; }
+.panel-head .title { flex: 1; min-width: 0; font-size: var(--fs-xl); font-weight: var(--fw-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-head .icon-btn { --ib-size: 30px; }
+.panel-body { flex: 1; overflow-y: auto; padding: 0 var(--space-2) var(--space-6); }
+.panel-body .list-head { margin: var(--space-5) var(--space-2) var(--space-1); }
+.panel-body .list-head:first-child { margin-top: var(--space-2); }
+.panel-body .list { background: transparent; border: 0; border-radius: 0; overflow: visible; }
+.panel-body .list + .list, .panel-body .list-head + .list { margin-top: 0; }
+.panel-body .row { --row-h: 48px; --row-py: var(--space-1-5); --row-pl: var(--space-2); --row-pr: var(--space-2); --row-gap: var(--space-2-5); border-radius: var(--r-lg); }
+.panel-body .row + .row, .panel-body .row + .row-edit, .panel-body .row-edit + .row { border-top: 0; }
+.panel-body .row.clickable { --focus-offset: 0px; }
+.panel-body .row-edit { border-radius: var(--r-lg); background: var(--card-2); box-shadow: inset 0 0 0 .5px var(--line-2); margin: var(--space-0-5) 0 var(--space-1); }
 .panel-body .row > .hint { flex: none; white-space: nowrap; }
+.panel-qr {
+  width: 180px; height: 180px; image-rendering: pixelated; background: var(--qr-bg);
+  padding: var(--space-2); border-radius: var(--r-lg); box-shadow: 0 0 0 .5px var(--line), var(--shadow-sm);
+}
+/* 会话记录预览（信息面板 → 最近会话） */
+.transcript { display: grid; gap: var(--space-2); max-height: 60vh; overflow: auto; }
+.transcript-msg { justify-self: start; max-width: 85%; }
+.transcript-msg.user { justify-self: end; }
+.transcript-msg .bubble {
+  white-space: pre-wrap; padding: 7px 11px; border-radius: var(--r-2xl);
+  font-size: var(--fs-md); line-height: var(--lh-normal); background: var(--bubble-ai);
+}
+.transcript-msg.user .bubble { background: var(--bubble-user); }
+.transcript-msg .hint { margin-top: var(--space-0-5); }
+.transcript-msg.user .hint { text-align: right; }
 
 .panel-scrim { display: none; }
-/* narrow window: the panel overlays the chat as a drawer over a scrim */
+/* narrow window: the panel floats over the chat as a glass drawer over a scrim */
 @media (max-width: 1180px) {
   .app.with-panel { grid-template-columns: var(--side-w) minmax(0, 1fr); }
   .app.with-panel .panel {
-    position: fixed; z-index: 30; top: 0; right: 0; bottom: 0; width: var(--panel-w);
-    box-shadow: var(--shadow);
+    position: fixed; z-index: var(--z-drawer); top: var(--pane-gap); right: var(--pane-gap); bottom: var(--pane-gap); width: var(--panel-w); margin: 0;
+    background: var(--grain), var(--glass-pop); backdrop-filter: var(--glass-filter-lg); box-shadow: var(--shadow-pop);
   }
-  .panel-scrim { display: block; position: fixed; z-index: 29; inset: 0; background: rgba(0, 0, 0, .18); animation: fade-in .2s ease-out; }
+  .panel-scrim {
+    display: block; position: fixed; z-index: calc(var(--z-drawer) - 1); inset: 0;
+    background: var(--scrim-soft); animation: fade-in var(--dur-base) var(--ease-out);
+  }
 }
 @media (max-width: 900px) {
   :root { --side-w: 240px; }
 }
-
-/* —— Command palette —— */
-.palette-scrim { position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, .18); animation: pop-fade .14s ease-out; }
-.palette {
-  position: fixed; z-index: 56; left: 50%; top: 14vh; width: min(520px, calc(100vw - 32px)); transform: translateX(-50%);
-  max-height: 60vh; display: flex; flex-direction: column;
-  background: var(--pop-bg); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
-  border-radius: 13px; box-shadow: var(--shadow); overflow: hidden;
-  animation: pop-fade .16s ease-out;
 }
-.palette .search input { height: 46px; font-size: 14px; }
-.palette li { min-height: 36px; font-size: 13px; }
-.palette li kbd { margin-left: auto; font: 11px var(--code); color: var(--muted); }

@@ -1,0 +1,19 @@
+/* 状态徽标 .badge [ok | err | warn | off] [count]，状态点 .dot [ok | err | warn]。
+   定制：覆盖 --badge-bg / --badge-fg。 */
+.badge {
+  --badge-bg: var(--pill);
+  --badge-fg: var(--fg-2);
+  display: inline-flex; align-items: center; height: 20px; padding: 0 var(--space-2); border-radius: var(--r-full);
+  font-size: var(--fs-2xs); font-weight: var(--fw-medium); white-space: nowrap; flex: none;
+  background: var(--badge-bg); color: var(--badge-fg);
+}
+.badge.ok { --badge-bg: var(--green-soft); --badge-fg: var(--green); }
+.badge.err { --badge-bg: var(--red-soft); --badge-fg: var(--red); }
+.badge.warn { --badge-bg: var(--amber-soft); --badge-fg: var(--amber); }
+.badge.off { --badge-fg: var(--muted); }
+.badge.count { height: 18px; min-width: 18px; padding: 0 5px; justify-content: center; font-variant-numeric: tabular-nums; }
+
+.dot { --dot-bg: var(--faint); width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--dot-bg); display: inline-block; }
+.dot.ok { --dot-bg: var(--green); }
+.dot.err { --dot-bg: var(--red); }
+.dot.warn { --dot-bg: var(--amber); }

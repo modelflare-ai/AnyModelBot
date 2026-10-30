@@ -17,10 +17,9 @@
       if (/Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform)) root.classList.add("mac-app");
     })();
   </script>
-  <link rel="stylesheet" href="/amb/static/tokens.css" />
-  <link rel="stylesheet" href="/amb/static/css/base.css" />
+  <!-- 设计库（token / 基础 / 组件 / 工具类，见 ui/design/README.md）+ 页面样式（@layer app） -->
+  <link rel="stylesheet" href="/amb/static/design/index.css" />
   <link rel="stylesheet" href="/amb/static/css/shell.css" />
-  <link rel="stylesheet" href="/amb/static/css/avatar.css" />
   <link rel="stylesheet" href="/amb/static/css/chat.css" />
   <link rel="stylesheet" href="/amb/static/css/settings.css" />
   <script type="importmap">

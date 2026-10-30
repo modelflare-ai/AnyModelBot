@@ -1,7 +1,7 @@
 // 首次启动 / 断开后：只有一个动作——粘贴 Modelflare API Key。不是向导路由，而是"未连接"时的整页空态。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Icon, Seg, Spinner } from "../components/ui.js";
-import { AppMark } from "../components/avatar.js";
+import { BotAvatar, MAIN_CHAR } from "../components/avatar.js";
 import { groupModels } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
 
@@ -15,7 +15,8 @@ export const LINE_OPTIONS = [
 ];
 
 /** 粘贴 Key → 校验（GET /v1/models）→ 写入。onConnected(result) 收到 { models, keyTail, … } */
-export function KeyForm({ line: initialLine = "auto", onConnected, showLine = true, submitLabel = "连接 Modelflare" }) {
+/** onFace(state)：给旁边的头像用——"listening"（在输入）/ "thinking"（正在校验）/ "idle" / "error"（一次性） */
+export function KeyForm({ line: initialLine = "auto", onConnected, onFace, showLine = true, submitLabel = "连接 Modelflare" }) {
   const [key, setKey] = useState("");
   const [show, setShow] = useState(false);
   const [line, setLine] = useState(initialLine);
@@ -25,6 +26,7 @@ export function KeyForm({ line: initialLine = "auto", onConnected, showLine = tr
   const input = useRef(null);
   const btn = useRef(null);
   useEffect(() => input.current?.focus(), []);
+  useEffect(() => onFace?.(busy ? "thinking" : key.trim() ? "listening" : "idle"), [busy, !!key.trim()]);
 
   const submit = async (lineOverride) => {
     const k = key.trim();
@@ -41,6 +43,7 @@ export function KeyForm({ line: initialLine = "auto", onConnected, showLine = tr
       onConnected(r);
     } catch (e) {
       setErr({ message: e.message, code: e.data?.code, suggestLine: e.data?.suggestLine });
+      onFace?.("error");
     } finally {
       clearTimeout(t);
       setBusy(false);
@@ -125,7 +128,7 @@ function ModelStep({ models, initial, onDone }) {
             ${ms.map(([m, label]) => html`<button type="button" role="option" aria-selected=${m === cur} class=${m === cur ? "cur" : ""} onClick=${() => setCur(m)} onDblClick=${start}>
               <span class="v">${label}</span>${m === cur && html`<span class="check"><${Icon} name="check" size=${14} /></span>`}
             </button>`)}`)}
-          ${!groups.length && html`<p class="hint" style="padding:8px">没有匹配的模型</p>`}
+          ${!groups.length && html`<p class="hint">没有匹配的模型</p>`}
         </div>`
       : html`<div class="notice amber"><span class="notice-text">这个 Key 所在的分组暂无可用模型。可以在控制台给分组开放模型后再回来刷新。</span>
           <a class="btn" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">去控制台 ↗</a></div>`}
@@ -136,16 +139,19 @@ function ModelStep({ models, initial, onDone }) {
 
 export function Onboarding({ status, gateway, defaultModel, onDone }) {
   const [models, setModels] = useState(null);
+  const [face, setFace] = useState("idle");
+  const [cue, setCue] = useState(null);
+  const onFace = (f) => (f === "error" ? setCue({ kind: "error", at: Date.now() }) : setFace(f));
   return html`<main class="onboard" data-screen="onboarding">
     <div class="onboard-col">
       <div class="onboard-hero">
-        <${AppMark} size=${44} />
+        <${BotAvatar} char=${MAIN_CHAR} size=${88} state=${face} cue=${cue} lively pokeable greet />
         <h1>用 Modelflare 开始</h1>
         <p>粘贴 API Key，GPT、Claude、Grok、Gemini 等模型会自动列出。</p>
       </div>
       ${gateway && gateway.mode === "managed" && gateway.state === "failed" && html`<div class="notice red"><span class="notice-text">内置模型网关没有启动：${gateway.lastError || "未知原因"}。修复后重启应用再连接。</span></div>`}
       ${models === null
-        ? html`<${KeyForm} line=${status.line} onConnected=${(r) => setModels(r.models || [])} />
+        ? html`<${KeyForm} line=${status.line} onFace=${onFace} onConnected=${(r) => (setFace("idle"), setModels(r.models || []))} />
           <div class="links">
             <a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">还没有 Key？去 Modelflare 控制台创建 ↗</a>
           </div>`

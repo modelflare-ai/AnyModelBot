@@ -50,9 +50,11 @@ if (fs.existsSync(koffi)) for (const pkg of fs.readdirSync(koffi)) {
   const p = path.join(koffi, pkg);
   for (const d of fs.readdirSync(p)) if (/^(linux|musl|darwin|win|freebsd|openbsd)_/.test(d) && !(d === `${os === "win32" ? "win32" : os}_${cpu}` || (os === "linux" && d === `musl_${cpu}`))) rm(path.join(p, d));
 }
-// 无运行价值的文件
+// 无运行价值的文件：源码映射、TypeScript 源码与声明（导出里指向 .ts 的只在 source 等自定义条件下，Node 默认不走）、
+// 包说明文档。文件数直接决定 Windows 安装速度（解压 + 杀毒逐个扫描）。LICENSE、SKILL.md 等保留。
 walk(nm, (p, name) => {
-  if (/\.(map|d\.ts|d\.mts|d\.cts|tsbuildinfo)$/.test(name)) rm(p);
+  if (/\.(map|ts|mts|cts|tsx|tsbuildinfo)$/.test(name)) rm(p);
+  else if (/^(readme|changelog|history|contributing|code_of_conduct)([.-][^/]*)?\.(md|markdown|yaml)$/i.test(name)) rm(p);
 });
 // 其他平台的 libreoffice-kit 预编译包（只留当前 os-cpu）。Linux 没有原生包，libreoffice-kit 在 Linux 上用 -wasm 引擎，必须保留。
 const loPrefix = "@deepseek-ai";

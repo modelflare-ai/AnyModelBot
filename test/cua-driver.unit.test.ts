@@ -1,8 +1,10 @@
+import { EventEmitter } from "node:events";
+import { PassThrough, Writable } from "node:stream";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { cuaConfig, cuaMcpEnv, cuaRoots, CUA_INPUT_TOOLS, CUA_READ_TOOLS, CUA_TOOLS, detectCua, linuxDesktopApps, type CuaProbe } from "../src/agent/cua-driver.js";
+import { cuaConfig, cuaMcpEnv, cuaRoots, CUA_INPUT_TOOLS, CUA_READ_TOOLS, CUA_TOOLS, detectCua, linuxDesktopApps, uniqueApps, windowsAppsFrom, type CuaProbe } from "../src/agent/cua-driver.js";
 import { Store } from "../src/store/db.js";
 
 const proxy = path.join(__dirname, "..", "dsh-runtime", "plugins", "amb-cua-mcp.mjs");
@@ -91,6 +93,115 @@ describe("cua-driver config", () => {
   });
 });
 
+describe("Windows app manifest", () => {
+  it("dedupes Start-menu targets case-insensitively (v0.1.5 MCP crash loop)", () => {
+    // 真实 windows-2025 runner 上的情况：系统自带的 notepad/mspaint 与开始菜单快捷方式只差大小写
+    const onDisk = new Set(["C:\\Windows\\System32\\notepad.exe", "C:\\Windows\\System32\\mspaint.exe", "C:\\Windows\\explorer.exe", "C:\\Program Files\\App\\app.exe"].map((p) => p.toLowerCase()));
+    const exists = (p: string) => onDisk.has(p.toLowerCase());
+    const shortcuts = ["C:\\WINDOWS\\system32\\notepad.exe", "C:\\WINDOWS\\system32\\mspaint.exe", "C:\\Program Files\\App\\app.exe", "C:\\PROGRAM FILES\\APP\\APP.EXE", "C:\\gone\\x.exe", "C:\\x\\readme.txt", ""].join("\r\n");
+    const apps = windowsAppsFrom({ SystemRoot: "C:\\Windows" }, shortcuts, exists, (p) => p);
+    const ids = apps.map((a) => ("executable" in a ? a.executable.toLowerCase() : ""));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.sort()).toEqual(["c:\\program files\\app\\app.exe", "c:\\windows\\explorer.exe", "c:\\windows\\system32\\mspaint.exe", "c:\\windows\\system32\\notepad.exe"]);
+    expect(uniqueApps([{ bundle_id: "com.apple.Safari" }, { bundle_id: "com.apple.safari" }], "darwin")).toHaveLength(1);
+  });
+});
+
+/** 假的 cua-driver 子进程：记录写进 stdin 的消息，测试从 stdout 回消息 */
+function fakeDriver() {
+  const c: any = new EventEmitter();
+  c.stdout = new PassThrough();
+  c.stderr = new PassThrough();
+  c.sent = [] as any[];
+  c.stdin = new Writable({
+    write(chunk, _enc, cb) {
+      for (const l of String(chunk).split("\n")) if (l.trim()) c.sent.push(JSON.parse(l));
+      cb();
+    },
+  });
+  c.reply = (msg: unknown) => c.stdout.write(JSON.stringify(msg) + "\n");
+  c.kill = () => c.emit("exit", null);
+  return c;
+}
+
+describe("cua MCP front: startup never waits for (or crash-loops on) the driver", () => {
+  const setup = async (o: { list?: () => Promise<Set<string>> } = {}) => {
+    const m = await import(proxy);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-front-"));
+    const out: any[] = [];
+    const logs: string[] = [];
+    const drivers: any[] = [];
+    const front = m.createFront({
+      cfg: { bin: "cua-driver", manifest: path.join(dir, "m.yaml"), tools: ["click", "list_windows"], apps: [], display: true },
+      env: {},
+      send: (msg: any) => out.push(msg),
+      log: (s: string) => logs.push(s),
+      spawnDriver: () => {
+        const d = fakeDriver();
+        drivers.push(d);
+        return d;
+      },
+      listTools: o.list ?? (async () => new Set(["click", "list_windows", "run_script"])),
+    });
+    return { front, out, logs, drivers, dir };
+  };
+  const tick = () => new Promise((r) => setTimeout(r, 20));
+
+  it("answers initialize itself, then lists the driver's (filtered) tools once it is up", async () => {
+    const { front, out, drivers } = await setup();
+    await front.onClient({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {} } });
+    expect(out[0]).toMatchObject({ id: 1, result: { capabilities: { tools: { listChanged: true } } } });
+    await tick();
+    const d = drivers[0];
+    expect(d.sent[0]).toMatchObject({ method: "initialize" });
+    d.reply({ jsonrpc: "2.0", id: d.sent[0].id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} } } });
+    await tick();
+    expect(front.ready).toBe(true);
+    const listing = front.onClient({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    await listing;
+    const fwd = d.sent.find((x: any) => x.id === 2);
+    expect(fwd.method).toBe("tools/list");
+    d.reply({ jsonrpc: "2.0", id: 2, result: { tools: [{ name: "click" }, { name: "run_script" }] } });
+    await tick();
+    expect(out.find((x) => x.id === 2).result.tools.map((t: any) => t.name)).toEqual(["click"]);
+  });
+
+  it("a slow driver: tools/list is empty at first, then tools/list_changed", async () => {
+    const { front, out, drivers } = await setup();
+    await front.onClient({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await front.onClient({ jsonrpc: "2.0", id: 2, method: "tools/list" }); // waits ~3 s, driver silent
+    expect(out.find((x) => x.id === 2).result.tools).toEqual([]);
+    const d = drivers[0];
+    d.reply({ jsonrpc: "2.0", id: d.sent[0].id, result: {} });
+    await tick();
+    expect(out.at(-1)).toMatchObject({ method: "notifications/tools/list_changed" });
+  }, 10_000);
+
+  it("a driver that dies at startup: no exit, no restart storm, calls report why", async () => {
+    const { front, out, drivers, logs } = await setup();
+    await front.onClient({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await tick();
+    drivers[0].stderr.write("Error: application resources repeat an identity\n");
+    drivers[0].emit("exit", 1);
+    await tick();
+    expect(logs.join("\n")).toContain("cua-driver mcp exited (1)");
+    await front.onClient({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "click", arguments: {} } });
+    const r = out.find((x) => x.id === 3);
+    expect(r.result.isError).toBe(true);
+    expect(r.result.content[0].text).toContain("exited (1)");
+    expect(drivers).toHaveLength(1); // retried at most once a minute, not per message
+  });
+
+  it("list-tools failing is reported the same way", async () => {
+    const { front, out, drivers } = await setup({ list: async () => Promise.reject(new Error("cua-driver list-tools failed: timeout")) });
+    await front.onClient({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await tick();
+    await front.onClient({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "click" } });
+    expect(out.find((x) => x.id === 2).result.content[0].text).toContain("list-tools failed");
+    expect(drivers).toHaveLength(0);
+  });
+});
+
 describe("cua MCP front (amb-cua-mcp.mjs)", () => {
   it("writes a bounded v3 manifest", async () => {
     const m = await import(proxy);
@@ -101,6 +212,14 @@ describe("cua MCP front (amb-cua-mcp.mjs)", () => {
     expect(y).toContain('    - bundle_id: "com.a.b"');
     expect(y).toContain("terminate: driver_launched");
     expect(y).toContain("  desktop:\n    display: true");
+  });
+  it("never repeats an app identity (cua-driver refuses to start on duplicates)", async () => {
+    const m = await import(proxy);
+    const apps = [{ executable: "C:\\Windows\\System32\\notepad.exe" }, { executable: "C:\\WINDOWS\\system32\\notepad.exe" }, { bundle_id: "com.A.b" }, { bundle_id: "com.a.B" }];
+    expect(m.uniqueApps(apps, "win32")).toEqual([apps[0], apps[2]]);
+    expect(m.uniqueApps([{ executable: "/usr/bin/x" }, { executable: "/usr/bin/X" }], "linux")).toHaveLength(2);
+    const y = m.manifestYaml({ tools: ["click"], apps: process.platform === "win32" ? apps : [{ executable: "/a" }, { executable: "/a" }] });
+    expect(y.match(/- (executable|bundle_id):/g)!.length).toBe(process.platform === "win32" ? 2 : 1);
   });
   it("parses list-tools and builds a bounded, telemetry-free env", async () => {
     const m = await import(proxy);

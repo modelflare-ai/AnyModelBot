@@ -4,7 +4,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { logger } from "../log.js";
+import { lineLogger, logger, registerSecret } from "../log.js";
 import { BOT_PROVIDER_PREFIX, MODELFLARE_PROVIDER, botProviderId, keyTail } from "../modelflare.js";
 
 const log = logger("magpie");
@@ -95,6 +95,9 @@ export class MagpieSupervisor {
   private readonly root: string;
   private restartTimer: NodeJS.Timeout | undefined;
   private logTail: string[] = [];
+  /** 当前（或最近一次）magpie 子进程 */
+  pid: number | undefined;
+  lastExit: { code: number | null; signal: string | null; at: number } | undefined;
 
   constructor(private opts: MagpieOptions) {
     this.root = path.join(opts.dataDir, "magpie");
@@ -170,6 +173,20 @@ export class MagpieSupervisor {
       this.keys = { webKey: genKey(), gatewayKey: "amb-" + genKey() };
     }
     this.saveKeys();
+    registerSecret(this.keys.webKey);
+    registerSecret(this.keys.gatewayKey);
+    this.registerProviderKeys();
+  }
+
+  /** 上游 API Key（providers.json 里的 key 字段）登记为密钥，日志里出现时替换成 *** */
+  private registerProviderKeys(): void {
+    const f = path.join(this.root, "config", "magpie", "providers.json");
+    try {
+      const j = JSON.parse(fs.readFileSync(f, "utf8"));
+      for (const p of Array.isArray(j) ? j : j.providers ?? []) registerSecret(String(p?.key ?? ""));
+    } catch {
+      /* 还没有 */
+    }
   }
 
   private saveKeys(): void {
@@ -181,7 +198,7 @@ export class MagpieSupervisor {
     if (!this.binPath) return Promise.reject(new Error("找不到 magpie 可执行文件，请先运行 npm run setup"));
     if (!this.keys) this.prepare();
     return new Promise((resolve, reject) => {
-      const p = spawn(this.binPath!, args, { env: this.env(), stdio: ["pipe", "pipe", "pipe"] });
+      const p = spawn(this.binPath!, args, { env: this.env(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       let stdout = "";
       let stderr = "";
       const t = setTimeout(() => p.kill("SIGKILL"), timeoutMs);
@@ -195,6 +212,8 @@ export class MagpieSupervisor {
         clearTimeout(t);
         resolve({ code: code ?? -1, stdout, stderr });
       });
+      // magpie 可能不读 stdin 就退出：写入失败（EPIPE）不能变成未捕获异常
+      p.stdin.on("error", () => {});
       p.stdin.end(stdin ?? "");
     });
   }
@@ -224,22 +243,24 @@ export class MagpieSupervisor {
   private async spawnOnce(): Promise<void> {
     this.state = this.restarts ? "restarting" : "starting";
     const args = ["web", "--addr", `127.0.0.1:${this.webPort}`, "--no-open", "--gateway"];
-    const child = spawn(this.binPath!, args, { env: this.env(), stdio: ["ignore", "pipe", "pipe"] });
+    // windowsHide：magpie 是控制台程序，Electron 是 GUI 程序；不加的话 Windows 上每次启动都会弹出一个黑色控制台窗口
+    const child = spawn(this.binPath!, args, { env: this.env(), stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     this.child = child;
+    this.pid = child.pid;
     if (child.pid) fs.writeFileSync(this.pidFile, String(child.pid));
-    const onLine = (d: Buffer) => {
-      for (const line of d.toString().split(/\r?\n/)) {
-        if (!line.trim()) continue;
-        // magpie 打印的启动链接含 ?k=<web key>，记录前脱敏
-        const safe = line.replaceAll(this.keys.webKey, "***").replaceAll(this.keys.gatewayKey, "***");
-        this.logTail.push(safe);
-        if (this.logTail.length > 200) this.logTail.shift();
-        log.debug(safe);
-      }
+    // magpie 打印的启动链接含 ?k=<web key>：lineLogger 按已登记的密钥与 URL 参数脱敏后再记录
+    const keep = (safe: string) => {
+      this.logTail.push(safe);
+      if (this.logTail.length > 200) this.logTail.shift();
     };
-    child.stdout?.on("data", onLine);
-    child.stderr?.on("data", onLine);
+    const out = lineLogger("magpie", "info", keep);
+    const err = lineLogger("magpie", "info", keep);
+    child.stdout?.on("data", (d) => out.push(d));
+    child.stderr?.on("data", (d) => err.push(d));
     child.on("exit", (code, signal) => {
+      out.flush();
+      err.flush();
+      this.lastExit = { code, signal, at: Date.now() };
       if (this.child !== child) return;
       this.child = undefined;
       if (this.stopping) {
@@ -321,7 +342,7 @@ export class MagpieSupervisor {
     let cmd = "";
     try {
       if (process.platform === "linux") cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " ");
-      else if (process.platform === "darwin") cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" });
+      else if (process.platform === "darwin") cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     } catch {
       return;
     }
@@ -379,6 +400,7 @@ export class MagpieSupervisor {
   private async upsertProvider(existing: string | undefined, wantId: string, name: string, apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string>): Promise<void> {
     if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
     if (!apiKey.trim()) throw new Error("缺少 API Key");
+    registerSecret(apiKey.trim());
     let id = existing;
     if (!id) {
       const add = await this.runCli(["provider", "add", name, `id=${wantId}`, `url=${baseUrl}`, "key=placeholder-key"]);
@@ -445,6 +467,20 @@ export class MagpieSupervisor {
     const key = String(p?.key ?? "");
     const connected = !!key && key !== "placeholder-key";
     return { connected, keyTail: connected ? keyTail(key) : "", baseUrl: String(p?.chat ?? "") };
+  }
+
+  /**
+   * 网关背后的上游端点（故障排查"直连端点"对比用）：地址、真实 key、provider id（缺省为共用连接；
+   * 开了预算的机器人用自己的 mfb-<botId>）。只在本进程内使用，不外传。
+   * 网关里的模型名带 provider 前缀（modelflare/<上游模型名>），直连时要去掉。
+   */
+  upstreamEndpoint(providerId?: string): { id: string; baseUrl: string; apiKey: string } | undefined {
+    const id = providerId && this.hasProvider(providerId) ? providerId : this.modelflareId();
+    const p = id ? this.readProviderRaw(id) : undefined;
+    const key = String(p?.key ?? "");
+    if (!id || !p || !key || key === "placeholder-key") return undefined;
+    registerSecret(key);
+    return { id, baseUrl: String(p.chat ?? "").replace(/\/+$/, ""), apiKey: key };
   }
 
   private modelflareId(): string | undefined {

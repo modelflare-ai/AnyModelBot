@@ -13,7 +13,7 @@ import { LarkTransport, type FeishuTransport } from "./channels/feishu/transport
 import { WeixinChannel } from "./channels/weixin/channel.js";
 import { WeixinLogin } from "./channels/weixin/login.js";
 import { startWebServer, type WebServer } from "./web/server.js";
-import { logger, mask } from "./log.js";
+import { initFileLog, logFilePath, logger, mask, registerSecret } from "./log.js";
 import { AgentManager } from "./agent/manager.js";
 import { normalizeSettings } from "./agent/settings.js";
 import { locateDshRuntime } from "./agent/host.js";
@@ -86,6 +86,8 @@ export interface AppOptions {
   noWeb?: boolean;
   /** 登录二维码是否打印到终端 */
   printQrToTerminal?: boolean;
+  /** 写 <dataDir>/logs/app.log（默认 true） */
+  fileLog?: boolean;
 }
 
 interface BotChannels {
@@ -107,11 +109,29 @@ export class App {
   desktop: DesktopHooks | undefined;
   /** Modelflare 账户（登录、余额、预算）；start() 时创建，桌面外壳的钥匙串那时已就绪 */
   account!: AccountManager;
+  /** 故障排查页最近一次"测试模型 / 测试代理"的结果（复制诊断信息时带上） */
+  lastDiagnostics: { model?: import("./diagnostics.js").ModelTestResult; agent?: import("./diagnostics.js").AgentTestResult } = {};
   private notices: Array<{ at: number; level: "info" | "warn"; text: string }> = [];
   private accountTimer: NodeJS.Timeout | undefined;
   private modelInfoCache: { at: number; data: Record<string, ModelInfo> } | undefined;
 
   constructor(readonly config: AppConfig, readonly opts: AppOptions = {}) {
+    // 日志文件：<dataDir>/logs/app.log（打包后的桌面版看不到 stdout，故障排查全靠它）
+    if (opts.fileLog !== false) initFileLog(path.join(config.dataDir, "logs"));
+    registerSecret(config.ui.token);
+    registerSecret(config.magpie.externalApiKey);
+    log.info(`anymodel bot ${appVersion()} starting`, {
+      platform: process.platform,
+      arch: process.arch,
+      os: os.release(),
+      electron: process.versions.electron,
+      node: process.versions.node,
+      pid: process.pid,
+      dataDir: config.dataDir,
+      gateway: config.magpie.mode,
+      agent: config.agent.mode,
+      log: logFilePath(),
+    });
     this.store = new Store(path.join(config.dataDir, "anymodel.db"));
     if (config.magpie.mode === "managed") {
       this.magpie = new MagpieSupervisor({ dataDir: config.dataDir, binPath: config.magpie.binPath || undefined });
@@ -149,6 +169,7 @@ export class App {
             workspace: (botId) => path.join(config.dataDir, "workspaces", botId),
           })
         : undefined,
+      onNotice: (text) => this.notice("warn", text),
     });
     this.runtime = new BotRuntime({
       agent: this.agent,
@@ -159,6 +180,22 @@ export class App {
       contextChars: config.llm.contextChars,
       route: (botId, model) => this.routeModel(botId, model),
     });
+  }
+
+  /**
+   * 启动后在后台拉起默认机器人的代理进程（AMB_AGENT_PREWARM=0 关闭）。第一次启动要加载上万个运行时文件，
+   * 杀毒软件逐个扫描时可能要几分钟；提前做，用户发第一条消息时多半已经就绪。
+   */
+  async prewarmAgent(): Promise<void> {
+    if (process.env.AMB_AGENT_PREWARM === "0" || this.opts.noWeb || !this.agent.available) return;
+    const bot = this.store.listBots()[0];
+    if (!bot) return;
+    try {
+      const model = bot.defaultModel || this.config.llm.defaultModel || (await this.runtime.listModels(true).catch(() => [] as string[]))[0] || "";
+      if (model) this.agent.prewarm(bot.id, this.routeModel(bot.id, model));
+    } catch (e) {
+      log.warn("agent prewarm skipped", { message: (e as Error).message });
+    }
   }
 
   /** 每个经 Modelflare 的请求都带的请求头（调用归因） */
@@ -293,6 +330,7 @@ export class App {
     this.seedDefaultBot();
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
     if (!this.opts.noWeb) this.web = await startWebServer(this);
+    void this.prewarmAgent();
     if (this.magpie && !this.opts.noWeb) {
       // 余额与低余额提醒：启动后读一次，之后每 5 分钟一次
       const tick = () => {
@@ -344,6 +382,8 @@ export class App {
     this.modelInfoCache = undefined;
     this.setModelflareLineConfig(line);
     await this.runtime.listModels(true).catch(() => []);
+    // 刚连上：现在才有模型可用，把代理进程也提前拉起来（首次启动可能要几分钟）
+    void this.prewarmAgent();
     return r;
   }
 
@@ -385,6 +425,8 @@ export class App {
   async startBot(botId: string): Promise<void> {
     const bot = this.store.getBot(botId);
     if (!bot) return;
+    registerSecret(bot.feishuAppSecret);
+    registerSecret(this.store.getWeixinAccount(botId)?.botToken);
     const ch: BotChannels = this.channels.get(botId) ?? {};
     this.channels.set(botId, ch);
     if (bot.feishuAppId && bot.feishuAppSecret && !ch.feishu) {

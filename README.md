@@ -71,7 +71,7 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 
 ## 模型（Modelflare）
 
-- 首次启动只有一个页面，主按钮是「登录 / 注册 Modelflare」：在系统浏览器里登录（没有账户可当场注册）并点「继续」授权，回到本程序后自动为这台电脑签发一把专用 API Key 并连接 → 选默认模型 → 开始对话。也可以点「我有 API Key」直接粘贴一个 Key（校验 `GET https://modelflare.dev/v1/models`）。
+- 首次启动只有一个按钮「登录 / 注册 Modelflare」：在系统浏览器里登录（没有账户可当场注册）并点「继续」授权，回到本程序后自动为这台电脑签发一把专用 API Key 并连接 → 选默认模型 → 开始对话。Docker 或远程部署收不到浏览器登录的回调，首次启动页改为填写 API Key（校验 `GET https://modelflare.dev/v1/models`）。
 - 登录方式：OIDC 授权码 + PKCE（RFC 7636），按 RFC 8252 作为原生应用——本程序是公共客户端（`client_id` 为 `anymodel-bot`，没有也不需要客户端密钥），授权结果回调到本机 `127.0.0.1` 的临时端口。在 Modelflare 网页个人资料页的「已授权的应用」里可以随时撤销；撤销后本程序会发现并回到登录页。
 - 账户凭据（refresh token）存在数据目录的 `modelflare-account.json`（权限 600），桌面版用系统钥匙串加密（Electron safeStorage）；界面只拿到账户名称。「退出登录」会撤销这台电脑的授权，Modelflare 同时删除登录时为它和各机器人签发的 Key。
 - 余额：侧栏左下角和 设置 → Modelflare 显示账户钱包余额（只用 API Key 时读 `/v1/dashboard/billing/credit_grants`）；「充值」打开 Modelflare 网页，回到窗口时自动刷新。余额低于提醒线（默认 $1，可改或关闭）时在应用里提醒一次，也可以设置让机器人发到你的微信 / 飞书。

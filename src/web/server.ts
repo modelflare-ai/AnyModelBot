@@ -17,6 +17,7 @@ import { connectionFromPids } from "../agent/peer-guard.js";
 import type { ApprovalRow } from "../store/db.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
+import { pwshProbe, type PwshStatus } from "../agent/pwsh.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -354,6 +355,27 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       return send(res, 200, { ok: true });
     }
     if (p === "/agent" && m === "GET") return send(res, 200, app.agent.status());
+    // —— Windows：没有 PowerShell 7 时建议安装（对话空状态、设置 → 常规、故障排查）——
+    if (seg[0] === "pwsh") {
+      const view = (st: PwshStatus) => ({ ...st, dismissed: cfg.ui.pwshHintDismissed });
+      if (seg.length === 1 && m === "GET") return send(res, 200, view(await pwshProbe.check()));
+      if (seg[1] === "recheck" && m === "POST") {
+        const before = pwshProbe.cachedDshPath;
+        const st = await pwshProbe.check(true);
+        // 代理进程空闲时下一条消息会换用新的 PowerShell（宿主的设置签名里带着它）
+        if (pwshProbe.cachedDshPath !== before) log.info("PowerShell changed; idle agent hosts restart on the next message", { from: before, to: pwshProbe.cachedDshPath });
+        return send(res, 200, view(st));
+      }
+      if (seg.length === 1 && m === "PUT") {
+        const b = await readJson(req);
+        if (b.dismissed !== undefined) {
+          cfg.ui.pwshHintDismissed = !!b.dismissed;
+          saveConfigFile(cfg.dataDir, (f) => (f.ui = { ...(f.ui ?? {}), pwshHintDismissed: cfg.ui.pwshHintDismissed }));
+        }
+        return send(res, 200, view(await pwshProbe.check()));
+      }
+      throw new HttpError(405, "method not allowed");
+    }
     // —— 故障排查（设置 → 故障排查）：所有输出都已脱敏 ——
     if (seg[0] === "diagnostics") {
       const sub = seg.slice(1).join("/");

@@ -11,6 +11,9 @@
 //   runs (scripts/ci/procmon.ps1), which is how the "flashing console windows" report is checked.
 // --max-console-windows N: fail when more than N new visible console windows appeared (needs --procmon).
 // --expect-diagnostics: also require the troubleshooting page's "test model" and "test agent" to pass.
+// --expect-pwsh7 (Windows): require that the app detected PowerShell 7 (/amb/api/pwsh and the diagnostics
+//   status), passed it to DSH (the "patch written" log line) and that the --tool command ran in it
+//   (the pwsh tool prints $PSVersionTable.PSVersion.Major). GitHub's windows-2025 image has PowerShell 7.
 // --tool: the mock model asks for one shell tool call before answering (exercises tool spawning).
 // --managed: use the bundled magpie gateway (as users do) with "Modelflare" pointed at the mock
 //   (AMB_MODELFLARE_BASE_URL) and connected through the API; otherwise the app calls the mock directly.
@@ -68,6 +71,7 @@ const jl = (file, obj) => fs.appendFileSync(path.join(out, file), JSON.stringify
 const MODEL = "mock-agent";
 const ANSWER = "pong-from-mock";
 const wantTool = flag("tool");
+const expectPwsh7 = flag("expect-pwsh7");
 const managed = flag("managed");
 const reasoning = flag("reasoning");
 const observeMs = Number(opt("observe-ms", 0));
@@ -111,7 +115,9 @@ const llm = http.createServer(async (req, res) => {
   // One shell call first when asked (and the runtime offers a shell tool), then the answer.
   const shell = tools.find((n) => n === "bash" || n === "pwsh" || n === "powershell");
   const toolResults = msgs.filter((m) => m.role === "tool");
-  const call = wantTool && b.tools && shell && !toolResults.length ? { name: shell, args: { description: "say hi", command: "echo tool-ran-ok" } } : undefined;
+  // PowerShell also prints its major version, so the e2e can tell PowerShell 7 from Windows PowerShell 5.1
+  const command = shell === "bash" ? "echo tool-ran-ok" : 'echo tool-ran-ok; "psver=$($PSVersionTable.PSVersion.Major)"';
+  const call = wantTool && b.tools && shell && !toolResults.length ? { name: shell, args: { description: "say hi", command } } : undefined;
   const text = toolResults.length ? `${ANSWER} [${toolResults.map((m) => textOf(m.content)).join("|").slice(0, 300)}]` : ANSWER;
   if (!b.stream) {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ id: "c1", object: "chat.completion", model: b.model, choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }));
@@ -333,6 +339,29 @@ try {
     const modelOk = !!m?.direct?.ok && (!!m?.gateway?.ok || !!m?.gateway?.skipped);
     say(`test model: ${modelOk ? "ok" : "FAILED"} (${m?.verdict ?? "no result"}); test agent: ${summary.testAgent?.ok ? "ok" : `FAILED at ${summary.testAgent?.stuckAt ?? "?"}`}`);
     summary.ok &&= modelOk && !!summary.testAgent?.ok;
+  }
+  if (expectPwsh7) {
+    // PowerShell 7 detected, handed to DSH and actually used for the tool call
+    const ps = (await api("/amb/api/pwsh", {}, 30_000)).body;
+    const diagPs = JSON.parse(fs.readFileSync(path.join(out, "diag-diag.json"), "utf8")).body?.pwsh;
+    fs.writeFileSync(path.join(out, "diag-pwsh.json"), JSON.stringify({ api: ps, diagnostics: diagPs }, null, 2));
+    let patchLine = "";
+    try {
+      patchLine = fs.readFileSync(path.join(dataDir, "logs", "app.log"), "utf8").split(/\r?\n/).find((l) => l.includes("dsh start: patch written")) ?? "";
+    } catch {
+      /* no log */
+    }
+    const psver = [summary.chat, summary.chat2].map((c) => /psver=(\d+)/.exec(c?.reply ?? "")?.[1]).filter(Boolean);
+    summary.pwsh = { api: ps, diagnostics: diagPs, patchLine: patchLine.slice(0, 400), psver };
+    const ok7 = (x) => !!x?.applicable && !!x?.found && !x?.missing && /^7\./.test(x?.version ?? "");
+    const checks = {
+      detected: ok7(ps),
+      diagnostics: ok7(diagPs),
+      passedToDsh: /"pwsh":"[^"]*pwsh\.exe"/i.test(patchLine),
+      toolRanInPwsh7: !wantTool || (psver.length > 0 && psver.every((v) => v === "7")),
+    };
+    say(`PowerShell: ${ps?.version ?? "-"} at ${ps?.path ?? "-"} (${ps?.source ?? "-"}); checks ${JSON.stringify(checks)}; tool psver ${psver.join(",") || "-"}`);
+    summary.ok &&= Object.values(checks).every(Boolean);
   }
 } catch (e) {
   summary.error = String(e?.message ?? e);

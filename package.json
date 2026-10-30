@@ -24,8 +24,8 @@
     "dist": "npm run build && node scripts/prepare-dsh.mjs && node scripts/build-magpie.mjs --target current && node scripts/fetch-cua-driver.mjs --target current && electron-builder",
     "electron:smoke": "npm run build && node scripts/electron-smoke.mjs",
     "dist:linux": "npm run build && node scripts/prepare-dsh.mjs --os linux --cpu x64 && node scripts/build-magpie.mjs --target linux/amd64,linux/arm64 && node scripts/fetch-cua-driver.mjs --target linux/x64,linux/arm64 && electron-builder --linux",
-    "dist:mac": "npm run build && node scripts/prepare-dsh.mjs --os darwin --cpu arm64 && node scripts/build-magpie.mjs --target darwin/amd64,darwin/arm64 && node scripts/fetch-cua-driver.mjs --target darwin/x64,darwin/arm64 && electron-builder --mac",
-    "dist:win": "npm run build && node scripts/prepare-dsh.mjs --os win32 --cpu x64 && node scripts/build-magpie.mjs --target windows/amd64,windows/arm64 && node scripts/fetch-cua-driver.mjs --target win32/x64,win32/arm64 && electron-builder --win",
+    "dist:mac": "npm run build && node scripts/build-magpie.mjs --target darwin/amd64,darwin/arm64 && node scripts/fetch-cua-driver.mjs --target darwin/x64,darwin/arm64 && node scripts/prepare-dsh.mjs --os darwin --cpu arm64 && electron-builder --mac dmg zip --arm64 && node scripts/prepare-dsh.mjs --os darwin --cpu x64 && electron-builder --mac dmg zip --x64",
+    "dist:win": "npm run build && node scripts/build-magpie.mjs --target windows/amd64,windows/arm64 && node scripts/fetch-cua-driver.mjs --target win32/x64,win32/arm64 && node scripts/prepare-dsh.mjs --os win32 --cpu x64 && electron-builder --win nsis --x64 && node scripts/prepare-dsh.mjs --os win32 --cpu arm64 && electron-builder --win nsis --arm64",
     "prepare:dsh": "node scripts/prepare-dsh.mjs",
     "fetch:cua": "node scripts/fetch-cua-driver.mjs"
   },

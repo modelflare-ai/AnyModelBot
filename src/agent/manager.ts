@@ -37,6 +37,8 @@ export interface AgentManagerOptions {
   reviewDelayMs?: number;
   /** 生图 / 生视频（amb-media 插件经 bridge 调用）；缺省时工具返回不可用 */
   media?: MediaService;
+  /** 需要让用户看到的提示（代理进程起不来等） */
+  onNotice?: (text: string) => void;
 }
 
 function deferred<T>() {
@@ -103,6 +105,7 @@ export class AgentManager {
         store: this.o.store,
         turnTimeoutMs: this.o.turnTimeoutMs,
         settings: () => this.settings(botId),
+        onNotice: this.o.onNotice,
       });
       this.hosts.set(botId, h);
     }
@@ -137,7 +140,32 @@ export class AgentManager {
     return this.o.store.getBot(botId)?.settings ?? DEFAULT_SETTINGS;
   }
 
+  /**
+   * 预热：应用启动后就在后台拉起代理进程，第一次启动（冷启动）可能要几分钟，不该等到用户发第一条消息。
+   * 失败只记日志（ensure 自己会记录并退避），不抛错。
+   */
+  prewarm(botId: string, model: string): void {
+    if (!this.available || !model) return;
+    const h = this.host(botId);
+    if (h.state === "running" || h.state === "starting") return;
+    log.info("prewarming agent host", { bot: botId, model });
+    void h.ensure(model).catch(() => undefined);
+  }
+
+  /** 会话 → 正在进行的回合开始时间（/status 与故障排查用：后来的消息排在它后面） */
+  readonly turnsInProgress = new Map<string, { botId: string; since: number }>();
+
   async runTurn(botId: string, input: { conversationId: string; text: string; model: string; observer?: TurnObserver }) {
+    const conv = input.conversationId;
+    this.turnsInProgress.set(conv, { botId, since: Date.now() });
+    try {
+      return await this.runTurnInner(botId, input);
+    } finally {
+      this.turnsInProgress.delete(conv);
+    }
+  }
+
+  private async runTurnInner(botId: string, input: { conversationId: string; text: string; model: string; observer?: TurnObserver }) {
     const conv = input.conversationId;
     const gate = this.gates.get(conv);
     if (gate) await withTimeout(gate, 240_000, undefined);
@@ -424,6 +452,39 @@ export class AgentManager {
       runtime: this.o.runtimeDir ? "found" : "missing",
       hosts: Object.fromEntries([...this.hosts].map(([id, h]) => [id, h.status()])),
     };
+  }
+
+  /** 故障排查：运行时位置 + 每个已创建的代理进程的详细状态（stderr 尾部、最近一次退出）+ 进行中的回合 */
+  diagnostics(): { enabled: boolean; available: boolean; runtimeDir?: string; hosts: Record<string, Record<string, unknown>>; turns: Array<{ conversationId: string; botId: string; forMs: number }> } {
+    return {
+      enabled: this.o.enabled,
+      available: this.available,
+      runtimeDir: this.o.runtimeDir,
+      hosts: Object.fromEntries([...this.hosts].map(([id, h]) => [id, h.diagnostics()])),
+      turns: [...this.turnsInProgress].map(([conversationId, t]) => ({ conversationId, botId: t.botId, forMs: Date.now() - t.since })),
+    };
+  }
+
+  /** 一句话的代理状态（/status 用；不等待、不拉起进程） */
+  hostSummary(botId: string): string {
+    if (!this.available) return "";
+    const h = this.hosts.get(botId);
+    if (!h || h.state === "stopped") return "代理进程：未启动（收到消息时启动）";
+    const d = h.diagnostics() as any;
+    if (h.state === "running") return `代理进程：运行中（pid ${h.pid ?? "?"}${d.lastInitMs ? `，启动用时 ${Math.round(d.lastInitMs / 1000)} 秒` : ""}）`;
+    if (h.state === "starting") {
+      const s = Math.round((d.startingForMs ?? 0) / 1000);
+      return `代理进程：正在启动（已 ${s} 秒${d.firstStart ? "；第一次启动可能要几分钟" : ""}）`;
+    }
+    if (h.state === "backoff") return `代理进程：上次启动失败，稍后重试（${h.lastError.slice(0, 120)}）`;
+    return `代理进程：启动失败，已暂停（${h.lastError.slice(0, 120)}）`;
+  }
+
+  /** 故障排查的"重启代理进程"：关掉（全部或指定机器人的）子进程并清掉退避；返回重启了哪些。 */
+  async restartHosts(botId?: string): Promise<string[]> {
+    const ids = [...this.hosts.keys()].filter((id) => !botId || id === botId);
+    await Promise.all(ids.map((id) => this.hosts.get(id)!.restart()));
+    return ids;
   }
 
   private resolveConversation(botId: string, sessionId: string): string {

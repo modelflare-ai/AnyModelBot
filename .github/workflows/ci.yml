@@ -2,6 +2,8 @@
 # Typecheck, unit tests and the TypeScript build. Installers are not built here because the six
 # native runners (two of them macOS) cost far more; use the Release workflow's "Run workflow"
 # button for a full packaging test.
+# Changes to the agent host, the gateway supervisor, the desktop shell or dsh-runtime also run a
+# Windows end-to-end job (~6 min) with the real DSH host against a mock model.
 
 name: CI
 
@@ -44,3 +46,92 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Does this change touch the agent host, the gateway or the desktop shell? Only then run the
+  # Windows end-to-end job below (it needs a Windows runner and ~6 minutes).
+  changes:
+    name: Agent paths changed?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      agent: ${{ steps.diff.outputs.agent }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "agent=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE" HEAD)
+          echo "$files"
+          if echo "$files" | grep -qE '^(src/agent/|src/magpie/|electron/|dsh-runtime/|scripts/prepare-dsh\.mjs$|scripts/e2e-agent\.mjs$|scripts/ci/|\.github/workflows/ci\.yml$)'; then
+            echo "agent=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "agent=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Windows end-to-end: the real app (electron .) with the bundled magpie gateway and the real DSH
+  # agent host, "Modelflare" pointed at a scripted mock model. One chat through the UI's SSE path
+  # with a shell tool call, the troubleshooting page's "test model" / "test agent", and no console
+  # window may appear (v0.1.5 flashed a stream of them; see scripts/e2e-agent.mjs).
+  windows-agent-e2e:
+    name: Windows agent e2e (mock model + real DSH host)
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch magpie
+        run: git submodule update --init --depth 1 vendor/magpie
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            dsh-runtime/package-lock.json
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: vendor/magpie/go.mod
+          cache-dependency-path: vendor/magpie/go.sum
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: node scripts/prepare-dsh.mjs
+      - run: node scripts/build-magpie.mjs --target windows/amd64
+      - run: node scripts/fetch-cua-driver.mjs --target win32/x64
+
+      # Electron 44 downloads its binary on the first require("electron"), not at npm install time.
+      - name: Fetch the Electron binary
+        run: |
+          exe=$(node -p 'require("electron")' | tail -n 1)
+          test -f "$exe"
+          echo "ELECTRON_EXE=$exe" >> "$GITHUB_ENV"
+
+      # --launch shell: Start-Process without redirection (ShellExecute), so the app has no std
+      # handles, like a Start-menu launch. /status is probed before and during the first turn.
+      - name: Chat through the app; no console windows
+        run: node scripts/e2e-agent.mjs --out "$RUNNER_TEMP/e2e" --launch shell --cwd "$GITHUB_WORKSPACE" --timeout-ms 150000 --procmon --managed --stream --tool --status-probes --observe-ms 20000 --max-console-windows 0 --expect-diagnostics -- "$ELECTRON_EXE" .
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: windows-agent-e2e
+          path: ${{ runner.temp }}/e2e
+          retention-days: 7

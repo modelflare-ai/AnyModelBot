@@ -1,7 +1,7 @@
 /* 加载与空状态：.spinner、.skel（骨架条）、.empty-state。 */
 .spinner {
   width: 14px; height: 14px; border-radius: 50%; flex: none;
-  border: 2px solid currentColor; border-right-color: transparent;
+  border: 2px solid currentColor; border-right-color: transparent;   /* 描边：转圈本身就是一道缺了口的圆边 */
   animation: spin var(--dur-spin) linear infinite;
 }
 .skel {

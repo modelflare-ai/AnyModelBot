@@ -1,7 +1,7 @@
 /* 提示胶囊（"已保存"）：.toasts > .toast [ok | err | warn] [leaving]。
    改编自 yetone/magpie internal/gui/assets/app.css 的状态胶囊（MIT，© 2026 yetone）。 */
 .toasts {
-  position: fixed; z-index: var(--z-toast); left: var(--space-4); bottom: var(--space-4);
+  position: fixed; z-index: var(--z-toast); left: var(--float-inset); bottom: var(--float-inset);
   display: grid; gap: var(--space-1-5); justify-items: start; pointer-events: none;
 }
 .toast {
@@ -9,17 +9,18 @@
   --toast-fg: var(--fg);
   --toast-edge: var(--glass-edge);
   pointer-events: auto; font-size: var(--fs-sm); line-height: 16px; font-weight: var(--fw-medium);
-  padding: var(--space-1) 11px; border-radius: var(--r-full);
-  max-width: min(480px, calc(100vw - 32px));
+  padding: var(--space-1) var(--space-3); border-radius: var(--r-full);
+  max-width: min(480px, calc(100vw - 2 * var(--float-inset)));
   background: var(--grain), var(--toast-bg); color: var(--toast-fg); backdrop-filter: var(--glass-filter-sm);
-  box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 .5px var(--toast-edge), var(--shadow-md);
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 .5px var(--toast-edge), var(--shadow-md);   /* 描边：浮层玻璃的细边 */
   display: flex; gap: var(--space-2); align-items: center;
   --rise: 6px;
   animation: rise-in var(--dur-base) var(--ease-out);
 }
-.toast.ok { --toast-bg: var(--accent-solid); --toast-fg: var(--on-accent); --toast-edge: var(--accent-line); }   /* "已保存"：黄绿信号 */
-.toast.err { --toast-bg: color-mix(in srgb, var(--red-soft) 88%, transparent); --toast-fg: var(--red); --toast-edge: color-mix(in srgb, var(--red) 30%, transparent); }
-.toast.warn { --toast-bg: color-mix(in srgb, var(--amber-soft) 88%, transparent); --toast-fg: var(--amber); --toast-edge: color-mix(in srgb, var(--amber) 25%, transparent); }
+.toast.ok { --toast-bg: var(--accent-solid); --toast-fg: var(--on-accent); --toast-edge: var(--accent-line); }   /* "已保存"：黄绿信号；黄绿在白底上只有 1.15:1，要一道墨色细边 */
+/* 出错 / 注意：只换底色，边仍是中性的玻璃细边（不要"淡红底 + 红边"两层都染色） */
+.toast.err { --toast-bg: color-mix(in srgb, var(--red-soft) 88%, transparent); --toast-fg: var(--red); }
+.toast.warn { --toast-bg: color-mix(in srgb, var(--amber-soft) 88%, transparent); --toast-fg: var(--amber); }
 .toast.leaving { --rise: 4px; animation: sink-out var(--dur-base) var(--ease-in) forwards; }
 .toast .icon-btn {
   --ib-fg: currentColor; --ib-fg-hover: currentColor;

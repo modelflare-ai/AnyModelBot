@@ -1,10 +1,12 @@
-/* 设置页与机器人设置（参考 Codex）：白底，大标题，分组标题是正文色的小标题，白色圆角 .list 一行一项，开关用 Switch。
+/* 设置页与机器人设置（参考 Codex / macOS 系统设置）：大标题，分组标题是正文色的小标题，每组是一块 --well（底色深一级、
+   不描边），一行一项、行间一条细线，开关用 Switch。
    设置分页在侧栏（shell.css 的 .side-nav）。 */
 @layer app {
-.settings { flex: 1; min-height: 0; overflow-y: auto; }
+/* 内容列居中、最宽 --page-w，两侧至少 --page-gutter（和对话列同一条规则） */
+.settings { --page-px: max(var(--page-gutter), calc((100% - var(--page-w)) / 2)); flex: 1; min-height: 0; overflow-y: auto; }
 .set-head {
   display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-12) max(24px, calc((100% - var(--page-w)) / 2)) var(--space-2);
+  padding: var(--page-top) var(--page-px) var(--space-2);
   -webkit-app-region: drag;
 }
 .set-head > * { -webkit-app-region: no-drag; }
@@ -12,25 +14,24 @@
 .set-titles { min-width: 0; display: grid; gap: var(--space-0-5); }
 .set-titles .set-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .set-sub { font-size: var(--fs-md); color: var(--muted); }
-.set-back { --ib-size: 32px; --ib-r: var(--r-full); --ib-fg: var(--ctl-fg); margin-left: calc(-1 * var(--space-1-5)); }
-.set-body { padding: var(--space-2) max(24px, calc((100% - var(--page-w)) / 2)) var(--space-16); }
+/* 返回钮往左探出，箭头的笔画落在内容列的左边上（和分组标题、标签、卡片同一条线） */
+.set-back { --ib-size: 32px; --ib-r: var(--r-full); --ib-fg: var(--ctl-fg); margin-left: calc(-1 * var(--space-2-5)); }
+.set-body { padding: var(--space-2) var(--page-px) var(--page-bottom); }
 
-/* 分组标题与卡片 */
-.settings .list-head { margin: var(--space-8) var(--space-0-5) var(--space-2-5); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); }
+/* 分组标题与卡片：标题、输入框标签、卡片共用内容列的左边 */
+.settings .list-head { margin: var(--section-gap) 0 var(--heading-gap); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); }
 .settings .list-head:first-child { margin-top: var(--space-6); }
-.settings .list { border-radius: var(--r-2xl); }
 .settings .list + .list { margin-top: var(--space-3); }
 .settings .row { --row-h: 60px; --row-py: var(--space-3); --row-pl: var(--space-4); --row-pr: var(--space-4); --row-gap: var(--space-4); }
 .settings .row .name { font-size: var(--fs-lg); }
-.settings .row .sub { font-size: var(--fs-sm); line-height: var(--lh-snug); margin-top: var(--space-0-5); max-width: 460px; white-space: normal; }
-.settings .row .ctl { gap: var(--space-1-5); }
+.settings .row .sub { font-size: var(--fs-sm); line-height: var(--lh-snug); max-width: 460px; white-space: normal; }
 .settings .pick { height: var(--ctl-md); padding: 0 var(--space-2) 0 var(--space-3); border-radius: var(--r-lg); }
 .settings .seg { --seg-r: var(--r-lg); }
 .settings .seg button { height: var(--ctl-sm); }
-.set-part { margin: var(--space-8) var(--space-0-5) var(--space-2-5); font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.set-part { margin: var(--section-gap) 0 var(--heading-gap); font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
 .set-part:first-child { margin-top: var(--space-6); }
 .set-body > .list:first-child { margin-top: var(--space-6); }
-.set-none { margin: var(--space-8) var(--space-0-5); font-size: var(--fs-md); color: var(--muted); }
+.set-none { margin: var(--section-gap) 0; font-size: var(--fs-md); color: var(--muted); }
 .mf-state { display: inline-flex; align-items: center; gap: var(--space-1-5); font-size: var(--fs-sm); color: var(--fg-2); }
 
 /* 机器人设置：身份是带标签的输入框（参考 Codex 的编辑页） */
@@ -43,38 +44,39 @@
 /* 新建机器人（参考 Grok Bot 的创建页）：居中的表单，下面是模板卡片 */
 .new-bot { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .new-bot .head-bot.static:hover { background: none; }
-.new-body { flex: 1; min-height: 0; overflow-y: auto; display: grid; justify-items: center; align-content: start; gap: var(--space-12); padding: var(--space-12) var(--space-6) var(--space-16); }
+.new-body { flex: 1; min-height: 0; overflow-y: auto; display: grid; justify-items: center; align-content: start; gap: var(--space-12); padding: var(--page-top) var(--page-gutter) var(--page-bottom); }
 .new-form { width: min(460px, 100%); display: grid; justify-items: center; }
 .new-title { margin-top: var(--space-4); font-size: var(--fs-4xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tighter); line-height: var(--lh-tight); text-align: center; }
 .new-lead { margin: var(--space-2) 0 var(--space-6); font-size: var(--fs-md); color: var(--muted); line-height: var(--lh-relaxed); text-align: center; }
 .new-form .set-field { width: 100%; }
 .new-form .btn { min-width: 140px; }
 .new-sugg { width: min(720px, 100%); }
-.new-sugg .list-head { margin: 0 var(--space-0-5) var(--space-3); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); }
+.new-sugg .list-head { margin: 0 0 var(--heading-gap); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(216px, 1fr)); gap: var(--space-3); }
-/* 模板卡：悬停浮起 1px（描边加深、投影变大），按下压回去，选中是 accent 描边 + 一层黄绿，图标亮成黄绿片 */
+/* 模板卡：一块 --well，不描边、不浮起。悬停底色深一级，按下再深一级并轻微缩小；
+   选中是一层黄绿 + 图标亮成黄绿片（图标平时只是一个字形，不套底） */
 .tpl {
   display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-3); row-gap: var(--space-0-5); align-content: start;
-  padding: var(--space-3-5) var(--space-4); border-radius: var(--r-2xl); text-align: left;
-  background: var(--card); box-shadow: inset 0 0 0 .5px var(--line), var(--shadow-xs);
-  transition: background var(--t-fast), box-shadow var(--t-base), transform var(--t-base);
+  padding: var(--card-pad); border-radius: var(--r-well); text-align: left;
+  background: var(--well);
+  transition: background var(--t-fast), transform var(--t-fast);
 }
-.tpl:hover { box-shadow: inset 0 0 0 .5px var(--line-strong), var(--shadow-sm); transform: translateY(-1px); }
-.tpl:active { box-shadow: inset 0 0 0 .5px var(--line-strong), var(--shadow-xs); transform: scale(var(--press)); transition-duration: var(--dur-fast); }
-.tpl.on { background: linear-gradient(var(--accent-wash), var(--accent-wash)), var(--card); box-shadow: inset 0 0 0 1.5px var(--accent), var(--shadow-xs); }
+.tpl:hover { background: var(--well-hover); }
+.tpl:active { background: var(--well-press); transform: scale(var(--press)); }
+.tpl.on, .tpl.on:hover { background: var(--accent-wash); }
 .tpl-ic {
-  grid-row: span 2; width: 36px; height: 36px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--pill); color: var(--fg-2);
-  transition: background var(--t-base), color var(--t-base), box-shadow var(--t-base);
+  grid-row: span 2; width: 36px; height: 36px; border-radius: var(--r-lg); display: grid; place-items: center; color: var(--fg-2);
+  transition: background var(--t-base), color var(--t-base);
 }
-.tpl:hover .tpl-ic { background: var(--pill-hover); color: var(--fg); }
-.tpl.on .tpl-ic { background: var(--accent-solid); color: var(--on-accent); box-shadow: inset 0 0 0 .5px var(--accent-line); }
+.tpl:hover .tpl-ic { color: var(--fg); }
+.tpl.on .tpl-ic { background: var(--accent-solid); color: var(--on-accent); box-shadow: inset 0 0 0 .5px var(--accent-line); }   /* 描边：黄绿在白底上只有 1.15:1，要一道墨色细边 */
 .tpl-name { font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
 .tpl-desc { font-size: var(--fs-sm); color: var(--muted); line-height: var(--lh-snug); }
 
 /* onboarding */
 .onboard {
   flex: 1; min-height: 0; height: 100vh; overflow-y: auto;
-  display: grid; justify-items: center; align-content: center; padding: var(--space-12) var(--space-4);
+  display: grid; justify-items: center; align-content: center; padding: var(--page-top) var(--page-gutter);
   -webkit-app-region: drag;
 }
 .onboard > * { -webkit-app-region: no-drag; }
@@ -82,10 +84,13 @@
 .onboard-hero { display: grid; justify-items: center; gap: var(--space-2-5); text-align: center; margin-bottom: var(--space-1-5); }
 .onboard-hero h1 { font-size: var(--fs-3xl); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tighter); }
 .onboard-hero p { font-size: var(--fs-md); color: var(--muted); line-height: var(--lh-relaxed); }
+/* 引导页的卡片是浮在环境光上的一块玻璃，和对话框同一种面（同一个圆角、同一种材质） */
 .onboard .list {
-  padding: var(--space-4); display: grid; gap: var(--space-2-5); border: 0; border-radius: var(--r-3xl);
+  padding: var(--card-pad); display: grid; gap: var(--space-2-5); border-radius: var(--r-pane);
   background: var(--grain), var(--glass-sheet); box-shadow: var(--shadow-pop);
 }
+/* 同一个表单（onboarding.js 的 KeyForm）在"更换密钥"对话框里：对话框本身就是那张卡，表单直接排在对话框的内边距里，不再套一层 */
+.sheet > form.list { padding: 0; background: none; border-radius: 0; overflow: visible; display: grid; gap: var(--space-2-5); }
 .onboard label.k { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--fg-2); }
 .onboard .err-text { font-size: var(--fs-sm); color: var(--red); line-height: var(--lh-normal); display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .onboard .slow { font-size: var(--fs-sm); color: var(--muted); }
@@ -97,11 +102,12 @@
 .onboard details[open] summary .ic { transform: rotate(180deg); }
 .onboard details summary { transition: color var(--t-fast); }
 .onboard details summary:hover { color: var(--fg); }
-.onboard details .row { margin-top: var(--space-2); background: var(--grain), var(--glass-sheet); box-shadow: var(--glass-ring); border-radius: var(--r-xl); }
+/* "高级"里的行直接排在卡片里，左右贴着卡片的内容边，不再套一块玻璃 */
+.onboard details .row { --row-pl: 0; --row-pr: 0; margin-top: var(--space-1); }
 .onboard .connected { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
 .picklist { max-height: 300px; overflow-y: auto; margin: 0 calc(-1 * var(--space-1-5)); padding: 0 var(--space-1-5); }
 .picklist > .hint { padding: var(--space-2); }
-.picklist .group { padding: var(--space-2) var(--space-1) 3px; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--faint); letter-spacing: var(--tracking-caps); }
+.picklist .group { padding: var(--space-2) var(--space-2) var(--space-1); font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--muted); }
 .picklist button {
   --focus-offset: -2px;
   display: flex; align-items: center; width: 100%; height: var(--ctl-lg); padding: 0 var(--space-2); border-radius: var(--r-md);

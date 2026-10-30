@@ -163,7 +163,7 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
 
       <div class="list-head">待审批${pending.length > 0 && html`<span class="badge count warn">${pending.length}</span>`}</div>
       ${pending.length
-        ? html`<div class="stack">${pending.map((a) => html`<div key=${a.id} class="stack" style="--gap: var(--space-1)">
+        ? html`<div class="stack">${pending.map((a) => html`<div key=${a.id} class="stack approval" style="--gap: var(--space-1)">
             <span class="hint">${CHANNEL_NAME[a.conversationId.split(":")[1]] || ""} · ${fmtAgo(a.createdAt)} · 截止 ${fmtTime(a.expiresAt).slice(-8, -3)}</span>
             <${PromptCard} requestId=${a.id} fallback="" />
           </div>`)}
@@ -178,7 +178,7 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
         ${convs && !convs.conversations.length && html`<div class="row"><span class="hint">还没有会话</span></div>`}
         ${convs && convs.conversations.slice(0, 12).map((c) => html`<div class="row compact clickable" role="button" tabindex="0"
             onClick=${() => (c.channel === "web" ? onOpenChat() : setViewing(c))} onKeyDown=${(e) => e.key === "Enter" && (c.channel === "web" ? onOpenChat() : setViewing(c))}>
-          <div class="who"><div class="name">${CHANNEL_NAME[c.channel] || c.channel} · ${c.title || c.peerId}</div><div class="sub">${c.lastMessage || "（空）"}</div></div>
+          <div class="who"><div class="name">${CHANNEL_NAME[c.channel] || c.channel} · ${c.title || c.peerId}</div><div class="sub">${(c.lastMessage || "").replace(/^⚠️\s*/, "") || "（空）"}</div></div>
           <span class="hint num">${fmtAgo(c.updatedAt)}</span>
         </div>`)}
       </div>

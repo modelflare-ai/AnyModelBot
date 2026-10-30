@@ -1,6 +1,6 @@
 // 首次启动 / 断开后：只有一个动作——粘贴 Modelflare API Key。不是向导路由，而是"未连接"时的整页空态。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, Seg, Spinner } from "../components/ui.js";
+import { html, Icon, Notice, Seg, Spinner } from "../components/ui.js";
 import { BotAvatar, MAIN_CHAR } from "../components/avatar.js";
 import { groupModels } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
@@ -130,8 +130,7 @@ function ModelStep({ models, initial, onDone }) {
             </button>`)}`)}
           ${!groups.length && html`<p class="hint">没有匹配的模型</p>`}
         </div>`
-      : html`<div class="notice amber"><span class="notice-text">这个 Key 所在的分组暂无可用模型。可以在控制台给分组开放模型后再回来刷新。</span>
-          <a class="btn" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">去控制台 ↗</a></div>`}
+      : html`<${Notice} tone="amber" action=${html`<a class="btn" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">去控制台 ↗</a>`}>这个 Key 所在的分组暂无可用模型。可以在控制台给分组开放模型后再回来刷新。<//>`}
     ${err && html`<div class="err-text" role="alert">${err}</div>`}
     <button type="button" class="btn primary lg block" disabled=${busy} onClick=${start}>${busy ? html`<${Spinner} /> 正在保存…` : models.length ? "开始对话" : "仍然开始"}</button>
   </div>`;
@@ -149,7 +148,7 @@ export function Onboarding({ status, gateway, defaultModel, onDone }) {
         <h1>用 Modelflare 开始</h1>
         <p>粘贴 API Key，GPT、Claude、Grok、Gemini 等模型会自动列出。</p>
       </div>
-      ${gateway && gateway.mode === "managed" && gateway.state === "failed" && html`<div class="notice red"><span class="notice-text">内置模型网关没有启动：${gateway.lastError || "未知原因"}。修复后重启应用再连接。</span></div>`}
+      ${gateway && gateway.mode === "managed" && gateway.state === "failed" && html`<${Notice} tone="red">内置模型网关没有启动：${gateway.lastError || "未知原因"}。修复后重启应用再连接。<//>`}
       ${models === null
         ? html`<${KeyForm} line=${status.line} onFace=${onFace} onConnected=${(r) => (setFace("idle"), setModels(r.models || []))} />
           <div class="links">

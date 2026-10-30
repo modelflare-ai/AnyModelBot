@@ -41,6 +41,7 @@ const P = {
   globe: "M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM2.25 8h11.5M8 2c1.55 1.65 2.35 3.65 2.35 6S9.55 12.35 8 14M8 2C6.45 3.65 5.65 5.65 5.65 8s.8 4.35 2.35 6",
   database: "M8 5.25c2.9 0 5.25-.78 5.25-1.75S10.9 1.75 8 1.75 2.75 2.53 2.75 3.5 5.1 5.25 8 5.25ZM2.75 3.5v9c0 .97 2.35 1.75 5.25 1.75s5.25-.78 5.25-1.75v-9M2.75 8c0 .97 2.35 1.75 5.25 1.75S13.25 8.97 13.25 8",
   info: "M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM8 7.25v3.75M8 4.9v.1",
+  alert: "M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM8 4.75v3.75M8 11v.1",
   chat: "M3.25 2.75h9.5c.41 0 .75.34.75.75v6.75c0 .41-.34.75-.75.75H7.25L4.5 13.25V11H3.25a.75.75 0 0 1-.75-.75V3.5c0-.41.34-.75.75-.75Z",
   code: "M5.25 4.5 1.75 8l3.5 3.5M10.75 4.5 14.25 8l-3.5 3.5M9.1 2.75 6.9 13.25",
   shield: "M8 1.75 2.75 3.6v4.15c0 3.05 2.2 5.4 5.25 6.5 3.05-1.1 5.25-3.45 5.25-6.5V3.6L8 1.75Z",
@@ -67,10 +68,10 @@ export function IconButton({ icon, label, size, iconSize = 14, on, class: cls, t
   </button>`;
 }
 
-/** 行内提示：tone = "amber" | "red"（缺省为品牌色）；action 放在右侧 */
+/** 行内提示：tone = "amber" | "red"（缺省为中性）；左边一个图标表达语气，action 放在右侧 */
 export function Notice({ tone, action, children }) {
   return html`<div class=${cx("notice", tone)} role=${tone === "red" ? "alert" : undefined}>
-    <span class="notice-text">${children}</span>${action}
+    <${Icon} name=${tone ? "alert" : "info"} size=${14} /><span class="notice-text">${children}</span>${action}
   </div>`;
 }
 
@@ -143,7 +144,13 @@ export function Seg({ options, value, onChange, disabled, label }) {
   </div>`;
 }
 
-/** 打开在锚点下方（空间不够时在上方）的浮层，position: fixed */
+/** 长度 token 的像素值（"--pop-offset" → 6）：JS 里的间距也从 token 来，不写死 */
+function tokenPx(name, fallback) {
+  const n = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** 打开在锚点下方（空间不够时在上方）的浮层，position: fixed。离锚点 --pop-offset，离窗口边缘 --pane-gap（和面板的边对齐） */
 export function usePopPosition(anchor, open, { width = 280, prefer = "down", align = "left", maxHeight = 360 } = {}) {
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -152,13 +159,15 @@ export function usePopPosition(anchor, open, { width = 280, prefer = "down", ali
       const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : anchor;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const below = vh - r.bottom - 12;
-      const above = r.top - 12;
+      const gap = tokenPx("--pop-offset", 6);
+      const edge = tokenPx("--pane-gap", 8);
+      const below = vh - r.bottom - gap - edge;
+      const above = r.top - gap - edge;
       const up = prefer === "up" ? above > 160 || above > below : below < Math.min(maxHeight, 220) && above > below;
       let left = align === "right" ? r.right - width : r.left;
-      left = Math.max(8, Math.min(left, vw - width - 8));
+      left = Math.max(edge, Math.min(left, vw - width - edge));
       const ox = Math.max(12, Math.min(width - 12, r.left + (r.width || 0) / 2 - left));
-      setPos(up ? { left, bottom: vh - r.top + 6, up: true, ox, max: Math.min(maxHeight, above) } : { left, top: r.bottom + 6, up: false, ox, max: Math.min(maxHeight, below) });
+      setPos(up ? { left, bottom: vh - r.top + gap, up: true, ox, max: Math.min(maxHeight, above) } : { left, top: r.bottom + gap, up: false, ox, max: Math.min(maxHeight, below) });
     };
     compute();
     window.addEventListener("resize", compute);

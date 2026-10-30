@@ -6,18 +6,28 @@ import { BotAvatar } from "../components/avatar.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, toast } from "../lib/store.js";
 import { fmtAgo } from "../lib/format.js";
+import { MF_TOPUP, usd } from "../lib/links.js";
 
-/** 左下角账户：头像字母 + 用户名 + 齿轮，点开设置 */
-export function AccountButton({ username, on, onClick }) {
-  const me = (username || "本机用户").trim();
+/** 左下角账户：头像字母 + 名称（登录后是 Modelflare 账户名）与余额 + 齿轮，点开设置 */
+export function AccountButton({ username, account, on, onClick }) {
+  const me = ((account && account.state === "signed_in" && account.name) || username || "本机用户").trim();
+  const bal = account && account.balanceUsd !== null && account.balanceUsd !== undefined ? usd(account.balanceUsd) : "";
   return html`<button type="button" class=${`account${on ? " on" : ""}`} title="设置（⌘,）" aria-label="打开设置" onClick=${onClick}>
     <span class="me" aria-hidden="true">${me.slice(0, 1).toUpperCase()}</span>
-    <span class="who">${me}</span>
+    <span class="who">${me}${bal && html`<span class=${`bal num${account.lowBalance ? " low" : ""}`}>余额 ${bal}</span>`}</span>
     <${Icon} name="gear" size=${15} />
   </button>`;
 }
 
-export function Sidebar({ bots, botsError, reloadBots, selectedId, view, previews, pending, working, username, onNew, onSelect, onDeleted, onOpenSettings }) {
+/** 余额低于提醒线时，侧栏底部常驻一条提示 */
+function LowBalance({ account }) {
+  if (!account || !account.lowBalance) return null;
+  return html`<a class="low-balance" href=${MF_TOPUP} target="_blank" rel="noopener noreferrer" role="status">
+    余额只剩 ${usd(account.balanceUsd)}，去充值 ↗
+  </a>`;
+}
+
+export function Sidebar({ bots, botsError, reloadBots, selectedId, view, previews, pending, working, username, account, onNew, onSelect, onDeleted, onOpenSettings }) {
   const [q, setQ] = useState("");
   const [ctx, setCtx] = useState(null); // { bot, x, y }
   const [renaming, setRenaming] = useState("");
@@ -89,7 +99,8 @@ export function Sidebar({ bots, botsError, reloadBots, selectedId, view, preview
         </button>`;
       })}
     </nav>
-    <div class="side-foot"><${AccountButton} username=${username} onClick=${onOpenSettings} /></div>
+    <${LowBalance} account=${account} />
+    <div class="side-foot"><${AccountButton} username=${username} account=${account} onClick=${onOpenSettings} /></div>
     ${ctx && html`<${Menu} anchor=${{ left: ctx.x, right: ctx.x, top: ctx.y, bottom: ctx.y, width: 0 }} width=${200} label=${`${ctx.bot.name} 的操作`} onClose=${() => setCtx(null)}
       items=${[
         { label: "重命名", onSelect: () => { setRenameText(ctx.bot.name); setRenaming(ctx.bot.id); } },

@@ -31,6 +31,11 @@ export interface BotSettings {
   utilityModel: string;
   /** 头像角色；空 = 由机器人 id 决定 */
   avatar: BotAvatarKey | "";
+  /**
+   * 预算（需要登录 Modelflare 账户）：开启后机器人用自己的 API Key，最多花 limitUsd 美元
+   * （包括这把 Key 已经花掉的）；关闭时与其他机器人共用本机的 Key。
+   */
+  budget: { enabled: boolean; limitUsd: number };
 }
 
 export const DEFAULT_SETTINGS: BotSettings = {
@@ -40,6 +45,7 @@ export const DEFAULT_SETTINGS: BotSettings = {
   computerUse: { enabled: true, backend: "cua", approval: "auto" },
   utilityModel: "",
   avatar: "",
+  budget: { enabled: false, limitUsd: 5 },
 };
 
 export function normalizeSettings(raw: unknown): BotSettings {
@@ -47,6 +53,8 @@ export function normalizeSettings(raw: unknown): BotSettings {
   const m = r.memory && typeof r.memory === "object" ? r.memory : {};
   const st = r.steward && typeof r.steward === "object" ? r.steward : {};
   const cu = r.computerUse && typeof r.computerUse === "object" ? r.computerUse : {};
+  const bg = r.budget && typeof r.budget === "object" ? r.budget : {};
+  const limit = Number(bg.limitUsd);
   const b = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
   return {
     permission: r.permission === "readonly" ? "readonly" : "workspace",
@@ -64,6 +72,10 @@ export function normalizeSettings(raw: unknown): BotSettings {
     },
     utilityModel: typeof r.utilityModel === "string" ? r.utilityModel.trim().slice(0, 200) : "",
     avatar: (BOT_AVATARS as readonly string[]).includes(r.avatar) ? r.avatar : "",
+    budget: {
+      enabled: b(bg.enabled, DEFAULT_SETTINGS.budget.enabled),
+      limitUsd: Number.isFinite(limit) && limit >= 0 && limit <= 100_000 ? Math.round(limit * 100) / 100 : DEFAULT_SETTINGS.budget.limitUsd,
+    },
   };
 }
 

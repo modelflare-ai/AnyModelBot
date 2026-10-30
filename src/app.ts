@@ -18,7 +18,24 @@ import { AgentManager } from "./agent/manager.js";
 import { normalizeSettings } from "./agent/settings.js";
 import { locateDshRuntime } from "./agent/host.js";
 import { findAppRoot } from "./magpie/supervisor.js";
-import { MODELFLARE_LINES, modelflareBaseUrl, verifyModelflareKey, type ModelflareLine, type VerifyResult } from "./modelflare.js";
+import {
+  MODELFLARE_LINES,
+  MODELFLARE_PROVIDER,
+  botProviderId,
+  fetchKeyBalance,
+  modelflareBaseUrl,
+  modelflareIssuer,
+  routeModel,
+  skillHeader,
+  verifyModelflareKey,
+  type ModelflareLine,
+  type VerifyResult,
+} from "./modelflare.js";
+import { AccountManager } from "./account/manager.js";
+import { AccountVault, type SecretBox } from "./account/vault.js";
+import { loadModelInfo, type ModelInfo } from "./account/model-info.js";
+import { MediaService } from "./agent/media.js";
+import type { BotSettings } from "./agent/settings.js";
 
 const log = logger("app");
 
@@ -29,6 +46,10 @@ export interface DesktopHooks {
   applyZoom(zoom: number): void;
   openDataDir(): void;
   openInBrowser(): void;
+  /** 在系统浏览器里打开外部链接（Modelflare 登录、充值） */
+  openExternal(url: string): void;
+  /** 系统钥匙串加密（Electron safeStorage）；不可用时缺省，账户凭据改靠文件权限保护 */
+  secretBox?: SecretBox;
 }
 
 export interface ModelflareStatus {
@@ -84,7 +105,11 @@ export class App {
   readonly channels = new Map<string, BotChannels>();
   web: WebServer | undefined;
   desktop: DesktopHooks | undefined;
+  /** Modelflare 账户（登录、余额、预算）；start() 时创建，桌面外壳的钥匙串那时已就绪 */
+  account!: AccountManager;
   private notices: Array<{ at: number; level: "info" | "warn"; text: string }> = [];
+  private accountTimer: NodeJS.Timeout | undefined;
+  private modelInfoCache: { at: number; data: Record<string, ModelInfo> } | undefined;
 
   constructor(readonly config: AppConfig, readonly opts: AppOptions = {}) {
     this.store = new Store(path.join(config.dataDir, "anymodel.db"));
@@ -111,8 +136,19 @@ export class App {
       turnTimeoutMs: config.agent.turnTimeoutMs,
       approvalTtlMs: config.agent.approvalTtlMs,
       // 后台小任务（管家判定/交接/记忆整理）直接走 magpie，不经代理子进程
-      complete: (model, system, user) =>
-        this.models.streamChat({ model, messages: [{ role: "system", content: system }, { role: "user", content: user }], signal: AbortSignal.timeout(120_000) }, () => {}),
+      complete: (botId, model, system, user) =>
+        this.models.streamChat(
+          { model: this.routeModel(botId, model), messages: [{ role: "system", content: system }, { role: "user", content: user }], signal: AbortSignal.timeout(120_000) },
+          () => {},
+        ),
+      media: this.magpie
+        ? new MediaService({
+            baseUrl: () => modelflareBaseUrl(this.config.modelflare.line),
+            keyFor: (botId) => this.botKey(botId),
+            headers: () => this.requestHeaders(),
+            workspace: (botId) => path.join(config.dataDir, "workspaces", botId),
+          })
+        : undefined,
     });
     this.runtime = new BotRuntime({
       agent: this.agent,
@@ -121,7 +157,117 @@ export class App {
       defaultModel: () => this.config.llm.defaultModel,
       contextMessages: config.llm.contextMessages,
       contextChars: config.llm.contextChars,
+      route: (botId, model) => this.routeModel(botId, model),
     });
+  }
+
+  /** 每个经 Modelflare 的请求都带的请求头（调用归因） */
+  requestHeaders(): Record<string, string> {
+    return skillHeader(appVersion());
+  }
+
+  /**
+   * 发给内置网关的模型 id：限定到该机器人用的 provider——开了预算的机器人用自己的 Key，
+   * 其余用共用连接。外部端点模式原样发送。
+   */
+  routeModel(botId: string, model: string): string {
+    if (!this.magpie) return model;
+    const own = botProviderId(botId);
+    return routeModel(model, this.magpie.hasProvider(own) ? own : (this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER));
+  }
+
+  /** 该机器人请求 Modelflare 用的 Key（只在本进程内使用） */
+  private botKey(botId: string): string {
+    if (!this.magpie) return "";
+    return this.magpie.providerKey(botProviderId(botId)) || this.magpie.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER);
+  }
+
+  /** 账户管理器：start() 时创建；命令行向导不启动整套服务，直接调用这里 */
+  ensureAccount(): AccountManager {
+    this.account ??= this.createAccount();
+    return this.account;
+  }
+
+  private createAccount(): AccountManager {
+    const account = new AccountManager({
+      issuer: modelflareIssuer(),
+      vault: AccountVault.at(this.config.dataDir, this.desktop?.secretBox),
+      store: this.store,
+      alerts: () => ({ lowBalanceUsd: this.config.modelflare.lowBalanceUsd, push: this.config.modelflare.lowBalancePush }),
+      hooks: {
+        connectKey: async (key) => {
+          const r = await this.connectModelflare(key, this.config.modelflare.line);
+          if (!r.ok) throw new Error(r.message);
+        },
+        disconnect: () => this.disconnectModelflare(),
+        setBotKey: async (botId, key) => {
+          if (!this.magpie) throw new Error("外部模型端点模式下不管理 Modelflare 连接");
+          await this.magpie.setBotProvider(botId, key, modelflareBaseUrl(this.config.modelflare.line), this.allowedModelflareUrls(), this.requestHeaders());
+        },
+        removeBotKey: async (botId) => {
+          await this.magpie?.removeBotProvider(botId);
+        },
+        keyBalance: async () => {
+          const key = this.magpie?.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER);
+          return key ? fetchKeyBalance(modelflareBaseUrl(this.config.modelflare.line), key) : undefined;
+        },
+        alert: (text, push) => {
+          this.notice("warn", text);
+          if (push) void this.pushToOwner(text);
+        },
+      },
+    });
+    account.botsSource = () => this.store.listBots().map((b) => ({ id: b.id, name: b.name, budget: b.settings.budget }));
+    account.init();
+    return account;
+  }
+
+  /** 提醒经机器人发给你：用第一个能发出去的渠道（微信发给扫码的人，飞书发到最近的单聊） */
+  async pushToOwner(text: string): Promise<boolean> {
+    for (const bot of this.store.listBots()) {
+      const ch = this.channels.get(bot.id);
+      try {
+        if (ch?.weixin && (await ch.weixin.notifyOwner(text))) return true;
+        const chat = ch?.feishu ? this.store.listConversations(bot.id).find((c) => c.channel === "feishu" && c.kind === "dm") : undefined;
+        if (chat && ch?.feishu && (await ch.feishu.notify(chat.peerId, text))) return true;
+      } catch (e) {
+        log.warn("push to owner failed", { bot: bot.id, message: (e as Error).message.slice(0, 200) });
+      }
+    }
+    return false;
+  }
+
+  /** 开启 / 调整 / 关闭机器人预算：先改 Modelflare 上的 Key，成功后才保存设置 */
+  async setBotBudget(botId: string, budget: BotSettings["budget"]): Promise<Bot> {
+    const bot = this.store.getBot(botId);
+    if (!bot) throw new Error("机器人不存在");
+    await this.account.setBotBudget(bot.id, bot.name, budget);
+    return this.store.updateBot(botId, { settings: { ...bot.settings, budget } })!;
+  }
+
+  /** 删除机器人时一并删掉它的预算 Key */
+  async deleteBot(botId: string): Promise<void> {
+    const bot = this.store.getBot(botId);
+    await this.stopBot(botId);
+    await this.agent.stopBot(botId);
+    if (bot?.settings.budget.enabled && this.account.signedIn) {
+      await this.account.setBotBudget(botId, bot.name, { ...bot.settings.budget, enabled: false }).catch((e) => log.warn("remove bot key failed", { message: (e as Error).message }));
+    }
+    this.store.deleteBot(botId);
+  }
+
+  /** 模型选择器里的能力与参考价（缓存一小时） */
+  async modelInfo(force = false): Promise<Record<string, ModelInfo>> {
+    if (!force && this.modelInfoCache && Date.now() - this.modelInfoCache.at < 3600_000) return this.modelInfoCache.data;
+    const key = this.magpie?.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER) ?? "";
+    const data = await loadModelInfo({
+      baseUrl: modelflareBaseUrl(this.config.modelflare.line),
+      apiKey: key,
+      headers: this.requestHeaders(),
+      pricingUrl: `${modelflareIssuer()}/api/pricing`,
+    });
+    this.modelInfoCache = { at: Date.now(), data };
+    return data;
   }
 
   notice(level: "info" | "warn", text: string): void {
@@ -143,12 +289,24 @@ export class App {
       }
     }
     this.agent.start();
+    this.ensureAccount();
     this.seedDefaultBot();
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
     if (!this.opts.noWeb) this.web = await startWebServer(this);
+    if (this.magpie && !this.opts.noWeb) {
+      // 余额与低余额提醒：启动后读一次，之后每 5 分钟一次
+      const tick = () => {
+        if (this.account.signedIn || this.magpie?.modelflareInfo().connected) void this.account.refresh();
+      };
+      setTimeout(tick, 3000).unref();
+      this.accountTimer = setInterval(tick, 5 * 60_000);
+      this.accountTimer.unref();
+    }
   }
 
   async stop(): Promise<void> {
+    if (this.accountTimer) clearInterval(this.accountTimer);
+    this.account?.cancelLogin();
     await this.web?.close();
     for (const id of [...this.channels.keys()]) await this.stopBot(id);
     await this.agent.stop();
@@ -182,7 +340,8 @@ export class App {
     const baseUrl = modelflareBaseUrl(line);
     const r = await verifyModelflareKey(baseUrl, apiKey.trim(), { line });
     if (!r.ok) return r;
-    await this.magpie.connectModelflare(apiKey, baseUrl, this.allowedModelflareUrls());
+    await this.magpie.connectModelflare(apiKey, baseUrl, this.allowedModelflareUrls(), this.requestHeaders());
+    this.modelInfoCache = undefined;
     this.setModelflareLineConfig(line);
     await this.runtime.listModels(true).catch(() => []);
     return r;

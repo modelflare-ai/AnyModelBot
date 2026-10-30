@@ -120,4 +120,11 @@ export class FeishuChannel {
   async idle(): Promise<void> {
     while (this.pending.size) await Promise.all([...this.pending]);
   }
+
+  /** 主动提醒：发到一个已有的单聊会话；传输层不支持时返回 false */
+  async notify(chatId: string, text: string): Promise<boolean> {
+    if (!this.transport.sendText) return false;
+    await this.transport.sendText(chatId, text);
+    return true;
+  }
 }

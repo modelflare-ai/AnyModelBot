@@ -5,7 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../log.js";
-import { MODELFLARE_PROVIDER, keyTail } from "../modelflare.js";
+import { BOT_PROVIDER_PREFIX, MODELFLARE_PROVIDER, botProviderId, keyTail } from "../modelflare.js";
 
 const log = logger("magpie");
 
@@ -364,30 +364,47 @@ export class MagpieSupervisor {
   /**
    * 连接 Modelflare：没有就以占位 key 创建固定 id 的 provider，再经 /api/provider/save 写入地址与真实 key
    * （key 不出现在进程参数里）。重复连接 = 覆盖。baseUrl 必须是白名单里的地址。
+   * headers 是每个请求额外带给 Modelflare 的请求头（调用归因）。
    */
-  async connectModelflare(apiKey: string, baseUrl: string, allowed: string[]): Promise<void> {
+  async connectModelflare(apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string> = {}): Promise<void> {
+    await this.upsertProvider(this.modelflareId(), MODELFLARE_PROVIDER, "Modelflare", apiKey, baseUrl, allowed, headers);
+  }
+
+  /** 机器人自己的 provider（预算 Key）：id 固定为 mfb-<botId>，机器人的请求都显式发到这个 provider */
+  async setBotProvider(botId: string, apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string> = {}): Promise<void> {
+    const id = botProviderId(botId);
+    await this.upsertProvider(this.hasProvider(id) ? id : undefined, id, `Modelflare ${botId}`, apiKey, baseUrl, allowed, headers);
+  }
+
+  private async upsertProvider(existing: string | undefined, wantId: string, name: string, apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string>): Promise<void> {
     if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
     if (!apiKey.trim()) throw new Error("缺少 API Key");
-    let id = this.modelflareId();
+    let id = existing;
     if (!id) {
-      const add = await this.runCli(["provider", "add", "Modelflare", `id=${MODELFLARE_PROVIDER}`, `url=${baseUrl}`, "key=placeholder-key"]);
+      const add = await this.runCli(["provider", "add", name, `id=${wantId}`, `url=${baseUrl}`, "key=placeholder-key"]);
       if (add.code !== 0) throw new Error(`创建 Modelflare 连接失败：${(add.stderr || add.stdout).trim().slice(0, 300)}`);
-      id = this.modelflareId() ?? (await this.findProviderId(MODELFLARE_PROVIDER));
+      id = this.hasProvider(wantId) ? wantId : await this.findProviderId(wantId);
     }
-    await this.saveProvider(id, { chat: baseUrl, key: apiKey.trim() });
+    await this.saveProvider(id, { chat: baseUrl, key: apiKey.trim(), headers });
   }
 
-  /** 切换线路：只改地址，key 不变 */
+  /** 切换线路：只改地址，key 不变（机器人自己的 provider 一起切） */
   async setModelflareUrl(baseUrl: string, allowed: string[]): Promise<void> {
     if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
-    const id = this.modelflareId();
-    if (!id) return;
-    await this.saveProvider(id, { chat: baseUrl });
+    for (const id of [this.modelflareId(), ...this.botProviderIds()]) if (id) await this.saveProvider(id, { chat: baseUrl });
   }
 
+  /** 断开 Modelflare：删除共用连接和所有机器人自己的 provider */
   async disconnectModelflare(): Promise<void> {
-    const id = this.modelflareId();
-    if (!id) return;
+    for (const id of [this.modelflareId(), ...this.botProviderIds()]) if (id) await this.deleteProvider(id);
+  }
+
+  async removeBotProvider(botId: string): Promise<void> {
+    const id = botProviderId(botId);
+    if (this.hasProvider(id)) await this.deleteProvider(id);
+  }
+
+  private async deleteProvider(id: string): Promise<void> {
     if (this.state !== "running") throw new Error("模型网关未运行，稍后再试");
     const res = await fetch(`${this.webOrigin}/api/provider/delete`, {
       method: "POST",
@@ -396,6 +413,29 @@ export class MagpieSupervisor {
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`断开失败：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+
+  hasProvider(id: string): boolean {
+    return this.listProviders().some((p) => p.id === id);
+  }
+
+  botProviderIds(): string[] {
+    return this.listProviders()
+      .map((p) => p.id)
+      .filter((id) => id.startsWith(BOT_PROVIDER_PREFIX));
+  }
+
+  /**
+   * provider 的明文 key：只在本进程内用于直连 Modelflare（余额、模型能力、生图），
+   * 不经接口返回、不写日志。
+   */
+  providerKey(id: string): string {
+    const key = String(this.readProviderRaw(id)?.key ?? "");
+    return key && key !== "placeholder-key" ? key : "";
+  }
+
+  get modelflareProviderId(): string | undefined {
+    return this.modelflareId();
   }
 
   /** 当前 Modelflare 连接（只回传尾号，不外传 key） */
@@ -412,7 +452,7 @@ export class MagpieSupervisor {
     return hit?.id;
   }
 
-  private async saveProvider(id: string, patch: Record<string, string>): Promise<void> {
+  private async saveProvider(id: string, patch: Record<string, unknown>): Promise<void> {
     if (this.state !== "running") throw new Error("模型网关未运行，稍后再试");
     const p = this.readProviderRaw(id);
     if (!p) throw new Error(`provider ${id} not found`);
@@ -424,7 +464,7 @@ export class MagpieSupervisor {
     });
     if (!res.ok) throw new Error(`保存失败：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
     const saved = this.readProviderRaw(id);
-    for (const [k, v] of Object.entries(patch)) if (saved?.[k] !== v) throw new Error("保存后校验失败");
+    for (const [k, v] of Object.entries(patch)) if (JSON.stringify(saved?.[k] ?? {}) !== JSON.stringify(v ?? {})) throw new Error("保存后校验失败");
   }
 
   private readProviderRaw(id: string): Record<string, unknown> | undefined {

@@ -7,7 +7,7 @@
  *  - 设置页里的开机自启、缩放、打开数据目录经 core.desktop 回调到这里（同进程，无需 preload/IPC）
  * CLI（npm start）与 Docker 走同一套 src/ 代码，本文件只做桌面外壳。
  */
-import { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog } from "electron";
+import { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, safeStorage } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -130,6 +130,13 @@ async function boot(): Promise<void> {
     applyZoom: (z) => win?.webContents.setZoomFactor(z),
     openDataDir: () => void shell.openPath(config.dataDir),
     openInBrowser: () => void shell.openExternal(entryUrl),
+    openExternal: (url) => {
+      if (/^https?:/i.test(url)) void shell.openExternal(url);
+    },
+    // 账户凭据用系统钥匙串加密（macOS 钥匙串、Windows DPAPI、Linux Secret Service）
+    secretBox: safeStorage.isEncryptionAvailable()
+      ? { encrypt: (plain) => safeStorage.encryptString(plain), decrypt: (data) => safeStorage.decryptString(data) }
+      : undefined,
   };
   await core.start();
   if (!core.web) throw new Error("管理界面未启动");

@@ -5,6 +5,7 @@ import { BotAvatar, AvatarPicker, charOf } from "../components/avatar.js";
 import { ModelPicker, shortModel } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
+import { usd } from "../lib/links.js";
 
 function Row({ id, name, sub, title, children, off }) {
   return html`<div class=${`row${off ? " off" : ""}`} id=${`bot-${id}`} title=${title}>
@@ -23,7 +24,58 @@ function ModelButton({ value, models, modelsError, reloadModels, resetLabel, onC
       onPick=${onChange} onClose=${() => setOpen(false)} reset=${{ label: resetLabel, onSelect: () => onChange("") }} />`}`;
 }
 
-export function BotSettingsScreen({ bot, section, models, modelsError, reloadModels, defaultModel, onBack, onBotUpdated, onDeleted }) {
+/**
+ * 预算：开启后机器人用自己的 Modelflare API Key，最多花设定的美元数（包括这把 Key 已经花掉的）；
+ * 用完后它的请求会被拒绝，其他机器人不受影响。需要登录 Modelflare 账户。
+ */
+function BudgetRows({ bot, budget, account, onSaved, onOpenSettings }) {
+  const [limit, setLimit] = useState(String(budget.limitUsd));
+  const [busy, setBusy] = useState(false);
+  const [use, setUse] = useState(null);
+  const signedIn = !!(account && account.state === "signed_in");
+  useEffect(() => setLimit(String(budget.limitUsd)), [budget.limitUsd]);
+  useEffect(() => {
+    if (!signedIn || !budget.enabled) return setUse(null);
+    api("/account/budgets").then((r) => setUse(r.budgets[bot.id] || null)).catch(() => setUse(null));
+  }, [signedIn, budget.enabled, budget.limitUsd, bot.id]);
+  const save = async (enabled, limitUsd) => {
+    setBusy(true);
+    try {
+      const r = await api(`/bots/${bot.id}/budget`, { method: "PUT", body: { enabled, limitUsd } });
+      onSaved(r.settings);
+      saved();
+    } catch (e) {
+      failed(e);
+      setLimit(String(budget.limitUsd));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const commitLimit = () => {
+    const v = Number(limit);
+    if (!Number.isFinite(v) || v < 0) return setLimit(String(budget.limitUsd));
+    if (v !== budget.limitUsd) save(budget.enabled, v);
+  };
+  if (!signedIn) {
+    return html`<${Row} id="budget" name="预算" sub="登录 Modelflare 账户后，可以给这个机器人单独设花费上限">
+      <button type="button" class="text accent" onClick=${() => onOpenSettings("modelflare", "account")}>去登录</button>
+    <//>`;
+  }
+  const sub = !budget.enabled
+    ? "与其他机器人共用本机的 Key，不单独限额"
+    : use
+      ? `已用 ${usd(use.used_usd)}，还剩 ${usd(use.remain_usd)}${use.status === "exhausted" ? " · 已用完，机器人暂停调用模型" : ""}`
+      : "用这个机器人自己的 Key，花到上限就停";
+  return html`<${Row} id="budget" name="预算" sub=${sub}>
+      <${Switch} label="预算" value=${budget.enabled} disabled=${busy} onChange=${(v) => save(v, Number(limit) || budget.limitUsd)} />
+    <//>
+    <${Row} id="budget-limit" name="上限（美元）" sub="包括已经花掉的部分；调高后用完的 Key 会自动恢复" off=${!budget.enabled}>
+      <input class="field num-in" type="number" min="0" step="1" inputmode="decimal" aria-label="预算上限（美元）" value=${limit} disabled=${!budget.enabled || busy}
+        onInput=${(e) => setLimit(e.target.value)} onBlur=${commitLimit} onKeyDown=${(e) => e.key === "Enter" && e.target.blur()} />
+    <//>`;
+}
+
+export function BotSettingsScreen({ bot, section, models, modelsError, reloadModels, defaultModel, account, onOpenSettings, onBack, onBotUpdated, onDeleted }) {
   const [d, setD] = useState(null);
   const [name, setName] = useState(bot.name);
   const [prompt, setPrompt] = useState(bot.systemPrompt || "");
@@ -111,6 +163,8 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
         <${Row} id="utility" name="后台小任务模型" sub="记忆整理、上下文管家与交接便条">
           ${s && html`<${ModelButton} value=${s.utilityModel} models=${models} modelsError=${modelsError} reloadModels=${reloadModels} resetLabel="与对话模型相同" onChange=${(m) => put({ utilityModel: m })} />`}
         <//>
+        ${s && account && html`<${BudgetRows} bot=${bot} budget=${s.budget} account=${account} onOpenSettings=${onOpenSettings}
+          onSaved=${(settings) => setD((v) => ({ ...v, settings }))} />`}
       </div>
 
       ${!s && html`<div class="list"><div class="row"><${Skeleton} w="45%" /></div><div class="row"><${Skeleton} w="35%" /></div></div>`}

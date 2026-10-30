@@ -207,6 +207,19 @@ export class WeixinChannel {
     this.loop = this.run(this.abort.signal).finally(() => (this.loop = undefined));
   }
 
+  /**
+   * 主动提醒：发给扫码登录的那个微信用户。需要他最近发过消息（有 context_token），
+   * 并占用同一份回复配额；没有可用配额时放弃，返回 false。
+   */
+  async notifyOwner(text: string): Promise<boolean> {
+    const acct = this.store.getWeixinAccount(this.botId);
+    const owner = acct?.ownerUserId ?? "";
+    const peer = owner ? this.store.getWeixinPeer(this.botId, owner) : undefined;
+    if (!this.client || !owner || !peer?.contextToken || !this.quota.tryConsume(owner)) return false;
+    await this.client.sendText(owner, text, peer.contextToken);
+    return true;
+  }
+
   async stop(): Promise<void> {
     this.abort?.abort();
     await this.loop?.catch(() => {});

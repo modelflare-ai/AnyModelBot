@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Icon, Seg, Switch, Sheet, CopyButton, Skeleton } from "../components/ui.js";
 import { AccountButton } from "./sidebar.js";
 import { ModelPicker, shortModel } from "../components/model-picker.js";
-import { KeyForm, LINE_OPTIONS, MF_CONSOLE, MF_DOCS } from "./onboarding.js";
+import { KeyForm, LINE_OPTIONS } from "./onboarding.js";
+import { LoginSheet, NotificationsSheet, UsageSheet } from "./account.js";
 import { api } from "../lib/api.js";
+import { MF_CONSOLE, MF_DOCS, MF_TOPUP, usd } from "../lib/links.js";
 import { useStore, confirmSheet, failed, saved } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
 
@@ -25,6 +27,12 @@ const ZOOMS = [
   [1.5, "150%"],
 ];
 const GATEWAY = { running: "运行中", starting: "启动中", restarting: "重启中", failed: "失败", stopped: "已停止", external: "外部端点" };
+const ALERT_LINES = [
+  [0, "不提醒"],
+  [1, "$1"],
+  [5, "$5"],
+  [20, "$20"],
+];
 
 function Row({ id, name, sub, title, children, flash, off }) {
   return html`<div class=${`row${flash ? " flash" : ""}${off ? " off" : ""}`} id=${`set-${id}`} title=${title}>
@@ -55,7 +63,7 @@ function NoticesSheet({ onClose }) {
 }
 
 /** 设置时的侧栏：返回应用 | 查找设置 | 分页 | 账户 */
-export function SettingsSide({ tab, query, onQuery, onTab, onBack, username }) {
+export function SettingsSide({ tab, query, onQuery, onTab, onBack, username, account }) {
   const searching = !!query.trim();
   return html`<aside class="side" aria-label="设置">
     <div class="side-top start">
@@ -73,14 +81,17 @@ export function SettingsSide({ tab, query, onQuery, onTab, onBack, username }) {
           onClick=${() => { onQuery(""); onTab(t); }}><${Icon} name=${icon} size=${16} /><span>${label}</span></button>`;
       })}
     </nav>
-    <div class="side-foot"><${AccountButton} username=${username} on onClick=${() => onTab("general")} /></div>
+    <div class="side-foot"><${AccountButton} username=${username} account=${account} on onClick=${() => onTab("general")} /></div>
   </aside>`;
 }
 
-export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onMfChanged, onSettings, models, modelsError, reloadModels, status, bots, onOpenBotSettings }) {
+export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onMfChanged, onSettings, models, modelsError, reloadModels, status, bots, onOpenBotSettings, account: acct, onAccount }) {
   const [s, setS] = useState(null);
   const [rekey, setRekey] = useState(false);
   const [notices, setNotices] = useState(false);
+  const [sheet, setSheet] = useState(""); // login | usage | notifications
+  const [invite, setInvite] = useState(null);
+  const [unread, setUnread] = useState(null);
   const [cu, setCu] = useState(null);
   const [flash, setFlash] = useState("");
   const mode = useStore(themeMode);
@@ -132,8 +143,37 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onM
       failed(e);
     }
   };
+  const logout = async () => {
+    if (!(await confirmSheet({ title: "退出 Modelflare 账户？", body: "会撤销这台电脑的授权，并删除登录时为它和各机器人签发的 API Key。机器人和会话都会保留。", confirmLabel: "退出登录", danger: true }))) return;
+    try {
+      const r = await api("/account/logout", { method: "POST", body: {} });
+      if (!r.revoked) failed("服务端没有确认撤销：本机已退出，可在 Modelflare 网页的「已授权的应用」里再撤销一次");
+      onAccount(r);
+      onMfChanged();
+    } catch (e) {
+      failed(e);
+    }
+  };
+  const refreshBalance = () =>
+    api("/account/refresh", { method: "POST", body: {} })
+      .then(onAccount)
+      .catch(failed);
+  const putAlerts = (patch) =>
+    api("/account/alerts", { method: "PUT", body: patch })
+      .then((r) => {
+        onAccount(r);
+        saved();
+      })
+      .catch(failed);
   const desktop = !!(s && s.desktop);
   const managed = mf && mf.mode === "managed";
+  const signedIn = !!(acct && acct.state === "signed_in");
+  // 登录后才有邀请码和通知；进入 Modelflare 分页时读一次
+  useEffect(() => {
+    if (!signedIn || tab !== "modelflare") return;
+    api("/account/invite").then(setInvite).catch(() => setInvite(null));
+    api("/account/notifications").then((r) => setUnread(r.data ? r.data.unread_count : null)).catch(() => setUnread(null));
+  }, [signedIn, tab]);
 
   // —— 行定义：每行一个稳定 id，可被搜索、可被深链（#/settings/<tab>/<id>）——
   const rows = useMemo(() => {
@@ -150,13 +190,37 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onM
       desktop && { tab: "general", id: "browser", name: "在浏览器中打开", sub: "用系统浏览器打开同一个本机界面", keys: "browser",
         ctl: html`<button type="button" class="text" onClick=${() => api("/desktop/open-in-browser", { method: "POST", body: {} }).catch(failed)}>打开</button>` },
 
-      { tab: "modelflare", id: "connection", name: "连接", sub: managed ? "API Key 只保存在本机" : "由环境变量 AMB_MAGPIE_BASE_URL 指定的端点（开发/测试）", keys: "密钥 key api 断开 更换",
+      managed && acct && { tab: "modelflare", id: "account", name: "Modelflare 账户",
+        sub: signedIn ? `${acct.name || "已登录"}${acct.billedToEnterprise ? " · 由企业钱包付费" : ""}` : acct.state === "unavailable" ? acct.error : "登录后可以查看用量、通知和邀请链接，也能给机器人单独设预算", keys: "登录 注册 账户 退出 account login",
+        ctl: signedIn
+          ? html`<button type="button" class="text danger" onClick=${logout}>退出登录</button>`
+          : acct.loginAvailable === false
+            ? html`<span class="val">Docker / 远程部署不支持浏览器登录</span>`
+            : html`<button type="button" class="text accent" onClick=${() => setSheet("login")}>登录 / 注册</button>` },
+      { tab: "modelflare", id: "connection", name: signedIn ? "本机 Key" : "连接",
+        sub: !managed ? "由环境变量 AMB_MAGPIE_BASE_URL 指定的端点（开发/测试）" : signedIn ? "登录时为这台电脑签发，退出登录会一并删除" : "API Key 只保存在本机", keys: "密钥 key api 断开 更换",
         ctl: managed
           ? html`<span class="mf-state"><span class=${`dot ${mf.connected ? "ok" : "err"}`}></span>${mf.connected ? "已连接" : "未连接"}</span>
               ${mf.keyTail && html`<span class="val">••••${mf.keyTail}</span>`}
-              <button type="button" class="text" onClick=${() => setRekey(true)}>更换密钥</button>
-              <button type="button" class="text danger" onClick=${disconnect}>断开</button>`
+              ${!signedIn && html`<button type="button" class="text" onClick=${() => setRekey(true)}>更换密钥</button>
+                <button type="button" class="text danger" onClick=${disconnect}>断开</button>`}`
           : html`<span class="val" title=${mf && mf.baseUrl}>${mf && mf.baseUrl}</span>` },
+      managed && acct && mf.connected && { tab: "modelflare", id: "balance", name: "余额",
+        sub: acct.error ? `读取失败：${acct.error}` : acct.source === "key" ? "这把 Key 所在账户的钱包余额" : acct.updatedAt ? `更新于 ${new Date(acct.updatedAt).toLocaleTimeString()}` : "读取中…", keys: "余额 充值 钱包 balance top up",
+        ctl: html`<span class=${`balance${acct.lowBalance ? " low" : ""}`}>${usd(acct.balanceUsd)}</span>
+          <button type="button" class="icon-btn" title="刷新" aria-label="刷新余额" onClick=${refreshBalance}><${Icon} name="refresh" size=${14} /></button>
+          <a class="btn" href=${MF_TOPUP} target="_blank" rel="noopener noreferrer">充值 ↗</a>` },
+      managed && acct && mf.connected && { tab: "modelflare", id: "low-balance", name: "余额提醒", sub: "余额低于这个数时在应用里提醒一次，充值后重新计", keys: "提醒 余额不足 low balance",
+        ctl: html`<${Seg} label="余额提醒" value=${acct.alerts.lowBalanceUsd} onChange=${(v) => putAlerts({ lowBalanceUsd: v })}
+          options=${ALERT_LINES.some(([v]) => v === acct.alerts.lowBalanceUsd) ? ALERT_LINES : [...ALERT_LINES, [acct.alerts.lowBalanceUsd, usd(acct.alerts.lowBalanceUsd)]]} />` },
+      managed && acct && mf.connected && acct.alerts.lowBalanceUsd > 0 && { tab: "modelflare", id: "low-balance-push", name: "提醒也发到微信 / 飞书", sub: "由机器人发给你：微信发给扫码登录的人（需要他最近发过消息），飞书发到最近的单聊", keys: "推送 提醒 微信 飞书",
+        ctl: html`<${Switch} label="提醒也发到微信 / 飞书" value=${acct.alerts.push} onChange=${(v) => putAlerts({ lowBalancePush: v })} />` },
+      signedIn && { tab: "modelflare", id: "usage", name: "用量", sub: "按天、按模型的花费", keys: "用量 花费 账单 usage",
+        ctl: html`<button type="button" class="text" onClick=${() => setSheet("usage")}>查看</button>` },
+      signedIn && { tab: "modelflare", id: "notifications", name: "通知", sub: unread ? `${unread} 条未读` : "Modelflare 发给你的通知与公告", keys: "通知 公告 消息 notification",
+        ctl: html`<button type="button" class="text" onClick=${() => setSheet("notifications")}>查看</button>` },
+      signedIn && invite && { tab: "modelflare", id: "invite", name: "邀请好友", sub: "好友通过你的链接注册并充值，你会获得返利", keys: "邀请 返利 推广 invite",
+        ctl: html`<span class="val">${invite.code}</span><${CopyButton} text=${invite.url} label="复制邀请链接" />` },
       managed && { tab: "modelflare", id: "line", name: "线路", sub: "中国大陆访问更稳定可选优化线路；切换后新请求生效", keys: "大陆 国际 origin 网络",
         ctl: html`<${Seg} label="线路" value=${mf.line} onChange=${setLine} options=${LINE_OPTIONS} />` },
       { tab: "modelflare", id: "default-model", name: "默认模型", sub: "机器人没有单独指定时使用", keys: "模型 model",
@@ -164,8 +228,8 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onM
           onChange=${(m) => put({ defaultModel: m }, { defaultModel: m })} />` },
       { tab: "modelflare", id: "models", name: "可用模型", sub: modelsError ? `获取失败：${modelsError}` : "这个 Key 所在分组开放的模型", keys: "列表 刷新",
         ctl: html`<span class="val num">${models ? `${models.length} 个` : "…"}</span><button type="button" class="text" onClick=${() => reloadModels().then(() => saved())}>刷新</button>` },
-      { tab: "modelflare", id: "billing", name: "用量与账单", sub: "用量、余额与价格以 Modelflare 主站为准", keys: "余额 价格 充值 usage",
-        ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">在 Modelflare 控制台查看 ↗</a>` },
+      { tab: "modelflare", id: "console", name: "Modelflare 控制台", sub: "账单、发票与 API Key 管理", keys: "控制台 账单 console",
+        ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">打开 ↗</a>` },
 
       { tab: "computer", id: "cu-status", name: "电脑操作后端", sub: cu ? cu.reason : "读取中…", keys: "computer use cua 辅助功能 屏幕录制",
         ctl: html`<span class=${`dot ${cu ? (cu.available ? "ok" : "err") : ""}`}></span>` },
@@ -174,6 +238,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onM
         ctl: bots && bots[0] && html`<button type="button" class="text" onClick=${() => onOpenBotSettings(bots[0].id, "computer")}>打开机器人设置</button>` },
 
       { tab: "privacy", id: "key-storage", name: "密钥存放", sub: "Modelflare 密钥只在本机内置网关的隔离配置里，不写日志、不进命令行参数", ctl: null, keys: "安全" },
+      { tab: "privacy", id: "account-storage", name: "账户凭据", sub: "登录 Modelflare 的凭据只存在数据目录，桌面版用系统钥匙串加密；界面只拿到账户名称", ctl: null, keys: "安全 登录 钥匙串" },
       { tab: "privacy", id: "token", name: "访问令牌", sub: s.listen.tokenRequired ? "需要令牌：界面监听在非本机地址，或桌面版每次启动随机生成" : "只监听本机，无需令牌", keys: "token 令牌",
         ctl: html`<span class=${`dot ${s.listen.tokenRequired ? "ok" : ""}`}></span>` },
       { tab: "privacy", id: "sandbox", name: "机器人沙箱", sub: "来自机器人沙箱的请求会被本机界面拒绝，机器人无法自行批准操作或读取配置", ctl: null, keys: "安全 dsh" },
@@ -194,7 +259,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onM
       { tab: "about", id: "links", name: "Modelflare", sub: "官网与文档",
         ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">modelflare.dev ↗</a><a class="text" href=${MF_DOCS} target="_blank" rel="noopener noreferrer">文档 ↗</a>` },
     ].filter(Boolean);
-  }, [s, mf, mode, models, modelsError, cu, status, bots]);
+  }, [s, mf, mode, models, modelsError, cu, status, bots, acct, invite, unread]);
 
   const needle = q.trim().toLowerCase();
   const shown = needle ? rows.filter((r) => `${r.name} ${r.sub || ""} ${r.keys || ""}`.toLowerCase().includes(needle)) : rows.filter((r) => r.tab === tab);
@@ -213,5 +278,8 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onM
       <${KeyForm} line=${mf.line} showLine=${false} submitLabel="验证并保存" onConnected=${() => { setRekey(false); saved(); onMfChanged(); reloadModels(); }} />
     <//>`}
     ${notices && html`<${NoticesSheet} onClose=${() => setNotices(false)} />`}
+    ${sheet === "login" && html`<${LoginSheet} onClose=${() => setSheet("")} onSignedIn=${(r) => { onAccount(r); onMfChanged(); reloadModels(); }} />`}
+    ${sheet === "usage" && html`<${UsageSheet} onClose=${() => setSheet("")} />`}
+    ${sheet === "notifications" && html`<${NotificationsSheet} onClose=${() => { setSheet(""); setUnread(null); }} />`}
   </section>`;
 }

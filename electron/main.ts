@@ -143,21 +143,24 @@ async function boot(): Promise<void> {
 }
 
 async function smoke(out: string): Promise<void> {
-  const wc = win!.webContents;
-  await new Promise<void>((r) => (wc.isLoading() ? wc.once("did-finish-load", () => r()) : r()));
-  // 未连接 Modelflare 时是引导页，已连接时是对话页；两者都带 data-screen
-  let screen = "";
-  for (let i = 0; i < 50; i++) {
-    screen = String(await wc.executeJavaScript("document.querySelector('[data-screen]')?.getAttribute('data-screen') || ''"));
-    if (screen) break;
-    await new Promise((r) => setTimeout(r, 200));
+  try {
+    const wc = win!.webContents;
+    await new Promise<void>((r) => (wc.isLoading() ? wc.once("did-finish-load", () => r()) : r()));
+    // 未连接 Modelflare 时是引导页，已连接时是对话页；两者都带 data-screen
+    let screen = "";
+    for (let i = 0; i < 50; i++) {
+      screen = String(await wc.executeJavaScript("document.querySelector('[data-screen]')?.getAttribute('data-screen') || ''"));
+      if (screen) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const img = await wc.capturePage();
+    fs.writeFileSync(out, img.toPNG());
+    const status = await wc.executeJavaScript("fetch('/amb/api/status').then(r=>r.status)");
+    const magpie = await wc.executeJavaScript("fetch('/magpie/').then(r=>r.status)");
+    console.log(`SMOKE ${JSON.stringify({ hasUi: !!screen, screen, status, magpie, magpieState: core?.magpie?.state })}`);
+  } finally {
+    app.quit(); // 任何一步失败也退出，不让冒烟测试挂到超时
   }
-  const img = await wc.capturePage();
-  fs.writeFileSync(out, img.toPNG());
-  const status = await wc.executeJavaScript("fetch('/amb/api/status').then(r=>r.status)");
-  const magpie = await wc.executeJavaScript("fetch('/magpie/').then(r=>r.status)");
-  console.log(`SMOKE ${JSON.stringify({ hasUi: !!screen, screen, status, magpie, magpieState: core?.magpie?.state })}`);
-  app.quit();
 }
 
 if (!app.requestSingleInstanceLock()) {

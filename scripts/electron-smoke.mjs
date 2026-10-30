@@ -14,7 +14,8 @@ let cmd = exe ?? require("electron");
 let args = exe ? [] : ["."];
 if (process.platform === "linux") args.push("--no-sandbox");
 if (process.platform === "linux" && !process.env.DISPLAY) {
-  args = ["-a", "-s", "-screen 0 1400x900x24", cmd, ...args];
+  // Xvfb 没有 GPU：不关 GPU 时 capturePage 会报 UnknownVizError
+  args = ["-a", "-s", "-screen 0 1400x900x24", cmd, ...args, "--disable-gpu"];
   cmd = "xvfb-run";
 }
 const r = spawnSync(cmd, args, { env: { ...process.env, AMB_DATA_DIR: dataDir, AMB_UI_PORT: "0", AMB_ELECTRON_SMOKE: shot }, encoding: "utf8", timeout: 120_000 });

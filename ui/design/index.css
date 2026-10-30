@@ -19,6 +19,7 @@
 @import url("components/seg.css") layer(components);
 @import url("components/switch.css") layer(components);
 @import url("components/popover.css") layer(components);
+@import url("components/model-family.css") layer(components);
 @import url("components/sheet.css") layer(components);
 @import url("components/toast.css") layer(components);
 @import url("components/notice.css") layer(components);

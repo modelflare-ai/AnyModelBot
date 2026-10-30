@@ -71,7 +71,7 @@ jobs:
           fi
           files=$(git diff --name-only "$BASE" HEAD)
           echo "$files"
-          if echo "$files" | grep -qE '^(src/agent/|src/magpie/|electron/|dsh-runtime/|scripts/prepare-dsh\.mjs$|scripts/e2e-agent\.mjs$|scripts/ci/|\.github/workflows/ci\.yml$)'; then
+          if echo "$files" | grep -qE '^(src/agent/|src/magpie/|electron/|dsh-runtime/|scripts/(prepare|bundle|verify)-dsh(-bundle)?\.mjs$|scripts/e2e-agent\.mjs$|scripts/ci/|\.github/workflows/ci\.yml$)'; then
             echo "agent=true" >> "$GITHUB_OUTPUT"
           else
             echo "agent=false" >> "$GITHUB_OUTPUT"
@@ -114,6 +114,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: node scripts/prepare-dsh.mjs
+      # The installers ship this packed layout (resources/dsh/dsh.asar + native node_modules), checked below.
+      - run: node scripts/bundle-dsh.mjs
       - run: node scripts/build-magpie.mjs --target windows/amd64
       - run: node scripts/fetch-cua-driver.mjs --target win32/x64
 
@@ -130,9 +132,21 @@ jobs:
       - name: Chat through the app; no console windows
         run: node scripts/e2e-agent.mjs --out "$RUNNER_TEMP/e2e" --launch shell --cwd "$GITHUB_WORKSPACE" --timeout-ms 150000 --procmon --managed --stream --tool --status-probes --observe-ms 20000 --max-console-windows 0 --expect-diagnostics --expect-pwsh7 -- "$ELECTRON_EXE" .
 
+      # The installers' DSH layout: Electron in Node mode loads the natives through dsh.asar and runs one
+      # DSH turn, then the same app chats with its agent host started from the archive.
+      - name: Bundled DSH (dsh.asar) under Electron
+        run: node scripts/verify-dsh-bundle.mjs "$ELECTRON_EXE" build/dsh/dsh.asar
+
+      - name: Chat through the app with the bundled DSH
+        env:
+          AMB_DSH_RUNTIME: ${{ github.workspace }}/build/dsh/dsh.asar
+        run: node scripts/e2e-agent.mjs --out "$RUNNER_TEMP/e2e-bundled" --launch shell --cwd "$GITHUB_WORKSPACE" --timeout-ms 150000 --managed --stream --tool --expect-diagnostics --expect-pwsh7 -- "$ELECTRON_EXE" .
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: windows-agent-e2e
-          path: ${{ runner.temp }}/e2e
+          path: |
+            ${{ runner.temp }}/e2e
+            ${{ runner.temp }}/e2e-bundled
           retention-days: 7

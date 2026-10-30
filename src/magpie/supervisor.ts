@@ -366,17 +366,33 @@ export class MagpieSupervisor {
    * （key 不出现在进程参数里）。重复连接 = 覆盖。baseUrl 必须是白名单里的地址。
    * headers 是每个请求额外带给 Modelflare 的请求头（调用归因）。
    */
-  async connectModelflare(apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string> = {}): Promise<void> {
-    await this.upsertProvider(this.modelflareId(), MODELFLARE_PROVIDER, "Modelflare", apiKey, baseUrl, allowed, headers);
+  async connectModelflare(apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string> = {}, picks: string[] = []): Promise<void> {
+    await this.upsertProvider(this.modelflareId(), MODELFLARE_PROVIDER, "Modelflare", apiKey, baseUrl, allowed, headers, picks);
   }
 
   /** 机器人自己的 provider（预算 Key）：id 固定为 mfb-<botId>，机器人的请求都显式发到这个 provider */
-  async setBotProvider(botId: string, apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string> = {}): Promise<void> {
+  async setBotProvider(botId: string, apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string> = {}, picks: string[] = []): Promise<void> {
     const id = botProviderId(botId);
-    await this.upsertProvider(this.hasProvider(id) ? id : undefined, id, `Modelflare ${botId}`, apiKey, baseUrl, allowed, headers);
+    await this.upsertProvider(this.hasProvider(id) ? id : undefined, id, `Modelflare ${botId}`, apiKey, baseUrl, allowed, headers, picks);
   }
 
-  private async upsertProvider(existing: string | undefined, wantId: string, name: string, apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string>): Promise<void> {
+  /**
+   * 启用的模型（picks）。内置网关对超过 24 个模型、又没有 picks 的服务商只放出列表前 24 个，没放出的
+   * 连 "provider/model" 也不服务，所以由我们写明全部对话模型。pickedFrom 由网关自己记录；Modelflare 的
+   * 列表还有不能对话的决策模型不在 picks 里，网关因此不会自动加入新模型，由 App 定时核对（syncModelPicks）。
+   */
+  async setModelPicks(id: string, picks: string[]): Promise<void> {
+    const cur = this.modelPicks(id);
+    if (!picks.length || (cur.length === picks.length && picks.every((m) => cur.includes(m)))) return;
+    await this.saveProvider(id, { models: picks });
+  }
+
+  modelPicks(id: string): string[] {
+    const p = this.readProviderRaw(id);
+    return Array.isArray(p?.models) ? p.models.map(String) : [];
+  }
+
+  private async upsertProvider(existing: string | undefined, wantId: string, name: string, apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string>, picks: string[]): Promise<void> {
     if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
     if (!apiKey.trim()) throw new Error("缺少 API Key");
     let id = existing;
@@ -385,7 +401,7 @@ export class MagpieSupervisor {
       if (add.code !== 0) throw new Error(`创建 Modelflare 连接失败：${(add.stderr || add.stdout).trim().slice(0, 300)}`);
       id = this.hasProvider(wantId) ? wantId : await this.findProviderId(wantId);
     }
-    await this.saveProvider(id, { chat: baseUrl, key: apiKey.trim(), headers });
+    await this.saveProvider(id, { chat: baseUrl, key: apiKey.trim(), headers, ...(picks.length ? { models: picks } : {}) });
   }
 
   /** 切换线路：只改地址，key 不变（机器人自己的 provider 一起切） */

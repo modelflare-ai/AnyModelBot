@@ -8,6 +8,10 @@
 #     Tags containing "-" (v0.2.0-rc.1) are published as pre-releases.
 #   - Test build: Actions -> Release -> "Run workflow" on any branch. Same builds; the installers are
 #     only kept as workflow artifacts (14 days). Running it on a tag ref re-publishes that release.
+#   - Fewer installers: "Run workflow" takes `targets`, a comma-separated list of the names below
+#     (e.g. `mac-arm64`); the default `all` builds every one. A tag push always builds all of them.
+#     To release a tag with only some installers, cancel the run the tag push started and run the
+#     workflow on that tag with `targets`.
 #
 # Outputs (<version> = package.json version)
 #   anymodel-bot-<version>-mac-arm64.dmg            macos-15 (Apple Silicon)
@@ -50,6 +54,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      targets:
+        description: "Installers to build: all, or a comma-separated list (mac-arm64,mac-x64,win-x64,win-arm64,linux-x64,linux-arm64)"
+        type: string
+        default: all
 
 permissions:
   contents: read
@@ -68,6 +77,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,6 +99,31 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building anymodel-bot $version"
 
+      - name: Select installers
+        id: matrix
+        env:
+          TARGETS: ${{ inputs.targets || 'all' }}
+        run: |
+          all='[
+            {"name":"mac-arm64","runner":"macos-15","os":"darwin","arch":"arm64","goos":"darwin","goarch":"arm64","targets":"--mac dmg","file":"mac-arm64.dmg"},
+            {"name":"mac-x64","runner":"macos-15-intel","os":"darwin","arch":"x64","goos":"darwin","goarch":"amd64","targets":"--mac dmg","file":"mac-x64.dmg"},
+            {"name":"win-x64","runner":"windows-2025","os":"win32","arch":"x64","goos":"windows","goarch":"amd64","targets":"--win nsis","file":"win-x64.exe"},
+            {"name":"win-arm64","runner":"windows-11-arm","os":"win32","arch":"arm64","goos":"windows","goarch":"arm64","targets":"--win nsis","file":"win-arm64.exe"},
+            {"name":"linux-x64","runner":"ubuntu-24.04","os":"linux","arch":"x64","goos":"linux","goarch":"amd64","targets":"--linux AppImage","file":"linux-x86_64.AppImage"},
+            {"name":"linux-arm64","runner":"ubuntu-24.04-arm","os":"linux","arch":"arm64","goos":"linux","goarch":"arm64","targets":"--linux AppImage","file":"linux-arm64.AppImage"}
+          ]'
+          if [ "$TARGETS" = all ]; then
+            selected=$(jq -c . <<<"$all")
+          else
+            selected=$(jq -c --arg t "$TARGETS" '($t | split(",") | map(gsub("^\\s+|\\s+$"; ""))) as $want | map(select(.name as $n | $want | index($n)))' <<<"$all")
+          fi
+          if [ "$(jq length <<<"$selected")" -eq 0 ]; then
+            echo "::error::No installer matches targets=$TARGETS"
+            exit 1
+          fi
+          echo "matrix=$selected" >> "$GITHUB_OUTPUT"
+          echo "Installers: $(jq -r 'map(.name) | join(", ")' <<<"$selected")"
+
   build:
     name: ${{ matrix.name }}
     needs: meta
@@ -97,13 +132,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { name: mac-arm64, runner: macos-15, os: darwin, arch: arm64, goos: darwin, goarch: arm64, targets: "--mac dmg", file: mac-arm64.dmg }
-          - { name: mac-x64, runner: macos-15-intel, os: darwin, arch: x64, goos: darwin, goarch: amd64, targets: "--mac dmg", file: mac-x64.dmg }
-          - { name: win-x64, runner: windows-2025, os: win32, arch: x64, goos: windows, goarch: amd64, targets: "--win nsis", file: win-x64.exe }
-          - { name: win-arm64, runner: windows-11-arm, os: win32, arch: arm64, goos: windows, goarch: arm64, targets: "--win nsis", file: win-arm64.exe }
-          - { name: linux-x64, runner: ubuntu-24.04, os: linux, arch: x64, goos: linux, goarch: amd64, targets: "--linux AppImage", file: linux-x86_64.AppImage }
-          - { name: linux-arm64, runner: ubuntu-24.04-arm, os: linux, arch: arm64, goos: linux, goarch: arm64, targets: "--linux AppImage", file: linux-arm64.AppImage }
+        # Chosen by the Version check job: every installer, or the ones a manual run names.
+        include: ${{ fromJSON(needs.meta.outputs.matrix) }}
     defaults:
       run:
         shell: bash

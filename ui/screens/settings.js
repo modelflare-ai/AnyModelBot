@@ -10,6 +10,7 @@ import { api } from "../lib/api.js";
 import { MF_CONSOLE, MF_DOCS, MF_TOPUP, usd } from "../lib/links.js";
 import { useStore, confirmSheet, failed, saved } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
+import { TroubleshootPane } from "./troubleshoot.js";
 
 export const TABS = [
   ["general", "常规", "sliders"],
@@ -18,6 +19,7 @@ export const TABS = [
   ["privacy", "隐私与安全", "lock"],
   ["network", "网络与访问", "globe"],
   ["data", "数据", "database"],
+  ["troubleshoot", "故障排查", "pulse"],
   ["about", "关于", "info"],
 ];
 const ZOOMS = [
@@ -85,7 +87,7 @@ export function SettingsSide({ tab, query, onQuery, onTab, onBack, username, acc
   </aside>`;
 }
 
-export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onMfChanged, onSettings, models, modelsError, reloadModels, status, bots, onOpenBotSettings, account: acct, onAccount }) {
+export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, mf, onMfChanged, onSettings, models, modelsError, reloadModels, status, bots, onOpenBotSettings, account: acct, onAccount }) {
   const [s, setS] = useState(null);
   const [rekey, setRekey] = useState(false);
   const [notices, setNotices] = useState(false);
@@ -255,7 +257,10 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onM
       { tab: "about", id: "licenses", name: "许可与第三方声明", sub: "MIT；界面部分样式改编自 magpie（MIT）", keys: "license",
         ctl: html`<button type="button" class="text" onClick=${() => setNotices(true)}>查看</button>` },
       { tab: "about", id: "diagnostics", name: "诊断信息", sub: status ? `内置模型网关 · ${GATEWAY[status.gateway.state] || status.gateway.state}${status.gateway.restarts ? ` · 重启 ${status.gateway.restarts} 次` : ""}${status.gateway.lastError ? ` · ${status.gateway.lastError}` : ""}` : "", keys: "网关 gateway magpie",
-        ctl: null },
+        ctl: html`<button type="button" class="text" onClick=${() => onTab?.("troubleshoot")}>故障排查</button>` },
+      // 故障排查页是单独的面板（troubleshoot.js），这一行只给搜索用：搜"日志""测试模型"时能找到入口
+      { tab: "troubleshoot", id: "troubleshoot", name: "故障排查", sub: "模型网关与代理进程的状态、测试模型、测试代理、最近日志、复制诊断信息", keys: "日志 log 测试 test 代理 agent 卡住 转圈 诊断 diagnostics 重启",
+        ctl: html`<button type="button" class="text" onClick=${() => { setQ(""); onTab?.("troubleshoot"); }}>打开</button>` },
       { tab: "about", id: "links", name: "Modelflare", sub: "官网与文档",
         ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">modelflare.dev ↗</a><a class="text" href=${MF_DOCS} target="_blank" rel="noopener noreferrer">文档 ↗</a>` },
     ].filter(Boolean);
@@ -271,7 +276,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, focusRow, mf, onM
     <div class="set-body">
       ${!s && html`<div class="list"><div class="row"><${Skeleton} w="40%" /></div><div class="row"><${Skeleton} w="55%" /></div></div>`}
       ${s && !shown.length && html`<p class="set-none">没有匹配的设置</p>`}
-      ${parts.map(([label, list]) => html`${label && html`<div class="set-part">${label}</div>`}
+      ${s && !needle && tab === "troubleshoot" ? html`<${TroubleshootPane} bots=${bots} desktop=${desktop} />` : parts.map(([label, list]) => html`${label && html`<div class="set-part">${label}</div>`}
         <div class="list">${list.map((r) => html`<${Row} key=${r.id} id=${r.id} name=${r.name} sub=${r.sub} title=${r.title || r.sub} flash=${flash === r.id}>${r.ctl}<//>`)}</div>`)}
     </div>
     ${rekey && html`<${Sheet} title="更换 Modelflare 密钥" onClose=${() => setRekey(false)}>

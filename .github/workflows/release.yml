@@ -10,8 +10,8 @@
 #     only kept as workflow artifacts (14 days). Running it on a tag ref re-publishes that release.
 #
 # Outputs (<version> = package.json version)
-#   anymodel-bot-<version>-mac-arm64.dmg            macos-15 (Apple Silicon)   [disabled for now, see matrix]
-#   anymodel-bot-<version>-mac-x64.dmg              macos-15-intel             [disabled for now, see matrix]
+#   anymodel-bot-<version>-mac-arm64.dmg            macos-15 (Apple Silicon)
+#   anymodel-bot-<version>-mac-x64.dmg              macos-15-intel
 #   anymodel-bot-<version>-win-x64.exe              windows-2025    (NSIS)
 #   anymodel-bot-<version>-win-arm64.exe            windows-11-arm  (NSIS)
 #   anymodel-bot-<version>-linux-x86_64.AppImage    ubuntu-24.04    (smoke-tested under Xvfb)
@@ -98,9 +98,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS is disabled for now (macOS runners are expensive on private repos). Uncomment to re-enable.
-          # - { name: mac-arm64, runner: macos-15, os: darwin, arch: arm64, goos: darwin, goarch: arm64, targets: "--mac dmg", file: mac-arm64.dmg }
-          # - { name: mac-x64, runner: macos-15-intel, os: darwin, arch: x64, goos: darwin, goarch: amd64, targets: "--mac dmg", file: mac-x64.dmg }
+          - { name: mac-arm64, runner: macos-15, os: darwin, arch: arm64, goos: darwin, goarch: arm64, targets: "--mac dmg", file: mac-arm64.dmg }
+          - { name: mac-x64, runner: macos-15-intel, os: darwin, arch: x64, goos: darwin, goarch: amd64, targets: "--mac dmg", file: mac-x64.dmg }
           - { name: win-x64, runner: windows-2025, os: win32, arch: x64, goos: windows, goarch: amd64, targets: "--win nsis", file: win-x64.exe }
           - { name: win-arm64, runner: windows-11-arm, os: win32, arch: arm64, goos: windows, goarch: arm64, targets: "--win nsis", file: win-arm64.exe }
           - { name: linux-x64, runner: ubuntu-24.04, os: linux, arch: x64, goos: linux, goarch: amd64, targets: "--linux AppImage", file: linux-x86_64.AppImage }

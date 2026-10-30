@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Icon, Notice, Seg, Spinner, CopyButton } from "../components/ui.js";
 import { BotAvatar, MAIN_CHAR } from "../components/avatar.js";
-import { groupModels } from "../components/model-picker.js";
+import { FamilyHead, groupModels, useFamilies } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
 import { MF_CONSOLE, MF_DOCS, MF_KEYS } from "../lib/links.js";
 
@@ -171,6 +171,8 @@ function ModelStep({ models, initial, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const groups = useMemo(() => groupModels(models, q), [models, q]);
+  const { isOpen, toggle } = useFamilies(groups, cur);
+  const folding = !q.trim() && groups.length > 1;
   const start = async () => {
     setBusy(true);
     try {
@@ -187,10 +189,15 @@ function ModelStep({ models, initial, onDone }) {
       ? html`<p class="hint">选一个默认模型，之后随时可在对话里切换。</p>
         <input class="field" placeholder="筛选模型" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="筛选模型" />
         <div class="picklist" role="listbox" aria-label="默认模型">
-          ${groups.map(([g, ms]) => html`${g && html`<div class="group">${g}</div>`}
-            ${ms.map(([m, label]) => html`<button type="button" role="option" aria-selected=${m === cur} class=${m === cur ? "cur" : ""} onClick=${() => setCur(m)} onDblClick=${start}>
+          ${groups.map(([g, ms]) => {
+            const rows = ms.map(([m, label]) => html`<button type="button" role="option" aria-selected=${m === cur} class=${m === cur ? "cur" : ""} onClick=${() => setCur(m)} onDblClick=${start}>
               <span class="v">${label}</span>${m === cur && html`<span class="check"><${Icon} name="check" size=${14} /></span>`}
-            </button>`)}`)}
+            </button>`);
+            if (!folding) return html`${groups.length > 1 && html`<div class="group">${g}</div>`}${rows}`;
+            const open = isOpen(g);
+            const hit = open ? undefined : ms.find(([m]) => m === cur);
+            return html`<button type="button" class="fam" aria-expanded=${open} onClick=${() => toggle(g)}><${FamilyHead} name=${g} count=${ms.length} current=${hit?.[1]} /></button>${open && rows}`;
+          })}
           ${!groups.length && html`<p class="hint">没有匹配的模型</p>`}
         </div>`
       : html`<${Notice} tone="amber" action=${html`<a class="btn" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">去控制台 ↗</a>`}>这个 Key 所在的分组暂无可用模型。可以在控制台给分组开放模型后再回来刷新。<//>`}

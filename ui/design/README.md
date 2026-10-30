@@ -19,7 +19,7 @@ ui/design/
     motion.css           关键帧库 + .anim-* 工具类 + 减少动态效果
     typography.css       文字角色 .t-*（在 utilities 层）
     utilities.css        .stack .cluster .grow .truncate .tone-* .sr-only
-  components/            一个组件一个文件：glass button field badge list seg switch popover sheet toast notice feedback avatar
+  components/            一个组件一个文件：glass button field badge list seg switch popover model-family sheet toast notice feedback avatar
   motion.js              ms("--dur-base")、usePresence()、reducedMotion()
   index.html / gallery.* 样例页
 ui/css/                  页面样式（shell / chat / settings），放在 app 层

@@ -1,0 +1,9 @@
+/* 模型族组头 .fam（模型选择器 .model-picker、引导页的 .picklist）：点一下展开或收起这一族。
+   族名和模型名落在同一条文字线上（不缩进），靠字重、数量和箭头区分；收起时把里面的当前模型名带出来。 */
+.fam .v { font-weight: var(--fw-semibold); color: var(--fg); }
+.fam .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--muted); }
+.fam .cnt { flex: none; margin-left: auto; font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.fam .chev { flex: none; color: var(--muted); transition: transform var(--t-base); }
+.fam[aria-expanded="true"] .chev { transform: rotate(90deg); }
+/* 展开的一族结束后、下一个组头前空一点 */
+:is(.pop, .picklist) :not(.fam) + .fam { margin-top: var(--space-1); }

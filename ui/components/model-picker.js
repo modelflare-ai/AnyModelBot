@@ -1,14 +1,12 @@
-// 模型选择器（magpie picker 的样式；数据来自 Modelflare 的 /v1/models）。
+// 模型选择器（magpie picker 的样式；数据来自 Modelflare 的 /v1/models）。按模型族分组，组头可以展开收起。
 // 不做厂商图标栏：各厂商 logo 是第三方商标，未取得授权前不用。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Popover, Icon } from "./ui.js";
 import { api } from "../lib/api.js";
 import { createStore, useStore } from "../lib/store.js";
+import { groupModels, modelFamily, normModel, sameModel } from "../lib/models.js";
 
-/** 内置网关列出的模型带 "modelflare/" 前缀，Modelflare 直接列出的不带；两种写法都能调用，显示与比较时去掉它 */
-export const normModel = (m) => (m && m.startsWith("modelflare/") ? m.slice("modelflare/".length) : m || "");
-export const sameModel = (a, b) => !!a && !!b && normModel(a) === normModel(b);
-export const shortModel = (m) => (m && m.includes("/") ? m.slice(m.lastIndexOf("/") + 1) : m);
+export { groupModels, normModel, sameModel, shortModel } from "../lib/models.js";
 
 // —— 模型能力与参考价（/models/info，后端缓存一小时；界面第一次打开选择器时取一次）——
 const infoStore = createStore(null);
@@ -41,23 +39,28 @@ export function modelNote(info, id) {
 }
 const NOTE_TITLE = "上下文 · 能力 · 每百万 tokens 输入/输出的起步参考价（美元，以账单为准）";
 
-/** 按 "厂商/模型" 的前缀分组（没有前缀的放在最后）；返回 [厂商, [[原始 id, 显示名]]] */
-export function groupModels(models, q = "") {
-  const needle = q.trim().toLowerCase();
-  const groups = new Map();
-  for (const m of models) {
-    const n = normModel(m);
-    if (needle && !n.toLowerCase().includes(needle)) continue;
-    const k = n.includes("/") ? n.slice(0, n.indexOf("/")) : "";
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push([m, k ? n.slice(k.length + 1) : n]);
-  }
-  return [...groups.entries()].sort((a, b) => (a[0] === "" ? 1 : b[0] === "" ? -1 : a[0].localeCompare(b[0])));
+// —— 模型族的开合：当前模型所在的族默认展开（没有当前模型时展开第一个）；用户点过的按点的算，本次运行内记住 ——
+const famOpen = new Map();
+export function useFamilies(groups, current) {
+  const [, redraw] = useState(0);
+  const curFam = current ? modelFamily(current) : groups[0]?.[0];
+  const isOpen = (g) => famOpen.get(g) ?? g === curFam;
+  const toggle = (g) => {
+    famOpen.set(g, !isOpen(g));
+    redraw((n) => n + 1);
+  };
+  return { isOpen, toggle };
+}
+
+/** 组头的内容：族名、收起时里面的当前模型、数量、箭头（展开时转向下） */
+export function FamilyHead({ name, count, current }) {
+  return html`<span class="v">${name}</span><span class="n">${current || ""}</span><span class="cnt">${count}</span><${Icon} name="chevRight" size=${12} class="chev" />`;
 }
 
 /**
  * models: string[] | null（加载中）；error: 加载失败时的说明。
  * reset: { label, note, onSelect }  顶部"恢复默认"项；foot: { label, onClick, disabled } 底部操作。
+ * 不筛选时按模型族折叠（只有一个族时不出组头）；筛选时全部展开，组名只作标签。
  */
 export function ModelPicker({ anchor, models, error, current, onPick, onClose, reset, foot, onRetry, prefer = "down", align = "left" }) {
   const [q, setQ] = useState("");
@@ -65,23 +68,51 @@ export function ModelPicker({ anchor, models, error, current, onPick, onClose, r
   const listRef = useRef(null);
   const info = useModelInfo();
   const groups = useMemo(() => groupModels(models || [], q), [models, q]);
+  const { isOpen, toggle } = useFamilies(groups, current);
+  const folding = !q.trim() && groups.length > 1;
   const custom = q.trim() && !(models || []).some((m) => sameModel(m, q.trim())) ? q.trim() : "";
-  const flat = [...(reset && !q ? [{ reset: true }] : []), ...groups.flatMap(([, ms]) => ms.map(([m]) => ({ m }))), ...(custom ? [{ m: custom, custom: true }] : [])];
+  const flat = [
+    ...(reset && !q ? [{ reset: true }] : []),
+    ...groups.flatMap(([g, ms]) => {
+      const rows = ms.map(([m]) => ({ m, g }));
+      return folding ? [{ fam: g }, ...(isOpen(g) ? rows : [])] : rows;
+    }),
+    ...(custom ? [{ m: custom, custom: true }] : []),
+  ];
+  // 列表到了以后，指向并滚到当前模型
+  const placed = useRef(false);
+  useEffect(() => {
+    if (placed.current || !models?.length) return;
+    placed.current = true;
+    const i = flat.findIndex((it) => it.m && sameModel(it.m, current));
+    if (i < 0) return;
+    setSel(i);
+    requestAnimationFrame(() => listRef.current?.querySelector("li.cur")?.scrollIntoView({ block: "nearest" }));
+  }, [models]);
   const choose = (it) => {
     onClose();
     if (it.reset) reset.onSelect();
     else onPick(it.m);
   };
   const onKey = (e) => {
+    const it = flat[sel];
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSel((s) => Math.min(flat.length - 1, s + 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSel((s) => Math.max(0, s - 1));
-    } else if (e.key === "Enter" && flat[sel]) {
+    } else if (e.key === "Enter" && it) {
       e.preventDefault();
-      choose(flat[sel]);
+      if (it.fam) toggle(it.fam);
+      else choose(it);
+    } else if (folding && it && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+      // 输入框是空的（folding 时 q 为空），左右键不会挪光标：→ 展开，← 收起；在模型上按 ← 收起它所在的族
+      e.preventDefault();
+      const g = it.fam || it.g;
+      if (!g || (it.m && e.key === "ArrowRight")) return;
+      if (isOpen(g) !== (e.key === "ArrowRight")) toggle(g);
+      if (it.m) setSel(flat.findIndex((x) => x.fam === g));
     }
     requestAnimationFrame(() => listRef.current?.querySelector("li.sel")?.scrollIntoView({ block: "nearest" }));
   };
@@ -95,6 +126,16 @@ export function ModelPicker({ anchor, models, error, current, onPick, onClose, r
       <span class="check"><${Icon} name="check" size=${14} /></span>
     </li>`;
   };
+  const head = (g, ms) => {
+    idx++;
+    const i = idx;
+    const open = isOpen(g);
+    const cur = open ? undefined : ms.find(([m]) => sameModel(m, current));
+    return html`<li class=${`fam ${sel === i ? "sel" : ""}`} aria-expanded=${open} onPointerMove=${() => setSel(i)} onClick=${() => toggle(g)}>
+      <${FamilyHead} name=${g} count=${ms.length} current=${cur?.[1]} />
+    </li>`;
+  };
+  const rows = (ms) => ms.map(([m, label]) => item({ m }, label, modelNote(info, m)));
   return html`<${Popover} anchor=${anchor} onClose=${onClose} class="model-picker" width=${340} maxHeight=${420} prefer=${prefer} align=${align} label="选择模型">
     <div class="search"><${Icon} name="search" size=${14} />
       <input placeholder="筛选，或输入任意模型 ID" value=${q} onInput=${(e) => { setQ(e.target.value); setSel(0); }} onKeyDown=${onKey} aria-label="筛选模型" />
@@ -104,7 +145,9 @@ export function ModelPicker({ anchor, models, error, current, onPick, onClose, r
       ${error && html`<li class="explained" style="pointer-events:auto"><span class="v" style="white-space:normal;color:var(--red)">获取模型列表失败：${error}</span>
         ${onRetry && html`<button type="button" class="text" onClick=${onRetry}>重试</button>`}</li>`}
       ${reset && !q && item({ reset: true }, reset.label, reset.note)}
-      ${groups.map(([g, ms]) => html`${g && html`<li class="group">${g}</li>`}${ms.map(([m, label]) => item({ m }, label, modelNote(info, m)))}`)}
+      ${groups.map(([g, ms]) =>
+        folding ? html`${head(g, ms)}${isOpen(g) && rows(ms)}` : html`${groups.length > 1 && html`<li class="group">${g}</li>`}${rows(ms)}`,
+      )}
       ${custom && item({ m: custom, custom: true }, `使用「${custom}」`, "自定义模型 ID")}
       ${models && !models.length && !q && html`<li class="explained"><span class="v" style="white-space:normal">没有可用模型：这个 Key 所在的分组还没有开放模型</span></li>`}
     </ul>

@@ -9,17 +9,18 @@
  */
 import type { ApprovalRow, Store } from "../store/db.js";
 import { questionsOf, type QuestionItem } from "../agent/approvals.js";
+import type { AttentionItem as DeliveryItem } from "../core/delivery.js";
 import { logger } from "../log.js";
 
 const log = logger("attention");
 
 /** question / approval：在等你回答、批准；failed：任务失败了；delivery：结果没送到；login：渠道登录过期了 */
 export type AttentionKind = "question" | "approval" | "failed" | "delivery" | "login";
-/** answer、approve、deny、retry、stop、seen（知道了）、relogin（去重新扫码）、open（打开对话） */
-export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "seen" | "relogin" | "open";
+/** answer、approve、deny、retry（任务再试 / 消息再发）、stop、dismiss（不再提示）、relogin（去重新扫码）、open（打开对话） */
+export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open";
 
 export interface AttentionItem {
-  /** 稳定 id：approval:<id>、task:<id>、login:<bot>:<渠道> */
+  /** 稳定 id：approval:<id>、task:<id>、delivery:<会话>:held|failed、login:<bot>:<渠道> */
   id: string;
   kind: AttentionKind;
   botId: string;
@@ -194,6 +195,28 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       ...(r.kind === "question" ? { questions: qs } : {}),
     };
   });
+}
+
+/**
+ * 出站队列那一份（core/delivery.ts）：没送到的结果，一个会话一行。「1 条结果未送达微信 · 在微信里发条消息就能收到」，
+ * 第二行是没送到的那几句（在这里就能看到）；一直失败的可以重试、放弃了的可以不再提示
+ */
+export function deliveryItem(d: DeliveryItem, botName: string): AttentionItem {
+  const text = d.messages.map((m) => m.text.replace(/\s+/g, " ").trim()).filter(Boolean).join(" / ");
+  return {
+    id: d.id,
+    kind: "delivery",
+    botId: d.botId,
+    botName,
+    subject: d.title,
+    status: d.line,
+    line: text.length > 300 ? text.slice(0, 299) + "…" : text,
+    since: d.since,
+    severity: d.severity === "error" ? "err" : "warn",
+    actions: d.actions,
+    conversationId: d.conversationId,
+    channel: d.channel,
+  };
 }
 
 /** 列表变没变：id + 状态 + 第二行 */

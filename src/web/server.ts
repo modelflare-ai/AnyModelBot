@@ -451,9 +451,9 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         ok = Array.isArray(b.answers)
           ? app.agent.approvals.answer(item.approvalId!, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
           : app.agent.approvals.answerText(item.approvalId!, String(b.text ?? ""), "web");
-      } else if (action === "retry") ok = !(await app.tasks.retry(item.taskId!)).error;
+      } else if (item.kind === "delivery" && (action === "retry" || action === "dismiss")) ok = app.delivery.act(item.id, action);
+      else if (action === "retry") ok = !(await app.tasks.retry(item.taskId!)).error;
       else if (action === "stop") ok = await app.tasks.stopTask(item.taskId!, "web");
-      else if (action === "seen") ok = app.tasks.seenDelivery(item.taskId!);
       if (!ok) throw new HttpError(409, "没能完成，可能已经处理过了");
       app.attention.kick();
       return send(res, 200, { ok: true, items: app.attention.list() });
@@ -657,6 +657,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           ...(b.avatar !== undefined ? { avatar: b.avatar } : {}),
           ...(b.computerUse !== undefined ? { computerUse: { ...cur.computerUse, ...b.computerUse } } : {}),
           ...(b.media !== undefined ? { media: { ...cur.media, ...b.media } } : {}),
+          ...(b.quietHours !== undefined ? { quietHours: { ...cur.quietHours, ...b.quietHours } } : {}),
+          ...(b.nudge !== undefined ? { nudge: b.nudge } : {}),
           memory: { ...cur.memory, ...(b.memory ?? {}) },
           steward: { ...cur.steward, ...(b.steward ?? {}) },
         });

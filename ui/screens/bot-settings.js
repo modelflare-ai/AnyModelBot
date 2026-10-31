@@ -10,6 +10,12 @@ import { PERMS, FULL_WARNING, confirmPermission } from "../lib/perms.js";
 import { CHANNEL_NAME, SOURCE_LABEL } from "../lib/access.js";
 import { fmtAgo } from "../lib/format.js";
 
+/** 免打扰的起止：整点 */
+const HOURS = Array.from({ length: 24 }, (_, h) => {
+  const v = `${String(h).padStart(2, "0")}:00`;
+  return [v, v];
+});
+
 function Row({ id, name, sub, title, children, off }) {
   return html`<div class=${`row${off ? " off" : ""}`} id=${`bot-${id}`} title=${title}>
     <div class="who"><div class="name">${name}</div>${sub && html`<div class="sub">${sub}</div>`}</div>
@@ -270,6 +276,21 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
           <${Row} id="steward" name="自动压缩或开新段" sub="上下文变长时整理，并留下交接便条">
             <${Switch} label="上下文管家" value=${s.steward.enabled} onChange=${(v) => put({ steward: { enabled: v } })} />
           <//>
+        </div>
+
+        <div class="list-head">主动消息</div>
+        <div class="list">
+          <${Row} id="quiet" name="免打扰" sub="后台结果留到结束后再发">
+            ${s.quietHours.enabled && html`<${MenuButton} label="免打扰开始" value=${s.quietHours.from} width=${120} options=${HOURS}
+                onChange=${(v) => put({ quietHours: { from: v } })} />
+              <span class="range-dash">–</span>
+              <${MenuButton} label="免打扰结束" value=${s.quietHours.to} width=${120} options=${HOURS}
+                onChange=${(v) => put({ quietHours: { to: v } })} />`}
+            <${Switch} label="免打扰" value=${s.quietHours.enabled} onChange=${(v) => put({ quietHours: { enabled: v } })} />
+          <//>
+          ${bot.weixinEnabled && html`<${Row} id="nudge" name="微信续期提醒" sub="还有消息要发时，24 小时到期前请你回一句">
+            <${Switch} label="微信续期提醒" value=${s.nudge} onChange=${(v) => put({ nudge: v })} />
+          <//>`}
         </div>
 
         <div class="list-head">电脑操作</div>

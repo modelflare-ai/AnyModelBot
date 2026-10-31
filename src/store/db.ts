@@ -126,8 +126,16 @@ export interface AccessEntry {
   notifiedAt: number;
 }
 
-/** pending 等着发；held 等对方先发消息（微信）；sent 发出去了；merged 合进别的一条发出去了；gone 再也发不出去 */
-export type OutboxStatus = "pending" | "held" | "sent" | "merged" | "gone";
+/**
+ * pending 等着发；scheduled 主动消息排到某个时间再发（免打扰、每天上限、合并）；held 等对方先发消息（微信）；
+ * sent 发出去了；merged 合进别的一条发出去了；gone 再也发不出去
+ */
+export type OutboxStatus = "pending" | "scheduled" | "held" | "sent" | "merged" | "gone";
+/**
+ * 主动推送的用途（设计文档第 6 节）：任务结果、任务失败、规则命中、固定提醒、问题（3b）、微信续期提醒；
+ * 空 = 对话里的回复、提示和系统通知（从不推迟）
+ */
+export type OutboxPurpose = "" | "result" | "failure" | "rule" | "reminder" | "question" | "nudge";
 /** 出站消息的内容：文本（最终回复、提示、通知）、文件、带按钮的卡片（飞书审批） */
 export interface OutboxBody {
   text?: string;
@@ -144,6 +152,10 @@ export interface OutboxBody {
   shown?: boolean;
   /** 已经是合成的「你不在时：…」（再被留着时不再加前缀） */
   away?: boolean;
+  /** 几条主动消息合成的摘要 */
+  digest?: boolean;
+  /** 不受免打扰和每天上限限制（任务或规则要求马上告诉用户） */
+  anytime?: boolean;
 }
 export type OutboxKind = "text" | "file" | "card" | "notice";
 /** 持久化的出站消息（见 core/outbox.ts） */
@@ -170,6 +182,18 @@ export interface OutboxRow {
   updatedAt: number;
   expiresAt: number;
   sentAt: number;
+  /** 主动推送的用途；空 = 回复 */
+  purpose: OutboxPurpose;
+  /** 推的是什么（任务标题、规则名）：摘要、续期提醒和「需要你」里用 */
+  subject: string;
+  /** 来自哪里：task:<id>、rule:<id> */
+  ref: string;
+  /** 排着 / 留着的原因：quiet_hours、daily_cap、coalesce、window_closed、quota、no_token；对方发消息时放出来的是 inbound */
+  reason: string;
+  /** merged：合进了哪一条 */
+  mergedInto: string;
+  /** 发不出去的，在「需要你」里被处理掉的时间 */
+  seenAt: number;
 }
 
 /**
@@ -210,6 +234,8 @@ export interface TaskRow {
   /** done | stopped | archived */
   endReason: string;
   stoppedBy: string;
+  /** 结果不受免打扰和每天上限限制（用户说了做完马上告诉他） */
+  anytime: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -365,6 +391,7 @@ CREATE TABLE IF NOT EXISTS outbox (
   sent_at INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS outbox_status ON outbox(status, seq);
 CREATE INDEX IF NOT EXISTS outbox_bot ON outbox(bot_id, status);
+CREATE INDEX IF NOT EXISTS outbox_conv ON outbox(conversation_id, status);
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
   origin_message_id INTEGER NOT NULL DEFAULT 0, origin_ref TEXT NOT NULL DEFAULT '',
@@ -398,6 +425,15 @@ const COLUMNS: Array<[string, string, string]> = [
   ["conversations", "kind", "TEXT NOT NULL DEFAULT 'dm'"],
   // 代理回合的活动记录（JSON 数组，见 agent/activity.ts）；只在助手消息上
   ["messages", "activity", "TEXT NOT NULL DEFAULT ''"],
+  // 主动消息的送达规则（core/delivery.ts）
+  ["outbox", "purpose", "TEXT NOT NULL DEFAULT ''"],
+  ["outbox", "subject", "TEXT NOT NULL DEFAULT ''"],
+  ["outbox", "ref", "TEXT NOT NULL DEFAULT ''"],
+  ["outbox", "reason", "TEXT NOT NULL DEFAULT ''"],
+  ["outbox", "merged_into", "TEXT NOT NULL DEFAULT ''"],
+  ["outbox", "seen_at", "INTEGER NOT NULL DEFAULT 0"],
+  // 任务的结果不受免打扰限制（用户说了做完马上告诉他）
+  ["tasks", "anytime", "INTEGER NOT NULL DEFAULT 0"],
   // 后台任务的提问与审批（3b）：属于哪个任务、哪个 run；blocking = 有 DSH 调用在等它
   ["approvals", "task_id", "TEXT NOT NULL DEFAULT ''"],
   ["approvals", "run_id", "TEXT NOT NULL DEFAULT ''"],
@@ -603,6 +639,11 @@ export class Store {
       .run(conversationId, role, content, now, activity?.length ? JSON.stringify(activity) : "");
     this.db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, conversationId);
     return Number(res.lastInsertRowid);
+  }
+  /** 这个会话里用户最近一次发消息的时间（没有返回 0） */
+  lastUserMessageAt(conversationId: string): number {
+    const r = this.db.prepare("SELECT MAX(created_at) AS at FROM messages WHERE conversation_id = ? AND role = 'user'").get(conversationId) as Row;
+    return Number(r?.at ?? 0) || 0;
   }
   listMessages(conversationId: string, limit = 500): Message[] {
     const rows = this.db
@@ -914,16 +955,28 @@ export class Store {
       updatedAt: Number(r.updated_at),
       expiresAt: Number(r.expires_at),
       sentAt: Number(r.sent_at),
+      purpose: String(r.purpose ?? "") as OutboxPurpose,
+      subject: String(r.subject ?? ""),
+      ref: String(r.ref ?? ""),
+      reason: String(r.reason ?? ""),
+      mergedInto: String(r.merged_into ?? ""),
+      seenAt: Number(r.seen_at ?? 0),
     };
   }
   /** 同一 id 只写一次；返回是否是新写入的 */
-  insertOutbox(o: Pick<OutboxRow, "id" | "botId" | "channel" | "conversationId" | "peerId" | "kind" | "body" | "replyTo" | "due" | "createdAt" | "expiresAt">): boolean {
+  insertOutbox(
+    o: Pick<OutboxRow, "id" | "botId" | "channel" | "conversationId" | "peerId" | "kind" | "body" | "replyTo" | "due" | "createdAt" | "expiresAt"> &
+      Partial<Pick<OutboxRow, "status" | "purpose" | "subject" | "ref" | "reason">>,
+  ): boolean {
     const res = this.db
       .prepare(
-        `INSERT OR IGNORE INTO outbox(id, seq, bot_id, channel, conversation_id, peer_id, kind, body, reply_to, due, created_at, updated_at, expires_at)
-         VALUES(?, (SELECT IFNULL(MAX(seq), 0) + 1 FROM outbox), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO outbox(id, seq, bot_id, channel, conversation_id, peer_id, kind, body, reply_to, due, created_at, updated_at, expires_at, status, purpose, subject, ref, reason)
+         VALUES(?, (SELECT IFNULL(MAX(seq), 0) + 1 FROM outbox), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(o.id, o.botId, o.channel, o.conversationId, o.peerId, o.kind, JSON.stringify(o.body), o.replyTo, o.due, o.createdAt, o.createdAt, o.expiresAt);
+      .run(
+        o.id, o.botId, o.channel, o.conversationId, o.peerId, o.kind, JSON.stringify(o.body), o.replyTo, o.due, o.createdAt, o.createdAt, o.expiresAt,
+        o.status ?? "pending", o.purpose ?? "", o.subject ?? "", o.ref ?? "", o.reason ?? "",
+      );
     return Number(res.changes) > 0;
   }
   getOutbox(id: string): OutboxRow | undefined {
@@ -934,8 +987,15 @@ export class Store {
   pendingOutbox(limit = 1000): OutboxRow[] {
     return (this.db.prepare("SELECT * FROM outbox WHERE status = 'pending' ORDER BY seq LIMIT ?").all(limit) as Row[]).map((r) => this.toOutbox(r));
   }
-  updateOutbox(id: string, patch: Partial<Pick<OutboxRow, "status" | "attempts" | "progress" | "due" | "error" | "sentAt" | "expiresAt" | "body">>, now = Date.now()): void {
-    const cols: Record<string, string> = { status: "status", attempts: "attempts", progress: "progress", due: "due", error: "error", sentAt: "sent_at", expiresAt: "expires_at", body: "body" };
+  updateOutbox(
+    id: string,
+    patch: Partial<Pick<OutboxRow, "status" | "attempts" | "progress" | "due" | "error" | "sentAt" | "expiresAt" | "body" | "kind" | "replyTo" | "reason" | "mergedInto" | "seenAt">>,
+    now = Date.now(),
+  ): void {
+    const cols: Record<string, string> = {
+      status: "status", attempts: "attempts", progress: "progress", due: "due", error: "error", sentAt: "sent_at", expiresAt: "expires_at", body: "body",
+      kind: "kind", replyTo: "reply_to", reason: "reason", mergedInto: "merged_into", seenAt: "seen_at",
+    };
     const keys = (Object.keys(patch) as Array<keyof typeof patch>).filter((k) => k in cols);
     if (!keys.length) return;
     const vals = keys.map((k) => (k === "body" ? JSON.stringify(patch.body) : (patch[k] as string | number)));
@@ -958,6 +1018,67 @@ export class Store {
   /** 留着等这个会话的对方发消息的，按写入顺序 */
   heldOutbox(conversationId: string): OutboxRow[] {
     return (this.db.prepare("SELECT * FROM outbox WHERE conversation_id = ? AND status = 'held' ORDER BY seq").all(conversationId) as Row[]).map((r) => this.toOutbox(r));
+  }
+  /** 这个会话还没发出去、在等的：留着的（等对方发消息）和排着的（主动消息等时间），按写入顺序 */
+  waitingOutbox(conversationId: string): OutboxRow[] {
+    return (this.db.prepare("SELECT * FROM outbox WHERE conversation_id = ? AND status IN ('held', 'scheduled') ORDER BY seq").all(conversationId) as Row[]).map((r) => this.toOutbox(r));
+  }
+  /** 排着的主动消息里到时间了的，按写入顺序 */
+  dueScheduledOutbox(now: number): OutboxRow[] {
+    return (this.db.prepare("SELECT * FROM outbox WHERE status = 'scheduled' AND due <= ? ORDER BY seq").all(now) as Row[]).map((r) => this.toOutbox(r));
+  }
+  /** 排着的主动消息里最早的时间（没有返回 0） */
+  nextScheduledDue(): number {
+    const r = this.db.prepare("SELECT MIN(due) AS due FROM outbox WHERE status = 'scheduled'").get() as Row;
+    return Number(r?.due ?? 0) || 0;
+  }
+  /** 这个会话排着的主动消息（不含文件），按时间 */
+  scheduledPushes(conversationId: string): OutboxRow[] {
+    return (this.db.prepare("SELECT * FROM outbox WHERE conversation_id = ? AND status = 'scheduled' AND kind != 'file' AND purpose NOT IN ('', 'nudge') ORDER BY due, seq").all(conversationId) as Row[]).map((r) =>
+      this.toOutbox(r),
+    );
+  }
+  /**
+   * 这个会话在 [since, until) 里推送出去（或正要推送、留着）的主动消息条数：一条摘要算一条，文件、续期提醒、
+   * 对方发消息时一起放出来的不算（每天上限）
+   */
+  countPushes(conversationId: string, since: number, until: number): number {
+    const r = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM outbox WHERE conversation_id = ? AND status IN ('pending', 'sent', 'held') AND kind != 'file'
+         AND purpose NOT IN ('', 'nudge') AND reason != 'inbound' AND due >= ? AND due < ?`,
+      )
+      .get(conversationId, since, until) as Row;
+    return Number(r.n);
+  }
+  /** 这个会话最近一次推送主动消息的时间（合并窗口；没有返回 0） */
+  lastPushAt(conversationId: string): number {
+    const r = this.db
+      .prepare("SELECT MAX(due) AS due FROM outbox WHERE conversation_id = ? AND status IN ('pending', 'sent', 'held') AND kind != 'file' AND purpose NOT IN ('', 'nudge')")
+      .get(conversationId) as Row;
+    return Number(r?.due ?? 0) || 0;
+  }
+  /** 这个会话最近发出去的一条 */
+  lastSentOutbox(conversationId: string): OutboxRow | undefined {
+    const r = this.db.prepare("SELECT * FROM outbox WHERE conversation_id = ? AND status = 'sent' ORDER BY seq DESC LIMIT 1").get(conversationId) as Row | undefined;
+    return r ? this.toOutbox(r) : undefined;
+  }
+  /** 合进这一条的那几条 */
+  mergedOutbox(id: string): OutboxRow[] {
+    return (this.db.prepare("SELECT * FROM outbox WHERE merged_into = ? ORDER BY seq").all(id) as Row[]).map((r) => this.toOutbox(r));
+  }
+  /** 一条消息实际的去向：合进别的一条的，看那一条 */
+  carrierOutbox(id: string): OutboxRow | undefined {
+    let row = this.getOutbox(id);
+    for (let i = 0; row && row.status === "merged" && row.mergedInto && i < 8; i++) row = this.getOutbox(row.mergedInto);
+    return row;
+  }
+  /** 没送到、要人管的：留着的、一直失败的（试了 minAttempts 次还在试）、放弃了还没处理掉的（since 之后） */
+  undeliveredOutbox(o: { botId?: string; minAttempts: number; since: number }): OutboxRow[] {
+    const where = ["(status = 'held' OR (status = 'pending' AND attempts >= ?) OR (status = 'gone' AND seen_at = 0 AND updated_at >= ?))", "purpose != 'nudge'"];
+    const args: Array<string | number> = [o.minAttempts, o.since];
+    if (o.botId) (where.push("bot_id = ?"), args.push(o.botId));
+    return (this.db.prepare(`SELECT * FROM outbox WHERE ${where.join(" AND ")} ORDER BY seq`).all(...args) as Row[]).map((r) => this.toOutbox(r));
   }
   /** 启动时：等着退避重试的马上再试一次 */
   resumeOutbox(now = Date.now()): number {
@@ -988,17 +1109,18 @@ export class Store {
       endedAt: Number(r.ended_at),
       endReason: String(r.end_reason),
       stoppedBy: String(r.stopped_by),
+      anytime: Number(r.anytime ?? 0) === 1,
       createdAt: Number(r.created_at),
       updatedAt: Number(r.updated_at),
     };
   }
-  insertTask(t: Omit<TaskRow, "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy">): TaskRow {
+  insertTask(t: Omit<TaskRow, "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy" | "anytime"> & { anytime?: boolean }): TaskRow {
     this.db
       .prepare(
-        `INSERT INTO tasks(id, bot_id, conversation_id, origin_message_id, origin_ref, title, brief, session_id, folder, model, permission, budget_usd, created_at, updated_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks(id, bot_id, conversation_id, origin_message_id, origin_ref, title, brief, session_id, folder, model, permission, budget_usd, anytime, created_at, updated_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(t.id, t.botId, t.conversationId, t.originMessageId, t.originRef, t.title, t.brief, t.sessionId, t.folder, t.model, t.permission, t.budgetUsd, t.createdAt, t.updatedAt);
+      .run(t.id, t.botId, t.conversationId, t.originMessageId, t.originRef, t.title, t.brief, t.sessionId, t.folder, t.model, t.permission, t.budgetUsd, t.anytime ? 1 : 0, t.createdAt, t.updatedAt);
     return this.getTask(t.id)!;
   }
   getTask(id: string): TaskRow | undefined {

@@ -5,6 +5,8 @@
  * - 临时失败按退避重试（5 秒起，翻倍到 5 分钟），渠道没在运行时等它上线；
  * - 要等对方先发消息才能发的（微信：超过 24 小时没说话、本轮配额用完）留着（held），对方下次发消息时按原来的顺序先发出去，
  *   能合并的合成一条「你不在时：…」，排在这次的回复前面；
+ * - 主动消息（任务结果等，规则见 delivery.ts）可以排到某个时间再发（scheduled：免打扰、每天上限、合并），不挡同一会话里的回复；
+ *   到时间时同一会话一起到期的交给 planner 合成一条摘要；对方先发了消息就和留着的一起先发；
  * - 再也发不出去了（平台多次拒绝、等待太久）标记 gone 并记下原因，只记在日志和诊断信息里；
  * - 应用重启后接着发。流式的中间内容和"正在输入"不经过这里。
  *
@@ -12,7 +14,7 @@
  * src/app/effects.ts 的持久化副作用队列（按会话排队、Later 不计失败、指数退避、关机时留到下次启动），见 THIRD_PARTY_NOTICES.md。
  */
 import crypto from "node:crypto";
-import type { OutboxBody, OutboxKind, OutboxRow, Store } from "../store/db.js";
+import type { OutboxBody, OutboxKind, OutboxPurpose, OutboxRow, Store } from "../store/db.js";
 import { logger } from "../log.js";
 
 const log = logger("outbox");
@@ -21,8 +23,18 @@ const log = logger("outbox");
 export class Later extends Error {}
 /** 再也发不出去了：标记 gone，message 是原因（日志、诊断信息） */
 export class Gone extends Error {}
-/** 要等对方先发消息才能发（微信 24 小时窗口已过、本轮配额用完）：留着，对方下次发消息时再发（见 release） */
-export class Held extends Error {}
+/** 要等对方先发消息才能发（微信 24 小时窗口已过、本轮配额用完）：留着，对方下次发消息时再发（见 release）；code 是原因 */
+export class Held extends Error {
+  constructor(
+    message: string,
+    readonly code: "window_closed" | "quota" | "no_token" = "window_closed",
+  ) {
+    super(message);
+  }
+}
+
+/** 定时器最长睡多久：电脑睡眠时定时器不走，醒来后最多这么久就会重新看一遍 */
+const MAX_SLEEP_MS = 5 * 60_000;
 
 /** 普通消息最长等多久（微信的会话凭证 24 小时有效，飞书也不该再补发一天前的回复） */
 export const OUTBOX_TTL_MS = 24 * 3600_000;
@@ -41,14 +53,32 @@ export interface OutboxInput {
   body: OutboxBody;
   /** 飞书：回复的消息 id */
   replyTo?: string;
-  /** 多久之后不再发（默认 24 小时；ack、审批提示更短） */
+  /** 多久之后不再发（默认 24 小时；ack、审批提示更短）；排着的从到期时算起 */
   ttlMs?: number;
+  /** 主动推送的用途（见 delivery.ts）；不给 = 对话里的回复 */
+  purpose?: OutboxPurpose;
+  subject?: string;
+  ref?: string;
+  /** 什么时候发：晚于现在就先排着（scheduled），不挡同一会话里的回复 */
+  due?: number;
+  /** 排着的原因 */
+  reason?: string;
 }
 
-/** 对方发消息后一起发的一组留着的消息：body 给了就合成这一条发，否则这组只有一条、照原样发 */
+/**
+ * 一起发的一组消息：body 给了就合成这一条发（kind、replyTo 给了也换掉，比如飞书的摘要改成直接发到会话），
+ * 否则这组只有一条、照原样发
+ */
 export interface HeldGroup {
   rows: OutboxRow[];
   body?: OutboxBody;
+  kind?: OutboxKind;
+  replyTo?: string;
+}
+
+/** 排着的消息到时间了（同一会话的一批）：返回 later 就再排到那时，否则返回怎么合成 */
+export interface OutboxPlanner {
+  promote(rows: OutboxRow[], now: number): { later: number; reason: string } | HeldGroup[];
 }
 
 /** 渠道的发送函数：成功返回；Later / Gone / 其他错误（临时失败，会重试）。progress 记下长文本已发出的分段数 */
@@ -81,11 +111,38 @@ export class Outbox {
   private scheduled = false;
   private started = false;
   private stopped = false;
+  private listeners = new Set<(row: OutboxRow) => void>();
+  /** 排着的消息到时间时怎么办（delivery.ts 设）；没有就一条一条照原样发 */
+  planner: OutboxPlanner | undefined;
 
   constructor(
     private store: Store,
     private opts: { now?: () => number; retry?: readonly [number, number] } = {},
   ) {}
+
+  /** 消息的状态变了（发出去、留着、放弃、排着的放出来）：「需要你」据此刷新 */
+  onChange(fn: (row: OutboxRow) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private changed(id: string): void {
+    if (!this.listeners.size) return;
+    const row = this.store.getOutbox(id);
+    if (!row) return;
+    for (const fn of this.listeners) {
+      try {
+        fn(row);
+      } catch (e) {
+        log.warn("outbox listener failed", { message: (e as Error).message });
+      }
+    }
+  }
+
+  /** 时间可能跳了（电脑睡醒、改了时钟）：马上再看一遍 */
+  wake(): void {
+    this.kick();
+  }
 
   private now(): number {
     return (this.opts.now ?? Date.now)();
@@ -108,7 +165,9 @@ export class Outbox {
   async send(input: OutboxInput): Promise<OutboxRow | undefined> {
     const now = this.now();
     const conversationId = `${input.botId}:${input.channel}:${input.peerId}`;
-    this.store.insertOutbox({
+    const due = Math.max(now, input.due ?? now);
+    const later = due > now;
+    const fresh = this.store.insertOutbox({
       id: input.id,
       botId: input.botId,
       channel: input.channel,
@@ -117,10 +176,20 @@ export class Outbox {
       kind: input.kind,
       body: input.body,
       replyTo: input.replyTo ?? "",
-      due: now,
+      due,
       createdAt: now,
-      expiresAt: now + (input.ttlMs ?? OUTBOX_TTL_MS),
+      expiresAt: due + (input.ttlMs ?? OUTBOX_TTL_MS),
+      status: later ? "scheduled" : "pending",
+      purpose: input.purpose ?? "",
+      subject: input.subject ?? "",
+      ref: input.ref ?? "",
+      reason: later ? (input.reason ?? "") : "",
     });
+    if (later) {
+      if (fresh) this.changed(input.id);
+      this.kick();
+      return this.store.getOutbox(input.id);
+    }
     this.pump();
     const f = this.inflight.get(conversationId);
     if (f?.id === input.id) await f.done;
@@ -132,7 +201,7 @@ export class Outbox {
     this.started = true;
     this.stopped = false;
     try {
-      for (const r of this.store.listOutbox({ status: "held", limit: 500 })) if (r.expiresAt <= this.now()) this.gone(r, "等待太久，已不再发送");
+      for (const st of ["held", "scheduled"] as const) for (const r of this.store.listOutbox({ status: st, limit: 500 })) if (r.expiresAt <= this.now()) this.gone(r, "等待太久，已不再发送");
       this.store.pruneOutbox(this.now());
       // 重启了：等着退避的不用再等，马上试一次
       this.store.resumeOutbox(this.now());
@@ -167,22 +236,69 @@ export class Outbox {
   }
 
   /**
-   * 对方又发消息了：留着给他的消息放回队列，按原来的顺序排在这次回复的前面。
+   * 对方又发消息了：留着给他的消息和排着的主动消息放回队列，按原来的顺序排在这次回复的前面。
    * combine 决定哪几条合成一条发（每组第一条换成合并后的内容，其余标记 merged）；不给就一条一条发。过期的不再发。
    */
   release(botId: string, channel: string, peerId: string, combine?: (rows: OutboxRow[]) => HeldGroup[]): number {
-    const held = this.store.heldOutbox(`${botId}:${channel}:${peerId}`);
-    if (!held.length) return 0;
+    const conv = `${botId}:${channel}:${peerId}`;
+    // 还没发出去的续期提醒：对方已经发消息了，不用再提醒
+    for (const r of this.store.pendingOutbox().filter((x) => x.conversationId === conv && x.purpose === "nudge")) if (!this.inflight.has(conv)) this.gone(r, "对方已经发消息了");
+    const waiting = this.store.waitingOutbox(conv);
+    if (!waiting.length) return 0;
     const now = this.now();
-    const live = held.filter((r) => r.expiresAt > now || (this.gone(r, "等待太久，已不再发送"), false));
-    for (const g of combine ? combine(live) : live.map((r): HeldGroup => ({ rows: [r] }))) {
-      const [first, ...rest] = g.rows;
-      this.store.updateOutbox(first.id, { status: "pending", due: now, error: "", ...(g.body ? { body: g.body, progress: 0 } : {}) }, now);
-      for (const r of rest) this.store.updateOutbox(r.id, { status: "merged" }, now);
-    }
-    if (live.length) log.info(`releasing ${live.length} held message(s)`, { bot: botId, channel });
+    const live = waiting.filter((r) => r.expiresAt > now || (this.gone(r, "等待太久，已不再发送"), false));
+    this.apply(combine ? combine(live) : live.map((r): HeldGroup => ({ rows: [r] })), now, "inbound");
+    if (live.length) log.info(`releasing ${live.length} waiting message(s)`, { bot: botId, channel });
     this.kick();
     return live.length;
+  }
+
+  /** 每组第一条放回队列（换成合并后的内容），其余标记 merged；排着的从现在起重新算有效期 */
+  private apply(groups: HeldGroup[], now: number, reason: string): void {
+    for (const g of groups) {
+      const [first, ...rest] = g.rows;
+      if (!first) continue;
+      this.store.updateOutbox(
+        first.id,
+        {
+          status: "pending",
+          due: now,
+          error: "",
+          reason,
+          ...(first.status === "scheduled" ? { expiresAt: now + Math.max(OUTBOX_TTL_MS, first.expiresAt - first.due) } : {}),
+          ...(g.body ? { body: g.body, progress: 0 } : {}),
+          ...(g.kind ? { kind: g.kind } : {}),
+          ...(g.replyTo !== undefined ? { replyTo: g.replyTo } : {}),
+        },
+        now,
+      );
+      for (const r of rest) this.store.updateOutbox(r.id, { status: "merged", mergedInto: first.id, reason }, now);
+      this.changed(first.id);
+    }
+  }
+
+  /** 排着的主动消息到时间了：同一会话的一批交给 planner（再排到以后 / 合成一条），放回队列 */
+  private promote(now: number): void {
+    const due = this.store.dueScheduledOutbox(now);
+    if (!due.length) return;
+    const byConv = new Map<string, OutboxRow[]>();
+    for (const r of due) byConv.set(r.conversationId, [...(byConv.get(r.conversationId) ?? []), r]);
+    for (const rows of byConv.values()) {
+      const live = rows.filter((r) => r.expiresAt > now || (this.gone(r, "等待太久，已不再发送"), false));
+      if (!live.length) continue;
+      let plan: ReturnType<OutboxPlanner["promote"]> = live.map((r) => ({ rows: [r] }));
+      try {
+        if (this.planner) plan = this.planner.promote(live, now);
+      } catch (e) {
+        log.warn("outbox planner failed", { message: (e as Error).message });
+      }
+      if ("later" in plan) {
+        const at = Math.max(plan.later, now + 1000);
+        for (const r of live) this.store.updateOutbox(r.id, { due: at, reason: plan.reason, expiresAt: Math.max(r.expiresAt, at + OUTBOX_TTL_MS) }, now);
+        continue;
+      }
+      this.apply(plan, now, live[0].reason);
+    }
   }
 
   private kick(): void {
@@ -200,7 +316,8 @@ export class Outbox {
     clearTimeout(this.timer);
     this.timer = undefined;
     const now = this.now();
-    let next = Infinity;
+    this.promote(now);
+    let next = this.store.nextScheduledDue() || Infinity;
     const heads = new Set<string>();
     for (const row of this.store.pendingOutbox()) {
       if (heads.has(row.conversationId)) continue;
@@ -220,7 +337,7 @@ export class Outbox {
       this.attempt(row, deliver);
     }
     if (next < Infinity) {
-      this.timer = setTimeout(() => this.pump(), Math.max(20, next - now));
+      this.timer = setTimeout(() => this.pump(), Math.min(MAX_SLEEP_MS, Math.max(20, next - now)));
       this.timer.unref?.();
     }
   }
@@ -234,6 +351,7 @@ export class Outbox {
       } catch (e) {
         this.failed(row, e);
       }
+      this.changed(row.id);
     })().finally(() => {
       if (this.inflight.get(conv)?.done === done) this.inflight.delete(conv);
       this.kick();
@@ -245,7 +363,7 @@ export class Outbox {
     const msg = String((e as Error)?.message ?? e).slice(0, 300);
     const now = this.now();
     if (e instanceof Gone) return this.gone(row, msg);
-    if (e instanceof Held) return this.hold(row, msg);
+    if (e instanceof Held) return this.hold(row, msg, e.code);
     // 关机中：留到下次启动
     if (this.stopped) return;
     const [base, max] = this.opts.retry ?? [5000, 300_000];
@@ -261,15 +379,47 @@ export class Outbox {
     this.store.updateOutbox(row.id, { attempts, error: msg, due: now + delay }, now);
   }
 
-  /** 留着等对方发消息：不算失败；普通消息最多留 HOLD_TTL_MS，短命的（ack、审批提示）照旧按自己的期限 */
-  private hold(row: OutboxRow, reason: string): void {
-    const expiresAt = row.expiresAt - row.createdAt >= OUTBOX_TTL_MS ? Math.max(row.expiresAt, row.createdAt + HOLD_TTL_MS) : row.expiresAt;
-    this.store.updateOutbox(row.id, { status: "held", error: reason, expiresAt }, this.now());
+  /**
+   * 留着等对方发消息：不算失败；普通消息和主动消息从现在起最多留 HOLD_TTL_MS，短命的（ack、审批提示）照旧按自己的期限。
+   * 续期提醒发不出去就算了
+   */
+  private hold(row: OutboxRow, reason: string, code = ""): void {
+    if (row.purpose === "nudge") return this.gone(row, reason);
+    const long = row.purpose !== "" || row.expiresAt - row.createdAt >= OUTBOX_TTL_MS;
+    const expiresAt = long ? Math.max(row.expiresAt, (row.purpose ? this.now() : row.createdAt) + HOLD_TTL_MS) : row.expiresAt;
+    this.store.updateOutbox(row.id, { status: "held", error: reason, reason: code, expiresAt }, this.now());
     log.info("message held until the user writes again", { id: row.id, channel: row.channel, kind: row.kind, reason });
   }
 
   private gone(row: OutboxRow, reason: string): void {
     this.store.updateOutbox(row.id, { status: "gone", error: reason }, this.now());
     log.warn("message gone", { id: row.id, channel: row.channel, kind: row.kind, reason });
+    this.changed(row.id);
+  }
+
+  /**
+   * 不用再发了（任务的提问已经在别处回答了、任务停了）：还没发出去的（排着、留着、等着重试）标记 gone，记作看过（不算没送到）；
+   * 正在发的不管。返回撤回了没有
+   */
+  withdraw(id: string, reason: string): boolean {
+    const row = this.store.getOutbox(id);
+    if (!row || (row.status !== "pending" && row.status !== "scheduled" && row.status !== "held")) return false;
+    if (this.inflight.get(row.conversationId)?.id === id) return false;
+    const now = this.now();
+    this.store.updateOutbox(id, { status: "gone", error: reason, seenAt: now }, now);
+    log.info("message withdrawn", { id, channel: row.channel, reason });
+    this.changed(id);
+    return true;
+  }
+
+  /** 「需要你」里点了重试：放弃了的从现在起再试，一直失败的马上再试一次 */
+  retry(id: string): boolean {
+    const row = this.store.getOutbox(id);
+    if (!row || (row.status !== "gone" && row.status !== "pending")) return false;
+    const now = this.now();
+    this.store.updateOutbox(id, { status: "pending", due: now, attempts: 0, error: "", expiresAt: Math.max(row.expiresAt, now + OUTBOX_TTL_MS) }, now);
+    this.changed(id);
+    this.kick();
+    return true;
   }
 }

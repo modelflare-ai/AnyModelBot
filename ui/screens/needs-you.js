@@ -66,7 +66,8 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin }) {
         <${Button} loading=${busy === "deny"} disabled=${!!busy} onClick=${() => act("deny")}>拒绝<//>`}
       ${item.kind === "failed" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>重试<//>
         <button type="button" class="text danger" disabled=${!!busy} onClick=${() => act("stop")}>停止</button>`}
-      ${item.kind === "delivery" && html`<${Button} loading=${busy === "seen"} disabled=${!!busy} onClick=${() => act("seen")}>知道了<//>`}
+      ${item.kind === "delivery" && item.actions.includes("retry") && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>重试<//>`}
+      ${item.kind === "delivery" && item.actions.includes("dismiss") && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>不再提示</button>`}
       ${item.kind === "login" && html`<${Button} onClick=${() => onRelogin?.(item.botId)}>重新扫码<//>`}
     </div>
     ${writing && html`<div class="need-reply">

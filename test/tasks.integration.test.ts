@@ -90,6 +90,8 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     new App(loadConfig({ dataDir, env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: ilink.url, AMB_DEFAULT_MODEL: "mock-agent", AMB_AGENT_PREWARM: "0" } }), {
       printQrToTerminal: false,
       weixinPollTimeoutMs: 1000,
+      // 这里测任务本身：所有测试共用主人的一个会话，主动消息的每天上限和合并（3c，见 delivery 的测试）不拦
+      deliveryLimits: { dailyCap: { weixin: 1000 }, coalesceMs: 0 },
     });
 
   beforeAll(async () => {
@@ -118,7 +120,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-tasks-"));
     app = makeApp();
     // 主人已经扫码登录；渠道连到 mock iLink
-    app.store.createBot({ id: "default", name: "小蓝", weixinEnabled: true, settings: { avatar: "blue" } as any });
+    app.store.createBot({ id: "default", name: "小蓝", weixinEnabled: true, settings: { avatar: "blue", quietHours: { enabled: false, from: "22:00", to: "08:00" } } as any });
     app.store.saveWeixinAccount({ botId: "default", botToken: "tok", ilinkBotId: "bot@im.bot", baseUrl: ilink.url, ownerUserId: OWNER });
     await app.start();
     base = app.web!.url.replace(/\/+$/, "");

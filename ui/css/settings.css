@@ -38,6 +38,9 @@
 .mf-state { display: inline-flex; align-items: center; gap: var(--space-1-5); font-size: var(--fs-sm); color: var(--fg-2); }
 .balance { font-size: var(--fs-lg); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
 .balance.low { color: var(--red); }
+/* 免打扰的起止：两个整点选择 + 中间一条短横，开关和它们隔开一点 */
+.settings .row .range-dash { color: var(--muted); font-variant-numeric: tabular-nums; }
+.settings .row .ctl .pick ~ .switch { margin-left: var(--space-2); }
 .settings input.field.num-in { width: 96px; --field-h: var(--ctl-md); text-align: right; font-variant-numeric: tabular-nums; }
 
 /* 用量：近 N 天的日柱状图 + 模型排行 */

@@ -572,7 +572,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <${NeedsRow} count=${3} onClick=${() => {}} /><${NeedsRow} count=${2} on onClick=${() => {}} /><${NeedsRow} count=${0} />
           </div>`}
         <//>
-        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你批准 / 失败 / 登录过期">
+        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你批准 / 未送达 / 失败 / 登录过期">
           ${() => html`<div class="list needs-list">${NEEDS.map((it) => html`<${NeedItem} item=${it} multiBot onAct=${async () => {}} />`)}</div>`}
         <//>
       <//>
@@ -602,6 +602,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
 const NEEDS = [
   { id: "q", kind: "question", botName: "小蓝", subject: "GPU 价格调研", status: "等你回答", line: "报告用中文还是英文？", since: Date.now() - 2 * 60_000, severity: "warn", questions: [{ id: "a", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }] },
   { id: "a", kind: "approval", botName: "小蓝", subject: "清理旧构建", status: "等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
+  { id: "d", kind: "delivery", botName: "小蓝", subject: "1 条结果未送达微信", status: "在微信里发条消息就能收到", line: "季度报告做好了，在 tasks 文件夹里。", since: Date.now() - 20 * 60_000, severity: "warn", actions: [] },
   { id: "f", kind: "failed", botName: "红魔", subject: "季度报告", status: "失败", line: "X 云的价格页要登录，我进不去", since: Date.now() - 40 * 60_000, severity: "err" },
   { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
 ];

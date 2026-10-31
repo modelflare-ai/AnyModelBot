@@ -1,4 +1,5 @@
 /** 每个机器人的身份与行为设置（存在 bots.settings JSON 列，网页可编辑）。 */
+import { DEFAULT_QUIET, minuteOf, type QuietHours } from "../core/quiet.js";
 export type PermissionPreset = "readonly" | "workspace" | "full";
 export type CuBackend = "cua" | "codex";
 export type CuApproval = "auto" | "ask-input";
@@ -48,6 +49,10 @@ export interface BotSettings {
   budget: { enabled: boolean; limitUsd: number };
   /** 后台任务最多同时跑几个（聊天不占名额；见 tasks/slots.ts） */
   taskSlots: number;
+  /** 免打扰（主人的时区）：期间的后台结果、规则命中排到结束再发；聊天回复不受影响（core/delivery.ts） */
+  quietHours: QuietHours;
+  /** 微信续期提醒：24 小时窗口快关时，还有消息要发就请用户回一句 */
+  nudge: boolean;
 }
 
 export const DEFAULT_SETTINGS: BotSettings = {
@@ -60,6 +65,8 @@ export const DEFAULT_SETTINGS: BotSettings = {
   avatar: "",
   budget: { enabled: false, limitUsd: 5 },
   taskSlots: 2,
+  quietHours: { ...DEFAULT_QUIET },
+  nudge: true,
 };
 
 export function normalizeSettings(raw: unknown): BotSettings {
@@ -69,6 +76,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
   const cu = r.computerUse && typeof r.computerUse === "object" ? r.computerUse : {};
   const bg = r.budget && typeof r.budget === "object" ? r.budget : {};
   const md = r.media && typeof r.media === "object" ? r.media : {};
+  const qh = r.quietHours && typeof r.quietHours === "object" ? r.quietHours : {};
   const limit = Number(bg.limitUsd);
   const slots = Number(r.taskSlots);
   const b = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
@@ -95,6 +103,12 @@ export function normalizeSettings(raw: unknown): BotSettings {
       limitUsd: Number.isFinite(limit) && limit >= 0 && limit <= 100_000 ? Math.round(limit * 100) / 100 : DEFAULT_SETTINGS.budget.limitUsd,
     },
     taskSlots: Number.isInteger(slots) && slots >= 1 && slots <= 8 ? slots : DEFAULT_SETTINGS.taskSlots,
+    quietHours: {
+      enabled: b(qh.enabled, DEFAULT_QUIET.enabled),
+      from: typeof qh.from === "string" && minuteOf(qh.from) !== undefined ? qh.from : DEFAULT_QUIET.from,
+      to: typeof qh.to === "string" && minuteOf(qh.to) !== undefined ? qh.to : DEFAULT_QUIET.to,
+    },
+    nudge: b(r.nudge, DEFAULT_SETTINGS.nudge),
   };
 }
 

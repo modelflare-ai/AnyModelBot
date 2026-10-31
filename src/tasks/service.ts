@@ -103,6 +103,8 @@ export interface TaskHost {
   stop(botId: string, sessionId: string): Promise<void>;
   /** 会话空闲时还有没有后台命令、子代理在跑；有就由插件在它们结束、会话再次空闲时报 task-settled */
   quiet(botId: string, sessionId: string): Promise<{ quiet: boolean; jobs?: string[] }>;
+  /** 这个机器人的一个 run 结束了：代理进程完全空闲、开过的会话又多了，就换一个新的（host.ts restartIfStale） */
+  runEnded?(botId: string): void;
 }
 
 /** DSH 的一条通知（SDK 的 session.event / session.status / subagent.*） */
@@ -789,6 +791,7 @@ export class TaskService {
     log.info("background task run ended", { task: l.taskId, run: l.runId, outcome, ...(error ? { error } : {}) });
     this.changed(l.taskId);
     this.pump();
+    this.o.host.runEnded?.(l.botId);
   }
 
   private forget(l: Live): void {
@@ -1186,6 +1189,11 @@ export class TaskService {
     const l = this.live.get(runId);
     if (l) return l.activity.steps;
     return parseSteps(this.store.getRun(runId)?.activity);
+  }
+
+  /** 这个机器人有没有在跑、收尾中的 run（任务的或规则的）：有就不换代理进程 */
+  busy(botId: string): boolean {
+    return [...this.live.values()].some((l) => l.botId === botId) || this.store.listRuns({ botId, states: ["running", "settling"], limit: 1 }).length > 0;
   }
 
   /** 每个机器人正在进行的任务数（侧栏"正在工作"） */
@@ -1636,6 +1644,7 @@ export class TaskService {
     log.info("rule run ended", { rule: l.ruleId, run: l.runId, mode: l.mode, outcome, ...(error ? { error } : {}) });
     this.changed(l.ruleId);
     this.pump();
+    this.o.host.runEnded?.(l.botId);
   }
 
   /**

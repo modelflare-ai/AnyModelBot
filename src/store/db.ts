@@ -84,8 +84,14 @@ export interface ApprovalRow {
   result: string;
   decidedBy: string;
   createdAt: number;
+  /** 0 = 不过期（后台任务的提问，等多久都行） */
   expiresAt: number;
   decidedAt: number;
+  /** 后台任务的（任务会话或它的子代理里来的，或任务报的 needs_you 提问）；聊天里的是空 */
+  taskId: string;
+  runId: string;
+  /** true：有一次 DSH 调用在等它（审批、聊天里的提问）；false：任务的提问，回答作为任务的新输入 */
+  blocking: boolean;
 }
 
 /**
@@ -392,6 +398,10 @@ const COLUMNS: Array<[string, string, string]> = [
   ["conversations", "kind", "TEXT NOT NULL DEFAULT 'dm'"],
   // 代理回合的活动记录（JSON 数组，见 agent/activity.ts）；只在助手消息上
   ["messages", "activity", "TEXT NOT NULL DEFAULT ''"],
+  // 后台任务的提问与审批（3b）：属于哪个任务、哪个 run；blocking = 有 DSH 调用在等它
+  ["approvals", "task_id", "TEXT NOT NULL DEFAULT ''"],
+  ["approvals", "run_id", "TEXT NOT NULL DEFAULT ''"],
+  ["approvals", "blocking", "INTEGER NOT NULL DEFAULT 1"],
 ];
 
 export class Store {
@@ -762,15 +772,18 @@ export class Store {
       createdAt: Number(r.created_at),
       expiresAt: Number(r.expires_at),
       decidedAt: Number(r.decided_at),
+      taskId: String(r.task_id ?? ""),
+      runId: String(r.run_id ?? ""),
+      blocking: Number(r.blocking ?? 1) !== 0,
     };
   }
-  insertApproval(a: Omit<ApprovalRow, "status" | "result" | "decidedBy" | "decidedAt">): ApprovalRow {
+  insertApproval(a: Omit<ApprovalRow, "status" | "result" | "decidedBy" | "decidedAt" | "taskId" | "runId" | "blocking"> & Partial<Pick<ApprovalRow, "taskId" | "runId" | "blocking">>): ApprovalRow {
     this.db
       .prepare(
-        `INSERT INTO approvals(id, code, kind, bot_id, conversation_id, session_id, tool, detail, reason, payload, status, created_at, expires_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+        `INSERT INTO approvals(id, code, kind, bot_id, conversation_id, session_id, tool, detail, reason, payload, status, created_at, expires_at, task_id, run_id, blocking)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
       )
-      .run(a.id, a.code, a.kind, a.botId, a.conversationId, a.sessionId, a.tool, a.detail, a.reason, a.payload, a.createdAt, a.expiresAt);
+      .run(a.id, a.code, a.kind, a.botId, a.conversationId, a.sessionId, a.tool, a.detail, a.reason, a.payload, a.createdAt, a.expiresAt, a.taskId ?? "", a.runId ?? "", a.blocking === false ? 0 : 1);
     return this.getApproval(a.id)!;
   }
   getApproval(id: string): ApprovalRow | undefined {
@@ -781,12 +794,14 @@ export class Store {
     const r = this.db.prepare("SELECT * FROM approvals WHERE code = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1").get(code) as Row | undefined;
     return r ? this.toApproval(r) : undefined;
   }
-  listApprovals(opts: { status?: ApprovalStatus; botId?: string; conversationId?: string; limit?: number } = {}): ApprovalRow[] {
+  listApprovals(opts: { status?: ApprovalStatus; botId?: string; conversationId?: string; taskId?: string; runId?: string; limit?: number } = {}): ApprovalRow[] {
     const where: string[] = [];
     const args: Array<string | number> = [];
     if (opts.status) (where.push("status = ?"), args.push(opts.status));
     if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
     if (opts.conversationId) (where.push("conversation_id = ?"), args.push(opts.conversationId));
+    if (opts.taskId) (where.push("task_id = ?"), args.push(opts.taskId));
+    if (opts.runId) (where.push("run_id = ?"), args.push(opts.runId));
     const sql = `SELECT * FROM approvals ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC LIMIT ${Math.max(1, Math.min(500, opts.limit ?? 100))}`;
     return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toApproval(r));
   }
@@ -934,6 +949,11 @@ export class Store {
     if (opts.since) (where.push("updated_at >= ?"), args.push(opts.since));
     const sql = `SELECT * FROM outbox ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY seq DESC LIMIT ${Math.max(1, Math.min(500, opts.limit ?? 100))}`;
     return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toOutbox(r));
+  }
+  /** 机器人在这个会话里最近发（或要发）的一条消息（合并掉的、放弃了的不算）：微信里光回编号算不算回答提问，看它 */
+  lastOutbox(conversationId: string): OutboxRow | undefined {
+    const r = this.db.prepare("SELECT * FROM outbox WHERE conversation_id = ? AND status IN ('pending', 'held', 'sent') ORDER BY seq DESC LIMIT 1").get(conversationId) as Row | undefined;
+    return r ? this.toOutbox(r) : undefined;
   }
   /** 留着等这个会话的对方发消息的，按写入顺序 */
   heldOutbox(conversationId: string): OutboxRow[] {

@@ -55,6 +55,31 @@
 .notif p { font-size: var(--fs-sm); color: var(--fg-2); white-space: pre-wrap; }
 .notif time { font-size: var(--fs-2xs); color: var(--faint); }
 
+/* 需要你（screens/needs-you.js）：和设置页同一种页面；一组 .list，一件事一块，块间一条细线。
+   左边一列是状态点，右边一列从上到下：谁 · 什么 · 状态（可点：展开任务详情）、问题或命令、行内操作 */
+.needs-list .need {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-2-5); row-gap: var(--space-2);
+  padding: var(--space-3-5) var(--space-4);
+}
+.needs-list .need + .need { border-top: 1px solid var(--line-2); }
+.need > .dot { grid-row: 1; align-self: center; }
+.need > :not(.dot) { grid-column: 2; }
+.need-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; text-align: left; font-size: var(--fs-sm); color: var(--fg-2); }
+button.need-head { --focus-offset: 2px; border-radius: var(--r-sm); transition: color var(--t-fast); }
+button.need-head:hover, button.need-head:hover .need-who b { color: var(--fg); }
+.need-who { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.need-who b { font-weight: var(--fw-semibold); color: var(--fg); }
+.need-when { flex: none; font-size: var(--fs-xs); color: var(--muted); }
+.need-head .chev { flex: none; color: var(--muted); transition: transform var(--t-fast); }
+.need.open .need-head .chev { transform: rotate(90deg); }
+.need-line { font-size: var(--fs-lg); font-weight: var(--fw-medium); color: var(--fg); line-height: var(--lh-snug); overflow-wrap: anywhere; }
+.need-line.mono { font-family: var(--code); font-size: var(--fs-sm); font-weight: var(--fw-regular); }
+.need-actions { display: flex; align-items: center; gap: var(--ctl-gap); flex-wrap: wrap; }
+.need-actions:empty { display: none; }
+.need-reply { display: flex; align-items: center; gap: var(--ctl-gap); }
+.need-reply .field { flex: 1; --field-h: var(--ctl-md); }
+.need-detail .task-detail { margin-top: var(--space-1); }
+
 /* 故障排查（screens/troubleshoot.js）：状态和检测结果是普通的行；stderr 尾部是组里展开的一块（不再套底）；
    日志是自己的一块 --well（和代码块同一种面），不描边 */
 .ts-state { display: inline-flex; align-items: center; gap: var(--space-1-5); font-size: var(--fs-sm); color: var(--fg-2); white-space: nowrap; }

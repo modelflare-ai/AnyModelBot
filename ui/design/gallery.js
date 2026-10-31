@@ -4,6 +4,7 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact
 import { html, Icon, Button, IconButton, Seg, Switch, MenuButton, Menu, Badge, Notice, Skeleton, Spinner, CopyButton, Toasts, DialogHost } from "../components/ui.js";
 import { BotAvatar, AvatarPicker, AppMark, BOT_CHARS, CHAR_KEYS, MAIN_CHAR } from "../components/avatar.js";
 import { TEMPLATES } from "../screens/new-bot.js";
+import { NeedItem, NeedsRow } from "../screens/needs-you.js";
 import { Markdown } from "../components/markdown.js";
 import { useStore, toast, saved, failed, confirmSheet } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
@@ -371,7 +372,7 @@ function Gallery() {
     ["原则", [["principles", "分层与约定"]]],
     ["Token", [["color", "颜色"], ["material", "材质"], ["type", "文字"], ["space", "间距与尺寸"], ["elevation", "投影与层级"], ["motion", "动效"]]],
     ["组件", [["states", "状态矩阵"], ["buttons", "按钮"], ["inputs", "输入"], ["menus", "菜单与分段"], ["status", "状态与反馈"], ["lists", "列表行"], ["overlays", "对话框与提示"], ["avatars", "头像"]]],
-    ["页面模式", [["patterns", "对话"], ["custom", "定制"]]],
+    ["页面模式", [["patterns", "对话"], ["needs", "需要你"], ["custom", "定制"]]],
   ];
   return html`<${Compare.Provider} value=${compare}><div class="gal">
     <nav class="gal-nav" aria-label="目录">
@@ -565,6 +566,17 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <//>
       <//>
 
+      <${Section} id="needs" title="需要你" lead="所有机器人里在等你的事：提问和审批在前，再是失败、没送到、登录。侧栏那一行和托盘角标只在有事时出现；一件一块，操作在行里，点标题行展开任务详情。">
+        <${Demo} title="侧栏" note="NeedsRow：件数为 0 时不画">
+          ${() => html`<div class="gal-strip-in" style="width: 264px; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-side)">
+            <${NeedsRow} count=${3} onClick=${() => {}} /><${NeedsRow} count=${2} on onClick=${() => {}} /><${NeedsRow} count=${0} />
+          </div>`}
+        <//>
+        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你批准 / 失败 / 登录过期">
+          ${() => html`<div class="list needs-list">${NEEDS.map((it) => html`<${NeedItem} item=${it} multiBot onAct=${async () => {}} />`)}</div>`}
+        <//>
+      <//>
+
       <${Section} id="custom" title="定制" lead="不改组件源码：在上下文里覆盖组件变量；需要一块不同主题的区域时，加 data-theme。">
         <${Demo} title="覆盖组件变量" code=${`.notice .btn { --btn-h: var(--ctl-sm); --btn-px: var(--space-2-5); }      /* 上下文覆盖 */
 <button class="btn" style="--btn-bg: var(--green-soft); --btn-fg: var(--green)">…</button>
@@ -585,6 +597,14 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
     <${DialogHost} />
   </div><//>`;
 }
+
+/** 「需要你」的样例（单人：一个人用自己的机器人） */
+const NEEDS = [
+  { id: "q", kind: "question", botName: "小蓝", subject: "GPU 价格调研", status: "等你回答", line: "报告用中文还是英文？", since: Date.now() - 2 * 60_000, severity: "warn", questions: [{ id: "a", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }] },
+  { id: "a", kind: "approval", botName: "小蓝", subject: "清理旧构建", status: "等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
+  { id: "f", kind: "failed", botName: "红魔", subject: "季度报告", status: "失败", line: "X 云的价格页要登录，我进不去", since: Date.now() - 40 * 60_000, severity: "err" },
+  { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
+];
 
 // 等 @import 进来的样式表都加载完再复制伪类规则
 if (document.readyState === "complete") mirrorPseudoStates();

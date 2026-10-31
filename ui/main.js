@@ -9,18 +9,20 @@ import { InfoPanel } from "./screens/info-panel.js";
 import { SettingsScreen, SettingsSide, TABS } from "./screens/settings.js";
 import { BotSettingsScreen } from "./screens/bot-settings.js";
 import { NewBotScreen } from "./screens/new-bot.js";
+import { NeedsYouScreen } from "./screens/needs-you.js";
 import { BotAvatar, MAIN_CHAR, charOf } from "./components/avatar.js";
 import { Onboarding } from "./screens/onboarding.js";
 import { api } from "./lib/api.js";
 import { setThemeMode } from "./lib/theme.js";
 import { failed, toast } from "./lib/store.js";
 
-// —— 路由：#/chat/<bot> · #/new · #/settings/<tab>[/<row>] · #/bot/<bot>/settings[/<section>] ——
+// —— 路由：#/chat/<bot> · #/new · #/needs · #/settings/<tab>[/<row>] · #/bot/<bot>/settings[/<section>] ——
 function parseHash() {
   const [kind, a, b, c] = location.hash.replace(/^#\/?/, "").split("/").map((x) => decodeURIComponent(x || ""));
   if (kind === "settings") return { view: "settings", tab: TABS.some(([t]) => t === a) ? a : "general", row: b || "" };
   if (kind === "bot" && a && b === "settings") return { view: "bot-settings", botId: a, section: c || "" };
   if (kind === "new") return { view: "new" };
+  if (kind === "needs") return { view: "needs" };
   if (kind === "models") return { view: "settings", tab: "modelflare", row: "" }; // 旧链接
   return { view: "chat", botId: kind === "chat" ? a : "" };
 }
@@ -134,6 +136,8 @@ function App() {
   const [agentWorking, setAgentWorking] = useState({});
   // 有后台任务在进行的机器人：侧栏头像也是"工作中"（不算对话在忙，对话页不因此去接进行中的消息）
   const [bgWorking, setBgWorking] = useState({});
+  // 「需要你」：件数（侧栏那一行，0 时没有）和每个机器人的件数、最早那件
+  const [needs, setNeeds] = useState({ n: 0, bots: {} });
   const [localWorking, setLocalWorking] = useState({});
   const [infoOpen, setInfoOpen] = useState(false);
   const [palette, setPalette] = useState(false);
@@ -217,11 +221,13 @@ function App() {
           const bg = {};
           for (const [id, n] of Object.entries(a.background || {})) if (Number(n) > 0) bg[id] = true;
           setBgWorking(bg);
+          setNeeds({ n: Number(a.attention) || 0, bots: a.needs || {} });
         })
         .catch(() => {}),
     [],
   );
   useInterval(pollWorking, 3000, connected);
+  useEffect(() => void (connected && pollWorking()), [connected]);
   const working = useMemo(() => {
     const m = { ...agentWorking };
     for (const src of [bgWorking, localWorking]) for (const [k, v] of Object.entries(src)) if (v) m[k] = true;
@@ -245,6 +251,12 @@ function App() {
     go(`/chat/${encodeURIComponent(id || (bot && bot.id) || "")}`);
   };
   const newBot = () => go("/new");
+  const openNeeds = () => go("/needs");
+  // 「需要你」里的重新扫码：去这个机器人的对话，打开信息面板（渠道在最上面）
+  const relogin = (id) => {
+    openChat(id);
+    setInfoOpen(true);
+  };
   useEffect(() => {
     if (route.view !== "settings") setSettingsQ("");
   }, [route.view]);
@@ -280,6 +292,7 @@ function App() {
         if (route.view === "bot-settings" && !typing) openChat(route.botId);
         else if (route.view === "new" && !typing && bots && bots.length) openChat();
         else if (route.view === "settings" && !typing) openChat();
+        else if (route.view === "needs" && !typing) openChat();
         else if (route.view === "chat" && infoOpen && !typing) setInfoOpen(false);
       }
     };
@@ -290,6 +303,7 @@ function App() {
   const commands = [
     { label: "打开设置", kbd: isMac ? "⌘," : "Ctrl+,", keys: "settings preferences", run: () => openSettings() },
     { label: "新建机器人", kbd: isMac ? "⌘N" : "Ctrl+N", keys: "new bot", run: newBot },
+    ...(needs.n > 0 ? [{ label: `需要你（${needs.n}）`, keys: "needs attention 需要你 待办", run: openNeeds }] : []),
     ...(route.view === "chat" ? [{ label: infoOpen ? "关闭信息面板" : "打开信息面板", kbd: isMac ? "⌘⇧I" : "Ctrl+Shift+I", keys: "info panel", run: () => setInfoOpen((v) => !v) }] : []),
     ...(bot ? [{ label: `「${bot.name}」的设置`, keys: "bot settings", run: () => openBotSettings(bot.id) }] : []),
     { label: "Modelflare 设置", keys: "modelflare key 密钥 模型", run: () => openSettings("modelflare") },
@@ -325,8 +339,8 @@ function App() {
       ? html`<${SettingsSide} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} onTab=${(t) => openSettings(t)} onBack=${() => openChat()}
           username=${status && status.username} account=${managed ? account : null} />`
       : html`<${Sidebar} bots=${bots} botsError=${botsErr} reloadBots=${reloadBots} selectedId=${bot && bot.id} view=${view === "chat" && bots && !bots.length ? "new" : view}
-          previews=${previews} pending=${pending} working=${working} username=${status && status.username} account=${managed ? account : null}
-          onNew=${newBot} onSelect=${openChat} onDeleted=${onDeleted} onOpenSettings=${() => openSettings()} />`}
+          previews=${previews} pending=${pending} working=${working} needs=${needs} username=${status && status.username} account=${managed ? account : null}
+          onNew=${newBot} onSelect=${openChat} onNeeds=${openNeeds} onDeleted=${onDeleted} onOpenSettings=${() => openSettings()} />`}
     <main class="main">
       ${view === "chat" && bot && html`<${ChatScreen} key=${bot.id} bot=${bot} models=${models} modelsError=${modelsError} reloadModels=${reloadModels}
         defaultModel=${settings && settings.defaultModel} infoOpen=${infoOpen} onToggleInfo=${() => setInfoOpen((v) => !v)}
@@ -336,6 +350,7 @@ function App() {
       ${view === "settings" && html`<${SettingsScreen} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} onTab=${(t) => openSettings(t)} focusRow=${route.row}
         mf=${mf} onMfChanged=${reloadMf} onSettings=${setSettings} models=${models} modelsError=${modelsError} reloadModels=${reloadModels}
         status=${status} bots=${bots} onOpenBotSettings=${openBotSettings} account=${managed ? account : null} onAccount=${setAccount} />`}
+      ${view === "needs" && html`<${NeedsYouScreen} multiBot=${!!bots && bots.length > 1} onChanged=${pollWorking} onOpenChat=${openChat} onRelogin=${relogin} />`}
       ${view === "bot-settings" && routedBot && html`<${BotSettingsScreen} key=${routedBot.id} bot=${routedBot} section=${route.section}
         models=${models} modelsError=${modelsError} reloadModels=${reloadModels} defaultModel=${settings && settings.defaultModel}
         account=${managed ? account : null} onOpenSettings=${openSettings}

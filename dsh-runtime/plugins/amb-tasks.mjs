@@ -6,7 +6,8 @@
 //   - denies the chat-only tools (present, ask_user_question and the task tools; only registered names, since
 //     tools.restrict throws on unknown ones),
 //   - adds the task rules (AMB_TASK_RULES, written by the host) as the last system-prompt section,
-//   - registers task_report, which reports the task's state to the host,
+//   - registers task_report, which reports the task's state to the host (needs_you carries one question for the
+//     user; the host asks it and hands the answer back as the session's next input),
 //   - refuses every tool call once the host has stopped the task.
 // Chat sessions get task_start / task_message / task_list; subagents get none of the task tools.
 //
@@ -91,7 +92,7 @@ export function apply(ctx) {
     }))
     ctx.tools.register(defineTool({
       name: 'task_message',
-      description: 'Pass the user\'s message to one of their background tasks when they refer to it: a working task sees it at its next step, a finished one resumes with it.',
+      description: 'Pass the user\'s message to one of their background tasks when they refer to it or answer its question: a working task sees it at its next step, a finished or waiting one resumes with it.',
       parameters: {
         task: { type: 'string', required: true, description: 'Task id or part of its title.' },
         text: { type: 'string', required: true, description: 'The message, in the user\'s words.' },
@@ -121,12 +122,14 @@ export function apply(ctx) {
 
   const reportTool = () => defineTool({
     name: 'task_report',
-    description: 'Report this background task\'s state to the app. done: the task is finished. failed: you cannot finish it. For both, message is the one line the user receives (at most 300 characters, in their language): the result and where it is; files are files to send them. progress records progress and is never sent. After done or failed, end your turn.',
+    description: 'Report this background task\'s state to the app. done: finished. failed: you cannot finish it. For both, message is the one line the user receives (at most 300 characters, in their language): the result and where it is; files are files to send them. needs_you: only the user can decide; the app asks them question, and their answer is your next message. progress is recorded, never sent. After done, failed or needs_you, end your turn.',
     parameters: {
-      state: { type: 'string', required: true, enum: ['progress', 'done', 'failed'], description: 'done, failed, or progress.' },
+      state: { type: 'string', required: true, enum: ['progress', 'needs_you', 'done', 'failed'] },
       summary: { type: 'string', required: true, description: 'What you did and found, for the record (not sent to the user).' },
       message: { type: 'string', description: 'For done and failed: the one line for the user.' },
       files: { type: 'array', items: { type: 'string' }, description: 'Paths of files to send to the user, relative to your folder.' },
+      question: { type: 'string', description: 'For needs_you: one short question.' },
+      options: { type: 'array', items: { type: 'string' }, description: 'For needs_you: choices, if any.' },
     },
     output: TEXT_OUT,
     execute: (args, exec) => host('/dsh/task-report', { sessionId: sessionOf(exec), ...args }, exec.signal),

@@ -2,6 +2,7 @@
  * 后台任务（3a）的零件：阶段表（一行一行）、名额（每个机器人、总数、人的预留名额与先后）、
  * TaskService 对着一个假的宿主：建任务与第一条输入、一轮结束与收尾、Report、提醒、出错重试、追加、停止、
  * 重启恢复（恢复说明在前、没收下的输入再交一次）、送达（出站队列 id 固定，只交一次）、/tasks 与 /stop 编号。
+ * 3b：任务的提问（needs_you → 不阻塞的提问 → 推给会话、一次一个 → 回答成为新输入）、任务会话里的审批、「需要你」。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -9,7 +10,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { taskStage, type StageInput } from "../src/tasks/stage.js";
 import { byPriority, pickRuns, priorityOf, type Waiting } from "../src/tasks/slots.js";
-import { TaskService, slugOf, takeTaskNotes, type TaskHost, type TaskNotification } from "../src/tasks/service.js";
+import { TaskService, askId, quotes, slugOf, takeTaskNotes, type TaskHost, type TaskNotification } from "../src/tasks/service.js";
+import { ApprovalCenter } from "../src/agent/approvals.js";
 import { AgentHost, ResumeFailed } from "../src/agent/host.js";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/agent/settings.js";
 import { NUDGE, TASK_RULES, recoveryNote, taskBrief } from "../src/agent/prompts/index.js";
@@ -154,11 +156,12 @@ describe("TaskService（假宿主）", () => {
   let store: Store;
   let host: FakeHost;
   let outbox: Outbox;
+  let approvals: ApprovalCenter;
   let svc: TaskService;
   let ws: string;
   const CONV = "b:weixin:owner";
 
-  const make = () => new TaskService({ store, host, outbox, defaultModel: () => "mock-model", retryDelaysMs: [5, 5, 5], maxBackground: 4 });
+  const make = () => new TaskService({ store, host, outbox, approvals, defaultModel: () => "mock-model", retryDelaysMs: [5, 5, 5], maxBackground: 4 });
   beforeEach(() => {
     ws = fs.mkdtempSync(path.join(os.tmpdir(), "amb-tasks-unit-"));
     store = new Store(":memory:");
@@ -169,6 +172,7 @@ describe("TaskService（假宿主）", () => {
     store.addMessage(CONV, "user", "帮我后台调研一下三家云的 GPU 价格 [文件 价目.pdf → inbox/20261031-x-价目.pdf]");
     host = new FakeHost(ws);
     outbox = new Outbox(store);
+    approvals = new ApprovalCenter(store);
     svc = make();
     svc.start();
   });
@@ -257,11 +261,230 @@ describe("TaskService（假宿主）", () => {
     expect(store.listOutbox({ limit: 50 }).map((r) => r.id)).toEqual([`task:${t.id}:failure:${store.listRuns({ taskId: t.id })[0].id}`]);
   });
 
-  it("问用户在 3a 不可用：needs_you 被拒，代理自己决定", async () => {
+  /** 代理报 needs_you 带一个问题，结束这一轮 */
+  const ask = (sessionId: string, question = "报告用中文还是英文？", options: string[] | undefined = ["中文", "英文"]) =>
+    turn(sessionId, () => void expect(svc.report({ sessionId, state: "needs_you", summary: "查完了，差语言", question, ...(options ? { options } : {}) }).text).toMatch(/^Recorded\. End your turn now: the app asks the user/));
+  const reply = (text: string, ctx = {}) => approvals.handleReply(CONV, text, "weixin:owner", { ...svc.replyContext(CONV), ...ctx });
+  const asks = () => store.listOutbox({ limit: 100 }).filter((r) => r.id.includes(":ask:")).reverse();
+
+  it("needs_you：要有一个问题；没有审批中心就不能问", async () => {
     const t = start();
     await flush();
-    expect(report(t.sessionId, "needs_you").error).toMatch(/cannot ask the user/);
-    expect(report(t.sessionId, "maybe").error).toMatch(/state must be/);
+    expect(report(t.sessionId, "needs_you").error).toMatch(/needs a question/);
+    expect(report(t.sessionId, "maybe").error).toMatch(/state must be progress, needs_you, done or failed/);
+    svc.stop();
+    const bare = new TaskService({ store, host, outbox, defaultModel: () => "m" });
+    bare.start();
+    const u = bare.create({ botId: "b", conversationId: CONV, title: "U", brief: "" }).task!;
+    await flush();
+    expect(bare.report({ sessionId: u.sessionId, state: "needs_you", summary: "", question: "要吗？" }).error).toMatch(/cannot ask the user right now/);
+    bare.stop();
+  });
+
+  it("退出演示的单元版：提问推到微信（一次），阶段等你回答；回编号算回答，回答成为新输入、开一个 answer run，任务接着做完", async () => {
+    const t = start();
+    await flush();
+    await ask(t.sessionId);
+    expect(runs(t.id)).toEqual([["launch", "ended", "needs_you"]]);
+    const [q] = approvals.pendingForTask(t.id);
+    expect(q).toMatchObject({ kind: "question", blocking: false, expiresAt: 0, taskId: t.id, runId: store.listRuns({ taskId: t.id })[0].id, conversationId: CONV, sessionId: t.sessionId });
+    expect(svc.get(t.id)!.stage).toMatchObject({ key: "needs-you/answer", label: "等你回答", group: "needs" });
+    // 推给微信：设计里的样式，原样发（不过 Markdown 过滤），id 固定
+    expect(asks().map((r) => [r.id, r.kind, r.body.text, r.body.raw])).toEqual([[askId(q), "text", "❓「GPU 价格调研」想问你：报告用中文还是英文？\n1. 中文\n2. 英文\n（回复编号，或引用这条消息回答）", true]]);
+    expect(store.listMessages(CONV).at(-1)!.content).toBe(asks()[0].body.text);
+    // 聊天代理知道这件事（用户在聊天里回答时，它能转给任务）
+    expect(takeTaskNotes(store, CONV)).toBe("[后台任务「GPU 价格调研」在等用户回答：报告用中文还是英文？（中文 / 英文）。用户在聊天里回答它时，用 task_message 转给这个任务]");
+    // 提问是机器人最后一条消息：光回编号就是回答
+    expect(reply("1")).toEqual({ handled: true, ack: "收到，「GPU 价格调研」继续。" });
+    await flush();
+    expect(store.getApproval(q.id)).toMatchObject({ status: "answered", decidedBy: "weixin:owner" });
+    expect(runs(t.id)).toEqual([["launch", "ended", "needs_you"], ["answer", "running", ""]]);
+    expect(host.prompts.at(-1)).toMatchObject({ sessionId: t.sessionId, resume: true });
+    expect(host.prompts.at(-1)!.text).toBe("[用户回答了你的问题]\n问题：报告用中文还是英文？\n回答：中文");
+    expect(svc.get(t.id)!.stage.key).toBe("working");
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "报告写好了（中文），在 report.md。"));
+    expect(runs(t.id).at(-1)).toEqual(["answer", "ended", "done"]);
+    expect(store.listOutbox({ limit: 50 }).find((r) => r.id.includes(":result:"))!.body.text).toBe("报告写好了（中文），在 report.md。");
+    expect(asks()).toHaveLength(1);
+  });
+
+  it("提问不是机器人最后一条消息时，光回编号是普通聊天；引用和编号开头什么时候都算", async () => {
+    const t = start();
+    await flush();
+    await ask(t.sessionId);
+    const [q] = approvals.pendingForTask(t.id);
+    // 之后机器人又在这个会话里回了一句（聊天）
+    store.insertOutbox({ id: "wx:b:m9:final", botId: "b", channel: "weixin", conversationId: CONV, peerId: "owner", kind: "text", body: { text: "下午 3 点的会是线上的" }, replyTo: "", due: Date.now(), createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
+    expect(reply("1")).toEqual({ handled: false });
+    expect(reply("中文")).toEqual({ handled: false });
+    expect(reply("好的")).toEqual({ handled: false });
+    // 以编号开头
+    expect(reply(`${q.code} 英文`)).toEqual({ handled: true, ack: "收到，「GPU 价格调研」继续。" });
+    await flush();
+    expect(host.prompts.at(-1)!.text).toContain("回答：英文");
+    // 引用（被截短、前面带名字也认得）
+    const u = start("季度报告");
+    await flush();
+    await ask(u.sessionId, "PPT 要几页？", []);
+    const [q2] = approvals.pendingForTask(u.id);
+    expect(asks().find((r) => r.id === askId(q2))!.body.text).toBe("❓「季度报告」想问你：PPT 要几页？\n（引用这条消息回答）");
+    expect(reply("10 页左右", { quote: "引用了别的消息", plain: "10 页左右" })).toEqual({ handled: false });
+    expect(reply("> 小蓝: ❓「季度报告」想问你：PPT 要…\n10 页左右", { quote: "小蓝: ❓「季度报告」想问你：PPT 要…", plain: "10 页左右" })).toEqual({ handled: true, ack: "收到，「季度报告」继续。" });
+    await flush();
+    expect(host.prompts.at(-1)!.text).toBe("[用户回答了你的问题]\n问题：PPT 要几页？\n回答：10 页左右");
+  });
+
+  it("引用匹配：推出去的原文、截短的、带名字的；太短的片段和别的消息不算", () => {
+    const sent = "❓「GPU 价格调研」想问你：报告用中文还是英文？\n1. 中文\n2. 英文\n（回复编号，或引用这条消息回答）";
+    expect(quotes(sent, sent, "报告用中文还是英文？")).toBe(true);
+    expect(quotes(sent, "❓「GPU 价格调研」想问你：报告用中文还是…", "报告用中文还是英文？")).toBe(true);
+    expect(quotes(sent, "小蓝：报告用中文还是英文？", "报告用中文还是英文？")).toBe(true);
+    expect(quotes(sent, "中文", "报告用中文还是英文？")).toBe(false);
+    expect(quotes(sent, "下午 3 点的会是线上的", "报告用中文还是英文？")).toBe(false);
+    expect(quotes(sent, "", "报告用中文还是英文？")).toBe(false);
+  });
+
+  it("一个会话同时只推一个：第二个任务的提问在「需要你」里等，第一个回答了才推", async () => {
+    host.settingsValue = normalizeSettings({ taskSlots: 4 });
+    const a = start("A 任务");
+    const b = start("B 任务");
+    await flush();
+    await ask(a.sessionId, "A 用哪个？");
+    await ask(b.sessionId, "B 用哪个？");
+    const qa = approvals.pendingForTask(a.id)[0];
+    const qb = approvals.pendingForTask(b.id)[0];
+    expect(asks().map((r) => r.id)).toEqual([askId(qa)]);
+    expect(svc.get(b.id)!.stage.key).toBe("needs-you/answer");
+    // 光回编号只认推出去的那个（它是最后一条消息）
+    expect(reply("2")).toMatchObject({ handled: true, ack: "收到，「A 任务」继续。" });
+    await flush();
+    expect(store.getApproval(qb.id)!.status).toBe("pending");
+    expect(asks().map((r) => r.id)).toEqual([askId(qa), askId(qb)]);
+    expect(asks().at(-1)!.body.text).toBe("❓「B 任务」想问你：B 用哪个？\n1. 中文\n2. 英文\n（回复编号，或引用这条消息回答）");
+  });
+
+  it("聊天代理的 task_message：任务在等回答时，这句话就是回答", async () => {
+    store.setAgentSession(CONV, "b", "session-chat");
+    const t = start();
+    await flush();
+    await ask(t.sessionId);
+    const r = await svc.chatTool({ botId: "b", sessionId: "session-chat", op: "message", args: { task: "GPU", text: "用英文吧" } });
+    expect(r.text).toMatch(/^Passed to 「GPU 价格调研」\. It answers the task's open question; the task continues\./);
+    await flush();
+    expect(approvals.pendingForTask(t.id)).toEqual([]);
+    expect(host.prompts.at(-1)!.text).toBe("[用户回答了你的问题]\n问题：报告用中文还是英文？\n回答：用英文吧");
+    expect(runs(t.id).at(-1)).toEqual(["answer", "running", ""]);
+  });
+
+  it("重启：提问留着（不阻塞的不作废），不再推一遍；重启后回答照样开 run；阻塞的审批作废", async () => {
+    const t = start();
+    await flush();
+    await ask(t.sessionId);
+    const blocking = approvals.create({ kind: "approval", botId: "b", conversationId: "b:web:console", sessionId: "session-chat", tool: "bash", detail: "rm -rf x", reason: "" });
+    svc.stop();
+    approvals = new ApprovalCenter(store);
+    approvals.start();
+    approvals.stop();
+    expect(store.getApproval(blocking.id)!.status).toBe("expired");
+    svc = make();
+    svc.start();
+    const [q] = approvals.pendingForTask(t.id);
+    expect(q.status).toBe("pending");
+    expect(asks()).toHaveLength(1);
+    expect(svc.get(t.id)!.stage.key).toBe("needs-you/answer");
+    expect(reply("2").handled).toBe(true);
+    await flush();
+    expect(runs(t.id).at(-1)).toEqual(["answer", "running", ""]);
+  });
+
+  it("这一轮以 needs_you 结束、提问还没建就重启了：启动时补问一次", async () => {
+    const t = start();
+    await flush();
+    const run = store.listRuns({ taskId: t.id })[0];
+    svc.stop();
+    store.updateRun(run.id, { state: "ended", outcome: "needs_you", endedAt: Date.now(), report: { state: "needs_you", summary: "", question: { question: "要几页？" }, at: Date.now() } });
+    svc = make();
+    svc.start();
+    expect(approvals.pendingForTask(t.id).map((r) => [r.detail, r.runId])).toEqual([["要几页？", run.id]]);
+    svc.stop();
+    svc = make();
+    svc.start();
+    expect(approvals.pendingForTask(t.id)).toHaveLength(1);
+  });
+
+  it("停止任务：它的提问作废，同一会话的下一个提问推出去", async () => {
+    host.settingsValue = normalizeSettings({ taskSlots: 4 });
+    const a = start("A 任务");
+    const b = start("B 任务");
+    await flush();
+    await ask(a.sessionId);
+    await ask(b.sessionId);
+    const qa = approvals.pendingForTask(a.id)[0];
+    expect(asks()).toHaveLength(1);
+    await svc.stopTask(a.id, "test");
+    expect(store.getApproval(qa.id)).toMatchObject({ status: "cancelled", decidedBy: "stopped" });
+    expect(asks()).toHaveLength(2);
+    expect(svc.get(a.id)!.stage.key).toBe("stopped");
+  });
+
+  it("任务会话里的审批：推到会话（带任务名）；最后一条消息是它时光回 y 也行；等批准时让出名额", async () => {
+    host.settingsValue = normalizeSettings({ taskSlots: 1 });
+    const t = start();
+    await flush();
+    const runId = store.listRuns({ taskId: t.id })[0].id;
+    const a = approvals.create({ kind: "approval", botId: "b", conversationId: CONV, sessionId: t.sessionId, tool: "bash", detail: "rm -rf build/", reason: "", taskId: t.id, runId, ttlMs: 12 * 3600_000 });
+    expect(svc.get(t.id)!.stage.key).toBe("needs-you/approval");
+    expect(asks().map((r) => r.body.text)).toEqual([`需批准（任务「GPU 价格调研」）：\`rm -rf build/\` — 回复 y ${a.code} / n ${a.code}`]);
+    // 名额：1 个，被等批准的 run 让出来了，第二个任务能开始
+    const u = start("U");
+    await flush();
+    expect(runs(u.id)).toEqual([["launch", "running", ""]]);
+    expect(reply("y")).toEqual({ handled: true, ack: `✅ 已批准 ${a.code}（仅本次）` });
+    expect(store.getApproval(a.id)!.status).toBe("allowed");
+    expect(svc.get(t.id)!.stage.key).toBe("working");
+  });
+
+  it("飞书：提问是带选项按钮的卡片，回复在请求那条消息下", async () => {
+    const fs1 = store.ensureConversation("b", "feishu", "oc_1", "主人");
+    store.addMessage(fs1.id, "user", "后台调研一下 GPU 价格");
+    store.setKV(`reply-to:${fs1.id}`, JSON.stringify({ messageId: "om_req", chatId: "oc_1" }));
+    const f = svc.create({ botId: "b", conversationId: fs1.id, title: "GPU", brief: "" }).task!;
+    await flush();
+    await ask(f.sessionId);
+    const row = asks()[0];
+    expect(row).toMatchObject({ channel: "feishu", kind: "card", replyTo: "om_req", peerId: "oc_1" });
+    expect(JSON.stringify(row.body.card)).toContain("「GPU」想问你");
+    const q = approvals.pendingForTask(f.id)[0];
+    expect(JSON.stringify(row.body.card)).toContain(JSON.stringify({ amb: "question", id: q.id, option: "2" }));
+  });
+
+  it("网页：提问不进出站队列（卡片就在对话里）", async () => {
+    const web = store.ensureConversation("b", "web", "console", "控制台");
+    store.addMessage(web.id, "user", "后台整理发票");
+    const w = svc.create({ botId: "b", conversationId: web.id, title: "发票", brief: "" }).task!;
+    await flush();
+    await ask(w.sessionId);
+    expect(asks()).toEqual([]);
+    expect(approvals.pending(web.id).map((r) => r.taskId)).toEqual([w.id]);
+  });
+
+  it("「需要你」里任务的那一份：失败的（重试、停止），没送到的（知道了）；重试开一个 retry run", async () => {
+    const t = start();
+    await flush();
+    await turn(t.sessionId, () => void report(t.sessionId, "failed", "X 云的价格页要登录"));
+    const [item] = svc.attention();
+    expect(item).toMatchObject({ id: `task:${t.id}`, kind: "failed", botName: "小蓝", subject: "GPU 价格调研", status: "失败", line: "X 云的价格页要登录", severity: "err", actions: ["retry", "stop"], channel: "weixin" });
+    expect((await svc.retry(t.id)).how).toBe("resumed");
+    await flush();
+    expect(runs(t.id).at(-1)).toEqual(["retry", "running", ""]);
+    expect(host.prompts.at(-1)!.text).toBe("[用户让你再试一次]\n上次没做完：X 云的价格页要登录");
+    expect(svc.attention()).toEqual([]);
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "好了"));
+    store.updateOutbox(store.latestRun(t.id)!.delivery, { status: "gone", error: "窗口关了" });
+    expect(svc.attention().map((x) => [x.kind, x.status, x.line, x.actions])).toEqual([["delivery", "未送达", "好了", ["seen"]]]);
+    expect(svc.seenDelivery(t.id)).toBe(true);
+    expect(svc.attention()).toEqual([]);
+    expect(svc.get(t.id)!.stage.key).toBe("ready");
   });
 
   it("这一轮没报告：提醒一次；还没有就失败（没有给出结果）", async () => {
@@ -518,6 +741,10 @@ describe("TaskService（假宿主）", () => {
     const t = start();
     await flush();
     store.insertApproval({ id: "a1", code: "1234", kind: "approval", botId: "b", conversationId: CONV, sessionId: t.sessionId, tool: "bash", detail: "rm -rf build", reason: "", payload: "", createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
+    expect(svc.get(t.id)!.stage.key).toBe("needs-you/approval");
+    // 子代理里的（会话 id 不同，记着任务）也算
+    store.decideApproval("a1", "allowed", "t");
+    store.insertApproval({ id: "a2", code: "1235", kind: "approval", botId: "b", conversationId: CONV, sessionId: "sub-1", tool: "bash", detail: "rm -rf build", reason: "", payload: "", createdAt: Date.now(), expiresAt: Date.now() + 60_000, taskId: t.id });
     expect(svc.get(t.id)!.stage.key).toBe("needs-you/approval");
   });
 

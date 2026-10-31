@@ -86,7 +86,7 @@ export function PromptCard({ requestId, fallback }) {
   };
   if (row.kind === "approval") {
     return html`<div class=${`card${pending ? "" : " done"}`}>
-      <div class="meta"><span>需要你的批准 · <span class="num">${row.code}</span></span>${!pending && html`<${Badge} s=${row.status} />`}</div>
+      <div class="meta"><span>${row.taskTitle ? `「${row.taskTitle}」` : ""}需要你的批准 · <span class="num">${row.code}</span></span>${!pending && html`<${Badge} s=${row.status} />`}</div>
       <div class="q">${row.reason || "机器人想执行一个超出工作区的操作"}</div>
       ${(row.tool || row.detail) && html`<div class="cmd">${row.tool}${row.detail ? "  " + row.detail : ""}</div>`}
       ${pending && html`<div class="actions">
@@ -123,6 +123,7 @@ export function PromptCard({ requestId, fallback }) {
   const sendAll = () =>
     submit(qs.map((q, i) => ({ id: q.id, selected: picked[q.id] || [], ...(i === qs.length - 1 && custom.trim() ? { custom: custom.trim() } : {}) })));
   return html`<div class=${`card${pending ? "" : " done"}`}>
+    ${row.taskTitle && html`<div class="meta"><span>「${row.taskTitle}」想问你</span></div>`}
     ${qs.map((q) => html`<div class="q-block">
       <div class="q">${q.question}</div>
       ${q.detail && html`<div class="q-detail">${q.detail}</div>`}

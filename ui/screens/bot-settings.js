@@ -1,11 +1,12 @@
 // 机器人设置（信息面板的 ⚙，参考 Codex 的编辑页）：返回 + 头像 + 大标题；身份是头像角色 + 带标签的输入框，其余是白色圆角 list + 行，改动即保存。
 import { useEffect, useRef, useState } from "preact/hooks";
-import { html, Icon, Seg, Switch, MenuButton, Skeleton, autoGrow } from "../components/ui.js";
+import { html, Icon, Seg, Switch, MenuButton, Notice, Skeleton, autoGrow } from "../components/ui.js";
 import { BotAvatar, AvatarPicker, charOf } from "../components/avatar.js";
 import { ModelPicker, shortModel } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
 import { usd } from "../lib/links.js";
+import { PERMS, FULL_WARNING, confirmPermission } from "../lib/perms.js";
 
 function Row({ id, name, sub, title, children, off }) {
   return html`<div class=${`row${off ? " off" : ""}`} id=${`bot-${id}`} title=${title}>
@@ -108,6 +109,10 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
       failed(e);
     }
   };
+  // 完全权限先确认
+  const pickPerm = async (v) => {
+    if (await confirmPermission(v)) await put({ permission: v });
+  };
   const pickAvatar = async (k) => {
     await put({ avatar: k });
     setHi({ kind: "hello", at: Date.now() });
@@ -171,11 +176,12 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
       ${s && html`
         <div class="list-head">权限</div>
         <div class="list">
-          <${Row} id="permission" name="文件权限" sub=${s.permission === "readonly" ? "不能改文件，命令在只读沙箱中运行" : "只能改本机器人工作区，越界操作需要你批准"}
-            title="工作区可写（默认）：只能改本机器人工作区，越界操作需审批；只读：不能改文件，命令在只读沙箱中运行">
-            <${Seg} label="文件权限" value=${s.permission} onChange=${(v) => put({ permission: v })} options=${[["workspace", "工作区可写"], ["readonly", "只读"]]} />
+          <${Row} id="permission" name="文件权限" sub=${PERMS[s.permission] ? PERMS[s.permission].note : ""}
+            title="工作区可写（默认）：只能改本机器人工作区，越界操作需审批；只读：不能改文件，命令在只读沙箱中运行；完全权限：命令不经沙箱，只有递归删除仍需确认">
+            <${Seg} label="文件权限" value=${s.permission} onChange=${pickPerm} options=${[["workspace", "工作区可写"], ["readonly", "只读"], ["full", "完全权限"]]} />
           <//>
         </div>
+        ${s.permission === "full" && html`<${Notice} tone="red">${FULL_WARNING}<//>`}
 
         <div class="list-head">记忆</div>
         <div class="list">

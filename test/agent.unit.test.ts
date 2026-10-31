@@ -11,6 +11,7 @@ import { AgentBridge, BOT_HEADER, type ProxyEvent, type Rejection } from "../src
 import { ApiFallbacks, shapeRejection } from "../src/agent/api-fallback.js";
 import { ActivityLog } from "../src/agent/activity.js";
 import { listen } from "./helpers.js";
+import { normalizeSettings } from "../src/agent/settings.js";
 
 let dir: string;
 let store: Store;
@@ -434,5 +435,38 @@ describe("agent API fallback", () => {
     const log = new ActivityLog();
     log.apply("api/fallback", { from: "openai-responses", to: "openai-completions", reason: "HTTP 400: Unsupported parameter" }, 1000);
     expect(log.steps).toEqual([expect.objectContaining({ kind: "retry", title: "改用 Chat Completions 重试", summary: "openai-responses 被拒：HTTP 400: Unsupported parameter", status: "ok" })]);
+  });
+});
+
+describe("full access patch", () => {
+  const patch = (permission: "readonly" | "workspace" | "full") => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-patch-"));
+    const settings = normalizeSettings({ permission, computerUse: { enabled: false } });
+    const host = new AgentHost({ botId: "b", dataDir, runtimeDir: "/rt", bridge: { url: "http://127.0.0.1:1" } as any, store: new Store(":memory:"), settings: () => settings });
+    fs.mkdirSync(host.home, { recursive: true });
+    const text = fs.readFileSync((host as any).writePatch("m"), "utf8");
+    const env = (host as any).env();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    return { text, env };
+  };
+  it("full: danger-full-access, the delete gate, and approvals still answerable (ask, not never)", () => {
+    const { text, env } = patch("full");
+    expect(env.DSH_PERMISSION_MODE).toBe("danger-full-access");
+    // 闸门是插件 insert 列表的最后一项，后面是顶层的行补丁
+    expect(text).toContain('    - id: amb-delete-gate\n      name: "/rt/plugins/amb-delete-gate.mjs"\n- id: approval\n  config:\n    policy: ask\n- id: permission\n');
+    expect(text).toContain("danger-full-access: { sandbox: danger-full-access, approval: ask }");
+    expect(text).not.toMatch(/approval: never/);
+    // 网页/渠道的审批、读围栏照旧
+    expect(text).toContain("- id: amb-bridge");
+    expect(text).toContain("- id: amb-permission");
+    expect(JSON.parse(env.AMB_DENY_READ)).toHaveLength(1);
+  });
+  it("other presets keep DSH's own permission rows", () => {
+    for (const p of ["workspace", "readonly"] as const) {
+      const { text, env } = patch(p);
+      expect(env.DSH_PERMISSION_MODE).toBe(p === "readonly" ? "read-only" : "workspace-write");
+      expect(text).not.toContain("amb-delete-gate");
+      expect(text).not.toMatch(/^- id: (approval|permission)$/m);
+    }
   });
 });

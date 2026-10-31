@@ -66,9 +66,11 @@ npm run test:dsh-bundle  # real DSH integration test under Electron against the 
 - The console listens on 127.0.0.1 only and generates a random access token on every launch, so other local programs cannot call the management API directly.
 - On quit, channels stop first, then magpie. If a previous run was killed and left a magpie process behind, the next launch cleans it up (Linux/macOS).
 
-Releases: bump `version` in `package.json`, commit, and push a `v<version>` tag. `.github/workflows/release.yml` builds on each of the six OS / architecture runners and publishes the installers plus `SHA256SUMS` to a GitHub Release. The repository secrets needed for signing and notarization are described in the comment at the top of that file.
+Releases: bump `version` in `package.json`, commit, and push a `v<version>` tag. `.github/workflows/release.yml` builds on each of the six OS / architecture runners and publishes the installers plus `SHA256SUMS` to a GitHub Release. The repository secrets needed for signing and notarization are described in the comment at the top of that file. The same tag also starts `.github/workflows/docker.yml`, which publishes the x64 + arm64 image to `ghcr.io/modelflare-ai/anymodel-bot` (tagged `<version>` and `latest`).
 
 ## Docker
+
+Users run the published image: `docker run -d --name amb -p 3600:3600 -v amb-data:/data ghcr.io/modelflare-ai/anymodel-bot`. To build it from source yourself:
 
 ```bash
 git submodule update --init --depth 1 vendor/magpie

@@ -1,5 +1,6 @@
 # anymodel bot：一个镜像同时包含机器人运行时 + 内置 magpie 模型网关
-# 构建前需检出子模块：git submodule update --init --depth 1 vendor/magpie
+# 发版时由 .github/workflows/docker.yml 发布到 ghcr.io/modelflare-ai/anymodel-bot（x64 + arm64），用户直接 docker run 那个镜像。
+# 自己构建前需检出子模块：git submodule update --init --depth 1 vendor/magpie
 #   docker build -t anymodel-bot .
 #   docker run -d --name amb -p 3600:3600 -v amb-data:/data anymodel-bot
 #   docker exec amb cat /data/ui-token   # 首次打开 http://<主机>:3600/?token=<令牌>

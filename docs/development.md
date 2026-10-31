@@ -66,9 +66,11 @@ npm run test:dsh-bundle  # 用 Electron 跑真实 DSH 集成测试，加载打�
 - 界面只监听 127.0.0.1，且每次启动生成随机访问令牌，其他本机程序无法直接调用管理接口。
 - 退出时先停渠道、再停 magpie；若上次被强杀残留 magpie 进程，下次启动会自动清理（Linux/macOS）。
 
-发布：改 `package.json` 的版本号并提交，推送 `v<版本>` 标签，`.github/workflows/release.yml` 会在六种系统 / 架构上各自打包，并把安装包和 `SHA256SUMS` 发到 GitHub Release。签名与公证所需的仓库密钥见该文件开头的注释。
+发布：改 `package.json` 的版本号并提交，推送 `v<版本>` 标签，`.github/workflows/release.yml` 会在六种系统 / 架构上各自打包，并把安装包和 `SHA256SUMS` 发到 GitHub Release。签名与公证所需的仓库密钥见该文件开头的注释。同一个标签还会触发 `.github/workflows/docker.yml`，把 x64 + arm64 镜像发布到 `ghcr.io/modelflare-ai/anymodel-bot`（`<版本>` 和 `latest` 两个标签）。
 
 ## Docker
+
+用户直接用已发布的镜像：`docker run -d --name amb -p 3600:3600 -v amb-data:/data ghcr.io/modelflare-ai/anymodel-bot`。下面是从源码自己构建：
 
 ```bash
 git submodule update --init --depth 1 vendor/magpie

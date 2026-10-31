@@ -122,7 +122,13 @@ await step("DSH host answers through a mock model", async () => {
   } finally {
     await h.close().catch(() => {});
     llm.close();
-    fs.rmSync(home, { recursive: true, force: true, maxRetries: 5 });
+    // Windows can keep a file under the DSH home locked for a moment after close (the image turn writes the
+    // attachment store there); a leftover temp dir must not hide the turn's own result.
+    try {
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 10 });
+    } catch (e) {
+      console.log(`  (left ${home}: ${e.code ?? e.message})`);
+    }
   }
 });
 await step("koffi", () => `v${from("@deepseek-ai/dsh-subprocess-local")("koffi").version}`);

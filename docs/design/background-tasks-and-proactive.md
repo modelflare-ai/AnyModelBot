@@ -351,7 +351,7 @@ What follows:
    - **Reserve quota.** Each live task or act-mode rule bound to a WeChat peer reserves 1 send, and an open question 1 more, up to 3 in total. Chat replies use `remaining − reserved`. The existing long-reply truncation note already handles running out.
    - **Hold, don't drop.** A delivery that can't go out is held, with the reason `window_closed` or `quota`. It shows in "needs you" as 「1 条结果等你在微信里发条消息才能送达」, with [在这里查看]. It also gets one desktop notification.
    - **Piggyback.** On the user's next inbound message, held items for that peer go out first, merged into one 「你不在时：…」 message. Then the chat reply follows.
-   - **No keep-alive pings.** A 「窗口快关了」 message would be pure noise.
+   - **One "reply ok" nudge, only when it matters** (decided by the product owner, replacing "no keep-alive pings"). About 2 h before the window closes, and only if something is scheduled to reach this user after it closes, the bot sends one quiet line naming what is coming, e.g. 「接下来还有 2 条提醒要发给你（明早 8:00 天气、周一 9:00 周报）。回个「ok」我就能继续按时提醒你。」 It goes out at most once per window, never during quiet hours, uses 1 of the window's 10 sends, and can be turned off per bot. Any reply opens a new window. With nothing scheduled, nothing is sent.
    - **Be honest when a rule is created.** If a rule delivers to WeChat, the rule editor and the creation reply say 「微信只在你 24 小时内发过消息时才能主动发给你；否则会在你下次发消息时一起送到，并显示在桌面端。」 For time-critical rules they suggest Feishu or desktop as the destination.
    - **Fit one message.** A pushed message must fit one WeChat message (at most 4,000 characters; we aim for at most 300) and is never split.
 
@@ -710,7 +710,24 @@ Estimates are in developer-days and include tests.
 
 **Total: about 32 developer-days.** 3a and 3b are the minimum to show the differentiator. 3d is the riskiest product-wise; observe mode is what makes it safe to ship.
 
-## 14. Open questions for the product owner
+## 14. Decisions (product owner, 2026-10-31)
+
+The product owner accepted the recommendations below; item 8 is their own refinement.
+
+1. **Who decides "background":** both. The chat agent starts a task for long work and says so in one line (「这个要跑一会儿，我放到后台做，好了告诉你」). The user can also say 「后台做」, or 「前台做」 to keep it in chat.
+2. **Concurrency:** 2 background runs per bot, 4 overall. Chat never waits behind them.
+3. **Budgets:** task $1.00, rule run $0.10, rule $3.00 per month. At the limit we pause and ask (shown in "needs you"); we never stop silently.
+4. **Quiet hours:** 22:00–08:00 in the user's time zone, on by default, per user. A rule can override them.
+5. **Models for rules:** checks run on the cheaper utility model; the main model only writes the actual result.
+6. **Fixed reminders** skip observe mode.
+7. **Observe → act:** after 3 good observed runs we suggest switching to act. Editing a rule's instruction sends it back to observe for one run.
+8. **WeChat 24 h window:** the "reply ok" nudge described in [WeChat: the hard constraint](#wechat-the-hard-constraint). Held messages show in "needs you" and go out with the user's next message, and desktop notifications are the reliable channel for time-sensitive rules.
+9. **Retention:** tasks and run logs are kept 30 days. Task folders are kept until the task is deleted and cleaned up after 30 idle days; the user is told first.
+10. **Feishu groups:** only the owner and allowed people (P2's allowlist) may start tasks and rules.
+11. **`/tasks`** chat command: yes, to list and stop tasks and rules.
+12. **Permission cap:** act-mode rules are capped at `workspace-write`, even on full-permission bots.
+
+## 14a. Open questions as originally asked
 
 1. **Who decides "background"?** Is it the chat agent (`task_start` when work is long), only an explicit phrase from the user (「后台做」), or both? Proposal: the agent decides and says so in its reply, and the user can say 「直接做」 to keep the work in chat.
 2. **Concurrency defaults:** 2 background runs per bot and 4 overall?

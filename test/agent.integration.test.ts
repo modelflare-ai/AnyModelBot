@@ -165,12 +165,14 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   const rejects: Record<string, "always" | "after-tool" | "busy"> = {};
   const hung: http.ServerResponse[] = [];
   let base = "";
+  /** 工作区与数据目录之外的目录（完全权限测试用） */
+  let outside = "";
 
   /** 根据最后一条用户消息与之后的工具结果数量决定下一步 */
   function plan(messages: any[]): Step {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
@@ -198,6 +200,19 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       ]],
       [/COUNTER/, [{ name: "bash", args: { description: "run", command: "echo ran >> counter.txt && wc -l < counter.txt" } }]],
       [/LOOPBACK/, [{ name: "bash", args: { description: "run", command: `python3 -c "import urllib.request as u\ntry:\n  print('API', u.urlopen('${base}/amb/api/status').status)\nexcept Exception as e:\n  print('API', getattr(e,'code',e))"` } }]],
+      // 完全权限：写工作区外的目录、读宿主数据目录、显式要求 danger-full-access
+      [/OUTWRITE/, [
+        { name: "bash", args: { description: "run", command: `echo out-$((40+2)) > ${outside}/marker.txt; cat ${outside}/marker.txt; cat ${path.join(dataDir, "anymodel.db")} >/dev/null 2>&1 && echo DB-READABLE || echo DB-HIDDEN` } },
+        { name: "bash", args: { description: "run", command: "echo escalated-$((40+2))", sandbox_permissions: "danger-full-access", justification: "测试提权" } },
+      ]],
+      // 普通删除直接执行，递归删除先问
+      [/RMRF/, [
+        { name: "bash", args: { description: "run", command: `rm ${outside}/single.txt && echo single-gone` } },
+        { name: "bash", args: { description: "run", command: `rm -rf ${outside}/victim && echo victim-gone` } },
+      ]],
+      [/RMWS/, [{ name: "bash", args: { description: "run", command: "mkdir -p tree/sub && touch tree/sub/f && rm -rf tree && echo tree-gone" } }]],
+      [/CHILDRM/, [{ name: "bash", args: { description: "run", command: `rm -rf ${outside}/victim2 && echo victim2-gone` } }]],
+      [/SUBRM/, [{ name: "subagent", args: { description: "delete", prompt: "CHILDRM now" } }]],
     ];
     for (const [re, steps] of scripts) {
       if (!re.test(user)) continue;
@@ -258,6 +273,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       res.end();
     });
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-agent-"));
+    outside = fs.mkdtempSync(path.join(os.tmpdir(), "amb-outside-"));
     app = new App(
       loadConfig({ dataDir, env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: "http://127.0.0.1:9", AMB_DEFAULT_MODEL: "mock-agent" } }),
       { printQrToTerminal: false },
@@ -273,6 +289,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     await app?.stop();
     await llm?.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
   });
 
   const chat = async (text: string) => {
@@ -648,5 +665,99 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const mine = callsFor("gpt-7-switch", from).filter((c) => c.body.tools);
     expect(mine.map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual(mine.map(() => "responses:ok"));
     expect(mine[0].body.input.filter((i: any) => i.type === "function_call_output")).toHaveLength(1);
+  }, 180_000);
+
+  // —— 完全权限：不进沙箱、不请求提权；递归删除仍经审批 ——
+  const setPermission = async (permission: string) => {
+    const r = (await api("/bots/default/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ permission }) })) as any;
+    expect(r.settings.permission).toBe(permission);
+  };
+  const approvalCount = () => app.store.listApprovals({ limit: 500 }).length;
+  const pendingApproval = async () => {
+    for (let i = 0; i < 300; i++) {
+      const row = ((await api("/approvals?status=pending")) as any).approvals[0];
+      if (row) return row;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return undefined;
+  };
+
+  it("workspace (default): writes outside the workspace stay in the sandbox, escalation asks", async () => {
+    const pending = chat("OUTWRITE workspace");
+    // 第二步显式要 danger-full-access：工作区模式下要审批（这里拒绝）
+    const row = await pendingApproval();
+    expect(row?.tool).toBe("bash");
+    await api(`/approvals/${row.id}/deny`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const r = await pending;
+    expect(r.reply).toContain("DB-HIDDEN");
+    expect(r.reply).not.toContain("escalated-42");
+    expect(fs.existsSync(path.join(outside, "marker.txt"))).toBe(false);
+  }, 120_000);
+
+  it("full: commands run unsandboxed with no approval prompt; the loopback API stays blocked", async () => {
+    await setPermission("full");
+    const before = approvalCount();
+    const r = await chat("OUTWRITE full");
+    expect(r.reply).toContain("out-42");
+    expect(r.reply).toContain("DB-READABLE");
+    expect(r.reply).toContain("escalated-42");
+    expect(fs.readFileSync(path.join(outside, "marker.txt"), "utf8").trim()).toBe("out-42");
+    expect(approvalCount()).toBe(before);
+    expect(r.prompts).toEqual([]);
+    expect((await chat("LOOPBACK full")).reply).toContain("API 403");
+    expect((await chat("/status")).reply).toMatch(/运行方式：代理模式（DeepSeek Harness，完全权限：不经沙箱）\n注意：完全权限下命令以你的用户身份直接运行/);
+  }, 180_000);
+
+  it("full: rm -rf asks first; deny keeps the directory, a plain rm does not ask", async () => {
+    fs.writeFileSync(path.join(outside, "single.txt"), "x");
+    fs.mkdirSync(path.join(outside, "victim", "sub"), { recursive: true });
+    fs.writeFileSync(path.join(outside, "victim", "sub", "f.txt"), "keep me");
+    const pending = chat("RMRF deny");
+    const row = await pendingApproval();
+    expect(row).toMatchObject({ tool: "bash", reason: "递归删除，需要你确认（rm -rf）" });
+    expect(row.detail).toContain(`rm -rf ${outside}/victim`);
+    // 第一步的普通删除已经执行了，没有问
+    expect(fs.existsSync(path.join(outside, "single.txt"))).toBe(false);
+    expect(fs.existsSync(path.join(outside, "victim"))).toBe(true);
+    const no = await fetch(`${base}/amb/api/approvals/${row.id}/deny`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    expect(no.status).toBe(200);
+    const r = await pending;
+    expect(r.reply).toContain("single-gone");
+    expect(r.reply).toMatch(/rejected/);
+    expect(r.reply).not.toContain("victim-gone");
+    expect(fs.readFileSync(path.join(outside, "victim", "sub", "f.txt"), "utf8")).toBe("keep me");
+    expect(r.prompts[0]?.prompt).toMatch(new RegExp(`需批准: bash \`rm -rf ${outside}/victim && echo victim-gone\` — 回复 y ${row.code} / n ${row.code}`));
+  }, 180_000);
+
+  it("full: approving the recursive delete runs it once", async () => {
+    fs.writeFileSync(path.join(outside, "single.txt"), "x");
+    const pending = chat("RMRF allow");
+    const row = await pendingApproval();
+    expect(row?.detail).toContain("rm -rf");
+    const ok = await fetch(`${base}/amb/api/approvals/${row.id}/approve`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    expect(ok.status).toBe(200);
+    const r = await pending;
+    expect(r.reply).toContain("victim-gone");
+    expect(fs.existsSync(path.join(outside, "victim"))).toBe(false);
+    expect(app.store.getApproval(row.id)!.status).toBe("allowed");
+  }, 180_000);
+
+  it("full: a subagent's recursive delete is gated too", async () => {
+    fs.mkdirSync(path.join(outside, "victim2", "sub"), { recursive: true });
+    const pending = chat("SUBRM please");
+    const row = await pendingApproval();
+    expect(row).toMatchObject({ tool: "bash", reason: "递归删除，需要你确认（rm -rf）" });
+    await api(`/approvals/${row.id}/deny`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    await pending;
+    expect(fs.existsSync(path.join(outside, "victim2", "sub"))).toBe(true);
+  }, 180_000);
+
+  it("back to workspace: recursive deletes inside the workspace run without asking, as before", async () => {
+    await setPermission("workspace");
+    const before = approvalCount();
+    const r = await chat("RMWS check");
+    expect(r.reply).toContain("tree-gone");
+    expect(approvalCount()).toBe(before);
+    expect((await chat("/status")).reply).toContain("运行方式：代理模式（DeepSeek Harness，工作区沙箱）");
   }, 180_000);
 });

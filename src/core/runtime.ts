@@ -217,7 +217,10 @@ export class BotRuntime {
   statusText(botId: string, convId: string, convModel: string, botModel: string): string {
     const m = convModel || botModel || this.opts.defaultModel() || "（自动：第一个可用模型）";
     const a = this.opts.agent;
-    const mode = a?.available ? "代理模式（DeepSeek Harness，工作区沙箱）" : "纯对话模式";
+    const perm = a?.available ? a.settings(botId).permission : undefined;
+    const mode = !a?.available ? "纯对话模式" : `代理模式（DeepSeek Harness，${perm === "full" ? "完全权限：不经沙箱" : perm === "readonly" ? "只读沙箱" : "工作区沙箱"}）`;
+    // 完全权限：每次 /status 都提醒风险
+    const full = perm === "full" ? ["注意：完全权限下命令以你的用户身份直接运行，可以读写你电脑上的任何文件（包括 AnyModelBot 自己的数据）；只有递归删除仍会先问你。在机器人设置里可以改回「工作区可写」。"] : [];
     const pend = a ? a.approvals.pending(convId).map((r) => `${r.kind === "approval" ? "待批准" : "待回答"} ${r.code}`) : [];
     const cui = a?.available ? a.computerUse(botId) : undefined;
     const cu = cui ? [`电脑操作：${cui.backend === "codex" ? "Codex 桥" : "Cua Driver"}，${cui.active ? "已启用" : "未启用"}——${cui.reason}`, ...(cui.notice && cui.enabled ? [cui.notice] : [])] : [];
@@ -226,7 +229,7 @@ export class BotRuntime {
     const ps = a?.available ? pwshStatusLine(pwshProbe.snapshot()) : "";
     const turn = a?.turnsInProgress.get(convId);
     const busy = turn ? [busyLine(turn.since, turn.lastProgress, turn.activity.steps)] : [];
-    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
+    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
   }
 
   /** 卡片按钮回调：批准/拒绝/选择选项。 */

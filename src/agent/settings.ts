@@ -1,5 +1,5 @@
 /** 每个机器人的身份与行为设置（存在 bots.settings JSON 列，网页可编辑）。 */
-export type PermissionPreset = "readonly" | "workspace";
+export type PermissionPreset = "readonly" | "workspace" | "full";
 export type CuBackend = "cua" | "codex";
 export type CuApproval = "auto" | "ask-input";
 /** 内置头像角色（ui/components/avatar.js 的 BOT_CHARS）；blue 是主角 */
@@ -7,7 +7,10 @@ export const BOT_AVATARS = ["blue", "yellow", "green", "red", "purple", "orange"
 export type BotAvatarKey = (typeof BOT_AVATARS)[number];
 
 export interface BotSettings {
-  /** 权限预设：readonly = 只读（不能改文件、命令只读沙箱）；workspace = 可写本机器人工作区（默认），越界操作需审批 */
+  /**
+   * 权限预设：readonly = 只读（不能改文件、命令只读沙箱）；workspace = 可写本机器人工作区（默认），越界操作需审批；
+   * full = 完全权限：命令不进沙箱、不再请求提权，以用户身份读写任何文件，只有递归删除仍要用户确认
+   */
   permission: PermissionPreset;
   memory: {
     enabled: boolean;
@@ -57,7 +60,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
   const limit = Number(bg.limitUsd);
   const b = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
   return {
-    permission: r.permission === "readonly" ? "readonly" : "workspace",
+    permission: r.permission === "readonly" || r.permission === "full" ? r.permission : "workspace",
     memory: {
       enabled: b(m.enabled, DEFAULT_SETTINGS.memory.enabled),
       review: b(m.review, DEFAULT_SETTINGS.memory.review),
@@ -79,6 +82,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
   };
 }
 
+/** DSH 的沙箱模式。full 用 danger-full-access，但宿主会把它的审批策略从 never 改成 ask（递归删除还要问，见 host.ts） */
 export function permissionMode(p: PermissionPreset): string {
-  return p === "readonly" ? "read-only" : "workspace-write";
+  return p === "readonly" ? "read-only" : p === "full" ? "danger-full-access" : "workspace-write";
 }

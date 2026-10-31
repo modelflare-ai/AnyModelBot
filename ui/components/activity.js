@@ -55,7 +55,7 @@ function Step({ s, now }) {
     ${ms != null && html`<span class=${`d num${s.status === "running" ? " shimmer" : ""}`}>${stepDur(ms)}</span>`}
     ${more && html`<${Icon} name="chevRight" size=${12} class="chev" />`}`;
   const label = `${s.status === "error" ? "失败" : s.status === "running" ? "进行中" : "完成"}：${s.title}`;
-  return html`<li class=${`act-step ${s.status}`}>
+  return html`<li class=${`act-step ${s.status}${open ? " open" : ""}`}>
     ${more
       ? html`<button type="button" class="act-head" aria-expanded=${open} aria-label=${`${label}，${open ? "收起" : "展开"}详情`} onClick=${() => setOpen(!open)}>${head}</button>`
       : html`<div class="act-head" aria-label=${label}>${head}</div>`}

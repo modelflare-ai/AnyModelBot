@@ -259,6 +259,8 @@ export class App {
       contextChars: config.llm.contextChars,
       route: (botId, model) => this.routeModel(botId, model),
       access: this.access,
+      // Key 可能在 Modelflare 控制台被删了：核对一下，重新签发了就让失败的那条消息再试一次
+      recoverKey: () => (this.account?.signedIn ? this.account.repairKeys(15_000) : Promise.resolve(false)),
     });
   }
 
@@ -396,6 +398,16 @@ export class App {
         keyBalance: async () => {
           const key = this.magpie?.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER);
           return key ? fetchKeyBalance(modelflareBaseUrl(this.config.modelflare.line), key) : undefined;
+        },
+        sharedKeyTail: () => this.magpie?.modelflareInfo().keyTail ?? "",
+        sharedKeyRejected: async () => {
+          if (!this.magpie) return false;
+          const key = this.magpie.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER);
+          if (!key) return true;
+          // 只认 401：连不上、限流、上游出错都不算 Key 坏了，不换
+          const line = this.config.modelflare.line;
+          const r = await verifyModelflareKey(modelflareBaseUrl(line), key, { line });
+          return !r.ok && r.code === "invalid_key";
         },
         alert: (text, push) => {
           this.notice("warn", text);

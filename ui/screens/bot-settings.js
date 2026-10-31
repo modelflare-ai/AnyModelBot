@@ -79,7 +79,7 @@ function BudgetRows({ bot, budget, account, onSaved, onOpenSettings }) {
 }
 
 /**
- * 谁能使用：只有主人和允许名单里的人。主人 = 扫码登录的微信 / 在应用里设的飞书主人；
+ * 谁能使用：只有主人和允许名单里的人。主人 = 扫码登录的微信 / 连上之后第一个发消息的人（可以「更换」：下一个发消息的人成为主人）；
  * 允许名单和拒绝过的人可以移除（移除后他再发消息会重新申请）。
  */
 function AccessRows({ botId }) {
@@ -107,23 +107,23 @@ function AccessRows({ botId }) {
     }))) return;
     call(encodeURIComponent(e.id), "DELETE");
   };
-  const clearOwner = async (ch, o) => {
-    if (!(await confirmSheet({ title: `取消${CHANNEL_NAME[ch]}主人？`, body: `「${o.who}」之后发消息需要重新被允许；下一个发消息的人可以在信息面板里设为主人。`, confirmLabel: "取消主人", danger: true }))) return;
-    call(encodeURIComponent(o.entryId), "DELETE");
+  const resetOwner = async (ch, o) => {
+    const name = CHANNEL_NAME[ch];
+    if (!(await confirmSheet({ title: `更换${name}主人？`, body: `「${o.name}」不再是主人，之后发消息需要重新被允许。下一个给机器人发消息的人会成为${name}主人：用你自己的${name}发一句话就行。`, confirmLabel: "更换", danger: true }))) return;
+    call(`owner/${ch}`, "DELETE");
   };
   if (!d) return html`<div class="list-head">谁能使用</div><div class="list"><div class="row"><${Skeleton} w="45%" /></div></div>`;
   const allowed = d.entries.filter((e) => e.status === "allowed");
   const denied = d.entries.filter((e) => e.status === "denied");
   const owner = (ch) => {
     const o = d.owners[ch];
-    const sub = o
-      ? `${o.who} · ${o.via === "login" ? "扫码登录的微信" : "在应用里设的"}`
-      : ch === "weixin"
-        ? "扫码登录后，扫码的那个微信就是主人"
-        : "还没有：第一个给机器人发消息的人会出现在信息面板，点「设为主人」";
-    return html`<${Row} id=${`access-${ch}`} name=${`${CHANNEL_NAME[ch]}主人`} sub=${sub}>
-      ${o && o.via === "app" && html`<button type="button" class="text" onClick=${() => clearOwner(ch, o)}>取消</button>`}
-    <//>`;
+    if (o) {
+      return html`<${Row} id=${`access-${ch}`} name=${`${CHANNEL_NAME[ch]}主人：${o.name}（${o.via === "login" ? "扫码登录的微信" : "第一个发消息的人"}）`}>
+        ${o.via !== "login" && html`<button type="button" class="text" onClick=${() => resetOwner(ch, o)}>更换</button>`}
+      <//>`;
+    }
+    const sub = ch === "weixin" ? "扫码登录后，扫码的那个微信就是主人" : `还没有：用你自己的${CHANNEL_NAME[ch]}给机器人发一句话，就完成绑定`;
+    return html`<${Row} id=${`access-${ch}`} name=${`${CHANNEL_NAME[ch]}主人`} sub=${sub} />`;
   };
   return html`<div class="list-head">谁能使用</div>
     <div class="list">

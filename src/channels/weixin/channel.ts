@@ -4,7 +4,7 @@ import { splitText } from "../../core/types.js";
 import { Dedup, KeyedQueue } from "../../core/queue.js";
 import type { BotRuntime } from "../../core/runtime.js";
 import type { OutboxBody, OutboxKind, OutboxRow, Store } from "../../store/db.js";
-import { Gone, Later, Outbox, ReplyIds, stableId } from "../../core/outbox.js";
+import { Gone, Held, Later, Outbox, ReplyIds, stableId, type HeldGroup } from "../../core/outbox.js";
 import { IlinkClient, MessageItemType, MessageType, WeixinApiError, hasDownloadableMedia, type InboundMedia, type MessageItem, type WeixinMessage } from "./api.js";
 import { StreamingMarkdownFilter } from "./markdown-filter.js";
 import { WeixinQuota } from "./quota.js";
@@ -87,13 +87,46 @@ function transient(e: unknown): boolean {
   return !(x?.syscall && ["open", "read", "stat", "scandir"].includes(x.syscall));
 }
 
-/** 能不能给这个人发：要有会话凭证、24 小时窗口没过、还有配额；不能就放弃（Gone），返回凭证 */
+/** 能不能给这个人发：要有会话凭证、24 小时窗口没过、还有配额；不能就留着（Held），等他下次发消息；返回凭证 */
 function reachable(quota: WeixinQuota, userId: string): string {
   const peer = quota.peer(userId);
-  if (!peer?.contextToken) throw new Gone("对方还没有给机器人发过消息，微信不允许主动发送");
-  if (!quota.open(userId)) throw new Gone("对方超过 24 小时没有发消息，微信不再允许回复");
-  if (quota.remaining(userId) <= 0) throw new Gone("本轮可发送条数已用完（对方每发一条消息，24 小时内最多回复 10 条）");
+  if (!peer?.contextToken) throw new Held("对方还没有给机器人发过消息，等他发消息后再发");
+  if (!quota.open(userId)) throw new Held("对方超过 24 小时没有发消息，等他下次发消息时再发");
+  if (quota.remaining(userId) <= 0) throw new Held("本轮可发送条数已用完（对方每发一条消息，24 小时内最多回复 10 条），等他下次发消息时再发");
   return peer.contextToken;
+}
+
+/** 留着的消息在对方下次发消息时送达，开头加上这句 */
+export const AWAY_PREFIX = "你不在时：";
+
+/**
+ * 对方又发消息了，留着给他的消息怎么发（Outbox.release 的 combine）：相邻的文字合成一条「你不在时：…」（一条微信放得下就合），
+ * 文件和发了一半的长回复照原样发，顺序不变。
+ */
+export function combineHeld(rows: OutboxRow[]): HeldGroup[] {
+  const groups: HeldGroup[] = [];
+  let cur: { rows: OutboxRow[]; texts: string[]; len: number } | undefined;
+  const flush = () => {
+    if (cur) groups.push({ rows: cur.rows, body: { text: AWAY_PREFIX + (cur.texts.length > 1 ? "\n" : "") + cur.texts.join("\n\n"), raw: true, away: true } });
+    cur = undefined;
+  };
+  for (const r of rows) {
+    const raw = r.body.text ?? "";
+    if (r.kind === "file" || r.progress > 0 || !raw.trim()) {
+      flush();
+      groups.push({ rows: [r] });
+      continue;
+    }
+    // 已经合成过的（又被留着）不再加前缀；Markdown 先按微信的规则过滤掉，合成的那条原样发
+    const text = r.body.away ? raw.slice(AWAY_PREFIX.length).trim() : r.body.raw ? raw.trim() : filterMarkdown(raw);
+    if (cur && cur.len + 2 + text.length > WEIXIN_CAPS.maxTextLength) flush();
+    cur ??= { rows: [], texts: [], len: AWAY_PREFIX.length };
+    cur.rows.push(r);
+    cur.texts.push(text);
+    cur.len += 2 + text.length;
+  }
+  flush();
+  return groups;
 }
 
 /**
@@ -216,7 +249,7 @@ export class WeixinReply implements ReplySession {
     try {
       await deliverWeixin(this.client, this.quota, row, () => {}, false);
     } catch (e) {
-      if (!(e instanceof Gone)) throw e;
+      if (!(e instanceof Gone) && !(e instanceof Held)) throw e;
       this.log.warn("weixin reply dropped", { userId: this.userId, reason: e.message });
     }
   }
@@ -325,7 +358,7 @@ export class WeixinChannel {
 
   /**
    * 主动发到一个微信会话的回复（代理自己醒来的一轮：后台命令结束）：和普通回复一样经出站队列，id 由 key 推出；
-   * 会话凭证、24 小时窗口和配额在发送时才查（deliverWeixin），发不出去在界面里看得到。
+   * 会话凭证、24 小时窗口和配额在发送时才查（deliverWeixin），发不出去就留着，等对方下次发消息时先发。
    */
   followUp(userId: string, key: string): ReplySession {
     const token = this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? "";
@@ -395,6 +428,8 @@ export class WeixinChannel {
     if (!this.dedup.firstSeen(id)) return;
     const userId = m.from_user_id;
     const peer = this.quota.onInbound(userId, m.context_token ?? "");
+    // 对方又发消息了（24 小时窗口和配额重新开始）：之前留着没发的先发，合成「你不在时：…」，排在这次的回复前面
+    this.outbox.release(this.botId, "weixin", userId, combineHeld);
     const ev: InboundEvent = {
       id,
       channel: "weixin",

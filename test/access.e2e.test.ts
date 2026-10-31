@@ -1,7 +1,7 @@
 /**
  * 准入端到端：mock iLink + 假飞书 + 真实 App/Web（外部模型端点模式）。
  * 陌生人被拦（只回一句、不碰模型）→ 主人在微信里「同意 1234」或在应用里批准 → 对方能对话；拒绝、移除；
- * 飞书在应用里设主人；升级前已在对话的人自动加入允许名单。
+ * 飞书连上后第一个发消息的人成为主人（可以更换）；升级前已在对话的人自动加入允许名单。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
@@ -157,26 +157,20 @@ describe("微信：只有主人和允许的人", () => {
   });
 });
 
-describe("飞书：在应用里设主人", () => {
-  it("还没有主人：第一个发消息的人被拦下，在应用里「设为主人」后能用，并且收到后续请求的通知", async () => {
+describe("飞书：第一个发消息的人成为主人", () => {
+  it("还没有主人：第一个发消息的人成为主人，这条消息照常回复；之后的人是使用请求，主人在飞书里「允许 1234」", async () => {
     // 模拟过了一小时：上面的请求通知不占这里的限额
     app.store.db.prepare("UPDATE access SET notified_at = 0").run();
     const ch = app.channels.get("default")!.feishu!;
+    expect((await api("/bots/default/access")).json.owners.feishu).toBeNull();
+    const texts = feishu.texts.length;
     feishu.onMessage!(feishuEvent("我是老板", { chatId: "oc_boss", senderOpenId: "ou_boss" }));
     await ch.idle();
-    expect(feishu.texts.at(-1)).toBe(REFUSAL_TEXT);
-    const req = (await api("/bots/default/access")).json.requests.find((r: any) => r.channel === "feishu");
-    expect(req).toMatchObject({ text: "我是老板", peer: "oc_boss" });
-    expect((await api("/bots/default/access")).json.owners.feishu).toBeNull();
-    const r = await api(`/bots/default/access/${req.id}/owner`, { method: "POST", body: {} });
-    expect(r.json.entry.status).toBe("owner");
-    await ch.idle();
-    expect(feishu.notices.at(-1)).toMatchObject({ chatId: "oc_boss", text: expect.stringContaining("主人") });
-    expect((await api("/bots/default/access")).json.owners.feishu).toMatchObject({ via: "app", peer: "oc_boss" });
-
-    feishu.onMessage!(feishuEvent("帮我看看", { chatId: "oc_boss", senderOpenId: "ou_boss" }));
-    await ch.idle();
-    expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：帮我看看");
+    expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：我是老板");
+    expect(feishu.texts.length).toBe(texts);
+    const acc = (await api("/bots/default/access")).json;
+    expect(acc.owners.feishu).toEqual({ via: "first-message", peer: "oc_boss", name: "ou_boss", who: "飞书用户 ou_boss" });
+    expect(acc.requests.filter((r: any) => r.channel === "feishu")).toEqual([]);
 
     // 同事来了：飞书主人和微信主人都收到配对码，主人在飞书里回复「允许 1234」
     const ownerWx = to(OWNER).length;
@@ -195,6 +189,24 @@ describe("飞书：在应用里设主人", () => {
     feishu.onMessage!(feishuEvent("谢谢", { chatId: "oc_colleague", senderOpenId: "ou_colleague" }));
     await ch.idle();
     expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：谢谢");
+  });
+
+  it("更换：清掉主人，下一个发消息的人成为主人；扫码登录的微信主人不能这样换", async () => {
+    const ch = app.channels.get("default")!.feishu!;
+    expect((await api("/bots/default/access/owner/weixin", { method: "DELETE" })).status).toBe(409);
+    expect((await api("/bots/default/access/owner/feishu", { method: "DELETE" })).status).toBe(200);
+    expect((await api("/bots/default/access")).json.owners.feishu).toBeNull();
+    feishu.onMessage!(feishuEvent("这是我自己的飞书", { chatId: "oc_me", senderOpenId: "ou_me" }));
+    await ch.idle();
+    expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：这是我自己的飞书");
+    expect((await api("/bots/default/access")).json.owners.feishu).toMatchObject({ via: "first-message", peer: "oc_me" });
+    // 原来的主人要重新申请；被允许的同事照常能用
+    feishu.onMessage!(feishuEvent("我还是主人吗", { chatId: "oc_boss", senderOpenId: "ou_boss" }));
+    await ch.idle();
+    expect(feishu.texts.at(-1)).toBe(REFUSAL_TEXT);
+    feishu.onMessage!(feishuEvent("我还能用吗", { chatId: "oc_colleague", senderOpenId: "ou_colleague" }));
+    await ch.idle();
+    expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：我还能用吗");
   });
 
   it("升级前的飞书单聊照常能用", async () => {

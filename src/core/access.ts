@@ -1,8 +1,8 @@
 /**
  * 谁能和机器人对话：默认只有主人。代理跑在用户自己的电脑上（甚至可能是完全权限），陌生人找到机器人也不能驱动它。
  *
- * - 主人：微信 = 扫码登录的那个微信；飞书（以及没拿到扫码者的微信）= 在应用里设的主人
- *   （第一个给机器人发消息的人会出现在信息面板的「使用请求」里，点「设为主人」）。
+ * - 主人：微信 = 扫码登录的那个微信；飞书（以及没拿到扫码者的微信）= 连上之后第一个发单聊消息的人
+ *   （先到先得；这条消息照常处理）。机器人设置里可以「更换」：清掉主人，下一个发消息的人成为主人。
  * - 其他人发消息：登记成使用请求，只回一句"还没被允许"（同一个人每小时最多一次），不进队列、不碰模型、不花钱；
  *   请求出现在信息面板里，也会带配对码发给主人（每个机器人每小时最多 3 条），主人回复「同意 1234」即可。
  * - 允许的人进允许名单，在机器人设置里能看到、能移除；被拒绝的人不再回复。
@@ -34,8 +34,8 @@ export type Notify = (to: { botId: string; channel: string; peerId: string }, te
 
 export interface Owner {
   peerId: string;
-  /** login = 扫码登录的微信；app = 在应用里设的 */
-  via: "login" | "app";
+  /** login = 扫码登录的微信；first-message = 连上之后第一个发消息的人 */
+  via: "login" | "first-message";
   entryId?: string;
 }
 
@@ -45,8 +45,13 @@ export function shortPeer(id: string): string {
   return s.length > 10 ? `…${s.slice(-6)}` : s;
 }
 
+/** 名字，没有名字时是 id 的末尾几位 */
+export function peerName(e: Pick<AccessEntry, "peerId" | "senderId" | "name">): string {
+  return e.name && e.name !== e.peerId ? e.name : shortPeer(e.senderId || e.peerId);
+}
+
 export function whoText(e: Pick<AccessEntry, "channel" | "peerId" | "senderId" | "name">): string {
-  return `${CHANNEL_LABEL[e.channel] ?? e.channel}用户 ${e.name && e.name !== e.peerId ? e.name : shortPeer(e.senderId || e.peerId)}`;
+  return `${CHANNEL_LABEL[e.channel] ?? e.channel}用户 ${peerName(e)}`;
 }
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -61,14 +66,14 @@ export class AccessControl {
     return (this.opts.now ?? Date.now)();
   }
 
-  /** 某个渠道的主人：微信优先用扫码登录的人，其余是在应用里设的 */
+  /** 某个渠道的主人：微信优先用扫码登录的人，其余是连上之后第一个发消息的人 */
   owner(botId: string, channel: string): Owner | undefined {
     if (channel === "weixin") {
       const o = this.store.getWeixinAccount(botId)?.ownerUserId;
       if (o) return { peerId: o, via: "login" };
     }
     const e = this.store.listAccess({ botId, channel, status: "owner" })[0];
-    return e ? { peerId: e.peerId, via: "app", entryId: e.id } : undefined;
+    return e ? { peerId: e.peerId, via: "first-message", entryId: e.id } : undefined;
   }
 
   private isOwner(ev: InboundEvent): boolean {
@@ -92,7 +97,7 @@ export class AccessControl {
    * 返回给他的一句话（同一个人每小时最多一次；被拒绝的人不回）。
    */
   admit(ev: InboundEvent): { ok: true } | { ok: false; reply?: string } {
-    if (this.allowed(ev)) return { ok: true };
+    if (this.claimOwner(ev) || this.allowed(ev)) return { ok: true };
     const now = this.now();
     let e = this.store.getAccess(ev.botId, ev.channel, ev.conversation.id);
     if (e?.status === "denied") return { ok: false };
@@ -124,6 +129,37 @@ export class AccessControl {
     if (e.repliedAt && now - e.repliedAt < REFUSE_EVERY_MS) return { ok: false };
     this.store.updateAccess(e.id, { repliedAt: now });
     return { ok: false, reply: REFUSAL_TEXT };
+  }
+
+  /**
+   * 这个渠道还没有主人（飞书刚连上、主人被更换、扫码时没拿到扫码者的微信）：第一个发单聊消息的人成为主人，
+   * 他的这条消息照常处理。拒绝过的人不算。
+   */
+  private claimOwner(ev: InboundEvent): boolean {
+    if (ev.channel === "web" || ev.conversation.kind === "group" || this.owner(ev.botId, ev.channel)) return false;
+    const cur = this.store.getAccess(ev.botId, ev.channel, ev.conversation.id);
+    if (cur?.status === "denied") return false;
+    const now = this.now();
+    const decided = { status: "owner" as const, code: "", decidedAt: now, decidedBy: "first-message", updatedAt: now };
+    if (cur) this.store.updateAccess(cur.id, decided);
+    else
+      this.store.putAccess({
+        id: crypto.randomUUID(),
+        botId: ev.botId,
+        channel: ev.channel,
+        peerId: ev.conversation.id,
+        senderId: ev.sender.id,
+        name: ev.sender.name ?? "",
+        source: "first-message",
+        text: clip(eventText(ev).replace(/\s+/g, " "), 200),
+        requests: 1,
+        createdAt: now,
+        repliedAt: 0,
+        notifiedAt: 0,
+        ...decided,
+      });
+    log.info("access owner claimed by the first message", { bot: ev.botId, channel: ev.channel, peer: shortPeer(ev.conversation.id) });
+    return true;
   }
 
   /** 把新请求带配对码发给各渠道的主人（每个机器人每小时最多 NOTICE_LIMIT 条；超出的只在应用里显示） */
@@ -180,22 +216,19 @@ export class AccessControl {
   }
 
   /**
-   * 设为这个渠道的主人（飞书；或没拿到扫码者的微信）。原来的主人改为普通允许。
-   * 扫码登录的微信已经是主人时不能改（重新扫码就换了）。
+   * 更换主人（机器人设置里的「更换」、飞书换了一个应用）：清掉这个渠道"第一个发消息"的主人，下一个发单聊消息的人成为主人。
+   * 原来的主人移出名单（之后发消息要重新被允许，除非他就是下一个发消息的人）；keep 时留在允许名单里（扫码拿到了扫码者的微信）。
+   * 扫码登录的微信主人不在这里，重新扫码就换了。
    */
-  setOwner(id: string, by: string): AccessEntry {
-    const e = this.store.getAccessById(id);
-    if (!e) throw new Error("记录不存在");
-    if (e.channel === "weixin" && this.store.getWeixinAccount(e.botId)?.ownerUserId) throw new Error("微信的主人是扫码登录的人；要换主人，请用那个微信重新扫码");
+  resetOwner(botId: string, channel: string, opts: { keep?: boolean } = {}): boolean {
     const now = this.now();
-    for (const o of this.store.listAccess({ botId: e.botId, channel: e.channel, status: "owner" })) {
-      if (o.id !== id) this.store.updateAccess(o.id, { status: "allowed", updatedAt: now });
+    const owners = this.store.listAccess({ botId, channel, status: "owner" });
+    for (const o of owners) {
+      if (opts.keep) this.store.updateAccess(o.id, { status: "allowed", source: "previous-owner", updatedAt: now });
+      else this.store.deleteAccess(o.id);
+      log.info("access owner reset", { bot: botId, channel, peer: shortPeer(o.peerId), kept: !!opts.keep });
     }
-    const was = e.status;
-    this.store.updateAccess(id, { status: "owner", code: "", decidedAt: now, decidedBy: by, updatedAt: now });
-    log.info("access owner set", { bot: e.botId, channel: e.channel, peer: shortPeer(e.peerId), by });
-    if (was === "pending") this.opts.notify?.({ botId: e.botId, channel: e.channel, peerId: e.peerId }, "你已被设为这个机器人的主人。以后有人想使用它时，我会在这里告诉你。", `access:${id}:owner:${now}`);
-    return this.store.getAccessById(id)!;
+    return owners.length > 0;
   }
 
   /** 直接加入允许名单（迁移、换了扫码的微信、测试） */
@@ -224,7 +257,7 @@ export class AccessControl {
     });
   }
 
-  /** 移除（允许名单里的人、被拒绝的人、在应用里设的主人）：之后他再发消息会重新申请 */
+  /** 移除（允许名单里的人、被拒绝的人）：之后他再发消息会重新申请 */
   remove(id: string): boolean {
     const e = this.store.getAccessById(id);
     if (!e) return false;

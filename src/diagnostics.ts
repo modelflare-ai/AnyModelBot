@@ -362,12 +362,13 @@ export function diagnosticsStatus(app: App): Record<string, unknown> {
   };
 }
 
-/** 出站队列：等着发的、最近 7 天没发出去的（只有数量和原因，不含消息内容） */
+/** 出站队列：等着发的、留着等对方发消息的、最近 7 天没发出去的（只有数量和原因，不含消息内容） */
 function outboxSummary(app: App): Record<string, unknown> | undefined {
   try {
     const pending = app.store.listOutbox({ status: "pending", limit: 500 });
+    const held = app.store.listOutbox({ status: "held", limit: 500 });
     const gone = app.store.listOutbox({ status: "gone", since: Date.now() - 7 * 86400_000, limit: 500 });
-    return { pending: pending.length, retrying: pending.filter((r) => r.attempts > 0).length, lastError: pending.find((r) => r.error)?.error, gone7d: gone.length, lastGone: gone[0]?.error };
+    return { pending: pending.length, retrying: pending.filter((r) => r.attempts > 0).length, lastError: pending.find((r) => r.error)?.error, held: held.length, gone7d: gone.length, lastGone: gone[0]?.error };
   } catch {
     return undefined;
   }
@@ -402,7 +403,7 @@ export function diagnosticsReport(app: App, lines = 200): string {
   const ps = pwshReportLine(s.pwsh);
   if (ps) out.push(ps);
   const ob = s.outbox;
-  if (ob) out.push(`[出站队列] 等待发送 ${ob.pending} 条（重试中 ${ob.retrying}）${ob.lastError ? ` · 最近错误：${ob.lastError}` : ""} · 最近 7 天没发出去 ${ob.gone7d} 条${ob.lastGone ? ` · 最近一次：${ob.lastGone}` : ""}`);
+  if (ob) out.push(`[出站队列] 等待发送 ${ob.pending} 条（重试中 ${ob.retrying}）${ob.lastError ? ` · 最近错误：${ob.lastError}` : ""} · 等对方发消息后再发 ${ob.held} 条 · 最近 7 天没发出去 ${ob.gone7d} 条${ob.lastGone ? ` · 最近一次：${ob.lastGone}` : ""}`);
   const m = app.lastDiagnostics.model;
   if (m) {
     out.push("");

@@ -97,30 +97,66 @@ describe("AccessControl", () => {
     expect(access.view("b").requests[0].text).toBe("hi again");
   });
 
-  it("Feishu: the first sender can be made owner in the app; later requests reach that owner, who can approve in Feishu", () => {
+  it("Feishu: the first DM claims ownership and is handled normally; a second sender becomes a request the owner approves in Feishu", () => {
     const { access, sent } = setup();
     expect(access.owner("b", "feishu")).toBeUndefined();
-    access.admit(ev("feishu", "oc_me", "我是主人"));
-    const mine = access.view("b").requests[0];
-    access.setOwner(mine.id, "web");
-    expect(access.owner("b", "feishu")).toEqual({ peerId: "oc_me", via: "app", entryId: mine.id });
-    expect(access.allowed(ev("feishu", "oc_me", "x"))).toBe(true);
-    expect(sent.at(-1)).toMatchObject({ channel: "feishu", peerId: "oc_me", text: expect.stringContaining("主人") });
+    // 第一个发单聊消息的人：直接放行（这条消息照常处理），成为飞书主人，不通知谁
+    expect(access.admit(ev("feishu", "oc_me", "我是主人"))).toEqual({ ok: true });
+    expect(access.owner("b", "feishu")).toEqual({ peerId: "oc_me", via: "first-message", entryId: expect.any(String) });
+    expect(access.view("b").requests).toEqual([]);
+    expect(access.view("b").entries).toEqual([expect.objectContaining({ peerId: "oc_me", status: "owner", source: "first-message", senderId: "ou_oc_me", text: "我是主人" })]);
+    expect(sent).toEqual([]);
+    expect(access.admit(ev("feishu", "oc_me", "再来一句"))).toEqual({ ok: true });
 
-    access.admit(ev("feishu", "oc_colleague", "借用一下"));
+    // 第二个、不同的人：使用请求，飞书主人和微信主人都收到配对码
+    expect(access.admit(ev("feishu", "oc_colleague", "借用一下"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
     const req = access.view("b").requests[0];
-    // 两个渠道的主人都收到
-    expect(sent.filter((s) => s.id.startsWith(`access:${req.id}`)).map((s) => s.channel).sort()).toEqual(["feishu", "weixin"]);
+    expect(req).toMatchObject({ peerId: "oc_colleague", status: "pending" });
+    expect(sent.filter((s) => s.id.startsWith(`access:${req.id}`)).map((s) => [s.channel, s.peerId]).sort()).toEqual([["feishu", "oc_me"], ["weixin", "owner@im.wechat"]]);
+    // 主人在飞书里回复「允许 1234」
+    expect(access.handleReply(ev("feishu", "oc_colleague", `允许 ${req.code}`)).handled).toBe(false);
     expect(access.handleReply(ev("feishu", "oc_me", `允许 ${req.code}`)).handled).toBe(true);
     expect(access.allowed(ev("feishu", "oc_colleague", "x"))).toBe(true);
+    expect(access.owner("b", "feishu")!.peerId).toBe("oc_me");
+  });
 
-    // 换主人：原来的主人变成普通允许
-    access.setOwner(req.id, "web");
-    expect(access.owner("b", "feishu")!.peerId).toBe("oc_colleague");
-    expect(access.view("b").entries.find((e) => e.peerId === "oc_me")!.status).toBe("allowed");
-    // 扫码登录的微信主人不能在应用里改
-    access.admit(ev("weixin", "x@im.wechat", "hi"));
-    expect(() => access.setOwner(access.view("b").requests[0].id, "web")).toThrow(/扫码/);
+  it("更换: resetting the owner removes them; the next DM claims it again; denied senders never claim", () => {
+    const { access } = setup();
+    // 同事抢先发了一句，成了飞书主人；有人发广告，被拒绝
+    expect(access.admit(ev("feishu", "oc_wrong", "我先发"))).toEqual({ ok: true });
+    access.admit(ev("feishu", "oc_spam", "广告"));
+    access.decide(access.view("b").requests[0].id, false, "web");
+
+    expect(access.resetOwner("b", "feishu")).toBe(true);
+    expect(access.owner("b", "feishu")).toBeUndefined();
+    expect(access.allowed(ev("feishu", "oc_wrong", "x"))).toBe(false);
+    // 拒绝过的人不能认领
+    expect(access.admit(ev("feishu", "oc_spam", "我又来了"))).toEqual({ ok: false });
+    expect(access.owner("b", "feishu")).toBeUndefined();
+    // 下一个发消息的人成为主人；原来的主人要重新申请
+    expect(access.admit(ev("feishu", "oc_me", "绑定"))).toEqual({ ok: true });
+    expect(access.owner("b", "feishu")!.peerId).toBe("oc_me");
+    expect(access.admit(ev("feishu", "oc_wrong", "我还能用吗"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
+    // 允许名单里的人在没有主人时也会认领（升级前就在用的人多半就是你自己）
+    access.resetOwner("b", "feishu");
+    access.allow("b", "feishu", "oc_old", "migration");
+    expect(access.admit(ev("feishu", "oc_old", "hi"))).toEqual({ ok: true });
+    expect(access.owner("b", "feishu")!.peerId).toBe("oc_old");
+    expect(access.resetOwner("b", "weixin")).toBe(false);
+  });
+
+  it("WeChat login without the scanner's id: the first DM claims ownership; a later login with an id keeps them on the allowlist", () => {
+    const { store, access } = setup();
+    store.saveWeixinAccount({ botId: "b", botToken: "t", ilinkBotId: "bot@im.bot", baseUrl: "http://x", ownerUserId: "" });
+    expect(access.owner("b", "weixin")).toBeUndefined();
+    expect(access.admit(ev("weixin", "me@im.wechat", "你好"))).toEqual({ ok: true });
+    expect(access.owner("b", "weixin")).toMatchObject({ peerId: "me@im.wechat", via: "first-message" });
+    expect(access.admit(ev("weixin", "other@im.wechat", "hi"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
+    // 重新扫码拿到了扫码者（App 里登录成功时这样调用）
+    access.resetOwner("b", "weixin", { keep: true });
+    store.saveWeixinAccount({ botId: "b", botToken: "t", ilinkBotId: "bot@im.bot", baseUrl: "http://x", ownerUserId: "owner@im.wechat" });
+    expect(access.owner("b", "weixin")).toEqual({ peerId: "owner@im.wechat", via: "login" });
+    expect(store.getAccess("b", "weixin", "me@im.wechat")).toMatchObject({ status: "allowed", source: "previous-owner" });
   });
 
   it("pairing codes and tool approval codes never collide", () => {

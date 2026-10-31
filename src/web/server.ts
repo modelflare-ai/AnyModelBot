@@ -20,8 +20,8 @@ import type { ApprovalRow } from "../store/db.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
 import { pwshProbe, type PwshMode } from "../agent/pwsh.js";
-import { shortPeer, whoText } from "../core/access.js";
-import type { AccessEntry, OutboxRow } from "../store/db.js";
+import { peerName, shortPeer, whoText } from "../core/access.js";
+import type { AccessEntry } from "../store/db.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -157,27 +157,6 @@ function publicAccess(e: AccessEntry) {
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
     decidedAt: e.decidedAt,
-  };
-}
-
-/** 出站队列里等着重发或发不出去的消息：发给谁、内容摘要、原因 */
-function publicOutbox(app: App, r: OutboxRow) {
-  const owner = app.access.owner(r.botId, r.channel)?.peerId === r.peerId;
-  const e = owner ? undefined : app.store.getAccess(r.botId, r.channel, r.peerId);
-  const preview = r.kind === "file" ? `文件「${r.body.name ?? ""}」` : (r.body.text ?? "").replace(/\s+/g, " ").slice(0, 120);
-  return {
-    id: r.id,
-    channel: r.channel,
-    to: owner ? `${r.channel === "weixin" ? "微信" : "飞书"}主人` : whoText(e ?? { channel: r.channel, peerId: r.peerId, senderId: r.peerId, name: "" }),
-    kind: r.kind,
-    preview,
-    status: r.status,
-    attempts: r.attempts,
-    error: r.error,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-    due: r.due,
-    expiresAt: r.expiresAt,
   };
 }
 
@@ -668,8 +647,9 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         const v = app.access.view(id);
         const owner = (ch: "weixin" | "feishu") => {
           const o = v.owners[ch];
-          const e = o?.entryId ? app.store.getAccessById(o.entryId) : undefined;
-          return o ? { peer: shortPeer(o.peerId), who: e ? whoText(e) : whoText({ channel: ch, peerId: o.peerId, senderId: o.peerId, name: "" }), via: o.via, entryId: o.entryId ?? null } : null;
+          if (!o) return null;
+          const e = (o.entryId ? app.store.getAccessById(o.entryId) : undefined) ?? { channel: ch, peerId: o.peerId, senderId: o.peerId, name: "" };
+          return { peer: shortPeer(o.peerId), name: peerName(e), who: whoText(e), via: o.via };
         };
         return send(res, 200, {
           policy: v.policy,
@@ -686,13 +666,14 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           if (!r) throw new HttpError(409, "这个请求已经处理过了");
           return send(res, 200, { entry: publicAccess(r) });
         }
-        if (seg[4] === "owner") {
-          try {
-            return send(res, 200, { entry: publicAccess(app.access.setOwner(entry.id, "web")) });
-          } catch (e) {
-            throw new HttpError(409, (e as Error).message);
-          }
-        }
+      }
+      // 更换主人：清掉"第一个发消息"的主人，下一个发单聊消息的人成为主人（扫码登录的微信要重新扫码）
+      if (seg[2] === "access" && seg[3] === "owner" && seg.length === 5 && m === "DELETE") {
+        const ch = seg[4];
+        if (ch !== "weixin" && ch !== "feishu") throw new HttpError(404, "没有这个渠道");
+        if (app.access.owner(id, ch)?.via === "login") throw new HttpError(409, "微信的主人是扫码登录的人；要换主人，请用那个微信重新扫码");
+        app.access.resetOwner(id, ch);
+        return send(res, 200, { ok: true });
       }
       if (seg[2] === "access" && seg.length === 4 && m === "DELETE") {
         const entry = app.store.getAccessById(decodeURIComponent(seg[3]));
@@ -700,27 +681,18 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         app.access.remove(entry.id);
         return send(res, 200, { ok: true });
       }
-      // —— 出站队列：等着重发的、发不出去的（信息面板） ——
-      if (sub === "outbox" && m === "GET") {
-        const waiting = app.store.listOutbox({ botId: id, status: "pending", limit: 50 }).filter((r) => r.attempts > 0 || r.error);
-        const failed = app.store.listOutbox({ botId: id, status: "gone", dismissed: false, since: Date.now() - 7 * 86400_000, limit: 50 });
-        return send(res, 200, { waiting: waiting.map((r) => publicOutbox(app, r)), failed: failed.map((r) => publicOutbox(app, r)) });
-      }
-      if (seg[2] === "outbox" && seg.length === 5 && seg[4] === "dismiss" && m === "POST") {
-        const row = app.store.getOutbox(decodeURIComponent(seg[3]));
-        if (!row || row.botId !== id) throw new HttpError(404, "消息不存在");
-        if (!app.outbox.dismiss(row.id)) throw new HttpError(409, "这条消息还在发送");
-        return send(res, 200, { ok: true });
-      }
       if (sub === "feishu" && m === "PUT") {
         const b = await readJson(req);
         const appId = String(b.appId ?? "").trim();
         const appSecret = String(b.appSecret ?? "").trim() || bot.feishuAppSecret;
+        // 换了一个飞书应用：单聊会话都是新的，原来的主人对不上了，连上后第一个发消息的人成为主人
+        if (appId !== bot.feishuAppId) app.access.resetOwner(id, "feishu");
         app.store.updateBot(id, { feishuAppId: appId, feishuAppSecret: appId ? appSecret : "" });
         await app.restartBot(id);
         return send(res, 200, app.channelStatus(id));
       }
       if (sub === "feishu" && m === "DELETE") {
+        app.access.resetOwner(id, "feishu");
         app.store.updateBot(id, { feishuAppId: "", feishuAppSecret: "" });
         await app.restartBot(id);
         return send(res, 200, app.channelStatus(id));

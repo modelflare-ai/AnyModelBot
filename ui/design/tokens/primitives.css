@@ -69,16 +69,16 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  /* —— 字号：8 级。桌面应用的密度，小号保留半像素 —— */
-  --fs-2xs: 11px;    /* 分组标题、徽标、快捷键 */
-  --fs-xs: 11.5px;   /* 次要说明、元信息、等宽值 */
-  --fs-sm: 12.5px;   /* 控件：按钮、菜单项、分段、输入框 */
-  --fs-md: 13px;     /* 界面正文 */
-  --fs-lg: 14px;     /* 列表标题、面板标题 */
-  --fs-xl: 15px;     /* 对话正文、对话框标题 */
-  --fs-2xl: 17px;    /* 空状态标题 */
-  --fs-3xl: 20px;    /* 引导页标题 */
-  --fs-4xl: 24px;    /* 页面大标题（设置、机器人设置） */
+  /* —— 字号：9 级。桌面应用的密度，小号保留半像素；都乘以 --fs-scale（设置 › 外观 › 字体大小，见 semantic.css「用户偏好」） —— */
+  --fs-2xs: calc(11px * var(--fs-scale));    /* 分组标题、徽标、快捷键 */
+  --fs-xs: calc(11.5px * var(--fs-scale));   /* 次要说明、元信息、等宽值 */
+  --fs-sm: calc(12.5px * var(--fs-scale));   /* 控件：按钮、菜单项、分段、输入框 */
+  --fs-md: calc(13px * var(--fs-scale));     /* 界面正文 */
+  --fs-lg: calc(14px * var(--fs-scale));     /* 列表标题、面板标题 */
+  --fs-xl: calc(15px * var(--fs-scale));     /* 对话正文、对话框标题 */
+  --fs-2xl: calc(17px * var(--fs-scale));    /* 空状态标题 */
+  --fs-3xl: calc(20px * var(--fs-scale));    /* 引导页标题 */
+  --fs-4xl: calc(22px * var(--fs-scale));    /* 页面大标题（设置、机器人设置、新建页）：比引导页标题大一档就够，不压过内容 */
 
   /* —— 字重、行高、字距 —— */
   --fw-regular: 400;
@@ -89,9 +89,10 @@
   --lh-snug: 1.4;
   --lh-normal: 1.5;
   --lh-relaxed: 1.55;
+  --lh-prose: 1.7;   /* 机器人回复的正文：整列长文，中文要多一点行距才不累 */
 
-  --tracking-tighter: -.02em;
-  --tracking-tight: -.01em;   /* 只收紧大字；不给小标签加字距，也不用全大写 */
+  --tracking-tighter: -.015em;   /* 大标题。中文字形本来就排得满，收得太紧会挤在一起 */
+  --tracking-tight: -.01em;      /* 只收紧大字；不给小标签加字距，也不用全大写 */
 
   /* —— 圆角：嵌套时内层 = 外层 − 内边距（.seg 8 → thumb 6） —— */
   --r-xs: 4px;
@@ -111,6 +112,16 @@
   --ctl-xl: 36px;
   --ctl-2xl: 44px;
 
+  /* —— 图标：五档尺寸（无单位的 px，components/icon.css 换算成宽高和线宽）。
+        线宽是显示出来的像素，和尺寸无关：12px 的箭头和 24px 的文件图标线一样细 —— */
+  --ic-xs: 12;   /* 下拉箭头、小按钮里的关闭、实心圆点里的勾 */
+  --ic-sm: 14;   /* 默认：按钮、菜单、输入框尾部、行内操作 */
+  --ic-md: 16;   /* 顶栏与工具栏按钮、侧栏导航、对话输入框、命令面板搜索 */
+  --ic-lg: 20;   /* 模板卡 */
+  --ic-xl: 24;   /* 文件卡片 */
+  --ic-stroke: 1.25;          /* 常规线宽 */
+  --ic-stroke-strong: 1.6;    /* 实心面上的图标：发送钮的箭头、完成圆点里的勾 */
+
   /* —— 层级：同一窗格内的浮动件 < 抽屉 < 弹出层 < 模态 < 命令面板 < 提示 —— */
   --z-raised: 1;
   --z-float: 5;
@@ -119,6 +130,9 @@
   --z-modal: 50;
   --z-palette: 56;
   --z-toast: 60;
+
+  /* —— 细线：一个物理像素。高分屏 .5px，普通屏 1px（.5px 在 1x 屏上会被抗锯齿成半透明的虚影甚至消失） —— */
+  --hairline: 1px;
 
   /* —— 透明度 —— */
   --o-disabled: .45;
@@ -132,12 +146,27 @@
   --glass-filter-lg: blur(var(--blur-lg)) saturate(var(--glass-sat));
   --glass-filter-sm: blur(var(--blur-sm)) saturate(var(--glass-sat));
 
-  /* —— 版式宽度 —— */
-  --side-w: 280px;
-  --panel-w: 320px;
-  --col-w: 760px;      /* 对话阅读列：参考 Codex，回复是整列宽的正文 */
+  /* —— 版式宽度：侧栏、信息面板可以拖分隔条调宽（README「分隔条」） —— */
+  /* 拖过的宽度是 <html> 上内联的 --side-w-user / --panel-w-user；shell.css 用 clamp(-min, var(-user, 默认), min(-max, -cap)) 取值 */
+  --side-w: 280px;          /* 侧栏默认宽度（窗口窄于 900px 时 240） */
+  --side-w-min: 220px;      /* 再窄机器人名称就只剩两三个字 */
+  --side-w-max: 400px;
+  --side-w-cap: 36vw;       /* 窗口变窄时侧栏最多占这么宽，拖宽过的侧栏不会把主区挤没 */
+  --panel-w: 320px;         /* 信息面板默认宽度（含它右边的 --pane-gap） */
+  --panel-w-min: 280px;
+  --panel-w-max: 440px;
+  --panel-w-cap: 34vw;
+  --main-w-min: 420px;      /* 拖宽侧栏或信息面板时，主区至少留这么宽 */
+  --col-w: 760px;     /* 对话阅读列：参考 Codex，回复是整列宽的正文 */
   --bubble-w: 600px;   /* 用户气泡最大宽度 */
+  --col-w-wide: 960px;     /* 设置 › 外观 › 对话宽度「宽」 */
+  --bubble-w-wide: 760px;  /* 对话列加宽（宽 / 铺满）时用户气泡的最大宽度 */
   --head-h: 52px;      /* 对话顶栏、信息面板顶栏 */
   --page-w: 680px;     /* 设置页、机器人设置的内容列 */
   --titlebar-inset: 84px;   /* macOS 桌面版：侧栏顶部给红绿灯让出的宽度 */
+  --caption-w-fallback: 138px;   /* Windows 桌面版：右上角最小化 / 最大化 / 关闭（3 × 46）的宽度，拿不到 env(titlebar-area-*) 时用 */
+  --brand-mark: 20px;       /* Windows 桌面版：侧栏左上角的应用图标 */
+}
+@media (min-resolution: 2dppx) {
+  :root { --hairline: .5px; }
 }

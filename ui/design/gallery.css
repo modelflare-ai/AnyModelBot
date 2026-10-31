@@ -3,7 +3,7 @@
 .gal { display: grid; grid-template-columns: 196px minmax(0, 1fr); height: 100vh; background: var(--bg); }
 .gal-nav {
   display: grid; align-content: start; gap: var(--space-0-5); overflow-y: auto;
-  padding: var(--space-5) var(--space-3); background: var(--grain), var(--glass-side); border-right: .5px solid var(--line-2);
+  padding: var(--space-5) var(--space-3); background: var(--grain), var(--glass-side); border-right: var(--hairline) solid var(--line-2);
 }
 .gal-nav .brand { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2) var(--space-4); font-weight: var(--fw-semibold); }
 .gal-nav .t-label { padding: var(--space-3) var(--space-2-5) var(--space-1); }
@@ -78,6 +78,7 @@
 .gal-curve { width: 56px; height: 56px; flex: none; overflow: visible; }
 .gal-curve rect { fill: none; stroke: var(--line); }
 .gal-curve path { fill: none; stroke: var(--accent); stroke-width: 2; }
+.gal-icon { display: grid; justify-items: center; align-content: center; gap: var(--space-1-5); min-width: 76px; min-height: 52px; color: var(--fg-2); }
 .gal-anim { display: grid; justify-items: center; gap: var(--space-2); width: 120px; }
 .gal-anim-box { width: 72px; height: 48px; border-radius: var(--r-lg); background: var(--accent-solid); box-shadow: inset 0 0 0 1px var(--accent-line); }   /* 描边：黄绿样例块要一道墨色细边 */
 
@@ -101,7 +102,7 @@
 .gal-mat b { font-weight: var(--fw-semibold); }
 
 /* —— 状态矩阵：一行一个组件，浅色 / 深色两条，画在真实的表面上 —— */
-.gal-state > .gal-strip + .gal-strip { border-top: .5px solid var(--line); }
+.gal-state > .gal-strip + .gal-strip { border-top: var(--hairline) solid var(--line); }
 .gal-strip-in { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-4) var(--space-5); padding: var(--space-4) var(--space-5) var(--space-3-5); }
 .ctx-surface > .gal-strip-in { background: var(--surface); }
 .ctx-side > .gal-strip-in { background: var(--grain), var(--glass-side); }
@@ -122,4 +123,15 @@
   .gal-stage-over { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .gal-pair > .gal-demo + .gal-demo { border-left: 0; border-top: 1px solid var(--line-2); }
 }
+/* —— 分隔条样例：左边一块"侧栏"、右边一块浮起的"主区"，中间 --pane-gap 的空隙就是分隔条（和 shell.css 同一种排法） —— */
+:root { --gal-split-w: 200px; --gal-split-w-min: 140px; --gal-split-w-max: 320px; }
+.gal-split {
+  --gal-col: clamp(var(--gal-split-w-min), var(--gal-split-w-user, var(--gal-split-w)), var(--gal-split-w-max));
+  position: relative; display: grid; grid-template-columns: var(--gal-col) minmax(0, 1fr); height: 160px;
+  background: var(--grain), var(--glass-side);
+}
+.gal-split-a { display: grid; place-items: center; }
+.gal-split-b { display: grid; place-items: center; margin: var(--pane-gap) var(--pane-gap) var(--pane-gap) 0; border-radius: var(--r-pane); background: var(--surface); box-shadow: var(--shadow-pane); }   /* 描边：和主区同一种面板 */
+.gal-split > .splitter { --split-x: calc(var(--gal-col) - var(--pane-gap) / 2); --split-inset: calc(var(--pane-gap) + var(--r-pane)); }
+.gal-split.mini { --gal-col: 64px; width: 180px; height: 72px; background: none; }
 }

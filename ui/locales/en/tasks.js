@@ -1,0 +1,15 @@
+// tasks · en
+export default {
+  cause: { launch: "Started", followup: "Continued after a follow-up", recover: "Resumed after a restart", retry: "Retry", continue: "Continued", answer: "Continued after your answer", manual: "Run manually" },
+  run: "Run {n}",
+  queued: "Queued",
+  stopped: "Stopped \"{title}\"",
+  latest: "Latest progress",
+  folder: "Folder",
+  stop: "Stop",
+  stopping: "Stopping…",
+  collapse: "Collapse",
+  view: "View background task",
+  chip: "Background task",
+  minutes: { one: "{count} min", other: "{count} min" },
+};

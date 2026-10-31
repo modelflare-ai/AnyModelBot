@@ -5,6 +5,7 @@
  */
 import os from "node:os";
 import { logger } from "../log.js";
+import { t } from "../i18n/index.js";
 import type { Store } from "../store/db.js";
 import { MODELFLARE_CLIENT_ID, MODELFLARE_SCOPES, MODELFLARE_WEB, UTM, webUrl, type KeyBalance } from "../modelflare.js";
 import { discover, OAuthError, revokeToken, startLogin, type LoginAttempt, type OidcEndpoints } from "./oauth.js";
@@ -146,7 +147,7 @@ export class AccountManager {
   /** 开始登录：返回在浏览器里打开的地址；完成后自动签发本机 Key 并接到内置网关 */
   async startLogin(): Promise<string> {
     if (this.state === "signing_in" && this.login) return this.login.url;
-    if (this.session) throw new ApiError("已经登录了 Modelflare 账户", 409);
+    if (this.session) throw new ApiError(t("account.already_signed_in"), 409);
     const ep = await this.ensureEndpoints();
     const attempt = await startLogin(ep, {
       clientId: MODELFLARE_CLIENT_ID,
@@ -180,7 +181,7 @@ export class AccountManager {
       const account = await session.account();
       const host = this.o.hostname ?? os.hostname();
       const key = await session.createKey(`AnyModelBot · ${host}`.slice(0, 50));
-      if (!key.key) throw new Error("Modelflare 没有返回新 Key");
+      if (!key.key) throw new Error(t("account.no_new_key"));
       try {
         await this.o.hooks.connectKey(key.key);
       } catch (e) {
@@ -197,7 +198,7 @@ export class AccountManager {
       void this.syncBotKeys().catch((e) => log.warn("sync bot keys failed", { message: (e as Error).message }));
     } catch (e) {
       this.state = this.session ? "signed_in" : "signed_out";
-      this.snapshot.error = `登录没有完成：${(e as Error).message}`;
+      this.snapshot.error = t("account.login_incomplete", { reason: (e as Error).message });
       log.warn("login failed", { message: (e as Error).message });
     } finally {
       this.login = undefined;
@@ -237,12 +238,12 @@ export class AccountManager {
   private async onRevoked(): Promise<void> {
     log.warn("Modelflare authorization revoked");
     await this.forget();
-    this.snapshot.error = "Modelflare 授权已失效（可能在网页上撤销了），请重新登录";
+    this.snapshot.error = t("account.revoked_elsewhere");
     this.o.hooks.alert(this.snapshot.error, false);
   }
 
   private async call<T>(fn: (s: AccountSession) => Promise<T>): Promise<T> {
-    if (!this.session) throw new ApiError("请先登录 Modelflare 账户", 409);
+    if (!this.session) throw new ApiError(t("account.sign_in_first"), 409);
     try {
       return await fn(this.session);
     } catch (e) {
@@ -302,7 +303,7 @@ export class AccountManager {
     const alerted = !!this.o.store.getKV(ALERTED);
     if (bal < lowBalanceUsd && !alerted) {
       this.o.store.setKV(ALERTED, String(Date.now()));
-      this.o.hooks.alert(`Modelflare 余额只剩 $${bal.toFixed(2)}，低于提醒线 $${lowBalanceUsd}。充值：${webUrl("/billing", "amb_low_balance")}`, push);
+      this.o.hooks.alert(t("account.low_balance", { balance: bal.toFixed(2), threshold: lowBalanceUsd, url: webUrl("/billing", "amb_low_balance") }), push);
     } else if (bal >= lowBalanceUsd && alerted) {
       this.o.store.deleteKV(ALERTED);
     }
@@ -357,7 +358,7 @@ export class AccountManager {
    * 机器人的请求改走这把 Key；关闭时删除 Key，机器人回到本机共用的 Key。
    */
   async setBotBudget(botId: string, botName: string, budget: BotBudget): Promise<void> {
-    if (!this.session) throw new ApiError("给机器人设预算需要先登录 Modelflare 账户", 409);
+    if (!this.session) throw new ApiError(t("account.budget_needs_login"), 409);
     let id = this.botKeyIds().get(botId);
     if (!budget.enabled) {
       if (id) await this.deleteKeyQuietly(id);
@@ -375,7 +376,7 @@ export class AccountManager {
       }
     }
     const key = await this.call((s) => s.createKey(keyName(botName), budget.limitUsd));
-    if (!key.key) throw new Error("Modelflare 没有返回新 Key");
+    if (!key.key) throw new Error(t("account.no_new_key"));
     try {
       await this.o.hooks.setBotKey(botId, key.key);
     } catch (e) {

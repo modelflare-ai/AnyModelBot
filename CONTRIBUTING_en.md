@@ -62,6 +62,7 @@ Repository layout, packaging and channel setup are covered in the [development g
 - The brand accent is fluorescent yellow-green `#d7ff00`; do not introduce blue into the UI.
 - The console is Preact + htm with no build step; please do not add a bundler or front-end dependencies that need compiling.
 - Check both the light and dark themes.
+- Don't hard-code UI text: add it to `ui/locales/zh-CN/` and `ui/locales/en/` (both languages) and use `t()`; run `node scripts/i18n-check.mjs` before submitting. Check both languages — English is usually longer.
 
 ## Third-party code and dependencies
 

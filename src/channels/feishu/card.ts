@@ -5,6 +5,7 @@ import { Gone, ReplyIds, stableId, type Outbox } from "../../core/outbox.js";
 import type { OutboxBody, OutboxKind, OutboxRow } from "../../store/db.js";
 import { CARD_ELEMENT_ID, actionCardSpec, type FeishuTransport } from "./transport.js";
 import { logger } from "../../log.js";
+import { t } from "../../i18n/index.js";
 
 const log = logger("feishu.card");
 
@@ -145,7 +146,7 @@ export class FeishuReply implements ReplySession {
         return this.post("file", { path: op.path, name: op.name }, this.ids.of("file", op.path));
       case "interactive": {
         const text = op.requestId ? op.prompt : `${op.prompt}${op.options?.length ? "\n" + op.options.map((o, i) => `${i + 1}. ${o}`).join("\n") : ""}`;
-        const title = op.kind === "approval" ? `需批准（${op.code ?? ""}）` : "需要你的回答";
+        const title = op.kind === "approval" ? t("channel.approval_title", { code: op.code ?? "" }) : t("channel.question_title");
         const card = op.buttons?.length ? actionCardSpec(title, op.prompt, op.buttons) : undefined;
         // 审批/提问十分钟后过期，发不出去就不必再等
         return this.post(card ? "card" : "text", { text, ...(card ? { card } : {}) }, this.ids.of("prompt", op.requestId ?? text), 10 * 60_000);

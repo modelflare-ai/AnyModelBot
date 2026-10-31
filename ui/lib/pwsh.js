@@ -3,6 +3,7 @@
 import { useEffect } from "preact/hooks";
 import { api } from "./api.js";
 import { createStore, toast, useStore } from "./store.js";
+import { t } from "./i18n.js";
 
 export const PWSH_INSTALL_URL = "https://aka.ms/PSWindows";
 export const PWSH_WINGET = "winget install --id Microsoft.PowerShell --source winget";
@@ -17,11 +18,14 @@ const BUSY = ["waiting", "downloading", "extracting", "verifying", "testing"];
 export const pwshInstalling = (s) => !!s?.private && BUSY.includes(s.private.install?.state);
 
 const mb = (n) => (n === undefined || n === null ? "?" : Math.round(n / 1048576));
-/** 安装进度的一句话 */
+/** 安装进度的一句话（按当前语言） */
 export function pwshProgress(p) {
   if (!p) return "";
-  if (p.state === "downloading") return `下载 ${mb(p.received)} / ${mb(p.total)} MB${p.total ? `（${Math.min(100, Math.floor(((p.received || 0) / p.total) * 100))}%）` : ""}`;
-  return { waiting: p.error || "准备中", extracting: "解压", verifying: "核对签名", testing: "试运行", done: "已装好", failed: `没装上：${p.error || "未知原因"}` }[p.state] || "";
+  if (p.state === "downloading")
+    return t("pwsh.progress.downloading", { received: mb(p.received), total: mb(p.total), pct: p.total ? t("pwsh.progress.pct", { n: Math.min(100, Math.floor(((p.received || 0) / p.total) * 100)) }) : "" });
+  if (p.state === "waiting") return p.error || t("pwsh.progress.waiting");
+  if (p.state === "failed") return t("pwsh.progress.failed", { error: p.error || t("pwsh.unknownReason") });
+  return ["extracting", "verifying", "testing", "done"].includes(p.state) ? t(`pwsh.progress.${p.state}`) : "";
 }
 
 function schedule(s) {
@@ -47,23 +51,23 @@ export function loadPwsh() {
 /** 重新检测：重新找、重新试运行（装好系统的 PowerShell 7 后点它；代理空闲时换用） */
 export async function recheckPwsh() {
   const s = set(await api("/pwsh/recheck", { method: "POST", body: {} }));
-  if (!s.missing) toast(`已检测到 PowerShell ${s.version || "7"}${s.source === "private" ? "（应用内置）" : ""}，代理空闲时换用`, "ok");
-  else toast(pwshInstalling(s) ? "还没有能用的 PowerShell 7，正在为代理安装" : "还没有检测到能用的 PowerShell 7", "warn");
+  if (!s.missing) toast(t("pwsh.found", { version: s.version || "7", private: s.source === "private" ? t("pwsh.privateSuffix") : "" }), "ok");
+  else toast(t(pwshInstalling(s) ? "pwsh.notFoundInstalling" : "pwsh.notFound"), "warn");
   return s;
 }
 
 /** 安装 / 重新安装应用内置的 PowerShell 7（后台进行，进度在提示和故障排查里） */
 export async function installPwsh(reinstall = false) {
   const s = set(await api("/pwsh/install", { method: "POST", body: { reinstall } }));
-  if (pwshInstalling(s)) toast(reinstall ? "正在重新安装 PowerShell 7…" : "正在安装 PowerShell 7…");
-  else if (!s.missing) toast(`代理用 PowerShell ${s.version || "7"}`, "ok");
+  if (pwshInstalling(s)) toast(t(reinstall ? "pwsh.reinstalling" : "pwsh.installing"));
+  else if (!s.missing) toast(t("pwsh.using", { version: s.version || "7" }), "ok");
   return s;
 }
 
 /** 改回系统默认（system）/ 重新用应用内置的（auto） */
 export async function setPwshMode(mode) {
   const s = set(await api("/pwsh/mode", { method: "PUT", body: { mode } }));
-  toast(mode === "system" ? "已改回系统默认，代理空闲时生效" : "已改用应用内置的 PowerShell 7", "ok");
+  toast(t(mode === "system" ? "pwsh.modeSystem" : "pwsh.modePrivate"), "ok");
   return s;
 }
 

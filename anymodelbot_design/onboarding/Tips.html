@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>随用随教的小提示 · 新手引导预览</title>
+<style>
+body{margin:0;background:#060706}
+*,*::before,*::after{box-sizing:border-box}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+input,textarea{font:inherit}
+a{color:#d7ff00}a:hover{color:#e9ff66}
+</style>
+<link rel="stylesheet" href="css/bots.css">
+<link rel="stylesheet" href="css/proto.css">
+</head>
+<body data-page="tips">
+<div style="min-height: 100vh; background: #060706; color: #fafaf7; font-family: Geist, 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif; font-size: 14px; line-height: 1.5; padding: 104px clamp(16px, 5vw, 48px) 96px">
+  <div style="max-width: 1200px; margin: 0 auto">
+
+    <!-- 章节头 -->
+    <header style="position: relative; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 32px; margin-bottom: 64px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.10)">
+      <span class="face" data-char="orange" style="position: absolute; right: 0; bottom: calc(100% - 6px); width: 64px; height: 64px"></span>
+      <p style="grid-column: 1 / -1; display: flex; align-items: baseline; gap: 14px; margin: 0 0 40px; font-size: 13px; letter-spacing: .08em; color: #a1a1aa">
+        <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; letter-spacing: .04em; color: #d7ff00">07</span>
+        <span style="color: rgba(255,255,255,.18)">/</span>随用随教
+      </p>
+      <h1 style="grid-column: 1 / -1; margin: 0; font-size: clamp(34px, 4.9vw, 64px); line-height: 1.16; letter-spacing: -.012em; font-weight: 600">
+        <span style="display: block">第一次遇到时，</span>
+        <span style="display: block; color: #a1a1aa">只提醒一次。</span>
+      </h1>
+      <p style="grid-column: 7 / -1; margin: 28px 0 0; max-width: 25em; color: #a1a1aa; font-size: 17px; line-height: 1.75">这些提示不进清单：用户第一次碰到某个场景时，在旁边轻轻出现；点「知道了」就不再出现。</p>
+    </header>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 24px">
+
+      <!-- 01 审批卡片 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">01</span>第一次弹出审批卡片</p>
+        <div style="padding: 14px; border-radius: 16px; background: #060706; box-shadow: 0 0 0 2px #d7ff00, 0 0 0 6px rgba(215,255,0,.14)">
+          <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; color: #a1a1aa; margin-bottom: 6px"><span>需要你的批准</span><span>7F3K</span></div>
+          <div style="font-size: 13.5px; font-weight: 500; margin-bottom: 8px">整理好的清单要写到工作区以外</div>
+          <div style="padding: 8px 10px; border-radius: 10px; background: #101110; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; color: #a1a1aa; margin-bottom: 10px; overflow-wrap: anywhere">写入 ~/Documents/整理清单.md</div>
+          <div style="display: flex; gap: 8px">
+            <button type="button" style="min-height: 32px; padding: 0 12px; border-radius: 999px; background: #d7ff00; color: #161a00; font-weight: 600; font-size: 12.5px">允许（仅本次）</button>
+            <button type="button" style="min-height: 32px; padding: 0 12px; border-radius: 999px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); font-size: 12.5px">拒绝</button>
+          </div>
+        </div>
+        <div style="position: relative; display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18)">
+          <span class="face" data-char="blue" style="flex: none; width: 30px; height: 30px"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 14.5px; margin-bottom: 2px">它在等你点头</div>
+            <p style="margin: 0 0 10px; color: #a1a1aa; font-size: 13px; line-height: 1.65">它想做一件超出工作区的事。点「允许（仅本次）」放行，点「拒绝」它就不做。</p>
+            <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 12.5px">知道了</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- 02 信息面板 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">02</span>第一次打开信息面板</p>
+        <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 16px; background: #060706; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <div style="display: flex; align-items: center; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.10)">
+            <span style="flex: 1; font-weight: 600; font-size: 13.5px">小蓝</span>
+            <span aria-hidden="true" style="display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fafaf7; box-shadow: 0 0 0 2px #d7ff00, 0 0 0 6px rgba(215,255,0,.14)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+            </span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; color: #a1a1aa">
+            <span style="padding: 2px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">渠道</span>
+            <span style="padding: 2px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">待审批</span>
+            <span style="padding: 2px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">记忆</span>
+            <span style="padding: 2px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">最近会话</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18)">
+          <span class="face" data-char="blue" style="flex: none; width: 30px; height: 30px"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 14.5px; margin-bottom: 2px">关于小蓝的一切都在这里</div>
+            <p style="margin: 0 0 10px; color: #a1a1aa; font-size: 13px; line-height: 1.65">渠道、待审批、记忆和最近会话都在这个面板。点 ⚙ 可以改它的模型、权限和预算。</p>
+            <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 12.5px">知道了</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- 03 对话变长 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">03</span>同一段对话聊得很长时</p>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: 16px; background: #060706; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <span style="flex: 1; color: #a1a1aa; font-size: 13px">顶栏右侧</span>
+          <span aria-hidden="true" style="display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #fafaf7; box-shadow: 0 0 0 2px #d7ff00, 0 0 0 6px rgba(215,255,0,.14)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </span>
+          <span style="color: #a1a1aa; font-size: 13px">或输入</span>
+          <kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; padding: 3px 8px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">/new</kbd>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18)">
+          <span class="face" data-char="blue" style="flex: none; width: 30px; height: 30px"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 14.5px; margin-bottom: 2px">换个话题？开一段新对话</div>
+            <p style="margin: 0 0 10px; color: #a1a1aa; font-size: 13px; line-height: 1.65">旧对话会归档，小蓝会留一张交接便条；长期记忆不受影响。</p>
+            <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 12.5px">知道了</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- 04 电脑操作 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">04</span>第一次让它操作电脑</p>
+        <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 16px; background: #060706; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <div style="align-self: flex-end; max-width: 90%; padding: 7px 12px; border-radius: 14px; background: rgba(255,255,255,.07); font-size: 13px">打开计算器，算一下 128 × 46。</div>
+          <span style="display: inline-flex; align-items: center; gap: 8px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; color: #a1a1aa">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+            正在操作：计算器
+          </span>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18)">
+          <span class="face" data-char="blue" style="flex: none; width: 30px; height: 30px"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 14.5px; margin-bottom: 2px">它能帮你操作电脑</div>
+            <p style="margin: 0 0 8px; color: #a1a1aa; font-size: 13px; line-height: 1.65">看屏幕、点鼠标、打字，帮你操作电脑上的应用。默认直接执行；想让它点击、输入前先问你，去「机器人设置 → 电脑操作 → 审批」里改。</p>
+            <p style="margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: #060706; color: #a1a1aa; font-size: 12.5px; line-height: 1.6"><span style="color: #fafaf7">仅 macOS：</span>第一次使用前，在「系统设置 → 隐私与安全性」里给 AnyModelBot 打开「辅助功能」和「屏幕录制」。</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+              <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; background: #d7ff00; color: #161a00; font-weight: 600; font-size: 12.5px">去设置审批</button>
+              <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 12.5px">知道了</button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- 05 余额 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">05</span>第一次看到侧栏的余额</p>
+        <div style="padding: 14px; border-radius: 16px; background: #060706; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <div style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border-radius: 12px; box-shadow: 0 0 0 2px #d7ff00, 0 0 0 6px rgba(215,255,0,.14)">
+            <span aria-hidden="true" style="display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #d7ff00; color: #161a00; font-weight: 700; font-size: 12px">Z</span>
+            <span style="flex: 1; font-size: 13px">我的账户</span>
+            <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px">$12.40</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18)">
+          <span class="face" data-char="blue" style="flex: none; width: 30px; height: 30px"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 14.5px; margin-bottom: 2px">这是你的余额</div>
+            <p style="margin: 0 0 10px; color: #a1a1aa; font-size: 13px; line-height: 1.65">Modelflare 账户的余额，所有机器人共用。点这里可以充值、看用量、设置余额提醒。</p>
+            <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 12.5px">知道了</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- 06 第二个机器人 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">06</span>新建第二个机器人时</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; padding: 14px; border-radius: 16px; background: #060706; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <span style="display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 13px"><span class="face" data-char="orange" style="width: 28px; height: 28px"></span>翻译官</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 13px"><span class="face" data-char="purple" style="width: 28px; height: 28px"></span>写作助手</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 13px"><span class="face" data-char="red" style="width: 28px; height: 28px"></span>代码助手</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 13px"><span class="face" data-char="yellow" style="width: 28px; height: 28px"></span>客服助手</span>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18)">
+          <span class="face" data-char="blue" style="flex: none; width: 30px; height: 30px"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 14.5px; margin-bottom: 2px">一件事交给一个机器人</div>
+            <p style="margin: 0 0 10px; color: #a1a1aa; font-size: 13px; line-height: 1.65">翻译、写作、写代码……每个机器人都有自己的人设、模型和工作区，互不打扰。</p>
+            <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 12.5px">知道了</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- 07 机器人预算 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">07</span>第一次打开机器人设置（已登录账户）</p>
+        <div style="border-radius: 16px; background: #060706; box-shadow: 0 0 0 2px #d7ff00, 0 0 0 6px rgba(215,255,0,.14)">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.10)">
+            <span style="flex: 1"><span style="display: block; font-size: 13.5px">预算</span><span style="display: block; color: #a1a1aa; font-size: 12px">用这个机器人自己的 Key，花到上限就停</span></span>
+            <span aria-hidden="true" style="position: relative; width: 38px; height: 22px; border-radius: 999px; background: #d7ff00"><span style="position: absolute; right: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #161a00"></span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px">
+            <span style="flex: 1; font-size: 13.5px">上限（美元）</span>
+            <span style="min-width: 64px; padding: 4px 10px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; text-align: right">5</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18)">
+          <span class="face" data-char="blue" style="flex: none; width: 30px; height: 30px"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 14.5px; margin-bottom: 2px">给它定个零花钱</div>
+            <p style="margin: 0 0 10px; color: #a1a1aa; font-size: 13px; line-height: 1.65">设一个花费上限，花完就停，不影响其他机器人。</p>
+            <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 12.5px">知道了</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- 08 关闭窗口：对话框 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">08</span>第一次关闭窗口（桌面版）</p>
+        <div role="dialog" aria-label="关闭窗口" style="display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 20px; border-radius: 24px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18), 0 30px 60px -20px rgba(0,0,0,.7)">
+          <span class="face" data-char="blue" style="width: 48px; height: 48px"></span>
+          <div style="font-weight: 600; font-size: 16px">小蓝会留在托盘里</div>
+          <p style="margin: 0; color: #a1a1aa; font-size: 13px; line-height: 1.65">窗口关了，它还在后台继续收发微信、飞书消息。想完全退出，在托盘菜单里选「退出」。</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px">
+            <button type="button" style="min-height: 34px; padding: 0 16px; border-radius: 999px; background: #d7ff00; color: #161a00; font-weight: 600; font-size: 13px">好的</button>
+            <button type="button" style="min-height: 34px; padding: 0 14px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 13px">改为直接退出</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- 09 快捷键 -->
+      <article style="display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 20px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+        <p style="display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; color: #a1a1aa"><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">09</span>清单完成后放一次</p>
+        <div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; background: #060706; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <div style="display: flex; align-items: center; gap: 10px"><span style="display: flex; gap: 4px"><kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; min-width: 26px; text-align: center; padding: 3px 7px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">⌘</kbd><kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; min-width: 26px; text-align: center; padding: 3px 7px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">K</kbd></span><span style="color: #a1a1aa; font-size: 13px">命令面板</span></div>
+          <div style="display: flex; align-items: center; gap: 10px"><span style="display: flex; gap: 4px"><kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; min-width: 26px; text-align: center; padding: 3px 7px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">⌘</kbd><kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; min-width: 26px; text-align: center; padding: 3px 7px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">⇧</kbd><kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; min-width: 26px; text-align: center; padding: 3px 7px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">I</kbd></span><span style="color: #a1a1aa; font-size: 13px">信息面板</span></div>
+          <div style="display: flex; align-items: center; gap: 10px"><span style="display: flex; gap: 4px"><kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; min-width: 26px; text-align: center; padding: 3px 7px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">⌘</kbd><kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; min-width: 26px; text-align: center; padding: 3px 7px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">,</kbd></span><span style="color: #a1a1aa; font-size: 13px">设置</span></div>
+          <div style="display: flex; align-items: center; gap: 10px"><span style="display: flex; gap: 4px"><kbd style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; min-width: 26px; text-align: center; padding: 3px 7px; border-radius: 8px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">Esc</kbd></span><span style="color: #a1a1aa; font-size: 13px">停止生成</span></div>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 14px; border-radius: 16px; background: #101110; box-shadow: 0 0 0 1px rgba(255,255,255,.18)">
+          <span class="face" data-char="blue" style="flex: none; width: 30px; height: 30px"></span>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-weight: 600; font-size: 14.5px; margin-bottom: 2px">再送你几个快捷键</div>
+            <p style="margin: 0 0 10px; color: #a1a1aa; font-size: 13px; line-height: 1.65">Windows 和 Linux 上把 ⌘ 换成 Ctrl。</p>
+            <button type="button" style="min-height: 30px; padding: 0 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-size: 12.5px">知道了</button>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <!-- 清单完成：收尾横幅 -->
+    <section style="position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 24px 40px; margin-top: 48px; padding: clamp(28px, 4vw, 48px); border-radius: 32px; background: #d7ff00; color: #161a00; overflow: hidden">
+      <div style="flex: 999 1 420px; min-width: 0">
+        <p style="margin: 0 0 14px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; letter-spacing: .06em">上手清单 · 6 / 6</p>
+        <h2 style="margin: 0; font-size: clamp(30px, 3.6vw, 48px); line-height: 1.18; letter-spacing: -.012em; font-weight: 600">
+          <span style="display: block">六件事都做完了。</span>
+          <span style="display: block; color: #465612">小蓝已经准备好了。</span>
+        </h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px">
+          <button type="button" style="min-height: 44px; padding: 0 22px; border-radius: 999px; background: #161a00; color: #d7ff00; font-weight: 600; font-size: 14.5px">再养一个机器人</button>
+          <button type="button" style="min-height: 44px; padding: 0 20px; border-radius: 999px; box-shadow: inset 0 0 0 1.5px rgba(22,26,0,.35); font-weight: 500; font-size: 14.5px">收起清单</button>
+        </div>
+      </div>
+      <div aria-hidden="true" style="flex: 1 1 300px; display: flex; justify-content: center; align-items: flex-end; gap: 4px">
+        <span class="face" data-char="yellow" style="width: 64px; height: 64px"></span>
+        <span class="face" data-char="green" style="width: 72px; height: 72px"></span>
+        <span class="face" data-char="blue" style="width: 104px; height: 104px"></span>
+        <span class="face" data-char="red" style="width: 72px; height: 72px"></span>
+        <span class="face" data-char="purple" style="width: 64px; height: 64px"></span>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module" src="js/page-tips.js"></script>
+</body>
+</html>

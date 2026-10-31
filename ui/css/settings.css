@@ -15,7 +15,7 @@
 .set-titles .set-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .set-sub { font-size: var(--fs-md); color: var(--muted); }
 /* 返回钮往左探出，箭头的笔画落在内容列的左边上（和分组标题、标签、卡片同一条线） */
-.set-back { --ib-size: 32px; --ib-r: var(--r-full); --ib-fg: var(--ctl-fg); margin-left: calc(-1 * var(--space-2-5)); }
+.set-back { --ib-size: var(--ctl-lg); --ib-r: var(--r-full); --ib-fg: var(--ctl-fg); margin-left: calc(-1 * var(--space-2-5)); }
 .set-body { padding: var(--space-2) var(--page-px) var(--page-bottom); }
 
 /* 分组标题与卡片：标题、输入框标签、卡片共用内容列的左边 */
@@ -25,8 +25,10 @@
 /* 分组下方的风险提示（完全权限）：紧跟在组的下面，不放进组里 */
 .settings .list + .notice { margin-top: var(--space-2); align-items: flex-start; padding: var(--space-3); }
 .settings .list + .notice > .ic { margin-top: 3px; }   /* 微调：图标对齐第一行文字（14px 图标 / 约 20px 行高） */
-.settings .row { --row-h: 60px; --row-py: var(--space-3); --row-pl: var(--space-4); --row-pr: var(--space-4); --row-gap: var(--space-4); }
-.settings .row .name { font-size: var(--fs-lg); }
+/* 行：上下 10，一行的行和"名称 + 说明"两行的行都是 60 高（14 × 1.4 + 2 + 12.5 × 1.4 + 20 ≈ 59）。
+   名称用常规字重、说明用 --muted：一页十几行时不发闷，层次交给分组标题的字重和说明的颜色 */
+.settings .row { --row-h: 60px; --row-py: var(--space-2-5); --row-pl: var(--space-4); --row-pr: var(--space-4); --row-gap: var(--space-4); }
+.settings .row .name { font-size: var(--fs-lg); font-weight: var(--fw-regular); line-height: var(--lh-snug); }
 .settings .row .sub { font-size: var(--fs-sm); line-height: var(--lh-snug); max-width: 460px; white-space: normal; }
 .settings .pick { height: var(--ctl-md); padding: 0 var(--space-2) 0 var(--space-3); border-radius: var(--r-lg); }
 .settings .seg { --seg-r: var(--r-lg); }
@@ -42,21 +44,44 @@
 .settings .row .range-dash { color: var(--muted); font-variant-numeric: tabular-nums; }
 .settings .row .ctl .pick ~ .switch { margin-left: var(--space-2); }
 .settings input.field.num-in { width: 96px; --field-h: var(--ctl-md); text-align: right; font-variant-numeric: tabular-nums; }
+.settings input.field.font-in { width: min(220px, 36vw); --field-h: var(--ctl-md); }
+
+/* 外观预览（设置 › 外观顶部）：一组 --well，里面一问一答 + 一行代码，用对话页同样的字号与字体 token，
+   跟着字体大小、界面字体、代码字体和代码换行实时变 */
+.ap-preview {
+  display: grid; gap: var(--space-3); margin-top: var(--space-6); padding: var(--card-pad);
+  background: var(--well); border-radius: var(--r-well);
+}
+.set-body > .ap-preview + .list { margin-top: var(--space-3); }
+.ap-bubble {
+  justify-self: end; max-width: 80%; padding: var(--space-2-5) var(--space-4); border-radius: var(--r-bubble);
+  background: var(--bubble-user); font-size: var(--fs-xl); line-height: var(--lh-relaxed);
+}
+.ap-reply { font-size: var(--fs-xl); line-height: var(--lh-relaxed); }
+.ap-reply b { font-weight: var(--fw-semibold); }
+.ap-code {
+  margin: 0; font: var(--fs-sm)/var(--lh-relaxed) var(--code); color: var(--fg-2);
+  white-space: var(--code-wrap); overflow-wrap: anywhere; overflow-x: auto;
+}
 
 /* 用量：近 N 天的日柱状图 + 模型排行 */
 .usage-days { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: end; gap: var(--space-1); height: 120px; padding: var(--space-2) 0; }
-.usage-days .bar { display: grid; align-content: end; justify-items: center; gap: var(--space-1); height: 100%; font-size: var(--fs-2xs); color: var(--faint); }
-.usage-days .bar i { display: block; width: 100%; min-height: 2px; border-radius: var(--r-sm) var(--r-sm) 0 0; background: var(--accent-solid); }
+.usage-days .bar { display: grid; align-content: end; justify-items: center; gap: var(--space-1); height: 100%; font-size: var(--fs-2xs); color: var(--muted); }
+.usage-days .bar i {
+  display: block; width: 100%; min-height: 2px; border-radius: var(--r-sm) var(--r-sm) 0 0; background: var(--accent-solid);
+  box-shadow: inset 0 0 0 var(--hairline) var(--accent-line);   /* 描边：黄绿柱子在白底上只有 1.15:1，要一道细边才看得出高度（同应用标志） */
+}
 .usage-models { display: grid; gap: var(--space-1); font-size: var(--fs-sm); }
 .usage-models div { display: flex; justify-content: space-between; gap: var(--space-3); }
 .usage-models .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .usage-models .n { color: var(--muted); font-variant-numeric: tabular-nums; }
-.notif { display: grid; gap: var(--space-1); padding: var(--space-3) 0; border-bottom: .5px solid var(--line); }
+.notif { display: grid; gap: var(--space-1); padding: var(--space-3) 0; border-bottom: 1px solid var(--line-2); }
 .notif:last-child { border-bottom: 0; }
 .notif b { font-weight: var(--fw-semibold); }
-.notif.unread b::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: var(--space-1-5); border-radius: 50%; background: var(--accent-solid); vertical-align: middle; }
+/* 未读点用 --accent（浅色墨、深色黄绿）：6px 的黄绿点在浅色玻璃上几乎看不见 */
+.notif.unread b::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: var(--space-1-5); border-radius: 50%; background: var(--accent); vertical-align: middle; }
 .notif p { font-size: var(--fs-sm); color: var(--fg-2); white-space: pre-wrap; }
-.notif time { font-size: var(--fs-2xs); color: var(--faint); }
+.notif time { font-size: var(--fs-2xs); color: var(--muted); }
 
 /* 需要你（screens/needs-you.js）：和设置页同一种页面；一组 .list，一件事一块，块间一条细线。
    左边一列是状态点，右边一列从上到下：谁 · 什么 · 状态（可点：展开任务详情）、问题或命令、行内操作 */
@@ -105,8 +130,8 @@ button.need-head:hover, button.need-head:hover .need-who b { color: var(--fg); }
 .set-field { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); }
 .set-field .k { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--fg-2); }
 .set-field .k .hint { font-weight: var(--fw-regular); }
-.set-field .field { --field-h: var(--ctl-xl); --field-px: var(--space-3-5); --field-r: var(--r-xl); font-size: var(--fs-lg); }
-.set-field textarea.field { min-height: 120px; padding: var(--space-3) var(--field-px); line-height: var(--lh-relaxed); }
+.set-field .field { --field-h: var(--ctl-xl); --field-px: var(--space-3); --field-r: var(--r-lg); font-size: var(--fs-lg); }
+.set-field textarea.field { min-height: 120px; padding: var(--space-2-5) var(--field-px); line-height: var(--lh-relaxed); }
 
 /* 新建机器人（参考 Grok Bot 的创建页）：居中的表单，下面是模板卡片 */
 .new-bot { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -132,12 +157,12 @@ button.need-head:hover, button.need-head:hover .need-who b { color: var(--fg); }
 .tpl:active { background: var(--well-press); transform: scale(var(--press)); }
 .tpl.on, .tpl.on:hover { background: var(--accent-wash); }
 .tpl-ic {
-  grid-row: span 2; width: 36px; height: 36px; border-radius: var(--r-lg); display: grid; place-items: center; color: var(--fg-2);
+  grid-row: span 2; width: var(--ctl-xl); height: var(--ctl-xl); border-radius: var(--r-lg); display: grid; place-items: center; color: var(--fg-2);
   transition: background var(--t-base), color var(--t-base);
 }
 .tpl:hover .tpl-ic { color: var(--fg); }
-.tpl.on .tpl-ic { background: var(--accent-solid); color: var(--on-accent); box-shadow: inset 0 0 0 .5px var(--accent-line); }   /* 描边：黄绿在白底上只有 1.15:1，要一道墨色细边 */
-.tpl-name { font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.tpl.on .tpl-ic { background: var(--accent-solid); color: var(--on-accent); box-shadow: inset 0 0 0 var(--hairline) var(--accent-line); }   /* 描边：黄绿在白底上只有 1.15:1，要一道墨色细边 */
+.tpl-name { font-size: var(--fs-lg); font-weight: var(--fw-medium); line-height: var(--lh-snug); }
 .tpl-desc { font-size: var(--fs-sm); color: var(--muted); line-height: var(--lh-snug); }
 
 /* onboarding */
@@ -158,7 +183,7 @@ button.need-head:hover, button.need-head:hover .need-who b { color: var(--fg); }
 }
 /* 同一个表单（onboarding.js 的 KeyForm）在"更换密钥"对话框里：对话框本身就是那张卡，表单直接排在对话框的内边距里，不再套一层 */
 .sheet > form.list { padding: 0; background: none; border-radius: 0; overflow: visible; display: grid; gap: var(--space-2-5); }
-.onboard label.k { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--fg-2); }
+.onboard label.k { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--fg-2); }
 .onboard .err-text { font-size: var(--fs-sm); color: var(--red); line-height: var(--lh-normal); display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .onboard .slow { font-size: var(--fs-sm); color: var(--muted); }
 .onboard .links { display: grid; gap: var(--space-2); justify-items: center; font-size: var(--fs-sm); color: var(--muted); }

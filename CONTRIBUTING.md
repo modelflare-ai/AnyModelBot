@@ -62,6 +62,7 @@ npm run setup          # 拉取 vendor/magpie 子模块并编译到 build/bin/
 - 品牌强调色是荧光黄绿 `#d7ff00`，界面里不引入蓝色。
 - 管理界面是 Preact + htm，没有构建步骤，请不要引入打包工具或需要编译的前端依赖。
 - 浅色和深色主题都要看一遍。
+- 界面上的文字不直接写在代码里：放进 `ui/locales/zh-CN/` 和 `ui/locales/en/`（两种语言都写），代码里用 `t()`；提交前跑 `node scripts/i18n-check.mjs`。中英两种语言都看一遍，英文通常更长。
 
 ## 第三方代码与依赖
 

@@ -10,6 +10,8 @@
   4–7         上面四层各自的"发光部分"（红魔的灯带、紫钻的霓虹线），没有就是空的
 
 只用 numpy + Pillow：  python3 scripts/build-bot-avatars.py
+官网的 AVIF 版要从无损的精灵图编码（site/scripts/make-bot-avif.ts）：  python3 scripts/build-bot-avatars.py --out <目录> --png
+  --out 改输出目录（默认 ui/design/bots），--png 另存一份无损 PNG
 几何（源图像素）和 ui/components/avatar.js 里的 BOT_CHARS 是同一套数，改一边要改另一边。
 """
 import os
@@ -173,6 +175,8 @@ def build(key, c):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, key + ".webp")
     sheet.save(path, "WEBP", quality=QUALITY, alpha_quality=90, method=6)
+    if PNG:
+        sheet.save(os.path.join(OUT, key + ".png"))
 
     k = CELL / SIDE
     to = lambda x, y: (round((x - x0) * k / CELL * 100, 2), round((y - y0) * k / CELL * 100, 2))
@@ -182,6 +186,16 @@ def build(key, c):
           f"top={to((t['stem'][0] + t['stem'][1]) / 2, t['cut'])}")
 
 
+PNG = False
+
 if __name__ == "__main__":
-    for key in sys.argv[1:] or CHARS:
+    args = sys.argv[1:]
+    if "--out" in args:
+        i = args.index("--out")
+        OUT = os.path.abspath(args[i + 1])
+        del args[i:i + 2]
+    if "--png" in args:
+        PNG = True
+        args.remove("--png")
+    for key in args or CHARS:
         build(key, CHARS[key])

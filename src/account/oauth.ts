@@ -7,6 +7,7 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import { lang, t, tl, type Lang } from "../i18n/index.js";
 
 export interface OidcEndpoints {
   issuer: string;
@@ -41,17 +42,17 @@ export async function discover(issuer: string, fetchImpl: typeof fetch = fetch):
   try {
     res = await fetchImpl(`${issuer}/.well-known/openid-configuration`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
   } catch (e) {
-    throw new OAuthError("network", `连不上 ${new URL(issuer).host}（${(e as Error).message}）`);
+    throw new OAuthError("network", t("account.host_unreachable", { host: new URL(issuer).host, reason: (e as Error).message }));
   }
-  if (!res.ok) throw new OAuthError("discovery", `读取登录配置失败（HTTP ${res.status}）`, res.status);
+  if (!res.ok) throw new OAuthError("discovery", t("account.discovery_failed", { status: res.status }), res.status);
   const doc = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   const origin = new URL(issuer).origin;
   const endpoint = (key: string) => {
     const v = typeof doc[key] === "string" ? (doc[key] as string) : "";
-    if (!v || new URL(v).origin !== origin) throw new OAuthError("discovery", `登录配置里的 ${key} 无效`);
+    if (!v || new URL(v).origin !== origin) throw new OAuthError("discovery", t("account.discovery_bad_endpoint", { key }));
     return v;
   };
-  if (doc.issuer !== issuer) throw new OAuthError("discovery", "登录配置的发行方不匹配");
+  if (doc.issuer !== issuer) throw new OAuthError("discovery", t("account.discovery_issuer_mismatch"));
   return {
     issuer,
     authorization: endpoint("authorization_endpoint"),
@@ -70,7 +71,7 @@ async function tokenRequest(endpoint: string, params: Record<string, string>, fe
       signal: AbortSignal.timeout(20_000),
     });
   } catch (e) {
-    throw new OAuthError("network", `连不上 Modelflare（${(e as Error).message}）`);
+    throw new OAuthError("network", t("account.unreachable", { reason: (e as Error).message }));
   }
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
@@ -79,7 +80,7 @@ async function tokenRequest(endpoint: string, params: Record<string, string>, fe
   }
   const accessToken = String(body.access_token ?? "");
   const refreshToken = String(body.refresh_token ?? params.refresh_token ?? "");
-  if (!accessToken || !refreshToken) throw new OAuthError("bad_response", "Modelflare 返回的令牌不完整");
+  if (!accessToken || !refreshToken) throw new OAuthError("bad_response", t("account.tokens_incomplete"));
   const ttl = Number(body.expires_in);
   return {
     accessToken,
@@ -101,7 +102,7 @@ export async function revokeToken(ep: OidcEndpoints, clientId: string, token: st
     body: new URLSearchParams({ token, client_id: clientId }).toString(),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) throw new OAuthError(`http_${res.status}`, `退出登录失败（HTTP ${res.status}）`, res.status);
+  if (!res.ok) throw new OAuthError(`http_${res.status}`, t("account.logout_failed", { status: res.status }), res.status);
 }
 
 export interface LoginAttempt {
@@ -120,8 +121,8 @@ export interface LoginOptions {
   fetchImpl?: typeof fetch;
 }
 
-const PAGE = (title: string, text: string) =>
-  `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
+const PAGE = (l: Lang, title: string, text: string) =>
+  `<!doctype html><html lang="${l}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
   `<body style="font:16px/1.6 system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;color:#222;background:#fafafa">` +
   `<main style="text-align:center;padding:24px"><h1 style="font-size:20px">${title}</h1><p>${text}</p></main></body></html>`;
 
@@ -131,6 +132,8 @@ const PAGE = (title: string, text: string) =>
  */
 export async function startLogin(ep: OidcEndpoints, o: LoginOptions): Promise<LoginAttempt> {
   const fetchImpl = o.fetchImpl ?? fetch;
+  // 浏览器回调不在发起登录的那个请求里：语言在这里定下（授权页、回调页、报错都用它）
+  const l = lang();
   const { verifier, challenge } = pkcePair();
   const state = b64url(crypto.randomBytes(24));
   let settle: { resolve: (t: TokenSet) => void; reject: (e: Error) => void };
@@ -149,14 +152,14 @@ export async function startLogin(ep: OidcEndpoints, o: LoginOptions): Promise<Lo
     const error = u.searchParams.get("error");
     const code = u.searchParams.get("code");
     const html = (status: number, title: string, text: string) => {
-      res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).end(PAGE(title, text));
+      res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).end(PAGE(l, title, text));
     };
     if (error || !code) {
-      html(400, "没有完成登录", error === "access_denied" ? "你取消了这次授权，可以回到 AnyModelBot 重新登录。" : "授权没有完成，请回到 AnyModelBot 重试。");
-      finish(new OAuthError(error || "invalid_request", error === "access_denied" ? "你取消了授权" : u.searchParams.get("error_description") || "授权没有完成"));
+      html(400, tl(l, "account.page_not_done_title"), tl(l, error === "access_denied" ? "account.page_denied" : "account.page_not_done"));
+      finish(new OAuthError(error || "invalid_request", error === "access_denied" ? tl(l, "account.denied") : u.searchParams.get("error_description") || tl(l, "account.not_done")));
       return;
     }
-    html(200, "登录完成", "可以关闭这个页面，回到 AnyModelBot。");
+    html(200, tl(l, "account.page_done_title"), tl(l, "account.page_done"));
     done = true;
     tokenRequest(ep.token, { grant_type: "authorization_code", code, redirect_uri: redirectUri, client_id: o.clientId, code_verifier: verifier }, fetchImpl).then(
       (t) => finish(undefined, t),
@@ -176,7 +179,7 @@ export async function startLogin(ep: OidcEndpoints, o: LoginOptions): Promise<Lo
     server.listen(0, "127.0.0.1", () => resolve());
   });
   const redirectUri = `http://127.0.0.1:${(server.address() as AddressInfo).port}/callback`;
-  timer = setTimeout(() => finish(new OAuthError("timeout", "登录等待超时，请重新开始")), o.timeoutMs ?? 10 * 60_000);
+  timer = setTimeout(() => finish(new OAuthError("timeout", tl(l, "account.login_timeout"))), o.timeoutMs ?? 10 * 60_000);
   const url = new URL(ep.authorization);
   const params: Record<string, string> = {
     response_type: "code",
@@ -187,7 +190,7 @@ export async function startLogin(ep: OidcEndpoints, o: LoginOptions): Promise<Lo
     code_challenge: challenge,
     code_challenge_method: "S256",
     prompt: "consent",
-    ui_locales: "zh-CN",
+    ui_locales: l,
     ...o.extra,
   };
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
@@ -195,7 +198,7 @@ export async function startLogin(ep: OidcEndpoints, o: LoginOptions): Promise<Lo
     url: url.toString(),
     result,
     cancel: () => {
-      if (!done) finish(new OAuthError("cancelled", "已取消登录"));
+      if (!done) finish(new OAuthError("cancelled", tl(l, "account.login_cancelled")));
     },
   };
 }

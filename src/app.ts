@@ -44,15 +44,19 @@ import { MediaService, pickDefault } from "./agent/media.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
 import { TaskService } from "./tasks/service.js";
+import { detached, setLangPref, t } from "./i18n/index.js";
 import { Attention, approvalItems, deliveryItem, type AttentionItem } from "./tasks/attention.js";
 
 const log = logger("app");
+
 
 /** 桌面外壳（Electron 主进程）提供的能力；CLI / Docker 下为空 */
 export interface DesktopHooks {
   autostart(): { supported: boolean; on: boolean };
   setAutostart(on: boolean): void;
   applyZoom(zoom: number): void;
+  /** Windows 桌面版：窗口右上角的最小化 / 最大化 / 关闭由系统画在界面上，符号颜色跟界面主题（主题只存在界面里） */
+  setTitleBarTheme?(dark: boolean): void;
   openDataDir(): void;
   openInBrowser(): void;
   /** 在系统浏览器里打开外部链接（Modelflare 登录、充值） */
@@ -147,6 +151,8 @@ export class App {
   private modelInfoLoading: Promise<Record<string, ModelInfo>> | undefined;
 
   constructor(readonly config: AppConfig, readonly opts: AppOptions = {}) {
+    // 应用语言（托盘菜单、后台和发到微信 / 飞书的系统消息用它；界面请求用请求自己的语言，见 src/i18n）
+    setLangPref(config.ui.lang);
     // 日志文件：<dataDir>/logs/app.log（打包后的桌面版看不到 stdout，故障排查全靠它）
     if (opts.fileLog !== false) initFileLog(path.join(config.dataDir, "logs"));
     registerSecret(config.ui.token);
@@ -378,7 +384,7 @@ export class App {
         },
         disconnect: () => this.disconnectModelflare(),
         setBotKey: async (botId, key) => {
-          if (!this.magpie) throw new Error("外部模型端点模式下不管理 Modelflare 连接");
+          if (!this.magpie) throw new Error(t("app.external_mode"));
           const baseUrl = modelflareBaseUrl(this.config.modelflare.line);
           const r = await verifyModelflareKey(baseUrl, key, { line: this.config.modelflare.line });
           if (!r.ok) throw new Error(r.message);
@@ -421,7 +427,7 @@ export class App {
   /** 开启 / 调整 / 关闭机器人预算：先改 Modelflare 上的 Key，成功后才保存设置 */
   async setBotBudget(botId: string, budget: BotSettings["budget"]): Promise<Bot> {
     const bot = this.store.getBot(botId);
-    if (!bot) throw new Error("机器人不存在");
+    if (!bot) throw new Error(t("app.bot_not_found"));
     await this.account.setBotBudget(bot.id, bot.name, budget);
     return this.store.updateBot(botId, { settings: { ...bot.settings, budget } })!;
   }
@@ -478,7 +484,7 @@ export class App {
       try {
         await this.magpie.start();
       } catch (e) {
-        this.notice("warn", `magpie 启动失败：${(e as Error).message}`);
+        this.notice("warn", t("app.magpie_failed", { message: (e as Error).message }));
       }
     }
     this.agent.start();
@@ -589,7 +595,7 @@ export class App {
 
   /** 先校验（GET /models），通过后才写入网关；失败时什么都不改 */
   async connectModelflare(apiKey: string, line: ModelflareLine): Promise<VerifyResult> {
-    if (!this.magpie) throw new Error("外部模型端点模式下不管理 Modelflare 连接");
+    if (!this.magpie) throw new Error(t("app.external_mode"));
     const baseUrl = modelflareBaseUrl(line);
     const r = await verifyModelflareKey(baseUrl, apiKey.trim(), { line });
     if (!r.ok) return r;
@@ -613,7 +619,7 @@ export class App {
   }
 
   async disconnectModelflare(): Promise<void> {
-    if (!this.magpie) throw new Error("外部模型端点模式下不管理 Modelflare 连接");
+    if (!this.magpie) throw new Error(t("app.external_mode"));
     await this.magpie.disconnectModelflare();
     await this.runtime.listModels(true).catch(() => []);
   }
@@ -651,8 +657,8 @@ export class App {
     if (this.store.listBots().length) return;
     const bot = this.store.createBot({
       id: "default",
-      name: "我的助手",
-      systemPrompt: "你是一个乐于助人的中文助手，回答简洁准确。",
+      name: t("app.default_bot_name"),
+      systemPrompt: t("app.default_bot_prompt"),
       feishuAppId: process.env.FEISHU_APP_ID ?? "",
       feishuAppSecret: process.env.FEISHU_APP_SECRET ?? "",
       weixinEnabled: true,
@@ -676,9 +682,10 @@ export class App {
       const fs = ch.feishu;
       this.runtime.registerReplier(bot.id, "feishu", (conv, handle, key) => (handle?.messageId ? { out: fs.followUp(conv.peerId, handle.messageId, key) } : undefined));
       ch.feishuError = undefined;
-      ch.feishu.start().catch((e) => {
+      const feishu = ch.feishu;
+      detached(() => feishu.start()).catch((e) => {
         ch.feishuError = (e as Error).message;
-        this.notice("warn", `机器人「${bot.name}」飞书长连接启动失败：${ch.feishuError}`);
+        this.notice("warn", t("app.feishu_failed", { name: bot.name, message: ch.feishuError }));
       });
       log.info(`bot ${bot.id}: feishu starting`, { appId: bot.feishuAppId, secret: mask(bot.feishuAppSecret) });
     }
@@ -691,13 +698,13 @@ export class App {
         delivery: this.delivery,
       });
       ch.weixin.onExpired = () => {
-        this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);
+        this.notice("warn", t("app.weixin_expired", { name: bot.name }));
         this.attention.kick();
       };
       const wx = ch.weixin;
       // 代理自己醒来的一轮：经出站队列发给这个微信用户（发送时才查 24 小时窗口和配额）
       this.runtime.registerReplier(bot.id, "weixin", (conv, _handle, key) => ({ out: wx.followUp(conv.peerId, key) }));
-      ch.weixin.start();
+      detached(() => wx.start());
     }
   }
 
@@ -743,7 +750,7 @@ export class App {
       await ch.weixin?.stop();
       ch.weixin = undefined;
       await this.startBot(botId);
-      this.notice("info", `机器人「${bot?.name ?? botId}」微信已连接`);
+      this.notice("info", t("app.weixin_connected", { name: bot?.name ?? botId }));
     });
     return login;
   }
@@ -760,12 +767,12 @@ export class App {
     const bot = this.store.getBot(botId);
     const ch = this.channels.get(botId);
     const feishu: ChannelStatus = !bot?.feishuAppId
-      ? { state: "disabled", detail: "未配置凭据", since: 0 }
+      ? { state: "disabled", detail: t("channel.feishu_no_credentials"), since: 0 }
       : ch?.feishuError
         ? { state: "error", detail: ch.feishuError, since: Date.now() }
         : ch?.feishu?.status ?? { state: "disabled", since: 0 };
     const acct = this.store.getWeixinAccount(botId);
-    const wx = ch?.weixin?.status ?? (acct ? { state: "disabled" as const, since: 0 } : { state: "login_required" as const, detail: "尚未扫码登录", since: 0 });
+    const wx = ch?.weixin?.status ?? (acct ? { state: "disabled" as const, since: 0 } : { state: "login_required" as const, detail: t("channel.wx_login_required"), since: 0 });
     const quota = ch?.weixin
       ? this.store.listWeixinPeers(botId).map((p) => ({ userId: p.userId, remaining: ch.weixin!.quota.remaining(p.userId), windowStartedAt: p.windowStartedAt }))
       : [];

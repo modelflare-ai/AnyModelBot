@@ -19,9 +19,11 @@ import { connectionFromPids } from "../agent/peer-guard.js";
 import type { ApprovalRow, Store } from "../store/db.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
-import { pwshProbe, type PwshMode } from "../agent/pwsh.js";
+import { pwshProbe, type PwshMode, type PwshStatus } from "../agent/pwsh.js";
 import { peerName, shortPeer, whoText } from "../core/access.js";
 import type { AccessEntry } from "../store/db.js";
+import { GUIDE_STEPS, deriveGuide, isGuideStep, mergeGuide, normalizeGuide, type GuideState } from "../guide.js";
+import { normalizeLang, requestLang, setLangPref, t, type LangPref } from "../i18n/index.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -73,11 +75,11 @@ class HttpError extends Error {
 
 async function readJson(req: http.IncomingMessage): Promise<any> {
   const ct = String(req.headers["content-type"] || "");
-  if (!ct.includes("application/json")) throw new HttpError(415, "需要 application/json");
+  if (!ct.includes("application/json")) throw new HttpError(415, t("web.needJson"));
   let body = "";
   for await (const c of req) {
     body += c;
-    if (body.length > 1_000_000) throw new HttpError(413, "请求体过大");
+    if (body.length > 1_000_000) throw new HttpError(413, t("web.bodyTooLarge"));
   }
   return body ? JSON.parse(body) : {};
 }
@@ -259,7 +261,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       res.end();
       return false;
     }
-    res.writeHead(401, { "content-type": "text/plain; charset=utf-8" }).end("需要访问令牌：打开 /?token=<令牌>");
+    res.writeHead(401, { "content-type": "text/plain; charset=utf-8" }).end(t("web.needToken"));
     return false;
   }
 
@@ -269,7 +271,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     const seg = p.split("/").filter(Boolean);
     // 写操作要求 JSON（触发 CORS 预检，阻止跨站表单 CSRF）
     if ((m === "POST" || m === "PUT" || m === "PATCH") && !/^application\/json\s*(;|$)/i.test(String(req.headers["content-type"] || "").trim())) {
-      throw new HttpError(415, "需要 application/json");
+      throw new HttpError(415, t("web.needJson"));
     }
 
     if (p === "/status" && m === "GET") {
@@ -294,13 +296,13 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     }
     if (p === "/modelflare" || p === "/modelflare/line") {
       if (m === "GET" && p === "/modelflare") return send(res, 200, app.modelflareStatus());
-      if (m !== "GET" && !app.magpie) throw new HttpError(409, "外部模型端点模式下不管理 Modelflare 连接");
+      if (m !== "GET" && !app.magpie) throw new HttpError(409, t("web.externalNoConnection"));
     }
     if (p === "/modelflare") {
       if (m === "PUT") {
         const b = await readJson(req);
         const apiKey = String(b.apiKey ?? "").trim();
-        if (!apiKey) throw new HttpError(400, "缺少 API Key");
+        if (!apiKey) throw new HttpError(400, t("web.missingApiKey"));
         const r = await app.connectModelflare(apiKey, normalizeLine(b.line ?? cfg.modelflare.line));
         if (!r.ok) return send(res, 400, { error: r.message, code: r.code, status: r.status, suggestLine: r.suggestLine });
         return send(res, 200, { ...app.modelflareStatus(), models: r.models });
@@ -324,7 +326,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     }
     if (seg[0] === "account") {
       const sub = seg.slice(1).join("/");
-      if (m !== "GET" && !app.magpie) throw new HttpError(409, "外部模型端点模式下不管理 Modelflare 账户");
+      if (m !== "GET" && !app.magpie) throw new HttpError(409, t("web.externalNoAccount"));
       // 浏览器登录的回调落在本程序所在机器的 127.0.0.1；界面监听在非本机地址（Docker、远程部署）时，
       // 用户的浏览器访问不到它，只能粘贴 API Key
       const loginAvailable = isLoopback(host);
@@ -336,7 +338,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         return send(res, 200, status());
       }
       if (sub === "login" && m === "POST") {
-        if (!loginAvailable) throw new HttpError(409, "Docker 或远程部署时无法用浏览器登录，请改用 API Key");
+        if (!loginAvailable) throw new HttpError(409, t("web.noBrowserLogin"));
         const loginUrl = await accountCall(() => app.account.startLogin());
         app.desktop?.openExternal(loginUrl);
         return send(res, 200, { ...status(), loginUrl, opened: !!app.desktop });
@@ -354,7 +356,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         const mf = cfg.modelflare;
         if (b.lowBalanceUsd !== undefined) {
           const v = normalizeLowBalance(b.lowBalanceUsd);
-          if (v !== Number(b.lowBalanceUsd)) throw new HttpError(400, "提醒线要在 0 到 1000 美元之间");
+          if (v !== Number(b.lowBalanceUsd)) throw new HttpError(400, t("web.lowBalanceRange"));
           mf.lowBalanceUsd = v;
         }
         if (b.lowBalancePush !== undefined) mf.lowBalancePush = !!b.lowBalancePush;
@@ -386,13 +388,20 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         }
         if (b.zoom !== undefined) {
           const z = Number(b.zoom);
-          if (!ZOOMS.includes(z)) throw new HttpError(400, "不支持的缩放比例");
+          if (!ZOOMS.includes(z)) throw new HttpError(400, t("web.badZoom"));
           cfg.ui.zoom = z;
           saveConfigFile(cfg.dataDir, (f) => (f.ui = { ...(f.ui ?? {}), zoom: z }));
           app.desktop?.applyZoom(z);
         }
+        if (b.lang !== undefined) {
+          const l = b.lang === "system" ? "system" : normalizeLang(b.lang);
+          if (!l) throw new HttpError(400, t("web.badLang"));
+          cfg.ui.lang = l as LangPref;
+          saveConfigFile(cfg.dataDir, (f) => (f.ui = { ...(f.ui ?? {}), lang: l }));
+          setLangPref(cfg.ui.lang);
+        }
         if (b.autostart !== undefined) {
-          if (!app.desktop?.autostart().supported) throw new HttpError(400, "当前环境不支持开机自启");
+          if (!app.desktop?.autostart().supported) throw new HttpError(400, t("web.noAutostart"));
           app.desktop.setAutostart(!!b.autostart);
         }
       } else if (m !== "GET") throw new HttpError(405, "method not allowed");
@@ -402,6 +411,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         videoModel: cfg.media.videoModel,
         closeToTray: cfg.ui.closeToTray,
         zoom: cfg.ui.zoom,
+        lang: cfg.ui.lang,
         autostart: app.desktop ? app.desktop.autostart() : { supported: false, on: false },
         desktop: !!app.desktop,
         listen: { host, port: boundPort, tokenRequired: !!token },
@@ -419,12 +429,18 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       return send(res, 200, { license: read("LICENSE"), notices: read("THIRD_PARTY_NOTICES.md") });
     }
     if (p === "/desktop/open-data-dir" && m === "POST") {
-      if (!app.desktop) throw new HttpError(400, "仅桌面版可用");
+      if (!app.desktop) throw new HttpError(400, t("web.desktopOnly"));
       app.desktop.openDataDir();
       return send(res, 200, { ok: true });
     }
+    // 界面主题变了（或刚加载完）：窗口按钮的符号颜色跟着换。只有 Windows 桌面版有这个钩子，其他环境静默忽略
+    if (p === "/desktop/title-bar" && m === "POST") {
+      const b = await readJson(req);
+      app.desktop?.setTitleBarTheme?.(b.dark === true);
+      return send(res, 200, { ok: true });
+    }
     if (p === "/desktop/open-in-browser" && m === "POST") {
-      if (!app.desktop) throw new HttpError(400, "仅桌面版可用");
+      if (!app.desktop) throw new HttpError(400, t("web.desktopOnly"));
       app.desktop.openInBrowser();
       return send(res, 200, { ok: true });
     }
@@ -534,6 +550,36 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       }
       throw new HttpError(405, "method not allowed");
     }
+    // —— 新手引导（上手清单）：进度写进 config.json；读的时候把能从数据里看出来做过的步骤并进去 ——
+    if (p === "/guide") {
+      const save = (g: GuideState) => {
+        cfg.ui.guide = g;
+        saveConfigFile(cfg.dataDir, (f) => (f.ui = { ...(f.ui ?? {}), guide: g }));
+      };
+      if (m === "PUT") {
+        const b = await readJson(req);
+        const add: unknown[] = b.done === undefined ? [] : Array.isArray(b.done) ? b.done : [b.done];
+        if (!add.every(isGuideStep)) throw new HttpError(400, t("web.unknownGuideStep"));
+        const g = b.reset ? normalizeGuide({}) : cfg.ui.guide;
+        save(normalizeGuide({
+          done: [...g.done, ...add],
+          hidden: b.hidden !== undefined ? !!b.hidden : g.hidden,
+          seen: [...g.seen, ...(typeof b.seen === "string" ? [b.seen] : [])],
+        }));
+      } else if (m !== "GET") throw new HttpError(405, "method not allowed");
+      const bots = app.store.listBots();
+      const derived = deriveGuide({
+        conversations: app.store.listConversations(),
+        bots,
+        weixinBound: (id) => !!app.store.getWeixinAccount(id),
+        // 机器人自己的记忆，或所有机器人共享的团队记忆，有一条就算记下过
+        memoryCount: (id) =>
+          [{ kind: "bot" as const, id }, { kind: "team" as const, id: "" }].reduce((n, s) => n + app.agent.memory.entries(s).length + app.agent.memory.topics(s).length, 0),
+      });
+      const merged = mergeGuide(cfg.ui.guide, derived);
+      if (merged.done.length !== cfg.ui.guide.done.length) save(merged);
+      return send(res, 200, { steps: GUIDE_STEPS, ...cfg.ui.guide });
+    }
     // —— 故障排查（设置 → 故障排查）：所有输出都已脱敏 ——
     if (seg[0] === "diagnostics") {
       const sub = seg.slice(1).join("/");
@@ -546,13 +592,13 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       if (sub === "test-model" && m === "POST") {
         const b = await readJson(req);
         const botId = b.botId ? String(b.botId) : undefined;
-        if (botId && !app.store.getBot(botId)) throw new HttpError(404, "机器人不存在");
+        if (botId && !app.store.getBot(botId)) throw new HttpError(404, t("web.botNotFound"));
         return send(res, 200, await testModel(app, { botId, model: b.model ? String(b.model) : undefined, timeoutMs: b.timeoutMs ? Number(b.timeoutMs) : undefined }));
       }
       if (sub === "test-agent" && m === "POST") {
         const b = await readJson(req);
         const botId = b.botId ? String(b.botId) : undefined;
-        if (botId && !app.store.getBot(botId)) throw new HttpError(404, "机器人不存在");
+        if (botId && !app.store.getBot(botId)) throw new HttpError(404, t("web.botNotFound"));
         return send(res, 200, await testAgent(app, { botId, model: b.model ? String(b.model) : undefined, timeoutMs: b.timeoutMs ? Number(b.timeoutMs) : undefined }));
       }
       if (sub === "restart-agent" && m === "POST") {
@@ -569,21 +615,21 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         return send(res, 200, { approvals: app.store.listApprovals({ status: status as any, botId: url.searchParams.get("bot") || undefined, limit: 100 }).map((r) => publicApproval(r, app.store)) });
       }
       const row = seg[1] ? app.store.getApproval(decodeURIComponent(seg[1])) : undefined;
-      if (!row) throw new HttpError(404, "请求不存在");
+      if (!row) throw new HttpError(404, t("web.requestNotFound"));
       if (seg.length === 2 && m === "GET") return send(res, 200, { approval: publicApproval(row, app.store) });
       if (seg.length === 3 && m === "POST" && (seg[2] === "approve" || seg[2] === "deny")) {
-        if (row.kind !== "approval") throw new HttpError(400, "不是审批请求");
+        if (row.kind !== "approval") throw new HttpError(400, t("web.notApproval"));
         const ok = app.agent.approvals.decide(row.id, seg[2] === "approve", "web");
-        if (!ok) throw new HttpError(409, "请求已处理或已过期");
+        if (!ok) throw new HttpError(409, t("web.requestDone"));
         return send(res, 200, { approval: publicApproval(app.store.getApproval(row.id)!, app.store) });
       }
       if (seg.length === 3 && m === "POST" && seg[2] === "answer") {
-        if (row.kind !== "question" || row.status !== "pending") throw new HttpError(409, "请求已处理或已过期");
+        if (row.kind !== "question" || row.status !== "pending") throw new HttpError(409, t("web.requestDone"));
         const b = await readJson(req);
         const ok = Array.isArray(b.answers)
           ? app.agent.approvals.answer(row.id, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
           : app.agent.approvals.answerText(row.id, String(b.text ?? ""), "web");
-        if (!ok) throw new HttpError(409, "提交失败");
+        if (!ok) throw new HttpError(409, t("web.submitFailed"));
         return send(res, 200, { approval: publicApproval(app.store.getApproval(row.id)!, app.store) });
       }
     }
@@ -591,7 +637,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       if (seg.length === 1 && m === "GET") return send(res, 200, { conversations: app.store.listConversations(url.searchParams.get("bot") || undefined) });
       if (seg.length === 3 && seg[2] === "messages" && m === "GET") {
         const conv = app.store.getConversation(decodeURIComponent(seg[1]));
-        if (!conv) throw new HttpError(404, "会话不存在");
+        if (!conv) throw new HttpError(404, t("web.conversationNotFound"));
         return send(res, 200, { conversation: conv, messages: app.store.listMessages(conv.id) });
       }
       // 一条回复的代理活动记录（展开时才取）
@@ -613,7 +659,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         if (m === "GET") return send(res, 200, { bots: app.store.listBots().map(publicBot) });
         if (m === "POST") {
           const b = await readJson(req);
-          if (!String(b.name || "").trim()) throw new HttpError(400, "名称不能为空");
+          if (!String(b.name || "").trim()) throw new HttpError(400, t("web.nameRequired"));
           const bot = app.store.createBot({
             name: String(b.name).trim(),
             systemPrompt: String(b.systemPrompt ?? ""),
@@ -626,7 +672,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       }
       const id = seg[1];
       const bot = id ? app.store.getBot(id) : undefined;
-      if (!bot) throw new HttpError(404, "机器人不存在");
+      if (!bot) throw new HttpError(404, t("web.botNotFound"));
       if (seg.length === 2) {
         if (m === "GET") return send(res, 200, { bot: publicBot(bot), channels: app.channelStatus(id) });
         if (m === "PUT") {
@@ -668,7 +714,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       if (sub === "budget" && m === "PUT") {
         const b = await readJson(req);
         const limitUsd = Number(b.limitUsd ?? bot.settings.budget.limitUsd);
-        if (!Number.isFinite(limitUsd) || limitUsd < 0 || limitUsd > 100_000) throw new HttpError(400, "预算要在 0 到 100000 美元之间");
+        if (!Number.isFinite(limitUsd) || limitUsd < 0 || limitUsd > 100_000) throw new HttpError(400, t("web.budgetRange"));
         const next = await accountCall(() => app.setBotBudget(id, normalizeSettings({ budget: { enabled: !!b.enabled, limitUsd } }).budget));
         return send(res, 200, { settings: next.settings });
       }
@@ -697,7 +743,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         const b = await readJson(req);
         const kind = String(b.kind ?? "bot");
         const scope = kind === "team" ? { kind: "team" as const, id: "" } : kind === "group" ? { kind: "group" as const, id: String(b.id ?? "") } : { kind: "bot" as const, id };
-        if (scope.kind === "group" && !scope.id.startsWith(id + ":")) throw new HttpError(400, "群不属于该机器人");
+        if (scope.kind === "group" && !scope.id.startsWith(id + ":")) throw new HttpError(400, t("web.groupNotOwned"));
         try {
           const text = app.agent.memory.forget(scope, String(b.match ?? ""), { topic: b.topic ? String(b.topic) : undefined, by: "web" });
           return send(res, 200, { ok: true, text });
@@ -823,20 +869,20 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       if (sub === "chat" && m === "POST") {
         const b = await readJson(req);
         const text = String(b.text ?? "").trim();
-        if (!text) throw new HttpError(400, "内容为空");
+        if (!text) throw new HttpError(400, t("web.emptyText"));
         const ev = webEvent(id, text);
         const intercepted = interceptWeb(ev);
         if (intercepted.handled) return send(res, 200, { reply: intercepted.ack ?? "", prompts: [] });
         const out = new CollectReply();
-        const t = startLive(id, text);
-        await runLive(t, ev, { apply: async (op) => (await t.apply(op), await out.apply(op)) });
+        const lt = startLive(id, text);
+        await runLive(lt, ev, { apply: async (op) => (await lt.apply(op), await out.apply(op)) });
         return send(res, 200, { reply: out.text, prompts: out.prompts, files: out.files, conversationId: consoleConvId(id) });
       }
       // 断开连接（切走、刷新、关窗口）不再中止这条消息：回合照常跑完，界面回来时经 chat/live 接上；停止走 /conversations/:id/stop
       if (sub === "chat/stream" && m === "POST") {
         const b = await readJson(req);
         const text = String(b.text ?? "").trim();
-        if (!text) throw new HttpError(400, "内容为空");
+        if (!text) throw new HttpError(400, t("web.emptyText"));
         const ev = webEvent(id, text);
         const out = new SseReply(res);
         try {
@@ -848,10 +894,10 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         } catch (e) {
           return out.end("error", { message: (e as Error).message });
         }
-        const t = startLive(id, text);
-        const off = t.subscribe((e, d) => (e === "done" || e === "error" ? out.end(e, d) : out.send(e, d)));
+        const lt = startLive(id, text);
+        const off = lt.subscribe((e, d) => (e === "done" || e === "error" ? out.end(e, d) : out.send(e, d)));
         res.on("close", off);
-        await runLive(t, ev);
+        await runLive(lt, ev);
         return;
       }
     }
@@ -866,7 +912,14 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     });
   }
 
+  // 界面请求带 x-amb-lang（界面当前的语言）：整个请求里的报错和状态文字都用这种语言（src/i18n）；
+  // 没带的（curl、旧页面）按应用的语言偏好。连接关闭后，请求里启动的后台任务退回应用语言
   const server = http.createServer((req, res) => {
+    const scope = requestLang(normalizeLang(req.headers["x-amb-lang"]));
+    res.once("close", scope.end);
+    scope.run(() => handle(req, res));
+  });
+  function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = new URL(req.url || "/", "http://localhost");
     if (!authorized(req, url, res)) return;
     if (url.pathname.startsWith("/amb/api/")) {
@@ -890,7 +943,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     if (url.pathname === "/amb/healthz") return send(res, 200, { ok: true });
     // 不再反代内置网关的界面或 /v1：网关只供本进程内部调用
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("not found");
-  });
+  }
   server.on("upgrade", (_req, socket) => socket.end("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
 
   const port = opts.port ?? cfg.ui.port;

@@ -86,7 +86,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.agent == 'true'
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -132,6 +132,13 @@ jobs:
       - name: Chat through the app; no console windows
         run: node scripts/e2e-agent.mjs --out "$RUNNER_TEMP/e2e" --launch shell --cwd "$GITHUB_WORKSPACE" --timeout-ms 150000 --procmon --managed --stream --tool --status-probes --observe-ms 20000 --max-console-windows 0 --expect-diagnostics --expect-pwsh7 -- "$ELECTRON_EXE" .
 
+      # The app-managed PowerShell 7 on a real Windows: the app must ignore the runner's own PowerShell 7, download the
+      # pinned release, check its SHA256 and Authenticode signature, launch-test it, hand it to DSH and run the tool call
+      # in it (psver=7). Then, with its pwsh.exe "quarantined" like antivirus would, the agent must fall back to Windows
+      # PowerShell 5.1 (psver=5), and a one-click reinstall must bring PowerShell 7 back.
+      - name: Chat with the app-managed PowerShell 7 (download, verify, use, self-heal)
+        run: node scripts/e2e-agent.mjs --out "$RUNNER_TEMP/e2e-private-pwsh" --timeout-ms 240000 --stream --tool --private-pwsh --pwsh-heal -- "$ELECTRON_EXE" .
+
       # The installers' DSH layout: Electron in Node mode loads the natives through dsh.asar and runs one
       # DSH turn, then the same app chats with its agent host started from the archive.
       - name: Bundled DSH (dsh.asar) under Electron
@@ -148,5 +155,7 @@ jobs:
           name: windows-agent-e2e
           path: |
             ${{ runner.temp }}/e2e
+            ${{ runner.temp }}/e2e-private-pwsh
+            !${{ runner.temp }}/e2e-private-pwsh/pwsh-home/*/**
             ${{ runner.temp }}/e2e-bundled
           retention-days: 7

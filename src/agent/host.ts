@@ -318,6 +318,13 @@ function yamlStr(s: string): string {
   return JSON.stringify(s); // JSON 字符串是合法的 YAML 标量
 }
 
+/** 工具结果的文字（content 是字符串或 [{type:"text",text}]） */
+function contentText(c: unknown): string {
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) return c.map((p) => (typeof p === "string" ? p : typeof p?.text === "string" ? p.text : "")).join("\n");
+  return "";
+}
+
 /** 把工具调用压成一行可读进度。 */
 export function summarizeCall(name: string, argsJson: string): string {
   let a: any = {};
@@ -387,6 +394,10 @@ export class AgentHost {
   private initFailures = 0;
   private retryAfter = 0;
   private listeners = new Set<(e: HostEvent) => void>();
+  /** 当前子进程补丁里写的 PowerShell（Windows）；代理拉不起它时据此退回 */
+  private pwshPath: string | undefined;
+  /** 进入 runOnce 还没结束的回合（含还在等进程、等会话的）：有就不在后台重启 */
+  private entering = 0;
 
   constructor(private o: AgentHostOptions) {}
 
@@ -738,6 +749,19 @@ exec "$REAL" "$@"
     return this.starting;
   }
 
+  /**
+   * 设置或 PowerShell 变了（比如内置 PowerShell 7 刚装好、或者坏了退回）而且空闲：在后台重启子进程，
+   * 下一条消息不用再等启动。正在跑的回合不打断，等下一条消息时由 ensure() 换。
+   */
+  async restartIfStale(): Promise<void> {
+    if (!this.harness || this.starting || this.active > 0 || this.entering > 0 || this.stopped || this.sig === this.settingsSig()) return;
+    const model = this.model;
+    log.info("bot settings or PowerShell changed while idle, restarting dsh in the background", { bot: this.o.botId });
+    await this.closeHarness();
+    this.state = "stopped";
+    await this.ensure(model).catch(() => undefined);
+  }
+
   /** 本机上一次成功启动的耗时；没有记录 = 第一次启动（冷启动：杀毒软件逐个扫描运行时文件，可能要几分钟） */
   private get initRecordFile(): string {
     return path.join(this.o.dataDir, "dsh", ".init.json");
@@ -794,6 +818,7 @@ exec "$REAL" "$@"
       const api: AgentApi = fb ? "openai-completions" : chosen;
       this.fallback = fb;
       const patch = this.writePatch(model, apps, pwshPath, modelLimits(model, known), api, info?.reasoning);
+      this.pwshPath = pwshPath;
       this.sig = this.settingsSig();
       const timeoutMs = this.initTimeoutMs();
       this.stage("patch written", t0, { api, computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
@@ -957,6 +982,17 @@ exec "$REAL" "$@"
   }
 
   private async runOnce(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
+    this.entering++;
+    try {
+      return await this.runEntered(input);
+    } finally {
+      this.entering--;
+      // 回合中 PowerShell 换了（比如刚发现它起不来）：回合结束、空闲了就在后台换上
+      if (this.entering === 0) void this.restartIfStale();
+    }
+  }
+
+  private async runEntered(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
     const h = await this.ensure(input.model);
     const s = await this.sessionFor(h, input.conversationId);
     // 在等进程 / 会话时就被中止了：消息还没交出去，不用重启子进程
@@ -994,6 +1030,12 @@ exec "$REAL" "$@"
             if (this.calls.size > 500) this.calls.delete(this.calls.keys().next().value!);
             if (data.name === "present") presented.push(...presentPaths(String(data.arguments ?? "")));
             input.observer?.onProgress?.(`🔧 ${summarizeCall(String(data.name), String(data.arguments ?? "")).split(this.workspace + "/").join("")}`);
+          }
+          if (ev?.type === "tool/result") {
+            // Windows：PowerShell 本身拉不起来（被杀毒软件删了、被策略拦了…）时退回下一个，不让代理一直用一个起不来的 shell（其他平台上探测器不管）
+            const msg = data?.message ?? {};
+            const call = this.calls.get(String(msg.toolCallId ?? ""));
+            if (call && /^(pwsh|powershell)$/i.test(call.name)) pwshProbe.observeToolResult(this.pwshPath, contentText(msg.content));
           }
           if (ev?.type === "request/context" && Number(data?.contextWindow) > 0) usage.window = Number(data.contextWindow);
           if (ev?.type === "assistant/message" && data?.usage) {

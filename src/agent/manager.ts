@@ -149,6 +149,11 @@ export class AgentManager {
     return h;
   }
 
+  /** PowerShell 等启动参数变了：空闲的代理进程在后台换用新的（正在跑回合的等下一条消息） */
+  async refreshIdle(): Promise<void> {
+    await Promise.all([...this.hosts.values()].map((h) => h.restartIfStale().catch(() => undefined)));
+  }
+
   /** Computer Use 的系统可用性 + 本机器人开关，供界面与 /status 显示 */
   computerUse(botId: string): ComputerUseInfo {
     const st = this.settings(botId).computerUse;

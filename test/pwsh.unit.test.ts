@@ -20,6 +20,7 @@ vi.mock("node:child_process", async (orig) => {
 });
 
 import { PwshProbe, findPwsh, parsePwshVersion, pwshPatchLines, pwshReportLine, pwshStatusLine, readPwshVersion, PWSH_WINGET, type PwshDeps } from "../src/agent/pwsh.js";
+import { PrivatePwsh, depsJsonVersion, type Runner } from "../src/agent/pwsh-private.js";
 import { App } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 
@@ -30,17 +31,28 @@ const PS5 = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\";
 const ENV = { ProgramFiles: PF, ProgramW6432: PF, LOCALAPPDATA: LOCAL, PATH: `C:\\Windows\\system32;C:\\Windows;${PS5};${APPS}` };
 const DEPS_746 = '{"targets":{".NETCoreApp,Version=v8.0/win-x64":{"pwsh/7.4.6":{"dependencies":{}}}},"libraries":{"pwsh/7.4.6":{"type":"project"}}}';
 
-/** 假的 Windows 文件系统：exes 里是存在的 pwsh.exe（file 或 Store 别名 alias），texts 是可读的文件，dirs 是目录列表 */
-function fakeWin(o: { exes?: Record<string, "file" | "alias">; texts?: Record<string, string>; dirs?: Record<string, string[]>; env?: NodeJS.ProcessEnv; runVersion?: PwshDeps["runVersion"] } = {}) {
+/**
+ * 假的 Windows 文件系统：exes 里是存在的 pwsh.exe（file 或 Store 别名 alias），texts 是可读的文件，dirs 是目录列表。
+ * 试运行（launchTest）一律通过、报 testVersion；内置副本在一个空的临时目录里（没装），不自动安装（代理模式没开）。
+ */
+function fakeWin(o: { exes?: Record<string, "file" | "alias">; texts?: Record<string, string>; dirs?: Record<string, string[]>; env?: NodeJS.ProcessEnv; runVersion?: PwshDeps["runVersion"]; testVersion?: string } = {}) {
   const k = (p: string) => p.toLowerCase();
   const exes = new Map(Object.entries(o.exes ?? {}).map(([p, v]) => [k(p), v]));
   const texts = new Map(Object.entries(o.texts ?? {}).map(([p, v]) => [k(p), v]));
   const lstats: string[] = [];
   const runs: string[] = [];
+  const tests: string[] = [];
   const enoent = (p: string) => Object.assign(new Error(`ENOENT: ${p}`), { code: "ENOENT" });
+  const env = { ...(o.env ?? ENV), AMB_PWSH_HOME: fs.mkdtempSync(path.join(os.tmpdir(), "amb-pwsh-home-")), PROCESSOR_IDENTIFIER: "Intel64 Family 6 Model 154" };
+  const run: Runner = async (exe) => {
+    tests.push(exe);
+    return { code: 0, stdout: `AMB-PWSH-TEST ver=${o.testVersion ?? "7.4.6"} rw=rw-ok ext=ext-ok\r\n`, stderr: "" };
+  };
   const deps: PwshDeps = {
     platform: "win32",
-    env: o.env ?? ENV,
+    env,
+    run,
+    priv: new PrivatePwsh({ env, platform: "win32", osRelease: "10.0.22631", arch: "x64", run }),
     lstat: async (p) => {
       lstats.push(p);
       const v = exes.get(k(p));
@@ -63,7 +75,7 @@ function fakeWin(o: { exes?: Record<string, "file" | "alias">; texts?: Record<st
       return o.runVersion(exe);
     },
   };
-  return { deps, lstats, runs, addExe: (p: string, v: "file" | "alias" = "file") => exes.set(k(p), v) };
+  return { deps, lstats, runs, tests, addExe: (p: string, v: "file" | "alias" = "file") => exes.set(k(p), v) };
 }
 
 describe("PowerShell 7 检测", () => {
@@ -88,7 +100,18 @@ describe("PowerShell 7 检测", () => {
     expect(await probe.dshPath()).toBe(exe);
     expect(probe.cachedDshPath).toBe(exe);
     expect(pwshStatusLine(st)).toBe("PowerShell：7.4.6（代理用它执行命令）");
-    expect(pwshReportLine(st)).toBe(`[PowerShell] 7.4.6 · ${exe}（安装目录） · 代理用它执行命令`);
+    expect(pwshReportLine(st)!.split("\n")[0]).toBe(`[PowerShell] 7.4.6 · ${exe}（安装目录） · 代理用它执行命令`);
+    expect(pwshReportLine(st)).toContain("内置 PowerShell 7.6.9 x64 · 未安装");
+  });
+
+  it("新版 MSI / zip 的 pwsh.deps.json 写的是 pwsh/7.6.9.500：照样不拉起进程就读出 7.6.9", async () => {
+    const exe = `${PF}\\PowerShell\\7\\pwsh.exe`;
+    const w = fakeWin({ exes: { [exe]: "file" }, texts: { [`${PF}\\PowerShell\\7\\pwsh.deps.json`]: DEPS_746.replaceAll("7.4.6", "7.6.9.500") } });
+    expect(await new PwshProbe(w.deps).check()).toMatchObject({ found: true, missing: false, version: "7.6.9" });
+    expect(w.runs).toEqual([]);
+    expect(depsJsonVersion('"pwsh/7.6.0-preview.5"')).toBe("7.6.0-preview.5");
+    expect(depsJsonVersion('"pwsh/7.4.6"')).toBe("7.4.6");
+    expect(depsJsonVersion("{}")).toBeUndefined();
   });
 
   it("PATH 里的 pwsh.exe（带引号和空格的项）；读不到 deps.json 时问 pwsh -Version", async () => {
@@ -141,9 +164,11 @@ describe("PowerShell 7 检测", () => {
     expect(pwshStatusLine(st)).toContain("Windows PowerShell 5.1");
     expect(pwshStatusLine(st)).toContain(PWSH_WINGET);
     expect(pwshReportLine(st)).toContain("未安装 PowerShell 7");
-    // 每个候选都只看了一次文件（PATH 里重复的目录去重）
-    expect(new Set(w.lstats.map((p) => p.toLowerCase())).size).toBe(w.lstats.length);
-    expect(w.lstats.every((p) => p.toLowerCase().endsWith("pwsh.exe"))).toBe(true);
+    // 每个候选都只看了一次文件（PATH 里重复的目录去重）；另外看一眼 5.1 在不在
+    const looked = w.lstats.filter((p) => !/\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i.test(p));
+    expect(new Set(looked.map((p) => p.toLowerCase())).size).toBe(looked.length);
+    expect(looked.every((p) => p.toLowerCase().endsWith("pwsh.exe"))).toBe(true);
+    expect(w.lstats.length - looked.length).toBe(1);
   });
 
   it("PATH 里只有 PowerShell 6：仍建议装 7", async () => {
@@ -197,7 +222,9 @@ describe("PowerShell 7 检测", () => {
     expect(spawned).toHaveLength(1);
     expect(spawned[0]).toMatchObject({ exe, args: ["-Version"], opts: { windowsHide: true } });
     expect(spawned[0].opts.timeout).toBeGreaterThan(0);
-    expect(spawned[0].opts.timeout).toBeLessThanOrEqual(10_000);
+    // 冷启动的机器上 pwsh 第一次启动可能要十几秒（CI 上 5 秒超时出过错）
+    expect(spawned[0].opts.timeout).toBeGreaterThanOrEqual(15_000);
+    expect(spawned[0].opts.timeout).toBeLessThanOrEqual(30_000);
     expect(parsePwshVersion("PowerShell 7.6.0-preview.5\n")).toBe("7.6.0-preview.5");
     expect(parsePwshVersion("garbage")).toBeUndefined();
   });

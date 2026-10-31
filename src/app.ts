@@ -52,6 +52,8 @@ export interface DesktopHooks {
   openExternal(url: string): void;
   /** 系统钥匙串加密（Electron safeStorage）；不可用时缺省，账户凭据改靠文件权限保护 */
   secretBox?: SecretBox;
+  /** 走 Chromium 网络栈的 fetch（Electron net.fetch：系统代理、系统证书）；下载内置 PowerShell 用，缺省时用 Node 的 fetch */
+  fetch?: typeof fetch;
 }
 
 export interface ModelflareStatus {
@@ -114,6 +116,7 @@ export class App {
   /** 故障排查页最近一次"测试模型 / 测试代理"的结果（复制诊断信息时带上） */
   lastDiagnostics: { model?: import("./diagnostics.js").ModelTestResult; agent?: import("./diagnostics.js").AgentTestResult } = {};
   private notices: Array<{ at: number; level: "info" | "warn"; text: string }> = [];
+  private offPwsh: (() => void) | undefined;
   private accountTimer: NodeJS.Timeout | undefined;
   private picksTimer: NodeJS.Timeout | undefined;
   private modelInfoCache: { at: number; data: Record<string, ModelInfo> } | undefined;
@@ -388,8 +391,16 @@ export class App {
       this.picksTimer = setInterval(() => void this.syncModelPicks(), 3600_000);
       this.picksTimer.unref();
     }
-    // Windows：找 PowerShell 7（只看文件，异步）；代理进程启动时和界面的提示都用这个结果
-    if (pwshProbe.applicable) void pwshProbe.check();
+    // Windows：选代理用的 PowerShell（系统里能用的 7 → 应用内置的 → 5.1），没有 7 时在后台自动装内置的；
+    // 选择变了（装好了、坏了退回）就告诉用户，空闲的代理进程在后台换用新的
+    if (pwshProbe.applicable) {
+      pwshProbe.configure({ agent: this.agent.available, mode: this.config.agent.pwsh, fetch: () => this.desktop?.fetch });
+      this.offPwsh = pwshProbe.onChange((e) => {
+        if (e.notice) this.notice(e.notice.level, e.notice.text);
+        if (e.kind === "path") void this.agent.refreshIdle();
+      });
+      void pwshProbe.check();
+    }
     void this.prewarmAgent();
     if (this.magpie && !this.opts.noWeb) {
       // 余额与低余额提醒：启动后读一次，之后每 5 分钟一次
@@ -403,6 +414,7 @@ export class App {
   }
 
   async stop(): Promise<void> {
+    this.offPwsh?.();
     if (this.accountTimer) clearInterval(this.accountTimer);
     if (this.picksTimer) clearInterval(this.picksTimer);
     this.account?.cancelLogin();

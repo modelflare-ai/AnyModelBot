@@ -14,7 +14,13 @@
 // --expect-pwsh7 (Windows): require that the app detected PowerShell 7 (/amb/api/pwsh and the diagnostics
 //   status), passed it to DSH (the "patch written" log line) and that the --tool command ran in it
 //   (the pwsh tool prints $PSVersionTable.PSVersion.Major). GitHub's windows-2025 image has PowerShell 7.
-// --tool: the mock model asks for one shell tool call before answering (exercises tool spawning).
+// --private-pwsh (Windows): the app must ignore the runner's own PowerShell 7 (AMB_PWSH_IGNORE_SYSTEM=1), download,
+//   verify, launch-test and use its app-managed copy (AMB_PWSH_HOME=<out>/pwsh-home, fresh). The chat waits until the
+//   install is done; then the --tool command must run in PowerShell 7 from that copy.
+// --pwsh-heal (with --private-pwsh): then "quarantine" the copy's pwsh.exe like antivirus would; the next tool call cannot
+//   start it, so the app must mark it broken and fall back to Windows PowerShell 5.1 (psver=5), and a one-click
+//   reinstall (POST /amb/api/pwsh/install) must bring PowerShell 7 back (psver=7).
+// --tool: the mock model asks for one shell tool call before answering each message (exercises tool spawning).
 // --managed: use the bundled magpie gateway (as users do) with "Modelflare" pointed at the mock
 //   (AMB_MODELFLARE_BASE_URL) and connected through the API; otherwise the app calls the mock directly.
 // --stream: send the message through the UI's SSE endpoint (/chat/stream) instead of /chat.
@@ -72,6 +78,9 @@ const MODEL = "mock-agent";
 const ANSWER = "pong-from-mock";
 const wantTool = flag("tool");
 const expectPwsh7 = flag("expect-pwsh7");
+const privatePwsh = flag("private-pwsh");
+const pwshHeal = flag("pwsh-heal");
+const pwshHome = path.join(out, "pwsh-home");
 const managed = flag("managed");
 const reasoning = flag("reasoning");
 const observeMs = Number(opt("observe-ms", 0));
@@ -112,13 +121,14 @@ const llm = http.createServer(async (req, res) => {
     return;
   }
   if (!req.url?.endsWith("/chat/completions")) return void res.writeHead(404).end();
-  // One shell call first when asked (and the runtime offers a shell tool), then the answer.
+  // One shell call per user message when asked (and the runtime offers a shell tool), then the answer.
   const shell = tools.find((n) => n === "bash" || n === "pwsh" || n === "powershell");
-  const toolResults = msgs.filter((m) => m.role === "tool");
+  const lastUser = msgs.findLastIndex((m) => m.role === "user");
+  const toolResults = msgs.slice(lastUser + 1).filter((m) => m.role === "tool");
   // PowerShell also prints its major version, so the e2e can tell PowerShell 7 from Windows PowerShell 5.1
   const command = shell === "bash" ? "echo tool-ran-ok" : 'echo tool-ran-ok; "psver=$($PSVersionTable.PSVersion.Major)"';
   const call = wantTool && b.tools && shell && !toolResults.length ? { name: shell, args: { description: "say hi", command } } : undefined;
-  const text = toolResults.length ? `${ANSWER} [${toolResults.map((m) => textOf(m.content)).join("|").slice(0, 300)}]` : ANSWER;
+  const text = toolResults.length ? `${ANSWER} [${toolResults.map((m) => textOf(m.content)).join("|").slice(0, 1500)}]` : ANSWER;
   if (!b.stream) {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ id: "c1", object: "chat.completion", model: b.model, choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }));
     return;
@@ -162,7 +172,10 @@ const env = {
   AMB_DSH_TRACE: path.join(out, "dsh-trace.jsonl"),
   AMB_WEIXIN_API_BASE: "http://127.0.0.1:9",
   AMB_MEMORY_REVIEW_DELAY_MS: "600000",
+  // --private-pwsh: pretend the runner has no PowerShell 7, so the app installs and uses its own copy (a fresh one)
+  ...(privatePwsh ? { AMB_PWSH_IGNORE_SYSTEM: "1", AMB_PWSH_HOME: pwshHome } : {}),
 };
+if (privatePwsh) fs.rmSync(pwshHome, { recursive: true, force: true });
 const launch = opt("launch", "node");
 say("launching", launch, JSON.stringify(cmd));
 let app;
@@ -297,6 +310,33 @@ try {
     summary.statusFirst = await chat("/status", 20_000);
     say("/status (first):", JSON.stringify(summary.statusFirst).slice(0, 500));
   }
+  // --private-pwsh: wait (up to 10 minutes) until the app has installed its PowerShell 7 and switched the agent to it
+  const pwshNow = async () => (await api("/amb/api/pwsh", {}, 60_000)).body;
+  const waitPwsh = async (what, ok, ms = 600_000) => {
+    const started = Date.now();
+    const until = started + ms;
+    let st;
+    let last = "";
+    while (Date.now() < until) {
+      st = await pwshNow().catch((e) => ({ error: String(e?.message ?? e) }));
+      jl("pwsh-status.jsonl", { what, st });
+      const line = `${st?.private?.install?.state ?? "-"} ${st?.private?.install?.received ?? ""}/${st?.private?.install?.total ?? ""} using=${st?.using ?? "-"} source=${st?.source ?? "-"}`;
+      if (line !== last) say(`pwsh (${what}): ${line}`);
+      last = line;
+      if (ok(st)) return st;
+      if (st?.private?.install?.state === "failed" && what !== "fallback") throw new Error(`PowerShell install failed: ${st.private.install.error}`);
+      if (what === "install" && Date.now() - started > 90_000 && (st?.private?.install?.state ?? "idle") === "idle") throw new Error(`the app never started installing PowerShell: ${JSON.stringify(st).slice(0, 600)}`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error(`timed out waiting for PowerShell (${what}): ${JSON.stringify(st).slice(0, 600)}`);
+  };
+  const privateReady = (st) => st?.source === "private" && st?.private?.ready && !st?.missing && /^7\./.test(st?.version ?? "");
+  if (privatePwsh) {
+    const st = await waitPwsh("install", privateReady);
+    summary.pwshInstalled = { version: st.version, path: st.path, test: st.private?.test, install: st.private?.install };
+    say(`app-managed PowerShell ${st.version} ready at ${st.path} (launch test ${st.private?.test?.ms} ms)`);
+  }
+
   summary.chatStartedAt = stamp();
   const first = chat(wantTool ? "Run the tool, then answer. TOOLTEST" : "Say hi. PINGTEST");
   if (flag("status-probes")) {
@@ -314,6 +354,41 @@ try {
     summary.chat2 = await chat("Again. PINGTEST 2");
     say("chat2:", JSON.stringify(summary.chat2).slice(0, 600));
     summary.ok &&= good(summary.chat2);
+  }
+  // --pwsh-heal: break the app-managed copy, expect the fallback to 5.1, then a one-click reinstall back to 7
+  const psverOf = (c) => /psver=(\d+)/.exec(c?.reply ?? "")?.[1];
+  if (privatePwsh && pwshHeal) {
+    const before = await pwshNow();
+    const exe = before.path;
+    const quarantined = exe + ".quarantined";
+    fs.renameSync(exe, quarantined);
+    say(`renamed ${exe} away (like antivirus quarantine)`);
+    summary.healBroken = await chat("The shell should fail now. HEAL 1");
+    say("chat (broken shell):", JSON.stringify(summary.healBroken).slice(0, 800));
+    const fell = await waitPwsh("fallback", (st) => !!st?.private?.bad && st?.fallback?.from === exe && st?.source !== "private", 120_000);
+    summary.healFallback = { bad: fell.private?.bad, fallback: fell.fallback, using: fell.using };
+    say(`fallback: ${JSON.stringify(summary.healFallback).slice(0, 600)}`);
+    summary.healOn51 = await chat("Run the tool again on the fallback shell. HEAL 2");
+    say("chat (fallback shell):", JSON.stringify(summary.healOn51).slice(0, 600));
+    const r = await api("/amb/api/pwsh/install", { method: "POST", body: JSON.stringify({ reinstall: true }) }, 60_000);
+    say(`reinstall requested: HTTP ${r.status}`);
+    const back = await waitPwsh("reinstall", (st) => privateReady(st) && st?.private?.install?.state === "done" && fs.existsSync(exe));
+    summary.healReinstalled = { version: back.version, path: back.path, test: back.private?.test };
+    summary.healBack = await chat("Run the tool once more. HEAL 3");
+    say("chat (reinstalled shell):", JSON.stringify(summary.healBack).slice(0, 600));
+    const statusLine = await chat("/status", 20_000);
+    summary.healStatusLine = statusLine.reply;
+    const checks = {
+      brokenToolFailed: !(summary.healBroken?.reply ?? "").includes("tool-ran-ok") && /windows-acl-run|CreateProcess|spawn|ENOENT/i.test(summary.healBroken?.reply ?? ""),
+      markedBroken: !!summary.healFallback.bad,
+      fellBackTo51: psverOf(summary.healOn51) === "5" && /powershell\.exe$/i.test(summary.healFallback.using ?? ""),
+      reinstalled: !!summary.healReinstalled.test?.ok,
+      backOn7: psverOf(summary.healBack) === "7" && (summary.healBack?.reply ?? "").includes("tool-ran-ok"),
+      statusSaysPrivate: /应用内置/.test(summary.healStatusLine ?? ""),
+    };
+    summary.healChecks = checks;
+    say(`self-healing checks ${JSON.stringify(checks)}`);
+    summary.ok &&= Object.values(checks).every(Boolean);
   }
   summary.agent = (await api("/amb/api/agent").catch((e) => ({ body: String(e) }))).body;
 
@@ -361,6 +436,29 @@ try {
       toolRanInPwsh7: !wantTool || (psver.length > 0 && psver.every((v) => v === "7")),
     };
     say(`PowerShell: ${ps?.version ?? "-"} at ${ps?.path ?? "-"} (${ps?.source ?? "-"}); checks ${JSON.stringify(checks)}; tool psver ${psver.join(",") || "-"}`);
+    summary.ok &&= Object.values(checks).every(Boolean);
+  }
+  if (privatePwsh) {
+    // The app-managed copy was downloaded in this run, verified, handed to DSH and the tool call ran in it
+    const ps = (await api("/amb/api/pwsh", {}, 30_000)).body;
+    fs.writeFileSync(path.join(out, "diag-pwsh-private.json"), JSON.stringify(ps, null, 2));
+    let patchLines = [];
+    try {
+      patchLines = fs.readFileSync(path.join(dataDir, "logs", "app.log"), "utf8").split(/\r?\n/).filter((l) => l.includes("dsh start: patch written"));
+    } catch {
+      /* no log */
+    }
+    const homeJson = JSON.stringify(pwshHome).slice(1, -1);
+    const checks = {
+      ignoredSystem: !!ps?.ignoreSystem,
+      installedHere: !!summary.pwshInstalled && fs.existsSync(path.join(pwshHome, "state.json")),
+      launchTested: !!summary.pwshInstalled?.test?.ok,
+      passedToDsh: patchLines.some((l) => l.includes(homeJson) && /pwsh\.exe/i.test(l)),
+      toolRanInPrivatePwsh7: psverOf(summary.chat) === "7",
+      noLeftovers: fs.readdirSync(pwshHome).filter((n) => /^\.(dl|staging|trash)-|^\.lock$/.test(n)).length === 0,
+    };
+    summary.privatePwsh = { checks, patchLines: patchLines.map((l) => l.slice(0, 400)), status: ps };
+    say(`app-managed PowerShell checks ${JSON.stringify(checks)}`);
     summary.ok &&= Object.values(checks).every(Boolean);
   }
 } catch (e) {

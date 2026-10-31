@@ -2,7 +2,8 @@
 //
 // Registers media_models, media_docs, generate_image and generate_video. The agent never holds a
 // Modelflare key: each call goes to the host over the loopback bridge (AMB_BRIDGE_URL / AMB_BRIDGE_TOKEN),
-// which asks the user to confirm the model, calls Modelflare with this bot's key and saves the result
+// which asks the user to confirm the model when needed (not the default model, a high estimated cost, an
+// ambiguous request, or a bot set to always ask), calls Modelflare with this bot's key and saves the result
 // under media/ in the workspace. The agent then delivers the file with the present tool. Every model has
 // its own request format, so the agent reads the model's live docs with media_docs and passes the body.
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -34,6 +35,11 @@ export function apply(ctx) {
     return { text: String(r.text ?? '') }
   }
 
+  const CONFIRM = {
+    type: 'boolean',
+    description: 'true: ask the user before generating, because the request is ambiguous. false: the user named this model, so a model other than the default needs no question. Omit otherwise. A high estimated cost is always asked.',
+  }
+
   const BODY = {
     type: 'object',
     additionalProperties: true,
@@ -62,10 +68,11 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'generate_image',
-    description: 'Generate or edit an image with an image model on Modelflare. Before anything is generated the user is asked to confirm the model; they may pick another one or cancel. The image is saved in the workspace under media/; deliver it with the present tool when the user should receive it. Write the prompt in detail (subject, style, composition, text in the image).',
+    description: 'Generate or edit an image with an image model on Modelflare. With the default model and a normal cost it generates right away; otherwise the user is asked to confirm the model first and may pick another one or cancel. The image is saved in the workspace under media/; deliver it with the present tool when the user should receive it. Write the prompt in detail (subject, style, composition, text in the image).',
     parameters: {
-      prompt: { type: 'string', required: true, description: 'What the image should show, in detail. Shown to the user in the confirmation; keep it in sync with the prompt inside body.' },
+      prompt: { type: 'string', required: true, description: 'What the image should show, in detail. Shown to the user when asked; keep it in sync with the prompt inside body.' },
       model: { type: 'string', description: 'Image model id. Omit to use the default model.' },
+      confirm: CONFIRM,
       body: BODY,
       endpoint: { type: 'string', enum: ['generations', 'edits'], description: 'For OpenAI Images models only: "edits" when the docs say reference images go to /v1/images/edits. Default generations.' },
       size: { type: 'string', description: 'Optional size such as 1024x1024 for a plain request without body, Images API models only.' },
@@ -76,10 +83,11 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'generate_video',
-    description: 'Generate a short video with a video model on Modelflare. Before anything is generated the user is asked to confirm the model; they may pick another one or cancel. It can take several minutes. The video is saved in the workspace under media/; deliver it with the present tool. Only use it when the user asks for a video: video generation costs much more than images.',
+    description: 'Generate a short video with a video model on Modelflare. With the default model and a normal cost it generates right away; otherwise the user is asked to confirm the model first and may pick another one or cancel. It can take several minutes. The video is saved in the workspace under media/; deliver it with the present tool. Only use it when the user asks for a video: video generation costs much more than images.',
     parameters: {
-      prompt: { type: 'string', required: true, description: 'What the video should show, in detail. Shown to the user in the confirmation; keep it in sync with the prompt inside body.' },
+      prompt: { type: 'string', required: true, description: 'What the video should show, in detail. Shown to the user when asked; keep it in sync with the prompt inside body.' },
       model: { type: 'string', description: 'Video model id. Omit to use the default model.' },
+      confirm: CONFIRM,
       body: BODY,
       seconds: { type: 'number', description: 'Optional length in seconds for a plain request without body.' },
       size: { type: 'string', description: 'Optional size such as 1280x720 for a plain request without body.' },

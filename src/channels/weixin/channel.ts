@@ -229,11 +229,14 @@ export class WeixinChannel {
    * 并占用同一份回复配额；没有可用配额时放弃，返回 false。
    */
   async notifyOwner(text: string): Promise<boolean> {
-    const acct = this.store.getWeixinAccount(this.botId);
-    const owner = acct?.ownerUserId ?? "";
-    const peer = owner ? this.store.getWeixinPeer(this.botId, owner) : undefined;
-    if (!this.client || !owner || !peer?.contextToken || !this.quota.tryConsume(owner)) return false;
-    await this.client.sendText(owner, text, peer.contextToken);
+    return this.notify(this.store.getWeixinAccount(this.botId)?.ownerUserId ?? "", text);
+  }
+
+  /** 主动发给某个微信用户（如重启后的提醒）：同样要有他最近的 context_token、占用同一份回复配额；发不出去返回 false */
+  async notify(userId: string, text: string): Promise<boolean> {
+    const peer = userId ? this.store.getWeixinPeer(this.botId, userId) : undefined;
+    if (!this.client || !peer?.contextToken || !this.quota.tryConsume(userId)) return false;
+    await this.client.sendText(userId, text, peer.contextToken);
     return true;
   }
 

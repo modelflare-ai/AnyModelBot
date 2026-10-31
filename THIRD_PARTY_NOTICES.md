@@ -118,6 +118,11 @@ DSH 的传递依赖以未修改形式随附，各自许可证保存在包目录�
 
 `dsh-runtime/plugins/amb-bridge.mjs`（审批 / 读取围栏插件）为本项目原创代码（MIT）。
 
+聊天规则（`src/agent/prompts/system.ts`）、每次模型请求现读的系统提示词段（`dsh-runtime/plugins/amb-prompt.mjs`）、
+提示词约定测试与字符数上限（`test/prompts.unit.test.ts`）的思路参考了 DeepSeek 的 dsh-superagent
+（MIT，Copyright (c) 2026 DeepSeek Harness Team）：它的注意力原则、按请求重算的 system-prompt 段与 prompt 测试。
+文字和代码为本项目重写，未复制其代码。
+
 ## DS Bot（长期记忆、上下文管家、机器人设置 — Apache-2.0）
 
 来源：https://github.com/Fei2411/DS-Bot

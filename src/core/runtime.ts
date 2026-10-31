@@ -10,7 +10,8 @@ import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
 import { promptText, type QuestionItem } from "../agent/approvals.js";
-import { MEMORY_GUIDE } from "../agent/steward.js";
+import { segmentInput, type ChatPlace } from "../agent/prompts/index.js";
+import { clearInflight, markInflight, takeNotice } from "./recovery.js";
 import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
 import { isBotProviderModel } from "../modelflare.js";
 import type { ApprovalRow } from "../store/db.js";
@@ -113,6 +114,8 @@ interface Inflight {
   botId: string;
   since: number;
   abort: AbortController;
+  /** 被应用退出打断：不回复，标记留着，下次启动时告诉用户（recovery.ts） */
+  interrupted?: boolean;
 }
 
 /** 回合还没交给代理（或纯对话还没出字）就被停止时的回复 */
@@ -123,7 +126,14 @@ export class BotRuntime {
   private modelCache: { at: number; list: string[] } | undefined;
   /** 会话 → 正在处理的消息 */
   private inflight = new Map<string, Set<Inflight>>();
+  /** 应用正在退出：正在处理的消息算被打断，不再回复也不改用纯对话 */
+  private closing = false;
   constructor(private opts: RuntimeOptions) {}
+
+  /** 应用退出前调用（App.stop）：之后失败的回合留下重启标记，由下次启动告诉用户 */
+  shutdown(): void {
+    this.closing = true;
+  }
 
   /**
    * 中止会话里正在处理的消息：纯对话中止模型请求（已生成的部分保留），代理回合交给代理之前直接收尾、之后在服务端中止
@@ -179,12 +189,22 @@ export class BotRuntime {
     const set = this.inflight.get(conv.id) ?? new Set<Inflight>();
     this.inflight.set(conv.id, set);
     set.add(t);
+    // 重启标记：应用退出或崩溃时还没处理完的，下次启动告诉用户
+    const text = eventText(ev);
+    if (text) markInflight(store, conv.id, text);
     try {
       await this.handleMessage(ev, out, bot, conv.id, conv.model, t);
     } finally {
       opts.signal?.removeEventListener("abort", link);
       set.delete(t);
       if (!set.size && this.inflight.get(conv.id) === set) this.inflight.delete(conv.id);
+      if (!set.size && !t.interrupted) {
+        try {
+          clearInflight(store, conv.id);
+        } catch {
+          /* 退出时数据库可能已经关了：标记留着，下次启动多提醒一次 */
+        }
+      }
     }
   }
 
@@ -198,6 +218,9 @@ export class BotRuntime {
     const text = eventText(ev);
     if (!text) return;
     const images = inboundImages(ev);
+    // 上次重启时没处理完、当时又没能告诉用户的：先说一声
+    const notice = takeNotice(store, conv.id);
+    if (notice) await out.apply({ type: "text", text: notice }).catch((e) => log.warn("restart notice failed", { message: (e as Error).message.slice(0, 200) }));
 
     // 排队时就被停止了：不再处理（命令也不执行），留一句"已中止"
     if (signal.aborted) {
@@ -229,8 +252,14 @@ export class BotRuntime {
 
     let note = "";
     if (agent?.available) {
-      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, bot.systemPrompt, out, seen, t);
+      const place: ChatPlace = { channel: ev.channel, kind: ev.conversation.kind === "group" ? "group" : "dm" };
+      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, place, out, seen, t);
       if (handled === true) return;
+      // 应用正在退出：代理进程没了不是该改用纯对话的时候，留给下次启动提醒
+      if (this.closing) {
+        t.interrupted = true;
+        return;
+      }
       // 代理进程还在启动（第一次可能要几分钟）：这条消息先由模型直接回答，不让用户干等
       if (handled === "starting") note = "（代理还在启动，这条消息先由模型直接回答；启动完成后会自动用回代理。）";
     }
@@ -352,7 +381,7 @@ export class BotRuntime {
     convId: string,
     text: string,
     model: string,
-    systemPrompt: string,
+    place: ChatPlace,
     out: ReplySession,
     images: TurnImage[],
     inflight: Inflight,
@@ -419,7 +448,7 @@ export class BotRuntime {
         }
       }
       if (signal.aborted) return await stoppedEarly();
-      const input = store.getAgentSession(convId) ? text : firstInput(agent, botId, convId, systemPrompt, text);
+      const input = store.getAgentSession(convId) ? text : firstInput(agent, botId, convId, text, place);
       // runTurn 同步登记回合，之后的停止交给代理（TurnStopped，会重启代理进程）
       const turn = agent.runTurn(botId, {
         conversationId: convId,
@@ -455,6 +484,11 @@ export class BotRuntime {
     } catch (e) {
       const err = e as Error;
       log.warn("agent turn failed", { message: err.message.slice(0, 300) });
+      // 应用正在退出时代理进程被关掉：不回复（渠道也停了），下次启动告诉用户这条没处理完
+      if (this.closing) {
+        inflight.interrupted = true;
+        return true;
+      }
       if (!(err instanceof TurnStopped) && !visible && agent.host(botId).state !== "running") {
         log.warn("agent host unavailable, falling back to plain chat");
         return false;
@@ -524,20 +558,14 @@ export class BotRuntime {
 }
 
 /**
- * 一段代理会话的首条输入：机器人设定 + 记忆说明与冻结快照 + 交接便条（一次性）+ 用户消息。
- * 这一段之内不再变化，便于模型端前缀缓存；记忆在下一段才刷新（本段内用 recall 查最新）。
+ * 一段代理会话的首条输入：对话渠道 + 冻结的记忆快照 + 交接便条（一次性）+ 用户消息（prompts/segment.ts）。
+ * 人设、聊天规则和记忆说明不在这里，在每次模型请求现读的系统提示词里（amb-prompt 插件）：改人设不用 /new。
+ * 这一段之内不再变化，便于模型端前缀缓存；记忆快照在下一段才刷新（本段内用 recall 查最新），
+ * 放进系统提示词的话每记一条都会让整段前缀缓存失效，而且各会话（群记忆）不一样。
  */
-export function firstInput(agent: AgentManager, botId: string, convId: string, systemPrompt: string, text: string): string {
-  const parts: string[] = [];
-  if (systemPrompt.trim()) parts.push(`[机器人设定]\n${systemPrompt.trim()}`);
-  if (agent.settings(botId).memory.enabled) {
-    const snap = agent.memoryPrefix(botId, convId);
-    parts.push(`[长期记忆]\n${MEMORY_GUIDE}\n\n${snap || "（目前为空）"}`);
-  }
-  const seed = agent.takeSeed(convId);
-  if (seed) parts.push(`[交接]\n以下是上一段对话留下的交接便条，供你延续上下文：\n${seed}`);
-  if (!parts.length) return text;
-  return `${parts.join("\n\n")}\n\n[用户消息]\n${text}`;
+export function firstInput(agent: AgentManager, botId: string, convId: string, text: string, place?: ChatPlace): string {
+  const memory = agent.settings(botId).memory.enabled ? agent.memoryPrefix(botId, convId) : undefined;
+  return segmentInput({ place, memory, handoff: agent.takeSeed(convId), text });
 }
 
 /** 审批/提问 → 出站交互操作（文本渠道用 prompt；卡片渠道用 buttons）。 */

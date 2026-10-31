@@ -134,12 +134,3 @@ export function parseReview(text: string): ReviewOps {
   out.remove = out.remove.slice(0, 5);
   return out;
 }
-
-/** 记忆使用说明（放在冻结快照之前，作为首条输入的一部分）。 */
-export const MEMORY_GUIDE = [
-  "你有跨对话的长期记忆，用 remember / forget / recall 三个工具管理：",
-  "- 用户明确让你记住、或透露了以后用得上的稳定信息（偏好、身份、约定）时，用 remember 记下，一条一句；",
-  "- 信息过时或用户要求忘记时，用 forget；",
-  "- 在回答「不知道」「不记得」之前，先用 recall 查一下；",
-  "- 不要把密码、密钥、令牌、证件号写进记忆。",
-].join("\n");

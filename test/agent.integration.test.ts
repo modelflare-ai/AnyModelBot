@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { App } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { RETRY_NOTE, locateDshRuntime } from "../src/agent/host.js";
+import { CHAT_RULES, MEMORY_GUIDE, botIdentity } from "../src/agent/prompts/index.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
 import { listen } from "./helpers.js";
 
@@ -176,7 +177,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): Step {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|PADDED|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|SUBASK|SUBHELLO|PADDED|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
@@ -219,6 +220,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       [/RMWS/, [{ name: "bash", args: { description: "run", command: "mkdir -p tree/sub && touch tree/sub/f && rm -rf tree && echo tree-gone" } }]],
       [/CHILDRM/, [{ name: "bash", args: { description: "run", command: `rm -rf ${outside}/victim2 && echo victim2-gone` } }]],
       [/SUBRM/, [{ name: "subagent", args: { description: "delete", prompt: "CHILDRM now" } }]],
+      [/SUBASK/, [{ name: "subagent", args: { description: "hello", prompt: "SUBHELLO now" } }]],
     ];
     for (const [re, steps] of scripts) {
       if (!re.test(user)) continue;
@@ -342,6 +344,81 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const hist = ((await (await fetch(`${base}/amb/api/conversations/${encodeURIComponent(conv.id)}/messages`)).json()) as any).messages;
     expect(hist.map((m: any) => m.role)).toEqual(["user", "assistant"]);
     expect(JSON.stringify(hist)).not.toMatch(/🔧|tool|bash:/);
+  }, 120_000);
+
+  // —— 系统提示词：我们的人设与机器人段（每次请求现读），而不是 DSH 的 coding agent 人设 ——
+  /** 模型请求里的系统提示词（Chat：system 消息；Responses：instructions 与 system 条目；Messages：system） */
+  const systemOf = (c: { api: string; body: any }): string => {
+    if (c.api === "chat") return c.body.messages.filter((m: any) => m.role === "system" || m.role === "developer").map((m: any) => textOf(m.content)).join("\n\n");
+    if (c.api === "messages") return textOf(c.body.system);
+    return [c.body.instructions ?? "", ...(c.body.input ?? []).filter((it: any) => it.role === "system" || it.role === "developer").map((it: any) => textOf(it.content))].filter(Boolean).join("\n\n");
+  };
+  /** 带着这段文字的第一个模型请求（这一轮的第一步） */
+  const requestFor = (marker: string) => calls.find((c) => c.body.tools && JSON.stringify(c.body).includes(marker))!;
+  const userTexts = (c: { body: any }) => (c.body.messages ?? []).filter((m: any) => m.role === "user").map((m: any) => textOf(m.content)) as string[];
+  const DEFAULT_PERSONA = "你是一个乐于助人的中文助手，回答简洁准确。";
+  /**
+   * 系统提示词加工具定义的字符数上限（DSH 自己的部分 + 我们的人设、机器人段和工具；基线 32,208 = 提示词 3,310 + 工具 28,898，上限高约 5%）。
+   * 缩短了就调低；要调高，在提交说明里写清原因。电脑操作的 MCP 工具随平台变化，不计入。
+   */
+  const SURFACE_BUDGET = 33_800;
+
+  it("the system prompt has our persona and the bot's section, not DSH's coding persona; the segment's first message has channel and memory", async () => {
+    await chat("/reset");
+    expect((await chat("SYSPROMPT one")).reply).toBe("好的");
+    const c = requestFor("SYSPROMPT one");
+    const sys = systemOf(c);
+    // 第一段就是我们的人设（没有 "powered by DeepSeek Harness"），模型名由 DSH 填入
+    expect(sys).toMatch(/^你是用户的个人助手，由 \S*mock-agent 模型驱动/);
+    expect(sys).not.toMatch(/coding agent|DeepSeek Harness/);
+    expect(sys).toContain(CHAT_RULES);
+    expect(sys).toContain(MEMORY_GUIDE);
+    // 机器人段在最后：名字和人设
+    expect(sys.trimEnd().endsWith(botIdentity("我的助手", DEFAULT_PERSONA))).toBe(true);
+    // 每段第一条消息：渠道、记忆快照、用户消息；人设和记忆说明不在这里
+    const first = userTexts(c).find((t) => t.includes("SYSPROMPT one"))!;
+    expect(first).toMatch(/^\[对话渠道\]\n本机网页对话/);
+    expect(first).toContain("[长期记忆快照]");
+    expect(first).toContain("[用户消息]\nSYSPROMPT one");
+    expect(first).not.toContain(DEFAULT_PERSONA);
+    expect(first).not.toContain("remember / forget / recall");
+    const tools = (c.body.tools as any[]).filter((t) => !String(t.function?.name ?? t.name).startsWith("mcp__"));
+    expect(sys.length + JSON.stringify(tools).length, `${sys.length} characters of prompt and ${JSON.stringify(tools).length} of tools`).toBeLessThanOrEqual(SURFACE_BUDGET);
+  }, 120_000);
+
+  it("an edited persona reaches the next model request of the same agent session (no /new); an unchanged one keeps the system prompt byte-identical", async () => {
+    const conv = "default:web:console";
+    const session = app.store.getAgentSession(conv);
+    await chat("SYSPROMPT two");
+    const before = systemOf(requestFor("SYSPROMPT two"));
+    expect(before).toBe(systemOf(requestFor("SYSPROMPT one")));
+    const put = (systemPrompt: string) => fetch(`${base}/amb/api/bots/default`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ systemPrompt }) });
+    expect((await put("你是海盗船长，每句话都以 Arr 结尾。")).status).toBe(200);
+    try {
+      await chat("SYSPROMPT three");
+      const after = systemOf(requestFor("SYSPROMPT three"));
+      expect(after).toContain("你是海盗船长，每句话都以 Arr 结尾。");
+      expect(after).not.toContain(DEFAULT_PERSONA);
+      // 同一个代理会话；人设前面的部分一个字没变（前缀缓存）
+      expect(app.store.getAgentSession(conv)).toBe(session);
+      const head = (s: string) => s.slice(0, s.indexOf("# 机器人设定"));
+      expect(head(after)).toBe(head(before));
+    } finally {
+      await put(DEFAULT_PERSONA);
+    }
+  }, 120_000);
+
+  it("subagents do not get the bot's section: they do not talk to the user", async () => {
+    const from = calls.length;
+    await chat("SUBASK please");
+    // 子代理在后台跑：等它发出第一个模型请求
+    const childOf = () => calls.slice(from).find((c) => c.body.tools && userTexts(c).some((t) => t.includes("SUBHELLO")));
+    for (let i = 0; i < 300 && !childOf(); i++) await new Promise((r) => setTimeout(r, 50));
+    const child = childOf()!;
+    expect(child).toBeTruthy();
+    expect(systemOf(child)).not.toContain("# 聊天规则");
+    expect(systemOf(child)).not.toContain("# 机器人设定");
+    expect(systemOf(requestFor("SUBASK please"))).toContain("# 聊天规则");
   }, 120_000);
 
   it("escalation waits for approval; approve via API allows once", async () => {

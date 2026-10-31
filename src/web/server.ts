@@ -568,6 +568,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           ...(b.utilityModel !== undefined ? { utilityModel: b.utilityModel } : {}),
           ...(b.avatar !== undefined ? { avatar: b.avatar } : {}),
           ...(b.computerUse !== undefined ? { computerUse: { ...cur.computerUse, ...b.computerUse } } : {}),
+          ...(b.media !== undefined ? { media: { ...cur.media, ...b.media } } : {}),
           memory: { ...cur.memory, ...(b.memory ?? {}) },
           steward: { ...cur.steward, ...(b.steward ?? {}) },
         });

@@ -2,6 +2,8 @@
 export type PermissionPreset = "readonly" | "workspace" | "full";
 export type CuBackend = "cua" | "codex";
 export type CuApproval = "auto" | "ask-input";
+/** auto = 只在需要时问（模型不是默认的、预计花费超过上限、要求不明确）；always = 每次生成前都问 */
+export type MediaConfirm = "auto" | "always";
 /** 内置头像角色（ui/components/avatar.js 的 BOT_CHARS）；blue 是主角 */
 export const BOT_AVATARS = ["blue", "yellow", "green", "red", "purple", "orange"] as const;
 export type BotAvatarKey = (typeof BOT_AVATARS)[number];
@@ -30,6 +32,11 @@ export interface BotSettings {
     /** auto = 所有操作自动执行（默认）；ask-input = 点击/输入等改变界面的操作先问用户，读取界面仍自动 */
     approval: CuApproval;
   };
+  /** 生图 / 生视频 */
+  media: {
+    /** 生成前什么时候问用户用哪个模型（manager.ts mediaAsk） */
+    confirm: MediaConfirm;
+  };
   /** 后台小任务（记忆整理、上下文管家、交接摘要）用的模型；空 = 用对话模型 */
   utilityModel: string;
   /** 头像角色；空 = 由机器人 id 决定 */
@@ -46,6 +53,7 @@ export const DEFAULT_SETTINGS: BotSettings = {
   memory: { enabled: true, review: true, teamWrite: false },
   steward: { enabled: true },
   computerUse: { enabled: true, backend: "cua", approval: "auto" },
+  media: { confirm: "auto" },
   utilityModel: "",
   avatar: "",
   budget: { enabled: false, limitUsd: 5 },
@@ -57,6 +65,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
   const st = r.steward && typeof r.steward === "object" ? r.steward : {};
   const cu = r.computerUse && typeof r.computerUse === "object" ? r.computerUse : {};
   const bg = r.budget && typeof r.budget === "object" ? r.budget : {};
+  const md = r.media && typeof r.media === "object" ? r.media : {};
   const limit = Number(bg.limitUsd);
   const b = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
   return {
@@ -73,6 +82,8 @@ export function normalizeSettings(raw: unknown): BotSettings {
       // 旧值（always / readonly-free）一律迁移为自动执行
       approval: cu.approval === "ask-input" ? "ask-input" : "auto",
     },
+    // 以前每次都问；升级后默认只在需要时问
+    media: { confirm: md.confirm === "always" ? "always" : "auto" },
     utilityModel: typeof r.utilityModel === "string" ? r.utilityModel.trim().slice(0, 200) : "",
     avatar: (BOT_AVATARS as readonly string[]).includes(r.avatar) ? r.avatar : "",
     budget: {

@@ -4,14 +4,23 @@
 // bot's preset in the web UI (DSH_PERMISSION_MODE) would only affect new conversations. Before any
 // tool runs we re-apply the configured preset to the calling session, so a switch to read-only
 // takes effect in existing chats too.
+//
+// Rule sessions (3d) and their subagents get their own preset from the host (observe: read-only; act: at most
+// workspace-write, even on a full-permission bot); amb-tasks puts it in a shared per-session map.
 export const name = 'amb-permission'
 export const inject = ['permissionPresets']
 
+/** Shared with amb-tasks: sessionId → preset for rule sessions. */
+const PRESETS = Symbol.for('amb.session.presets')
+
 export function apply(ctx) {
-  const want = process.env.DSH_PERMISSION_MODE || 'workspace-write'
+  const fallback = process.env.DSH_PERMISSION_MODE || 'workspace-write'
+  const presets = (globalThis[PRESETS] ??= new Map())
   ctx.on('tools/pre-execute', (exec, next) => {
     const session = exec?.agent?.session
     if (session) {
+      // a rule session whose config never arrived is not in the map: it is refused by amb-tasks anyway
+      const want = presets.get(String(session.id ?? exec?.agent?.id ?? '')) ?? (/^rule-/.test(String(session.id ?? '')) ? 'read-only' : fallback)
       try {
         if (ctx.permissionPresets.current(session) !== want) ctx.permissionPresets.set(session, want)
       } catch (e) {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { normalizeSettings, type BotSettings } from "../agent/settings.js";
+import type { Schedule } from "../tasks/schedule.js";
 
 /**
  * SQLite 存储（node:sqlite，无原生模块，Electron 下也无需 rebuild）。
@@ -89,6 +90,8 @@ export interface ApprovalRow {
   decidedAt: number;
   /** 后台任务的（任务会话或它的子代理里来的，或任务报的 needs_you 提问）；聊天里的是空 */
   taskId: string;
+  /** 规则（3d）执行时的审批：属于哪条规则（runId 是那次运行）；只在「需要你」里，不推、不进聊天回合 */
+  ruleId: string;
   runId: string;
   /** true：有一次 DSH 调用在等它（审批、聊天里的提问）；false：任务的提问，回答作为任务的新输入 */
   blocking: boolean;
@@ -205,6 +208,8 @@ export interface TaskReport {
   state: ReportState;
   summary: string;
   message?: string;
+  /** 3d 规则：观察时本会做的事（执行时做了的事） */
+  would?: string;
   files?: string[];
   /** 3b：要问用户的一个问题 */
   question?: { question: string; options?: string[]; multiSelect?: boolean };
@@ -241,7 +246,7 @@ export interface TaskRow {
 }
 export type RunState = "queued" | "running" | "settling" | "ended";
 export type RunOutcome = "" | "done" | "needs_you" | "failed" | "budget" | "stopped" | "interrupted" | "skipped";
-export type RunCause = "launch" | "answer" | "followup" | "retry" | "continue" | "recover" | "schedule" | "manual";
+export type RunCause = "launch" | "answer" | "followup" | "retry" | "continue" | "recover" | "schedule" | "manual" | "event";
 /** 一段工作（一次启动、回答、追加、重试、恢复）：占着名额直到结束 */
 export interface RunRow {
   id: string;
@@ -264,6 +269,9 @@ export interface RunRow {
   error: string;
   /** 结果交给出站队列 / 写进会话时的确定 id（交过就不再交） */
   delivery: string;
+  /** 规则的 run 当时的沙箱：read-only / workspace-write（任务的是空的，权限记在任务上） */
+  permission: string;
+  /** 排队时间；规则的 run 是它该跑的时间（错过、等名额都从这里算宽限） */
   queuedAt: number;
   startedAt: number;
   endedAt: number;
@@ -282,6 +290,45 @@ export interface RunInputRow {
   deliveredAt: number;
   takenAt: number;
   createdAt: number;
+}
+
+/**
+ * 规则（设计文档第 1、4、5、9 节，3d）：用户写的一条长期指令 + 什么时候跑 + 模式。check 每次开一个新会话判断要不要说话，
+ * remind 到点只发一句固定的话（不进模型）。
+ * 触发是带标签的联合：schedule（宿主的定时器）或 event（事件源：以后由用户配置的 workload 接进来，见 TaskService.emitRuleEvent）。
+ */
+export type RuleKind = "check" | "remind";
+export type RuleMode = "off" | "observe" | "act";
+export type RuleTrigger = { kind: "schedule"; schedule: Schedule } | { kind: "event"; source: string; filter?: Record<string, unknown> };
+export interface RuleRow {
+  id: string;
+  botId: string;
+  /** 结果发到哪个会话（建规则的那个） */
+  conversationId: string;
+  title: string;
+  /** 用户的原话 */
+  instruction: string;
+  /** remind：到点发的那句话 */
+  message: string;
+  kind: RuleKind;
+  trigger: RuleTrigger;
+  mode: RuleMode;
+  /** 改了规则原话后先观察几次再执行（产品负责人：观察 1 次） */
+  observeLeft: number;
+  /** 相对工作区：rules/<slug>-<id6> */
+  folder: string;
+  /** 原话每改一次加 1；每个 run 记下它跑的是哪一版 */
+  version: number;
+  /** 下次该跑的时间；0 = 没有（事件触发、关着、暂停了、一次性的已经跑过） */
+  nextRunAt: number;
+  /** 连续失败几次（成功一次清零；3 次自动暂停） */
+  failures: number;
+  /** 暂停的原因：failures；空 = 没暂停 */
+  pausedReason: string;
+  /** 不受免打扰和每天上限限制（固定提醒：时间是用户定的） */
+  anytime: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 type Row = Record<string, unknown>;
@@ -333,10 +380,27 @@ const RUN_COLS: Record<string, string> = {
   costUsd: "cost_usd",
   error: "error",
   delivery: "delivery",
+  permission: "permission",
   startedAt: "started_at",
   endedAt: "ended_at",
 };
 const INPUT_COLS: Record<string, string> = { runId: "run_id", messageId: "message_id", deliveredAt: "delivered_at", takenAt: "taken_at" };
+const RULE_COLS: Record<string, string> = {
+  conversationId: "conversation_id",
+  title: "title",
+  instruction: "instruction",
+  message: "message",
+  kind: "kind",
+  trigger: "trigger_spec",
+  mode: "mode",
+  observeLeft: "observe_left",
+  version: "version",
+  nextRunAt: "next_run_at",
+  failures: "failures",
+  pausedReason: "paused_reason",
+  anytime: "anytime",
+  updatedAt: "updated_at",
+};
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS bots (
@@ -417,6 +481,16 @@ CREATE TABLE IF NOT EXISTS run_inputs (
   message_id TEXT NOT NULL DEFAULT '', delivered_at INTEGER NOT NULL DEFAULT 0, taken_at INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS run_inputs_open ON run_inputs(task_id, taken_at);
+CREATE TABLE IF NOT EXISTS rules (
+  id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+  title TEXT NOT NULL, instruction TEXT NOT NULL, message TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'check', trigger_spec TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'observe',
+  observe_left INTEGER NOT NULL DEFAULT 0, folder TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
+  next_run_at INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0, paused_reason TEXT NOT NULL DEFAULT '',
+  anytime INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS rules_due ON rules(mode, next_run_at);
+CREATE INDEX IF NOT EXISTS runs_rule ON runs(rule_id, queued_at);
+CREATE INDEX IF NOT EXISTS run_inputs_run ON run_inputs(run_id, taken_at);
 `;
 
 /** 旧库补列（CREATE TABLE IF NOT EXISTS 不会改已有表）。 */
@@ -438,6 +512,9 @@ const COLUMNS: Array<[string, string, string]> = [
   ["approvals", "task_id", "TEXT NOT NULL DEFAULT ''"],
   ["approvals", "run_id", "TEXT NOT NULL DEFAULT ''"],
   ["approvals", "blocking", "INTEGER NOT NULL DEFAULT 1"],
+  // 规则（3d）执行时的审批
+  ["approvals", "rule_id", "TEXT NOT NULL DEFAULT ''"],
+  ["runs", "permission", "TEXT NOT NULL DEFAULT ''"],
 ];
 
 export class Store {
@@ -582,8 +659,10 @@ export class Store {
     this.db.prepare("DELETE FROM access WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM outbox WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM run_inputs WHERE task_id IN (SELECT id FROM tasks WHERE bot_id = ?)").run(id);
+    this.db.prepare("DELETE FROM run_inputs WHERE rule_id IN (SELECT id FROM rules WHERE bot_id = ?)").run(id);
     this.db.prepare("DELETE FROM runs WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM tasks WHERE bot_id = ?").run(id);
+    this.db.prepare("DELETE FROM rules WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM bots WHERE id = ?").run(id);
   }
 
@@ -814,17 +893,18 @@ export class Store {
       expiresAt: Number(r.expires_at),
       decidedAt: Number(r.decided_at),
       taskId: String(r.task_id ?? ""),
+      ruleId: String(r.rule_id ?? ""),
       runId: String(r.run_id ?? ""),
       blocking: Number(r.blocking ?? 1) !== 0,
     };
   }
-  insertApproval(a: Omit<ApprovalRow, "status" | "result" | "decidedBy" | "decidedAt" | "taskId" | "runId" | "blocking"> & Partial<Pick<ApprovalRow, "taskId" | "runId" | "blocking">>): ApprovalRow {
+  insertApproval(a: Omit<ApprovalRow, "status" | "result" | "decidedBy" | "decidedAt" | "taskId" | "ruleId" | "runId" | "blocking"> & Partial<Pick<ApprovalRow, "taskId" | "ruleId" | "runId" | "blocking">>): ApprovalRow {
     this.db
       .prepare(
-        `INSERT INTO approvals(id, code, kind, bot_id, conversation_id, session_id, tool, detail, reason, payload, status, created_at, expires_at, task_id, run_id, blocking)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+        `INSERT INTO approvals(id, code, kind, bot_id, conversation_id, session_id, tool, detail, reason, payload, status, created_at, expires_at, task_id, rule_id, run_id, blocking)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
       )
-      .run(a.id, a.code, a.kind, a.botId, a.conversationId, a.sessionId, a.tool, a.detail, a.reason, a.payload, a.createdAt, a.expiresAt, a.taskId ?? "", a.runId ?? "", a.blocking === false ? 0 : 1);
+      .run(a.id, a.code, a.kind, a.botId, a.conversationId, a.sessionId, a.tool, a.detail, a.reason, a.payload, a.createdAt, a.expiresAt, a.taskId ?? "", a.ruleId ?? "", a.runId ?? "", a.blocking === false ? 0 : 1);
     return this.getApproval(a.id)!;
   }
   getApproval(id: string): ApprovalRow | undefined {
@@ -835,13 +915,14 @@ export class Store {
     const r = this.db.prepare("SELECT * FROM approvals WHERE code = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1").get(code) as Row | undefined;
     return r ? this.toApproval(r) : undefined;
   }
-  listApprovals(opts: { status?: ApprovalStatus; botId?: string; conversationId?: string; taskId?: string; runId?: string; limit?: number } = {}): ApprovalRow[] {
+  listApprovals(opts: { status?: ApprovalStatus; botId?: string; conversationId?: string; taskId?: string; ruleId?: string; runId?: string; limit?: number } = {}): ApprovalRow[] {
     const where: string[] = [];
     const args: Array<string | number> = [];
     if (opts.status) (where.push("status = ?"), args.push(opts.status));
     if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
     if (opts.conversationId) (where.push("conversation_id = ?"), args.push(opts.conversationId));
     if (opts.taskId) (where.push("task_id = ?"), args.push(opts.taskId));
+    if (opts.ruleId) (where.push("rule_id = ?"), args.push(opts.ruleId));
     if (opts.runId) (where.push("run_id = ?"), args.push(opts.runId));
     const sql = `SELECT * FROM approvals ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC LIMIT ${Math.max(1, Math.min(500, opts.limit ?? 100))}`;
     return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toApproval(r));
@@ -1167,39 +1248,60 @@ export class Store {
       costUsd: Number(r.cost_usd),
       error: String(r.error),
       delivery: String(r.delivery),
+      permission: String(r.permission ?? ""),
       queuedAt: Number(r.queued_at),
       startedAt: Number(r.started_at),
       endedAt: Number(r.ended_at),
     };
   }
-  insertRun(r: Pick<RunRow, "id" | "botId" | "taskId" | "sessionId" | "cause" | "queuedAt">): RunRow {
+  insertRun(r: Pick<RunRow, "id" | "botId" | "taskId" | "sessionId" | "cause" | "queuedAt"> & Partial<Pick<RunRow, "ruleId" | "ruleVersion" | "mode">>): RunRow {
     this.db
-      .prepare("INSERT INTO runs(id, bot_id, task_id, session_id, cause, state, queued_at) VALUES(?, ?, ?, ?, ?, 'queued', ?)")
-      .run(r.id, r.botId, r.taskId, r.sessionId, r.cause, r.queuedAt);
+      .prepare("INSERT INTO runs(id, bot_id, task_id, rule_id, rule_version, mode, session_id, cause, state, queued_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)")
+      .run(r.id, r.botId, r.taskId, r.ruleId ?? "", r.ruleVersion ?? 0, r.mode ?? "act", r.sessionId, r.cause, r.queuedAt);
+    return this.getRun(r.id)!;
+  }
+  /** 规则的一条运行记录，直接以结束的状态写进去（跳过：电脑没开、一直在忙、上次还没跑完） */
+  insertEndedRun(r: Pick<RunRow, "id" | "botId" | "ruleId" | "ruleVersion" | "mode" | "cause" | "outcome" | "error" | "queuedAt" | "endedAt">): RunRow {
+    this.db
+      .prepare("INSERT INTO runs(id, bot_id, rule_id, rule_version, mode, session_id, cause, state, outcome, error, queued_at, ended_at) VALUES(?, ?, ?, ?, ?, '', ?, 'ended', ?, ?, ?, ?)")
+      .run(r.id, r.botId, r.ruleId, r.ruleVersion, r.mode, r.cause, r.outcome, r.error, r.queuedAt, r.endedAt);
     return this.getRun(r.id)!;
   }
   getRun(id: string): RunRow | undefined {
     const r = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Row | undefined;
     return r ? this.toRun(r) : undefined;
   }
-  updateRun(id: string, patch: Partial<Pick<RunRow, "sessionId" | "state" | "outcome" | "report" | "would" | "activity" | "tokensIn" | "tokensOut" | "costUsd" | "error" | "delivery" | "startedAt" | "endedAt">>): void {
+  updateRun(id: string, patch: Partial<Pick<RunRow, "sessionId" | "state" | "outcome" | "report" | "would" | "activity" | "tokensIn" | "tokensOut" | "costUsd" | "error" | "delivery" | "permission" | "startedAt" | "endedAt">>): void {
     updateRow(this.db, "runs", RUN_COLS, id, patch);
   }
-  /** 一个任务的 runs（旧→新）；不含活动记录（大） */
-  listRuns(opts: { taskId?: string; botId?: string; states?: RunState[]; limit?: number } = {}): RunRow[] {
+  /** 一个任务（或规则）的 runs（旧→新）；不含活动记录（大） */
+  listRuns(opts: { taskId?: string; ruleId?: string; botId?: string; states?: RunState[]; limit?: number } = {}): RunRow[] {
     const where: string[] = [];
     const args: Array<string | number> = [];
     if (opts.taskId) (where.push("task_id = ?"), args.push(opts.taskId));
+    if (opts.ruleId) (where.push("rule_id = ?"), args.push(opts.ruleId));
     if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
     if (opts.states?.length) (where.push(`state IN (${opts.states.map(() => "?").join(", ")})`), args.push(...opts.states));
-    const sql = `SELECT id, bot_id, task_id, rule_id, rule_version, mode, session_id, cause, state, outcome, report, would, '' AS activity, tokens_in, tokens_out, cost_usd, error, delivery, queued_at, started_at, ended_at
+    const sql = `SELECT id, bot_id, task_id, rule_id, rule_version, mode, session_id, cause, state, outcome, report, would, '' AS activity, tokens_in, tokens_out, cost_usd, error, delivery, permission, queued_at, started_at, ended_at
       FROM runs ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY queued_at, rowid LIMIT ${Math.max(1, Math.min(1000, opts.limit ?? 500))}`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toRun(r));
+  }
+  /** 规则的运行记录（新→旧）：before 之前的（按排队时间，翻页用） */
+  ruleRuns(ruleId: string, opts: { before?: number; limit?: number; mode?: string; outcome?: RunOutcome; version?: number } = {}): RunRow[] {
+    const where = ["rule_id = ?"];
+    const args: Array<string | number> = [ruleId];
+    if (opts.before) (where.push("queued_at < ?"), args.push(opts.before));
+    if (opts.mode) (where.push("mode = ?"), args.push(opts.mode));
+    if (opts.outcome) (where.push("outcome = ?"), args.push(opts.outcome));
+    if (opts.version) (where.push("rule_version = ?"), args.push(opts.version));
+    const sql = `SELECT id, bot_id, task_id, rule_id, rule_version, mode, session_id, cause, state, outcome, report, would, '' AS activity, tokens_in, tokens_out, cost_usd, error, delivery, permission, queued_at, started_at, ended_at
+      FROM runs WHERE ${where.join(" AND ")} ORDER BY queued_at DESC, rowid DESC LIMIT ${Math.max(1, Math.min(500, opts.limit ?? 20))}`;
     return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toRun(r));
   }
   /** 任务最近的一个 run（不含活动记录） */
   latestRun(taskId: string): RunRow | undefined {
     const r = this.db
-      .prepare("SELECT id, bot_id, task_id, rule_id, rule_version, mode, session_id, cause, state, outcome, report, would, '' AS activity, tokens_in, tokens_out, cost_usd, error, delivery, queued_at, started_at, ended_at FROM runs WHERE task_id = ? ORDER BY queued_at DESC, rowid DESC LIMIT 1")
+      .prepare("SELECT id, bot_id, task_id, rule_id, rule_version, mode, session_id, cause, state, outcome, report, would, '' AS activity, tokens_in, tokens_out, cost_usd, error, delivery, permission, queued_at, started_at, ended_at FROM runs WHERE task_id = ? ORDER BY queued_at DESC, rowid DESC LIMIT 1")
       .get(taskId) as Row | undefined;
     return r ? this.toRun(r) : undefined;
   }
@@ -1219,10 +1321,10 @@ export class Store {
       createdAt: Number(r.created_at),
     };
   }
-  insertInput(i: Pick<RunInputRow, "id" | "taskId" | "runId" | "kind" | "text" | "fromPerson" | "createdAt"> & Partial<Pick<RunInputRow, "messageId" | "deliveredAt">>): RunInputRow {
+  insertInput(i: Pick<RunInputRow, "id" | "taskId" | "runId" | "kind" | "text" | "fromPerson" | "createdAt"> & Partial<Pick<RunInputRow, "ruleId" | "messageId" | "deliveredAt">>): RunInputRow {
     this.db
-      .prepare("INSERT INTO run_inputs(id, task_id, run_id, kind, text, from_person, message_id, delivered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(i.id, i.taskId, i.runId, i.kind, i.text, i.fromPerson ? 1 : 0, i.messageId ?? "", i.deliveredAt ?? 0, i.createdAt);
+      .prepare("INSERT INTO run_inputs(id, task_id, rule_id, run_id, kind, text, from_person, message_id, delivered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(i.id, i.taskId, i.ruleId ?? "", i.runId, i.kind, i.text, i.fromPerson ? 1 : 0, i.messageId ?? "", i.deliveredAt ?? 0, i.createdAt);
     return this.toInput(this.db.prepare("SELECT * FROM run_inputs WHERE id = ?").get(i.id) as Row);
   }
   updateInput(id: string, patch: Partial<Pick<RunInputRow, "runId" | "messageId" | "deliveredAt" | "takenAt">>): void {
@@ -1239,6 +1341,83 @@ export class Store {
   takeInputs(taskId: string, messageId: string, at = Date.now()): number {
     return Number(this.db.prepare("UPDATE run_inputs SET taken_at = ? WHERE task_id = ? AND message_id = ? AND taken_at = 0").run(at, taskId, messageId).changes);
   }
+  /** 规则的一个 run 里会话还没收下的输入（旧→新）：每个 run 一个新会话，输入跟着 run 走 */
+  openRunInputs(runId: string): RunInputRow[] {
+    return (this.db.prepare("SELECT * FROM run_inputs WHERE run_id = ? AND task_id = '' AND taken_at = 0 ORDER BY created_at, rowid").all(runId) as Row[]).map((r) => this.toInput(r));
+  }
+  /** 规则的 run：会话里出现了这条用户消息 */
+  takeRunInputs(runId: string, messageId: string, at = Date.now()): number {
+    return Number(this.db.prepare("UPDATE run_inputs SET taken_at = ? WHERE run_id = ? AND task_id = '' AND message_id = ? AND taken_at = 0").run(at, runId, messageId).changes);
+  }
+  /** 规则的 run 的第一条输入（重跑时照原样再交一次） */
+  runInputs(runId: string): RunInputRow[] {
+    return (this.db.prepare("SELECT * FROM run_inputs WHERE run_id = ? ORDER BY created_at, rowid").all(runId) as Row[]).map((r) => this.toInput(r));
+  }
+
+  // ---------- rules（3d） ----------
+  private toRule(r: Row): RuleRow {
+    const trigger = parseJson<RuleTrigger>(r.trigger_spec) ?? { kind: "event", source: "" };
+    return {
+      id: String(r.id),
+      botId: String(r.bot_id),
+      conversationId: String(r.conversation_id),
+      title: String(r.title),
+      instruction: String(r.instruction),
+      message: String(r.message),
+      kind: String(r.kind) === "remind" ? "remind" : "check",
+      trigger,
+      mode: (["off", "observe", "act"].includes(String(r.mode)) ? String(r.mode) : "off") as RuleMode,
+      observeLeft: Number(r.observe_left),
+      folder: String(r.folder),
+      version: Number(r.version),
+      nextRunAt: Number(r.next_run_at),
+      failures: Number(r.failures),
+      pausedReason: String(r.paused_reason),
+      anytime: Number(r.anytime) === 1,
+      createdAt: Number(r.created_at),
+      updatedAt: Number(r.updated_at),
+    };
+  }
+  insertRule(r: Omit<RuleRow, "version" | "failures" | "pausedReason" | "observeLeft"> & Partial<Pick<RuleRow, "version" | "observeLeft">>): RuleRow {
+    this.db
+      .prepare(
+        `INSERT INTO rules(id, bot_id, conversation_id, title, instruction, message, kind, trigger_spec, mode, observe_left, folder, version, next_run_at, anytime, created_at, updated_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(r.id, r.botId, r.conversationId, r.title, r.instruction, r.message, r.kind, JSON.stringify(r.trigger), r.mode, r.observeLeft ?? 0, r.folder, r.version ?? 1, r.nextRunAt, r.anytime ? 1 : 0, r.createdAt, r.updatedAt);
+    return this.getRule(r.id)!;
+  }
+  getRule(id: string): RuleRow | undefined {
+    const r = this.db.prepare("SELECT * FROM rules WHERE id = ?").get(id) as Row | undefined;
+    return r ? this.toRule(r) : undefined;
+  }
+  updateRule(id: string, patch: Partial<Omit<RuleRow, "id" | "botId" | "folder" | "createdAt">>): void {
+    updateRow(this.db, "rules", RULE_COLS, id, patch);
+  }
+  listRules(opts: { botId?: string; conversationId?: string; limit?: number } = {}): RuleRow[] {
+    const where: string[] = [];
+    const args: Array<string | number> = [];
+    if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
+    if (opts.conversationId) (where.push("conversation_id = ?"), args.push(opts.conversationId));
+    const sql = `SELECT * FROM rules ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at LIMIT ${Math.max(1, Math.min(500, opts.limit ?? 200))}`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toRule(r));
+  }
+  /** 到点了的规则（开着、没暂停、按时间表）：next_run_at 在 now 及之前 */
+  dueRules(now: number): RuleRow[] {
+    return (this.db.prepare("SELECT * FROM rules WHERE mode != 'off' AND paused_reason = '' AND next_run_at > 0 AND next_run_at <= ? ORDER BY next_run_at").all(now) as Row[]).map((r) => this.toRule(r));
+  }
+  /** 最早的下次运行时间（定时器只设这一个）；没有就是 0 */
+  nextRuleDue(): number {
+    const r = this.db.prepare("SELECT MIN(next_run_at) AS t FROM rules WHERE mode != 'off' AND paused_reason = '' AND next_run_at > 0").get() as Row | undefined;
+    return Number(r?.t ?? 0) || 0;
+  }
+  /** 删掉规则和它的运行记录 */
+  deleteRule(id: string): void {
+    this.db.prepare("DELETE FROM run_inputs WHERE rule_id = ?").run(id);
+    this.db.prepare("DELETE FROM runs WHERE rule_id = ?").run(id);
+    this.db.prepare("DELETE FROM rules WHERE id = ?").run(id);
+  }
+
   /** 任务的会话建过（交出去过输入）：之后要 resume */
   taskPrompted(taskId: string): boolean {
     return !!this.db.prepare("SELECT 1 FROM run_inputs WHERE task_id = ? AND delivered_at > 0 LIMIT 1").get(taskId);

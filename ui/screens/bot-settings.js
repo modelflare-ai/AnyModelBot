@@ -9,6 +9,7 @@ import { usd } from "../lib/links.js";
 import { PERMS, FULL_WARNING, confirmPermission } from "../lib/perms.js";
 import { CHANNEL_NAME, SOURCE_LABEL } from "../lib/access.js";
 import { fmtAgo } from "../lib/format.js";
+import { RuleEditor } from "../components/rules.js";
 
 /** 免打扰的起止：整点 */
 const HOURS = Array.from({ length: 24 }, (_, h) => {
@@ -155,10 +156,15 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
   const [prompt, setPrompt] = useState(bot.systemPrompt || "");
   const promptRef = useRef(null);
   const [hi, setHi] = useState(null);
+  // 规则（3d）：在这里新建；列表、详情和运行记录在信息面板的「任务」组里
+  const [rules, setRules] = useState(null);
+  const [newRule, setNewRule] = useState(false);
+  const loadRules = () => api(`/rules?bot=${encodeURIComponent(bot.id)}`).then((x) => setRules(x.rules)).catch(() => setRules([]));
   useEffect(() => {
     setName(bot.name);
     setPrompt(bot.systemPrompt || "");
     api(`/bots/${bot.id}/settings`).then(setD).catch(failed);
+    loadRules();
   }, [bot.id]);
   useEffect(() => autoGrow(promptRef.current, 320), [prompt, d]);
   useEffect(() => {
@@ -291,7 +297,11 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
           ${bot.weixinEnabled && html`<${Row} id="nudge" name="微信续期提醒" sub="还有消息要发时，24 小时到期前请你回一句">
             <${Switch} label="微信续期提醒" value=${s.nudge} onChange=${(v) => put({ nudge: v })} />
           <//>`}
+          <${Row} id="rules" name="规则" sub=${rules && rules.length ? `${rules.length} 条，在信息面板的「任务」里` : "到点检查或提醒"}>
+            <button type="button" class="btn" onClick=${() => setNewRule(true)}>新建</button>
+          <//>
         </div>
+        ${newRule && html`<${RuleEditor} botId=${bot.id} onClose=${() => setNewRule(false)} onSaved=${() => (setNewRule(false), loadRules())} />`}
 
         <div class="list-head">电脑操作</div>
         <div class="list">

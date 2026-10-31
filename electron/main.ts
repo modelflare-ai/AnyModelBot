@@ -8,7 +8,7 @@
  *  - 设置页里的开机自启、缩放、打开数据目录经 core.desktop 回调到这里（同进程，无需 preload/IPC）
  * CLI（npm start）与 Docker 走同一套 src/ 代码，本文件只做桌面外壳。
  */
-import { app, BrowserWindow, Menu, Notification, Tray, nativeImage, net, shell, dialog, safeStorage } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, nativeImage, net, powerMonitor, shell, dialog, safeStorage } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -208,6 +208,9 @@ async function boot(): Promise<void> {
   };
   await core.start();
   if (!core.web) throw new Error("管理界面未启动");
+  // 规则的定时器：电脑醒来、解锁时马上重新看一遍（睡着时错过的按宽限期补跑一次或记为跳过）
+  powerMonitor.on("resume", () => core?.tasks.scheduler.wake());
+  powerMonitor.on("unlock-screen", () => core?.tasks.scheduler.wake());
   entryUrl = `${core.web.url.replace(/\/$/, "")}/?token=${encodeURIComponent(config.ui.token)}`;
   log.info(`数据目录：${dataDir}`);
   log.info(`管理界面：${core.web.url}`);

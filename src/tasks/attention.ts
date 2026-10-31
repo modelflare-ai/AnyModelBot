@@ -14,13 +14,13 @@ import { logger } from "../log.js";
 
 const log = logger("attention");
 
-/** question / approval：在等你回答、批准；failed：任务失败了；delivery：结果没送到；login：渠道登录过期了 */
-export type AttentionKind = "question" | "approval" | "failed" | "delivery" | "login";
+/** question / approval：在等你回答、批准；failed：任务失败了；rule：规则连续失败（暂停了）；delivery：结果没送到；login：渠道登录过期了 */
+export type AttentionKind = "question" | "approval" | "failed" | "rule" | "delivery" | "login";
 /** answer、approve、deny、retry（任务再试 / 消息再发）、stop、dismiss（不再提示）、relogin（去重新扫码）、open（打开对话） */
 export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open";
 
 export interface AttentionItem {
-  /** 稳定 id：approval:<id>、task:<id>、delivery:<会话>:held|failed、login:<bot>:<渠道> */
+  /** 稳定 id：approval:<id>、task:<id>、rule:<id>、delivery:<会话>:held|failed、login:<bot>:<渠道> */
   id: string;
   kind: AttentionKind;
   botId: string;
@@ -37,6 +37,8 @@ export interface AttentionItem {
   conversationId?: string;
   channel?: string;
   taskId?: string;
+  /** 规则（3d）：连续失败的、执行时的审批 */
+  ruleId?: string;
   approvalId?: string;
   code?: string;
   questions?: QuestionItem[];
@@ -45,7 +47,7 @@ export interface AttentionItem {
 export type AttentionSource = () => AttentionItem[];
 
 /** 排序：提问和审批在前（等着的事），再是失败、没送到，最后是系统的（登录）；同一类旧的在前 */
-const ORDER: Record<AttentionKind, number> = { question: 0, approval: 0, failed: 1, delivery: 2, login: 3 };
+const ORDER: Record<AttentionKind, number> = { question: 0, approval: 0, failed: 1, rule: 1, delivery: 2, login: 3 };
 
 const NOTIFIED = "attention:notified";
 
@@ -173,6 +175,7 @@ const CHANNEL: Record<string, string> = { weixin: "微信", feishu: "飞书", we
 export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[] {
   return rows.map((r) => {
     const task = r.taskId ? store.getTask(r.taskId) : undefined;
+    const rule = r.ruleId ? store.getRule(r.ruleId) : undefined;
     const channel = store.getConversation(r.conversationId)?.channel ?? r.conversationId.split(":")[1] ?? "";
     const qs = questionsOf(r);
     const line = r.kind === "approval" ? r.detail || r.reason || r.tool : qs.map((q) => q.question).join(" / ") || r.detail;
@@ -181,7 +184,7 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       kind: r.kind,
       botId: r.botId,
       botName: store.getBot(r.botId)?.name ?? r.botId,
-      subject: task?.title ?? CHANNEL[channel] ?? "对话",
+      subject: task?.title ?? (rule ? `规则「${rule.title}」` : (CHANNEL[channel] ?? "对话")),
       status: r.kind === "approval" ? "等你批准" : "等你回答",
       line: line.length > 300 ? line.slice(0, 299) + "…" : line,
       since: r.createdAt,
@@ -190,6 +193,7 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       conversationId: r.conversationId,
       channel,
       ...(r.taskId ? { taskId: r.taskId } : {}),
+      ...(r.ruleId ? { ruleId: r.ruleId } : {}),
       approvalId: r.id,
       code: r.code,
       ...(r.kind === "question" ? { questions: qs } : {}),

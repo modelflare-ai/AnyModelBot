@@ -44,6 +44,8 @@ import { MediaService, pickDefault } from "./agent/media.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
 import { TaskService } from "./tasks/service.js";
+import { RuleEvents } from "./tasks/rule-events.js";
+import { lockDataDir, type DataDirLock } from "./store/lock.js";
 import { Attention, approvalItems, deliveryItem, type AttentionItem } from "./tasks/attention.js";
 
 const log = logger("app");
@@ -129,8 +131,10 @@ export class App {
   readonly delivery: Delivery;
   /** 谁能和机器人对话：主人 + 允许名单 + 使用请求 */
   readonly access: AccessControl;
-  /** 后台任务：自己的会话和文件夹，结果经出站队列回到请求它的会话 */
+  /** 后台任务：自己的会话和文件夹，结果经出站队列回到请求它的会话；规则（3d）也由它跑（定时器是 tasks.scheduler） */
   readonly tasks: TaskService;
+  /** 事件触发的规则的入口：以后用户配置的 workload（事件源）在这里把事件交进来（见 tasks/rule-events.ts） */
+  readonly ruleEvents: RuleEvents;
   /** "需要你"：所有机器人里在等人的事（侧栏、托盘角标、系统通知） */
   readonly attention: Attention;
   web: WebServer | undefined;
@@ -145,6 +149,8 @@ export class App {
   private picksTimer: NodeJS.Timeout | undefined;
   private modelInfoCache: { at: number; data: Record<string, ModelInfo> } | undefined;
   private modelInfoLoading: Promise<Record<string, ModelInfo>> | undefined;
+  /** 数据目录锁（命令行、Docker：同一个数据目录只能一个宿主，调度器开始之前拿） */
+  private lock: DataDirLock | undefined;
 
   constructor(readonly config: AppConfig, readonly opts: AppOptions = {}) {
     // 日志文件：<dataDir>/logs/app.log（打包后的桌面版看不到 stdout，故障排查全靠它）
@@ -234,11 +240,20 @@ export class App {
       defaultModel: () => this.config.llm.defaultModel,
       route: (botId, model) => this.routeModel(botId, model),
       maxBackground: config.agent.maxBackground,
+      // 规则：检查用小模型，真要发的那一句用主模型写（决定 5）
+      complete: (botId, model, system, user) =>
+        this.models.streamChat(
+          { model: this.routeModel(botId, model), messages: [{ role: "system", content: system }, { role: "user", content: user }], signal: AbortSignal.timeout(120_000) },
+          () => {},
+        ),
+      timeZone: opts.timeZone,
     });
     this.agent.tasks = this.tasks;
-    // "需要你"的四份：在等的提问和审批、任务（失败、预算）、没送到的结果（出站队列）、渠道（微信登录过期）
+    this.ruleEvents = new RuleEvents(this.tasks);
+    // "需要你"的五份：在等的提问和审批、任务（失败、预算）、规则（连续失败、暂停了）、没送到的结果（出站队列）、渠道（微信登录过期）
     this.attention.addSource(() => approvalItems(this.store, this.agent.approvals.pendingAll()));
     this.attention.addSource(() => this.tasks.attention());
+    this.attention.addSource(() => this.tasks.ruleAttention());
     this.attention.addSource(() => this.delivery.attentionItems().map((d) => deliveryItem(d, this.store.getBot(d.botId)?.name ?? d.botId)));
     this.attention.addSource(() => this.loginAttention());
     this.agent.approvals.listen(() => this.attention.kick());
@@ -474,6 +489,8 @@ export class App {
   }
 
   async start(): Promise<void> {
+    // 同一个数据目录只能有一个宿主（两个调度器会把规则跑两遍、两个渠道连接抢同一个微信）：桌面版另有单实例锁
+    this.lock ??= lockDataDir(this.config.dataDir);
     if (this.magpie) {
       try {
         await this.magpie.start();
@@ -565,6 +582,8 @@ export class App {
     await this.agent.stop();
     await this.magpie?.stop();
     this.store.close();
+    this.lock?.release();
+    this.lock = undefined;
   }
 
   get username(): string {

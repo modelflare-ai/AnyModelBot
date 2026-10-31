@@ -437,10 +437,11 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   const userTexts = (c: { body: any }) => (c.body.messages ?? []).filter((m: any) => m.role === "user").map((m: any) => textOf(m.content)) as string[];
   const DEFAULT_PERSONA = "你是一个乐于助人的中文助手，回答简洁准确。";
   /**
-   * 系统提示词加工具定义的字符数上限（DSH 自己的部分 + 我们的人设、机器人段和工具；基线 34,052 = 提示词 3,692 + 工具 30,360，其中后台任务的 task_start、task_message、task_list 约 1,460；上限高约 5%）。
+   * 系统提示词加工具定义的字符数上限（DSH 自己的部分 + 我们的人设、机器人段和工具；基线 34,052 = 提示词 3,692 + 工具 30,360，其中后台任务的 task_start、task_message、task_list 约 1,460；
+   * 3b、3c 之后 34,289；3d 加上规则的 rule_create、rule_update 后 35,649 = 提示词 3,692 + 工具 31,957（多了 1,360）；上限高约 5%）。
    * 缩短了就调低；要调高，在提交说明里写清原因。电脑操作的 MCP 工具随平台变化，不计入。
    */
-  const SURFACE_BUDGET = 35_800;
+  const SURFACE_BUDGET = 37_400;
 
   it("the system prompt has our persona and the bot's section, not DSH's coding persona; the segment's first message has channel and memory", async () => {
     await chat("/reset");

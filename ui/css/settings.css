@@ -81,7 +81,7 @@ button.need-head:hover, button.need-head:hover .need-who b { color: var(--fg); }
 .need-actions:empty { display: none; }
 .need-reply { display: flex; align-items: center; gap: var(--ctl-gap); }
 .need-reply .field { flex: 1; --field-h: var(--ctl-md); }
-.need-detail .task-detail { margin-top: var(--space-1); }
+.need-detail .task-detail, .need-detail .rule-detail { margin-top: var(--space-1); }
 
 /* 故障排查（screens/troubleshoot.js）：状态和检测结果是普通的行；stderr 尾部是组里展开的一块（不再套底）；
    日志是自己的一块 --well（和代码块同一种面），不描边 */

@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BOT_SECTION,
   BOT_SECTION_ORDER,
@@ -25,7 +25,14 @@ import {
   recoveryNote,
   segmentInput,
   taskBrief,
+  RULE_NUDGE,
+  RULE_RERUN,
+  RULE_RESULT_SYSTEM,
+  ruleBrief,
+  ruleResultInput,
+  ruleRules,
 } from "../src/agent/prompts/index.js";
+import { RULE_DENY, RULE_DENY_PREFIX } from "../src/tasks/rules.js";
 import { AgentHost, locateDshRuntime } from "../src/agent/host.js";
 import { normalizeSettings } from "../src/agent/settings.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
@@ -64,6 +71,43 @@ async function loadPlugins(): Promise<{ chat: ToolDef[]; task: { tools: ToolDef[
   }
 }
 
+/**
+ * 规则会话建出来：amb-tasks 经 bridge 问宿主要配置（/dsh/task-config），这里用宿主会给的那份回答它（answer 为 undefined 时模拟宿主不可达），
+ * 拿到限定的工具、规则段、规则版的 task_report、权限；再建一个它的子代理，看它跟不跟着
+ */
+async function loadRule(mode: "observe" | "act", answer: "ok" | "down" = "ok") {
+  const env = { ...process.env };
+  const fetchMock = vi.fn(async (url: string, init: any) => {
+    if (answer === "down") throw new Error("ECONNREFUSED");
+    const b = JSON.parse(init.body);
+    expect(url).toBe("http://127.0.0.1:9/dsh/task-config");
+    const cfg = { kind: "rule", mode, deny: RULE_DENY[mode], denyPrefix: RULE_DENY_PREFIX, section: ruleRules(mode), permission: mode === "observe" ? "read-only" : "workspace-write" };
+    return new Response(JSON.stringify(b.sessionId.startsWith("rule-") ? cfg : { error: "no" }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    Object.assign(process.env, { AMB_BRIDGE_URL: "http://127.0.0.1:9", AMB_BRIDGE_TOKEN: "t", AMB_MEMORY: "1" });
+    const tools: any[] = [];
+    const created: Array<(e: any) => unknown> = [];
+    const ctx = { tools: { register: (t: any) => tools.push(t), get: (n: string) => tools.find((t) => t.name === n) ?? (["present", "ask_user_question"].includes(n) ? {} : undefined) }, inject: () => {}, on: (ev: string, fn: any) => ev === "agent/created" && created.push(fn), get: () => undefined };
+    for (const f of ["amb-memory.mjs", "amb-media.mjs", "amb-tasks.mjs"]) (await import(path.join(runtime!, "plugins", f))).apply(ctx);
+    const make = (id: string, parentSession?: string) => {
+      const out = { tools: [] as ToolDef[], sections: [] as any[], deny: [] as string[][], guards: [] as Array<(e: any) => string | undefined> };
+      const agent = { id, session: { header: parentSession ? { parentSession } : {} }, ctx: { tools: { restrict: (f: any) => out.deny.push(f.deny), register: (t: any) => out.tools.push(def(t)), guard: (g: any) => out.guards.push(g) }, systemPrompt: { section: (x: any) => out.sections.push(x) } } };
+      return { agent, out };
+    };
+    const rule = make("rule-rl_1-abc");
+    for (const fn of created) await fn({ agent: rule.agent });
+    const sub = make("sub-1", "rule-rl_1-abc");
+    for (const fn of created) await fn({ agent: sub.agent });
+    const presets = (globalThis as any)[Symbol.for("amb.session.presets")] as Map<string, string>;
+    return { rule: rule.out, sub: sub.out, presets: new Map(presets), calls: fetchMock.mock.calls.length };
+  } finally {
+    process.env = env;
+    vi.unstubAllGlobals();
+  }
+}
+
 /** 提示词的各段，按名字 */
 async function parts(): Promise<Record<string, string>> {
   const tools = runtime ? await ourTools() : [];
@@ -89,6 +133,15 @@ async function parts(): Promise<Record<string, string>> {
     "task recovery": recoveryNote(["sleep 600"]),
     "task nudge": NUDGE,
     "tool task_report": runtime ? JSON.stringify((await loadPlugins()).task.tools.find((t) => t.name === "task_report") ?? "") : "",
+    "tool rule_create": tool("rule_create"),
+    "tool rule_update": tool("rule_update"),
+    "rule observe": ruleRules("observe"),
+    "rule act": ruleRules("act"),
+    "rule brief": ruleBrief({ title: "看 X 价格", when: "每天 08:00", instruction: "每天早上 8 点看看 X 的价格，低于 200 告诉我", mode: "observe", recent: [{ at: "11月1日 08:00", line: "没有告诉用户。X 现在 ¥259" }], memory: "" }),
+    "rule nudge": RULE_NUDGE,
+    "rule rerun": RULE_RERUN,
+    "rule result": RULE_RESULT_SYSTEM + "\n\n" + ruleResultInput({ instruction: "低于 200 告诉我", summary: "X 现在 ¥199", draft: "X 降到 199 了" }),
+    "tool rule report observe": runtime ? JSON.stringify((await loadRule("observe")).rule.tools.find((t) => t.name === "task_report") ?? "") : "",
   };
   out["*"] = Object.values(out).join("\n\n");
   return out;
@@ -136,6 +189,17 @@ const RULES: [rule: string, part: string, says: string[], gone?: string[]][] = [
   ["任务的第一条输入：用户原话在前，说明在后", "task brief", ["[用户的原话]\n帮我调研三家云的 GPU 价格", "[对话助手的说明]\n比较 A100 包月价", "tasks/gpu-abc123"]],
   ["恢复说明：被停的后台命令；重复外部动作之前先查日志和外部系统", "task recovery", ["The app restarted", "sleep 600", "Before repeating any outside action", ".task/journal.md", "task_report"]],
   ["没报告时提醒一次：done 带一句话、failed 带原因", "task nudge", ["task_report", "done", "failed"]],
+  // —— 规则（3d）：检查从观察开始，只在值得说时说一句；观察只看不动；执行最多可写工作区 ——
+  ["rule_create：用户原话原样；检查从观察开始只记录；提醒到点发那句；确认一句", "tool rule_create", ["verbatim", "starts in observe mode", "only recording what it would say", "kind remind", "Confirm in one sentence", "every 30m", "weekly mon,thu"]],
+  ["rule_update：用户要求时改模式（执行才发）、原话、时间表或删掉", "tool rule_update", ["when the user asks", "mode act (results are sent)", "observe (only records)", "off", "delete"]],
+  ["规则段（观察）：优先于聊天规则；只看不动，本来要做的写进 would；值得说才说一句，只记下来；不报告就算失败", "rule observe",
+    ["优先于上面的聊天规则", "只看、只查，不改任何东西", "would", "task_report", "值得告诉用户", "不值得说就 done 不带 message", "这次只记下来", "不超过 300 字", "就算失败"], ["needs_you", ".task/journal.md"]],
+  ["规则段（执行）：只做规则里写的事，外部动作前后记日志；那一句会发给用户", "rule act", ["只做规则里写的事", ".task/journal.md", "会发给用户", "不值得说就 done 不带 message"], ["would"]],
+  ["规则的第一条输入：规则、用户原话、最近几次的结果、这次是观察", "rule brief", ["[规则]\n看 X 价格（每天 08:00）", "[用户的原话]\n每天早上 8 点看看 X 的价格，低于 200 告诉我", "[最近几次的结果]\n- 11月1日 08:00：没有告诉用户。X 现在 ¥259", "[这次]\n观察：只看不动，message 只记下来，不会发给用户。"]],
+  ["规则没报告时提醒一次：值得说带一句，不值得说不带，查不了报失败", "rule nudge", ["task_report", "done with a one-line message", "done without a message to stay quiet", "failed with the reason"]],
+  ["重跑：先看日志和外部系统再重复外部动作", "rule rerun", ["重跑", ".task/journal.md", "外部系统"]],
+  ["主模型写那一句：只输出一句，先说结果，不说过程、不提规则", "rule result", ["只输出这一句话", "先说结果", "不超过 120 字", "不说过程", "不提规则和检查本身", "[草稿]\nX 降到 199 了"]],
+  ["规则版 task_report：值得说才带 message，不带就保持安静；观察时只记下来；没有 needs_you", "tool rule report observe", ["only when they should hear about it", "leave it out to stay quiet", "observe mode: it is only recorded", "would", "failed"], ["needs_you"]],
 ];
 
 describe.skipIf(!runtime)("提示词约定", () => {
@@ -146,16 +210,18 @@ describe.skipIf(!runtime)("提示词约定", () => {
     for (const words of gone) expect(text.toLowerCase()).not.toContain(words.toLowerCase());
   });
 
-  it("聊天规则、人设和任务规则都短", () => {
+  it("聊天规则、人设、任务规则和规则段都短", () => {
     expect(CHAT_RULES.length).toBeLessThan(440);
     expect(agentPersona({ computerUse: true }).length).toBeLessThan(180);
     expect(TASK_RULES.length).toBeLessThan(400);
+    expect(ruleRules("observe").length).toBeLessThan(300);
+    expect(ruleRules("act").length).toBeLessThan(300);
   });
 
   it("任务会话：只去掉注册了的聊天专用工具，规则段在机器人段之后（优先），有 task_report；子代理拿不到任务工具", async () => {
     const { task } = await loadPlugins();
-    // 只有 present 和三个任务工具是"注册了的"：ask_user_question、rule_create 在这个假环境里没有，不能交给 restrict（它会抛错）
-    expect(task.deny).toEqual([["present", "task_start", "task_message", "task_list"]]);
+    // 只有 present 和聊天的任务、规则工具是"注册了的"：ask_user_question 在这个假环境里没有，不能交给 restrict（它会抛错）
+    expect(task.deny).toEqual([["present", "task_start", "task_message", "task_list", "rule_create", "rule_update"]]);
     expect(task.sections).toHaveLength(1);
     expect(task.sections[0]).toMatchObject({ name: TASK_SECTION, order: TASK_SECTION_ORDER, interpolate: false });
     expect(TASK_SECTION_ORDER).toBeGreaterThan(BOT_SECTION_ORDER);
@@ -163,12 +229,49 @@ describe.skipIf(!runtime)("提示词约定", () => {
     expect(task.tools.map((t) => t.name)).toEqual(["task_report"]);
   });
 
+  it("规则会话：插件按宿主给的配置去掉工具、加规则段、注册规则版的 task_report、定权限；子代理跟着；宿主不可达就只读、一律拒绝", async () => {
+    const o = await loadRule("observe");
+    expect(o.calls).toBe(1);
+    // 只交注册了的：present、ask_user_question、聊天的任务和规则工具、生图、记忆的 remember / forget（recall 留着）
+    expect(o.rule.deny).toHaveLength(1);
+    expect(new Set(o.rule.deny[0])).toEqual(new Set(["present", "ask_user_question", "task_start", "task_message", "task_list", "rule_create", "rule_update", "generate_image", "generate_video", "media_models", "media_docs", "remember", "forget"]));
+    expect(o.rule.sections).toHaveLength(1);
+    expect(o.rule.sections[0]).toMatchObject({ name: TASK_SECTION, order: TASK_SECTION_ORDER, interpolate: false });
+    expect(o.rule.sections[0].text()).toBe(ruleRules("observe"));
+    expect(o.rule.tools.map((t) => t.name)).toEqual(["task_report"]);
+    const props = (t: ToolDef) => JSON.stringify(t.parameters);
+    expect(props(o.rule.tools[0])).toContain('"enum":["progress","done","failed"]');
+    expect(props(o.rule.tools[0])).toContain('"would"');
+    // 电脑操作按前缀拒绝（MCP 工具名列不全）
+    const guard = (g: Array<(e: any) => string | undefined>, name: string) => g.map((f) => f({ name })).find(Boolean);
+    expect(guard(o.rule.guards, "mcp__computer-use__click")).toMatch(/not available while running a rule/);
+    expect(guard(o.rule.guards, "bash")).toBeUndefined();
+    expect(o.presets.get("rule-rl_1-abc")).toBe("read-only");
+    // 子代理：同样的权限和去掉的工具，没有规则段和 task_report
+    expect(o.presets.get("sub-1")).toBe("read-only");
+    expect(new Set(o.sub.deny[0])).toEqual(new Set(o.rule.deny[0]));
+    expect(o.sub.sections).toEqual([]);
+    expect(guard(o.sub.guards, "mcp__computer-use__type")).toBeDefined();
+    // 执行：记忆可以写，权限是可写工作区
+    const a = await loadRule("act");
+    expect(a.rule.deny[0]).not.toContain("remember");
+    expect(a.rule.sections[0].text()).toBe(ruleRules("act"));
+    expect(props(a.rule.tools[0])).not.toContain('"would"');
+    expect(a.presets.get("rule-rl_1-abc")).toBe("workspace-write");
+    // 宿主不可达：只读，什么工具都拒绝，也没有 task_report（这次会失败）
+    const d = await loadRule("act", "down");
+    expect(d.presets.get("rule-rl_1-abc")).toBe("read-only");
+    expect(d.rule.tools).toEqual([]);
+    expect(guard(d.rule.guards, "bash")).toMatch(/cannot be reached/);
+  });
+
   /**
-   * 我们交给模型的部分：人设 + 机器人段（典型人设、开着记忆）+ 我们的工具定义（记忆、生图、后台任务）。
-   * 基线 8,514（提示词 907 + 工具 7,607，其中 task_start、task_message、task_list 1,370），上限高约 5%。
+   * 我们交给模型的部分：人设 + 机器人段（典型人设、开着记忆）+ 我们的工具定义（记忆、生图、后台任务、规则）。
+   * 3a 基线 8,514（提示词 907 + 工具 7,607，其中 task_start、task_message、task_list 1,370）；3b、3c 之后 8,751（工具 7,844）。
+   * 3d 加上 rule_create（819）、rule_update（467）和 task_list 多一句「and rules」后 10,049（工具 9,142）。上限高约 5%。
    * 缩短了就调低；要调高，在提交说明里写清原因。
    */
-  const BUDGET = 8_950;
+  const BUDGET = 10_550;
   it("我们的提示词加工具定义不超过字符数上限", async () => {
     const prompt = agentPersona({ computerUse: true }).length + botPrompt({ name: "小蓝", persona: PERSONA, memory: true }).length;
     const tools = JSON.stringify(await ourTools()).length;
@@ -184,6 +287,19 @@ describe.skipIf(!runtime)("提示词约定", () => {
     const { task } = await loadPlugins();
     const extra = TASK_RULES.length + JSON.stringify(task.tools).length;
     expect(extra, `${TASK_RULES.length} characters of rules and ${JSON.stringify(task.tools).length} of task_report`).toBeLessThanOrEqual(TASK_BUDGET);
+  });
+
+  /**
+   * 规则会话（观察，比执行长）在聊天会话之外多出来的：规则段 + 规则版的 task_report（去掉的工具不算）。上限高约 5%。
+   * 3d 基线 1,058（观察：规则段 285 + task_report 773）。
+   */
+  const RULE_BUDGET = 1_110;
+  it("规则会话多出来的提示词和工具不超过字符数上限", async () => {
+    for (const mode of ["observe", "act"] as const) {
+      const { rule } = await loadRule(mode);
+      const extra = ruleRules(mode).length + JSON.stringify(rule.tools).length;
+      expect(extra, `${mode}: ${ruleRules(mode).length} characters of rules and ${JSON.stringify(rule.tools).length} of task_report`).toBeLessThanOrEqual(RULE_BUDGET);
+    }
   });
 });
 

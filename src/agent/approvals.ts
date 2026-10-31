@@ -140,6 +140,8 @@ export class ApprovalCenter {
     reason: string;
     payload?: string;
     taskId?: string;
+    /** 规则（3d）执行时的审批：只在「需要你」里，不进聊天回合 */
+    ruleId?: string;
     runId?: string;
     blocking?: boolean;
     ttlMs?: number;
@@ -160,12 +162,13 @@ export class ApprovalCenter {
       createdAt: now,
       expiresAt: ttl === 0 ? 0 : now + ttl,
       taskId: input.taskId ?? "",
+      ruleId: input.ruleId ?? "",
       runId: input.runId ?? "",
       blocking: input.blocking !== false,
     });
-    log.info(`${row.kind} ${row.code} created`, { bot: row.botId, tool: row.tool, ...(row.taskId ? { task: row.taskId } : {}) });
-    // 聊天回合的提示进这一轮的回复；任务的由任务服务推（不混进同一会话里正在进行的聊天回复）
-    const sink = row.taskId ? undefined : this.sinks.get(row.conversationId);
+    log.info(`${row.kind} ${row.code} created`, { bot: row.botId, tool: row.tool, ...(row.taskId ? { task: row.taskId } : {}), ...(row.ruleId ? { rule: row.ruleId } : {}) });
+    // 聊天回合的提示进这一轮的回复；任务的由任务服务推（不混进同一会话里正在进行的聊天回复）；规则的只在「需要你」里
+    const sink = row.taskId || row.ruleId ? undefined : this.sinks.get(row.conversationId);
     if (sink) void sink(row).catch((e) => log.warn("prompt sink failed", { message: (e as Error).message }));
     this.emit({ type: "created", row });
     return row;
@@ -243,7 +246,7 @@ export class ApprovalCenter {
 
   /** 这个会话里聊天回合在等的（不含后台任务的）：中止、/reset 只作废这些 */
   pendingChat(conversationId: string): ApprovalRow[] {
-    return this.pending(conversationId).filter((r) => !r.taskId);
+    return this.pending(conversationId).filter((r) => !r.taskId && !r.ruleId);
   }
 
   /** 这个任务还在等的提问和审批 */
@@ -268,7 +271,7 @@ export class ApprovalCenter {
     const t = text.trim();
     if (!t || t.startsWith("/")) return { handled: false };
     const all = this.pending(conversationId);
-    const chat = all.filter((r) => !r.taskId);
+    const chat = all.filter((r) => !r.taskId && !r.ruleId);
     const task = all.filter((r) => r.taskId);
     // 引用了任务的提示
     const quote = ctx.quote;

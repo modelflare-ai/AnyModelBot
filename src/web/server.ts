@@ -21,7 +21,8 @@ import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
 import { pwshProbe, type PwshMode } from "../agent/pwsh.js";
 import { peerName, shortPeer, whoText } from "../core/access.js";
-import type { AccessEntry } from "../store/db.js";
+import type { AccessEntry, RuleMode } from "../store/db.js";
+import { normalizeSchedule, type Schedule } from "../tasks/schedule.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -452,6 +453,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           ? app.agent.approvals.answer(item.approvalId!, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
           : app.agent.approvals.answerText(item.approvalId!, String(b.text ?? ""), "web");
       } else if (item.kind === "delivery" && (action === "retry" || action === "dismiss")) ok = app.delivery.act(item.id, action);
+      else if (item.kind === "rule" && action === "retry") ok = !app.tasks.resumeRule(item.ruleId!).error;
       else if (action === "retry") ok = !(await app.tasks.retry(item.taskId!)).error;
       else if (action === "stop") ok = await app.tasks.stopTask(item.taskId!, "web");
       if (!ok) throw new HttpError(409, "没能完成，可能已经处理过了");
@@ -486,6 +488,69 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         const ok = await app.tasks.stopTask(task.id, "web");
         if (!ok) throw new HttpError(409, "任务已经停止了");
         return send(res, 200, { task: app.tasks.get(task.id) });
+      }
+      throw new HttpError(404, "not found");
+    }
+    // —— 规则（3d）：列表、新建、改（原话、时间表、模式、发到哪）、删、立即运行、运行记录与一次运行的步骤 ——
+    if (seg[0] === "rules") {
+      const scheduleOf = (raw: unknown, tz: string): Schedule => {
+        const r = normalizeSchedule(raw, tz, Date.now());
+        if (!r.schedule) throw new HttpError(400, r.error ?? "时间表不对");
+        return r.schedule;
+      };
+      if (seg.length === 1 && m === "GET") {
+        return send(res, 200, { rules: app.tasks.listRules({ botId: url.searchParams.get("bot") || undefined, conversationId: url.searchParams.get("conversation") || undefined }) });
+      }
+      if (seg.length === 1 && m === "POST") {
+        const b = await readJson(req);
+        const r = app.tasks.createRule({
+          botId: String(b.botId ?? ""),
+          conversationId: String(b.conversationId ?? ""),
+          title: String(b.title ?? ""),
+          instruction: String(b.instruction ?? ""),
+          kind: b.kind === "remind" ? "remind" : "check",
+          message: String(b.message ?? ""),
+          schedule: scheduleOf(b.schedule, app.delivery.timeZone),
+        });
+        if (!r.rule) throw new HttpError(400, r.error ?? "没能建好");
+        return send(res, 200, { rule: app.tasks.getRuleView(r.rule.id) });
+      }
+      const rule = seg[1] ? app.store.getRule(decodeURIComponent(seg[1])) : undefined;
+      if (!rule) throw new HttpError(404, "规则不存在");
+      if (seg.length === 2 && m === "GET") return send(res, 200, { rule: app.tasks.getRuleView(rule.id) });
+      if (seg.length === 2 && m === "PUT") {
+        const b = await readJson(req);
+        const patch: Parameters<typeof app.tasks.updateRule>[1] = {};
+        if (b.title !== undefined) patch.title = String(b.title);
+        if (b.instruction !== undefined) patch.instruction = String(b.instruction);
+        if (b.message !== undefined) patch.message = String(b.message);
+        if (b.conversationId !== undefined) patch.conversationId = String(b.conversationId);
+        if (b.mode !== undefined) {
+          if (!["off", "observe", "act"].includes(b.mode)) throw new HttpError(400, "模式只能是关、观察或执行");
+          patch.mode = b.mode as RuleMode;
+        }
+        if (b.schedule !== undefined) patch.schedule = scheduleOf(b.schedule, rule.trigger.kind === "schedule" ? rule.trigger.schedule.tz : app.delivery.timeZone);
+        const r = app.tasks.updateRule(rule.id, patch);
+        if (!r.rule) throw new HttpError(400, r.error ?? "没能保存");
+        return send(res, 200, { rule: app.tasks.getRuleView(rule.id) });
+      }
+      if (seg.length === 2 && m === "DELETE") {
+        await app.tasks.deleteRule(rule.id);
+        return send(res, 200, { ok: true });
+      }
+      if (seg.length === 3 && seg[2] === "run" && m === "POST") {
+        const r = rule.pausedReason ? app.tasks.resumeRule(rule.id) : app.tasks.runRuleNow(rule.id);
+        if (r.error) throw new HttpError(409, r.error);
+        return send(res, 200, { rule: app.tasks.getRuleView(rule.id) });
+      }
+      if (seg.length === 3 && seg[2] === "runs" && m === "GET") {
+        const before = Number(url.searchParams.get("before")) || undefined;
+        return send(res, 200, { runs: app.tasks.ruleLog(rule.id, { before, limit: Math.min(100, Number(url.searchParams.get("limit")) || 20) }) });
+      }
+      if (seg.length === 5 && seg[2] === "runs" && seg[4] === "activity" && m === "GET") {
+        const run = app.store.getRun(decodeURIComponent(seg[3]));
+        if (!run || run.ruleId !== rule.id) throw new HttpError(404, "没有这次运行");
+        return send(res, 200, { steps: app.tasks.activity(run.id) });
       }
       throw new HttpError(404, "not found");
     }

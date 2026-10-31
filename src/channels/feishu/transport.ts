@@ -21,6 +21,27 @@ export interface FeishuMessageEvent {
   senderOpenId: string;
   mentions: Array<{ key: string; name?: string; openId?: string }>;
   createTime: number;
+  /** 回复（或话题里的消息）：回复链的根消息、直接回复的那条（message_id）；不是回复时没有 */
+  rootId?: string;
+  parentId?: string;
+}
+
+/** im.message.receive_v1 的事件 → FeishuMessageEvent */
+export function messageEventOf(data: any): FeishuMessageEvent {
+  const m = data?.message ?? {};
+  return {
+    eventId: data?.event_id,
+    messageId: m.message_id,
+    chatId: m.chat_id,
+    chatType: m.chat_type,
+    messageType: m.message_type,
+    content: m.content ?? "{}",
+    senderOpenId: data?.sender?.sender_id?.open_id ?? "",
+    mentions: (m.mentions ?? []).map((x: any) => ({ key: x.key, name: x.name, openId: x.id?.open_id })),
+    createTime: Number(m.create_time ?? Date.now()),
+    ...(m.root_id ? { rootId: String(m.root_id) } : {}),
+    ...(m.parent_id ? { parentId: String(m.parent_id) } : {}),
+  };
 }
 
 /**
@@ -147,18 +168,7 @@ export class LarkTransport implements FeishuTransport {
       "im.message.receive_v1": async (data: any) => {
         // 3 秒规则：立即返回，业务异步处理（onMessage 内只入队）
         try {
-          const m = data.message ?? {};
-          onMessage({
-            eventId: data.event_id,
-            messageId: m.message_id,
-            chatId: m.chat_id,
-            chatType: m.chat_type,
-            messageType: m.message_type,
-            content: m.content ?? "{}",
-            senderOpenId: data.sender?.sender_id?.open_id ?? "",
-            mentions: (m.mentions ?? []).map((x: any) => ({ key: x.key, name: x.name, openId: x.id?.open_id })),
-            createTime: Number(m.create_time ?? Date.now()),
-          });
+          onMessage(messageEventOf(data));
         } catch (e) {
           this.log.warn("bad event", { message: (e as Error).message });
         }

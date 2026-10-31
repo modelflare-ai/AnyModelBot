@@ -184,7 +184,9 @@ A person's message reaches a task only by explicit reference:
 - **WeChat:** a quote (引用) of the task's message. We store the sent text in the outbox and match the quote against it.
 - **Any channel:** the chat agent calls `task_message({ task, text })` when the user names the task ("GPU 那个改成英文").
 
-A follow-up while the task is working is **steered** into it (P1) and lands at its next step. A follow-up to a done task resumes it under the same task. Quoting a task's message also adds the task's latest Report to the chat turn, so "详细说说" is answered by the chat agent from the report without waking the task.
+A follow-up while the task is working is **steered** into it (P1) and lands at its next step. A follow-up to a done or failed task resumes it under the same task. A stopped task can't be continued.
+
+As built: a WeChat quote of a task's pushed result or failure line, or a Feishu message in the reply chain of the task's request message (results are replied under it), goes straight to the task with a one-line acknowledgement (「收到，「GPU 价格调研」继续。」). It doesn't wait for the chat agent to notice. A quote of a digest that names several tasks stays ordinary chat. A pushed result ends with 「引用这条消息可以继续问。」 on WeChat and 「回复这条消息可以继续问。」 on Feishu, and still fits 300 characters. So "详细说说" on a quoted result is answered by the task itself.
 
 ### Concurrency and the reserved human lane
 

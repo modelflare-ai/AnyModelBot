@@ -66,6 +66,8 @@ export interface PushInput {
   subject: string;
   /** 一句话（设计里的消息样式：一行，细节按需） */
   text: string;
+  /** 单独发出去时接在后面的提示（任务结果：引用 / 回复这条消息可以继续问）；合成摘要时不带 */
+  hint?: string;
   /** 跟在后面的文件 */
   files?: string[];
   /** 飞书：回复在哪条消息下；kind = notice 时直接发到会话 */
@@ -253,7 +255,7 @@ export class Delivery {
     const { due, reason } = this.plan(peer, p.purpose, !!p.anytime, now);
     const common = { botId: p.botId, channel: p.channel, peerId: p.peerId, replyTo: p.replyTo ?? "", purpose: p.purpose, subject: clip(oneLine(p.subject), 60), ref: p.ref ?? "", due, reason };
     const flag = p.anytime ? { anytime: true } : {};
-    const extra = { ...(p.card ? { card: p.card } : {}), ...(p.raw ? { raw: true } : {}) };
+    const extra = { ...(p.card ? { card: p.card } : {}), ...(p.raw ? { raw: true } : {}), ...(p.hint ? { hint: p.hint } : {}) };
     void this.o.outbox.send({ ...common, id: p.id, kind: p.card ? "card" : (p.kind ?? "text"), body: { text: p.text, ...extra, ...flag } });
     (p.files ?? []).forEach((f, i) => void this.o.outbox.send({ ...common, id: `${p.id}:file:${i}`, kind: "file", body: { path: f, name: path.basename(f), ...flag } }));
     if (due > now) log.info("proactive message scheduled", { id: p.id, channel: p.channel, reason, inMin: Math.round((due - now) / 60_000) });

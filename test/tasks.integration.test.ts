@@ -67,6 +67,9 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     if (/The app restarted while you were working/.test(user)) return report(`RECOVERED-${tag}：调研好了，结论在 notes.md。`);
     if (/^Report this task's state with task_report now/.test(user)) return report(`NUDGED-${tag}`);
     if (/^background job /.test(user)) return report(`BGRESULT-${tag}`);
+    // 用户引用结果追加的一句（不经聊天代理，直接到任务）
+    const more = /^\[用户追加\]\n(.+)$/.exec(user);
+    if (more) return report(`FOLLOWED-${tag}：${more[1]}`);
     // ASK：先问用户（needs_you），回答作为下一条输入回来，再按回答做完
     if (tag.startsWith("ASK")) {
       const ans = /^\[用户回答了你的问题\][\s\S]*回答：(.+)$/.exec(user);
@@ -216,6 +219,26 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     expect((await api(`/tasks/${t.id}`)).runs.map((r: any) => [r.cause, r.outcome])).toEqual([["launch", "done"]]);
   }, 180_000);
 
+  it("follow-ups reach the task directly: quoting its pushed result on WeChat resumes the same task without a chat turn", async () => {
+    const t = await research("FOLLOWQ");
+    await waitFor(() => sentTo("RESULT-FOLLOWQ").length === 1);
+    const result = sentTo("RESULT-FOLLOWQ")[0].text;
+    expect(result).toBe("RESULT-FOLLOWQ：调研好了，结论在 notes.md。引用这条消息可以继续问。");
+    await waitFor(() => stage("FOLLOWQ") === "ready");
+    const chats = calls.filter((c) => !c.task).length;
+    ilink.pushItems(OWNER, [{ type: 1, text_item: { text: "加上 H100" }, ref_msg: { title: "", message_item: { type: 1, text_item: { text: result } } } }]);
+    await waitFor(() => sentTo("收到，「调研 FOLLOWQ」继续。").length === 1);
+    await waitFor(() => sentTo("FOLLOWED-FOLLOWQ").length === 1);
+    expect(sentTo("FOLLOWED-FOLLOWQ")[0].text).toBe("FOLLOWED-FOLLOWQ：加上 H100。引用这条消息可以继续问。");
+    await waitFor(() => stage("FOLLOWQ") === "ready");
+    // 聊天代理没有被叫醒；同一个任务、同一个会话接着做
+    expect(calls.filter((c) => !c.task).length).toBe(chats);
+    expect((await api(`/tasks/${t.id}`)).runs.map((r: any) => [r.cause, r.outcome])).toEqual([
+      ["launch", "done"],
+      ["followup", "done"],
+    ]);
+  }, 180_000);
+
   it("exit demo (3b): a task asks 「中文还是英文？」 on WeChat; a bare number answers it and the task continues; needs-you lists it on desktop and is empty after", async () => {
     expect((await api("/attention")).items).toEqual([]);
     const t = await research("ASKQ");
@@ -234,7 +257,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     ilink.push(OWNER, "1");
     await waitFor(() => sentTo("收到，「调研 ASKQ」继续。").length === 1);
     await waitFor(() => sentTo("ANSWERED-ASKQ").length === 1);
-    expect(sentTo("ANSWERED-ASKQ")[0].text).toBe("ANSWERED-ASKQ：用中文写好了。");
+    expect(sentTo("ANSWERED-ASKQ")[0].text).toBe("ANSWERED-ASKQ：用中文写好了。引用这条消息可以继续问。");
     await waitFor(() => stage("ASKQ") === "ready");
     expect(calls.slice(0).filter((c) => !c.task).length).toBe(chats);
     // 回答作为任务的下一条输入，在同一个会话里接着做（人的唤醒：answer run）
@@ -266,7 +289,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     // 引用那条提问回答（自己写的回答）
     ilink.pushItems(OWNER, [{ type: 1, text_item: { text: "英文" }, ref_msg: { title: "", message_item: { type: 1, text_item: { text: asked } } } }]);
     await waitFor(() => sentTo("ANSWERED-ASKW").length === 1);
-    expect(sentTo("ANSWERED-ASKW")[0].text).toBe("ANSWERED-ASKW：用英文写好了。");
+    expect(sentTo("ANSWERED-ASKW")[0].text).toBe("ANSWERED-ASKW：用英文写好了。引用这条消息可以继续问。");
     expect(sentTo("收到，「调研 ASKW」继续。")).toHaveLength(1);
     await waitFor(() => stage("ASKW") === "ready");
     expect(calls.some((c) => !c.task && c.users.some((u) => u.includes("英文") && u.includes(">")))).toBe(false);
@@ -285,7 +308,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     ilink.push(OWNER, `y ${row.code}`);
     await waitFor(() => sentTo(`✅ 已批准 ${row.code}`).length === 1);
     await waitFor(() => sentTo("APPROVED-APPR1").length === 1);
-    expect(sentTo("APPROVED-APPR1")[0].text).toBe("APPROVED-APPR1<<ran>>");
+    expect(sentTo("APPROVED-APPR1")[0].text).toBe("APPROVED-APPR1<<ran>>。引用这条消息可以继续问。");
     await waitFor(() => stage("APPR1") === "ready");
     expect((await api("/attention")).items).toEqual([]);
   }, 180_000);

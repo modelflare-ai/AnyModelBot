@@ -102,7 +102,8 @@ describe("退出演示：免打扰与微信窗口", () => {
     expect(to(OWNER, from)).toEqual([]);
     await clock("2026-11-07T08:00");
     await until(() => to(OWNER, from).length >= 1, 5000);
-    expect(to(OWNER, from)).toEqual(["GPU 价格调研好了：A100 包月最便宜的是 X 云，约 ¥7,800。"]);
+    // 单独发出去的结果带着设计里的那句提示；「你不在时」和摘要里不带（见下面两个）
+    expect(to(OWNER, from)).toEqual(["GPU 价格调研好了：A100 包月最便宜的是 X 云，约 ¥7,800。引用这条消息可以继续问。"]);
     await clock("2026-11-07T09:00");
     expect(to(OWNER, from)).toHaveLength(1);
   });

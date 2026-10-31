@@ -15,9 +15,15 @@ import { ApprovalCenter } from "../src/agent/approvals.js";
 import { AgentHost, ResumeFailed } from "../src/agent/host.js";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/agent/settings.js";
 import { NUDGE, TASK_RULES, recoveryNote, taskBrief } from "../src/agent/prompts/index.js";
-import { Outbox } from "../src/core/outbox.js";
+import { Outbox, sentText } from "../src/core/outbox.js";
 import { Delivery } from "../src/core/delivery.js";
 import { Store } from "../src/store/db.js";
+import { BotRuntime } from "../src/core/runtime.js";
+import { KeyedQueue } from "../src/core/queue.js";
+import { FeishuChannel } from "../src/channels/feishu/channel.js";
+import { messageEventOf } from "../src/channels/feishu/transport.js";
+import type { AgentManager } from "../src/agent/manager.js";
+import { FakeFeishu, feishuEvent } from "./helpers.js";
 
 const flush = async (n = 5) => {
   for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r));
@@ -580,6 +586,100 @@ describe("TaskService（假宿主）", () => {
     expect(store.getTask(t.id)!.endedAt).toBe(0);
   });
 
+  it("追加不经聊天代理（微信）：引用推出去的结果（带「引用这条消息可以继续问。」）或失败那句就交给任务，在同一任务里接着做；对不上的是普通聊天；停了的照旧", async () => {
+    const t = start();
+    await flush();
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "GPU 价格调研好了：A100 包月最便宜的是 X 云，约 ¥7,800"));
+    const row = store.listOutbox({ limit: 50 })[0];
+    expect(row.body).toMatchObject({ text: "GPU 价格调研好了：A100 包月最便宜的是 X 云，约 ¥7,800", hint: "引用这条消息可以继续问。" });
+    const sent = sentText(row.body);
+    expect(sent).toBe("GPU 价格调研好了：A100 包月最便宜的是 X 云，约 ¥7,800。引用这条消息可以继续问。");
+    // 会话历史里只有结果本身
+    expect(store.listMessages(CONV).at(-1)!.content).toBe(row.body.text);
+    // 引用了别的、没有引用、只是个命令：普通聊天
+    expect(svc.followUp(CONV, { text: "改成英文", quote: "下午 3 点的会是线上的" })).toEqual({ handled: false });
+    expect(svc.followUp(CONV, { text: "改成英文" })).toEqual({ handled: false });
+    expect(svc.followUp(CONV, { text: "/status", quote: sent })).toEqual({ handled: false });
+    // 引用结果（被截短、前面带名字也认得）：交给任务，回一句收到
+    expect(svc.followUp(CONV, { text: "改成英文", quote: `小蓝: ${sent.slice(0, 20)}…` })).toEqual({ handled: true, ack: "收到，「GPU 价格调研」继续。" });
+    await flush();
+    expect(runs(t.id)).toEqual([
+      ["launch", "ended", "done"],
+      ["followup", "running", ""],
+    ]);
+    expect(host.prompts.at(-1)).toMatchObject({ sessionId: t.sessionId, text: "[用户追加]\n改成英文", resume: true });
+    // 失败那句也认（它不带提示：失败那句本来就说了怎么办）
+    await turn(t.sessionId, () => void report(t.sessionId, "failed", "英文版的价格页打不开"));
+    const fail = store.listOutbox({ limit: 50 }).find((r) => r.id.includes(":failure:"))!;
+    expect(fail.body.hint).toBeUndefined();
+    expect(svc.followUp(CONV, { text: "试试这个链接", quote: fail.body.text })).toEqual({ handled: true, ack: "收到，「GPU 价格调研」继续。" });
+    await flush();
+    expect(runs(t.id).at(-1)).toEqual(["followup", "running", ""]);
+    expect(host.prompts.at(-1)!.text).toBe("[用户追加]\n试试这个链接");
+    // 停了的：照旧说不能再追加，不开 run
+    await svc.stopTask(t.id, "web");
+    expect(svc.followUp(CONV, { text: "再试一次", quote: sent })).toEqual({ handled: true, ack: "「GPU 价格调研」已停止，不能再追加；需要的话开个新任务。" });
+    await flush();
+    expect(runs(t.id).at(-1)).toEqual(["followup", "ended", "stopped"]);
+    expect(store.listRuns({ taskId: t.id })).toHaveLength(3);
+  });
+
+  it("追加不经聊天代理：引用合成的摘要（不止一个任务）是普通聊天；结果连提示一起不超过 300 字", async () => {
+    host.settingsValue = normalizeSettings({ taskSlots: 8 });
+    const a = start("A");
+    const b = start("B");
+    await flush();
+    await turn(a.sessionId, () => void report(a.sessionId, "done", "A 做好了，在 a.md"));
+    await turn(b.sessionId, () => void report(b.sessionId, "done", "B 做好了，在 b.md"));
+    expect(svc.followUp(CONV, { text: "详细说说", quote: "2 个后台任务：\n· A 做好了，在 a.md\n· B 做好了，在 b.md" })).toEqual({ handled: false });
+    // 「你不在时」合成的一条里只有一个任务：认得出
+    expect(svc.followUp(CONV, { text: "详细说说", quote: "你不在时：A 做好了，在 a.md" })).toEqual({ handled: true, ack: "收到，「A」继续。" });
+    // 两句结果后半句一样（开头的「D：」也像个名字）：取最像的那个
+    const d = start("D");
+    const e = start("E");
+    await flush();
+    await turn(d.sessionId, () => void report(d.sessionId, "done", "D：调研好了，结论在 notes.md。"));
+    await turn(e.sessionId, () => void report(e.sessionId, "done", "E：调研好了，结论在 notes.md。"));
+    const dRow = store.listOutbox({ limit: 50 }).find((r) => r.ref === `task:${d.id}`)!;
+    expect(svc.followUp(CONV, { text: "加上 H100", quote: sentText(dRow.body) })).toEqual({ handled: true, ack: "收到，「D」继续。" });
+    const c = start("C");
+    await flush();
+    await turn(c.sessionId, () => void report(c.sessionId, "done", "长".repeat(400)));
+    const row = store.listOutbox({ limit: 50 }).find((r) => r.ref === `task:${c.id}`)!;
+    expect(sentText(row.body).length).toBeLessThanOrEqual(300);
+    expect(sentText(row.body)).toMatch(/长…引用这条消息可以继续问。$/);
+  });
+
+  it("追加不经聊天代理（飞书）：发在请求那条消息的回复链里（回复结果、回复请求）就交给任务；结果带「回复这条消息可以继续问。」", async () => {
+    const fs1 = store.ensureConversation("b", "feishu", "oc_1", "主人");
+    store.addMessage(fs1.id, "user", "后台调研一下 GPU 价格");
+    store.setKV(`reply-to:${fs1.id}`, JSON.stringify({ messageId: "om_req", chatId: "oc_1" }));
+    const f = svc.create({ botId: "b", conversationId: fs1.id, title: "GPU", brief: "" }).task!;
+    await flush();
+    await turn(f.sessionId, () => void report(f.sessionId, "done", "GPU 好了"));
+    const row = store.listOutbox({ limit: 50 })[0];
+    expect([row.replyTo, row.body.text, row.body.hint]).toEqual(["om_req", "GPU 好了", "回复这条消息可以继续问。"]);
+    expect(svc.followUp(fs1.id, { text: "加上 H100", rootId: "om_other", parentId: "om_other2" })).toEqual({ handled: false });
+    expect(svc.followUp(fs1.id, { text: "加上 H100" })).toEqual({ handled: false });
+    // 回复结果：回复链的根是请求那条
+    expect(svc.followUp(fs1.id, { text: "加上 H100", rootId: "om_req", parentId: "om_result" })).toEqual({ handled: true, ack: "收到，「GPU」继续。" });
+    await flush();
+    expect(host.prompts.at(-1)).toMatchObject({ sessionId: f.sessionId, text: "[用户追加]\n加上 H100", resume: true });
+    // 直接回复请求那条也一样（在跑：并进这一轮）
+    svc.onEvent("b", f.sessionId, status(f.sessionId, "running"));
+    expect(svc.followUp(fs1.id, { text: "再加上 L40S", parentId: "om_req" })).toEqual({ handled: true, ack: "收到，「GPU」继续。" });
+    await flush();
+    expect(host.steers.at(-1)).toMatchObject({ sessionId: f.sessionId, text: "[用户追加]\n再加上 L40S" });
+    // 建任务时会话里还没收到过飞书消息：结果直接发到会话，不带提示（回复链认不出是哪个任务）
+    const fs2 = store.ensureConversation("b", "feishu", "oc_2", "主人");
+    store.addMessage(fs2.id, "user", "后台整理发票");
+    const g = svc.create({ botId: "b", conversationId: fs2.id, title: "发票", brief: "" }).task!;
+    await flush();
+    await turn(g.sessionId, () => void report(g.sessionId, "done", "发票好了"));
+    const notice = store.listOutbox({ limit: 50 }).find((r) => r.ref === `task:${g.id}`)!;
+    expect([notice.kind, notice.body.hint]).toEqual(["notice", undefined]);
+  });
+
   it("停止：只停这个任务（宿主停会话），不发任何消息；之后的报告被拒；停了的不能再追加；/stop 编号一样", async () => {
     const a = start("A");
     const b = start("B");
@@ -844,6 +944,21 @@ describe("TaskService（假宿主）", () => {
     expect(svc.get(t.id)!.stage.key).toBe("needs-you/approval");
   });
 
+  it("run 结束时告诉宿主（代理进程完全空闲、开过的会话多了就换新的）；在跑、收尾中的 run 算忙", async () => {
+    const ended: string[] = [];
+    (host as TaskHost).runEnded = (botId) => void ended.push(botId);
+    expect(svc.busy("b")).toBe(false);
+    const t = start();
+    await flush();
+    expect(svc.busy("b")).toBe(true);
+    host.quiets.push({ quiet: false, jobs: ["j1"] });
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "好了"));
+    expect(store.listRuns({ taskId: t.id })[0].state).toBe("settling");
+    expect([svc.busy("b"), ended]).toEqual([true, []]);
+    svc.settled({ sessionId: t.sessionId });
+    expect([svc.busy("b"), svc.busy("other"), ended]).toEqual([false, false, ["b"]]);
+  });
+
   it("每个机器人最多 10 个进行中的任务", async () => {
     host.settingsValue = normalizeSettings({ taskSlots: 8 });
     for (let i = 0; i < 10; i++) start(`T${i}`);
@@ -890,5 +1005,52 @@ describe("宿主：补丁加载 amb-tasks，任务规则经环境变量交给插
       ["task-t_1", "session.status"],
     ]);
     store.close();
+  });
+});
+
+describe("追加不经聊天代理：渠道 → runtime.interceptReply → 任务", () => {
+  it("飞书事件带上回复链（root_id、parent_id）；发在任务请求那条消息下的不进聊天，交给任务，回一句收到；别的照常进聊天", async () => {
+    const raw = { event_id: "e1", sender: { sender_id: { open_id: "ou_1" } }, message: { message_id: "om_2", root_id: "om_req", parent_id: "om_res", chat_id: "oc_1", chat_type: "p2p", message_type: "text", content: '{"text":"hi"}', create_time: "1" } };
+    expect(messageEventOf(raw)).toMatchObject({ messageId: "om_2", chatId: "oc_1", senderOpenId: "ou_1", rootId: "om_req", parentId: "om_res" });
+    expect(messageEventOf({ message: { message_id: "om_3", chat_id: "oc_1" } })).not.toHaveProperty("rootId");
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "amb-tasks-follow-"));
+    const store = new Store(":memory:");
+    store.createBot({ id: "b", name: "小蓝" });
+    const host = new FakeHost(ws);
+    const outbox = new Outbox(store);
+    const approvals = new ApprovalCenter(store);
+    const svc = new TaskService({ store, host, delivery: new Delivery({ store, outbox }), approvals, defaultModel: () => "m", retryDelaysMs: [5, 5, 5] });
+    svc.start();
+    const conv = store.ensureConversation("b", "feishu", "oc_1", "主人");
+    store.addMessage(conv.id, "user", "后台调研一下 GPU 价格");
+    store.setKV(`reply-to:${conv.id}`, JSON.stringify({ messageId: "om_req", chatId: "oc_1" }));
+    const task = svc.create({ botId: "b", conversationId: conv.id, title: "GPU", brief: "" }).task!;
+    await flush();
+    const agent = { available: true, approvals, tasks: svc, turnsInProgress: new Map(), canSteer: () => false } as unknown as AgentManager;
+    const rt = new BotRuntime({ store, models: {} as any, defaultModel: () => "m", contextMessages: 20, contextChars: 20_000, agent });
+    const chats: string[] = [];
+    rt.handle = async (ev) => void chats.push(ev.id);
+    const fake = new FakeFeishu();
+    const ch = new FeishuChannel("b", fake, rt, new KeyedQueue(), 0, outbox);
+    outbox.start();
+    try {
+      await ch.start();
+      fake.onMessage!(feishuEvent("加上 H100", { messageId: "om_f1", chatId: "oc_1", rootId: "om_req", parentId: "om_res" }));
+      await ch.idle();
+      await flush();
+      expect(chats).toEqual([]);
+      expect(fake.calls.filter((c) => c.op === "text").map((c) => c.args.slice(0, 2))).toEqual([["om_f1", "收到，「GPU」继续。"]]);
+      expect(host.prompts.at(-1)).toMatchObject({ sessionId: task.sessionId, text: "[用户追加]\n加上 H100" });
+      // 不在回复链里：照常进聊天
+      fake.onMessage!(feishuEvent("你好", { messageId: "om_f2", chatId: "oc_1" }));
+      await ch.idle();
+      expect(chats).toEqual(["om_f2"]);
+    } finally {
+      await ch.stop();
+      await outbox.stop();
+      svc.stop();
+      store.close();
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
   });
 });

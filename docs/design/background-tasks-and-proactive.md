@@ -184,7 +184,9 @@ A person's message reaches a task only by explicit reference:
 - **WeChat:** a quote (引用) of the task's message. We store the sent text in the outbox and match the quote against it.
 - **Any channel:** the chat agent calls `task_message({ task, text })` when the user names the task ("GPU 那个改成英文").
 
-A follow-up while the task is working is **steered** into it (P1) and lands at its next step. A follow-up to a done task resumes it under the same task. Quoting a task's message also adds the task's latest Report to the chat turn, so "详细说说" is answered by the chat agent from the report without waking the task.
+A follow-up while the task is working is **steered** into it (P1) and lands at its next step. A follow-up to a done or failed task resumes it under the same task. A stopped task can't be continued.
+
+As built: a WeChat quote of a task's pushed result or failure line, or a Feishu message in the reply chain of the task's request message (results are replied under it), goes straight to the task with a one-line acknowledgement (「收到，「GPU 价格调研」继续。」). It doesn't wait for the chat agent to notice. A quote of a digest that names several tasks stays ordinary chat. A pushed result ends with 「引用这条消息可以继续问。」 on WeChat and 「回复这条消息可以继续问。」 on Feishu, and still fits 300 characters. So "详细说说" on a quoted result is answered by the task itself.
 
 ### Concurrency and the reserved human lane
 
@@ -673,6 +675,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | Rule edited during a run | The run finishes under its recorded version; the next run uses the new version |
 | Two hosts open the same data dir | On desktop, Electron's `requestSingleInstanceLock()` already prevents it. The headless CLI and Docker build need a data-dir lock before the Scheduler starts (a small addition in 3d) |
 | Prompt injection from a web page during a task or rule | Permission caps (observe is read-only; act is capped at workspace), approvals go to needs-you, and denied acting tools. We can't fully prevent network side effects from shell tools, and the UI says so |
+| The DSH child's memory grows with sessions the SDK can't close (one per rule run) | About 0.25–0.45 MB per finished session (measured). After more than 100 task and rule sessions the child is replaced as soon as it is fully idle: no chat turn, run, pending approval, compaction or background job. Nothing is interrupted or recovered |
 | Disk growth (task folders, DSH session JSONL) | Retention: archive done tasks after 30 days, and offer to delete their folders and sessions; sizes are shown in the task detail (Q9) |
 
 ## 12. Testing strategy

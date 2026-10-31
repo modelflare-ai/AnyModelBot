@@ -237,16 +237,29 @@ export class AgentManager {
         apiFallbacks: this.apiFallbacks,
         onWake: (conv) => this.onWake?.(botId, conv),
         onTaskEvent: (root, n) => this.tasks?.onEvent(botId, root, n),
+        idle: () => this.idle(botId),
       });
-      // 代理进程退出（中止宽限期内没停下、设置变化、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它；跑着的后台任务记为中断、排恢复
+      // 代理进程退出（中止宽限期内没停下、设置变化、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它；跑着的后台任务记为中断、排恢复。
+      // 空闲时换掉的（recycled）上面什么都没在跑：之后才开始的 run 已经在用新的进程，不能当成被打断
       h.on((e) => {
         if (e.type !== "exit") return;
         this.endCompaction((c) => c.botId === botId);
-        this.tasks?.onChildExit(botId);
+        if (!e.recycled) this.tasks?.onChildExit(botId);
       });
       this.hosts.set(botId, h);
     }
     return h;
+  }
+
+  /**
+   * 换代理进程之前宿主这边的检查（聊天回合由代理宿主自己看）：没有在跑或收尾的任务、规则 run，没有等批准的（阻塞的），
+   * 没有在等管家判定或原地压缩的会话
+   */
+  private idle(botId: string): boolean {
+    if (this.tasks?.busy(botId)) return false;
+    if (this.approvals.pendingAll().some((a) => a.botId === botId && a.blocking)) return false;
+    if ([...this.compactDone.values()].some((c) => c.botId === botId)) return false;
+    return ![...this.gates.keys()].some((conv) => this.o.store.getConversation(conv)?.botId === botId);
   }
 
   /** PowerShell 等启动参数变了：空闲的代理进程在后台换用新的（正在跑回合的等下一条消息） */
@@ -914,6 +927,7 @@ export class AgentManager {
       steer: (botId, sessionId, id, text) => this.hosts.get(botId)?.steerTask(sessionId, id, text) ?? Promise.resolve(false),
       stop: async (botId, sessionId) => void (await this.hosts.get(botId)?.stopTask(sessionId)),
       quiet: (botId, sessionId) => this.hosts.get(botId)?.taskQuiet(sessionId) ?? Promise.resolve({ quiet: true }),
+      runEnded: (botId) => void this.hosts.get(botId)?.restartIfStale().catch(() => undefined),
     };
   }
 

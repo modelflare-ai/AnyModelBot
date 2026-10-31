@@ -1,10 +1,11 @@
 // 信息面板：点悬浮胶囊或 ⌘⇧I 打开，面板自己的 ✕ 关闭，⚙ 进机器人设置。
-import { useCallback, useEffect, useState } from "preact/hooks";
-import { html, Icon, Badge, Sheet, Spinner, Skeleton } from "../components/ui.js";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { html, Icon, Badge, Button, Sheet, Spinner, Skeleton } from "../components/ui.js";
+import { ActivityLine, currentStep, useNow } from "../components/activity.js";
 import { PromptCard } from "./chat.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, saved, toast } from "../lib/store.js";
-import { fmtAgo, fmtTime } from "../lib/format.js";
+import { fmtAgo, fmtDur, fmtTime } from "../lib/format.js";
 
 export function usePoll(fn, ms, deps = []) {
   const [data, setData] = useState(null);
@@ -126,16 +127,53 @@ function MemorySection({ botId }) {
     </div>`;
 }
 
+/** 会话里正在处理的那一轮：处理了多久、多久没进展、现在在做什么（可展开看步骤），以及"中止" */
+function LiveTurn({ turn, convId }) {
+  const now = useNow(true);
+  const [stopping, setStopping] = useState(false);
+  const stop = async () => {
+    setStopping(true);
+    try {
+      await api(`/conversations/${encodeURIComponent(convId)}/stop`, { method: "POST" });
+    } catch (e) {
+      failed(`中止失败：${e.message}`);
+      setStopping(false);
+    }
+  };
+  const idle = turn.lastProgress ? now - turn.lastProgress : 0;
+  const cur = currentStep(turn.steps);
+  const label = `正在处理 ${fmtDur(now - turn.since)}${cur ? ` · ${cur}` : turn.lastProgress ? "" : " · 等代理进程接手"}`;
+  return html`<div class="transcript-turn">
+    <${ActivityLine} label=${label} live steps=${turn.steps} />
+    <div class="cluster">
+      ${idle >= 60_000 && html`<span class="hint">${fmtDur(idle)}没有新进展</span>`}
+      <span class="grow"></span>
+      <${Button} variant="danger" size="sm" loading=${stopping} onClick=${stop}>中止</${Button}>
+    </div>
+  </div>`;
+}
+
 function ConversationSheet({ conv, onClose }) {
-  const [d] = usePoll(() => api(`/conversations/${encodeURIComponent(conv.id)}/messages`), 0, [conv.id]);
+  const enc = encodeURIComponent(conv.id);
+  const [d, , reload] = usePoll(() => api(`/conversations/${enc}/messages`), 0, [conv.id]);
+  const [t] = usePoll(() => api(`/conversations/${enc}/turn`), 2000, [conv.id]);
+  const turn = t?.turn;
+  // 那一轮结束了：重新取消息，新回复和它的处理过程出现在列表里
+  const busy = useRef(false);
+  useEffect(() => {
+    if (busy.current && !turn) reload();
+    busy.current = !!turn;
+  }, [!!turn]);
   return html`<${Sheet} title=${`${CHANNEL_NAME[conv.channel] || conv.channel} · ${conv.title || conv.peerId}`} wide onClose=${onClose}>
     <div class="transcript">
       ${!d && html`<span class="hint">加载中…</span>`}
-      ${d && !d.messages.length && html`<span class="hint">没有消息</span>`}
+      ${d && !d.messages.length && !turn && html`<span class="hint">没有消息</span>`}
       ${d && d.messages.map((m) => html`<div class=${`transcript-msg${m.role === "user" ? " user" : ""}`}>
+        ${m.steps && html`<${ActivityLine} label="处理过程" count=${m.steps} load=${() => api(`/conversations/${enc}/messages/${m.id}/activity`).then((x) => x.steps)} />`}
         <div class="bubble selectable">${m.content}</div>
         <div class="hint">${fmtTime(m.createdAt)}</div>
       </div>`)}
+      ${turn && html`<${LiveTurn} key=${turn.since} turn=${turn} convId=${conv.id} />`}
     </div>
     <div class="actions"><button type="button" class="btn" data-autofocus onClick=${onClose}>关闭</button></div>
   <//>`;

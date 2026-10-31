@@ -309,16 +309,15 @@ export class WeixinChannel {
       receivedAt: Date.now(),
     };
     // 审批/提问回复不能排在正在等待审批的回合后面（会死锁），在入队前处理
+    // 没处理掉但带 ack 的（前一条还在处理）：先说一声，消息照常入队
     const intercepted = this.runtime.interceptReply(ev);
-    if (intercepted.handled) {
-      if (intercepted.ack) {
-        const ack = new WeixinReply(this.client!, userId, peer.contextToken, this.quota);
-        const p = ack.apply({ type: "text", text: intercepted.ack }).catch((e) => this.log.warn("ack failed", { message: (e as Error).message }));
-        this.pending.add(p);
-        void p.finally(() => this.pending.delete(p));
-      }
-      return;
+    if (intercepted.ack) {
+      const ack = new WeixinReply(this.client!, userId, peer.contextToken, this.quota);
+      const p = ack.apply({ type: "text", text: intercepted.ack }).catch((e) => this.log.warn("ack failed", { message: (e as Error).message }));
+      this.pending.add(p);
+      void p.finally(() => this.pending.delete(p));
     }
+    if (intercepted.handled) return;
     const media = mediaItems(m.item_list);
     const p = this.queue.run(`weixin:${this.botId}:${userId}`, async () => {
       const reply = new WeixinReply(this.client!, userId, this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? peer.contextToken, this.quota);

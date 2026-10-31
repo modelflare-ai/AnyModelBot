@@ -43,16 +43,19 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   let dataDir: string;
   let llm: Awaited<ReturnType<typeof listen>>;
   const seenAuth = new Set<string>();
+  const hung: http.ServerResponse[] = [];
   let base = "";
 
   /** 根据最后一条用户消息与之后的工具结果数量决定下一步 */
-  function plan(messages: any[]): { tool?: { name: string; args: any }; text?: string } {
+  function plan(messages: any[]): { tool?: { name: string; args: any }; text?: string; hang?: boolean } {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
+    // 卡住的模型：请求收下了，一直不回
+    if (/HANG/.test(user)) return { hang: true };
     // 看图：回报模型收到的图片（data URL 的头）和文字里有没有工作区路径
     if (/LOOKIMG/.test(user)) {
       const content = messages[lastUser]?.content;
@@ -92,6 +95,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       }
       const b = await body(req);
       const step = b.tools ? plan(b.messages) : { text: "标题" };
+      if ("hang" in step && step.hang) return void hung.push(res);
       if (process.env.AMB_TEST_LLM_LOG) fs.appendFileSync(process.env.AMB_TEST_LLM_LOG, JSON.stringify({ url: req.url, stream: b.stream, tools: (b.tools ?? []).map((t: any) => t.function?.name), msgs: b.messages.map((m: any) => [m.role, textOf(m.content).slice(0, 200), m.tool_calls?.map((t: any) => t.function?.name)]), step }) + "\n");
       if (!b.stream) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [{ message: { role: "assistant", content: step.text ?? "" }, finish_reason: "stop" }] }));
@@ -120,6 +124,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   }, 60_000);
 
   afterAll(async () => {
+    for (const r of hung) r.destroy();
     await app?.stop();
     await llm?.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
@@ -270,4 +275,56 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(inbox.filter((f) => /^\d{8}-\d{6}-[0-9a-f]{6}\.png$/.test(f))).toHaveLength(2);
     expect(fs.readFileSync(path.join(dataDir, "workspaces", "default", "inbox", inbox[0])).equals(png)).toBe(true);
   }, 180_000);
+
+  // —— 卡住的回合：看门狗、/stop、处理过程 ——
+  const console_ = async () => (await (await fetch(`${base}/amb/api/bots/default/chat`)).json()) as { conversationId: string; messages: any[] };
+  const api = async (p: string, init?: RequestInit) => (await fetch(`${base}/amb/api${p}`, init)).json();
+
+  it("a turn without progress is stopped by the watchdog: the agent restarts and the reply keeps its steps", async () => {
+    const o = (app.agent as any).o;
+    const prev = o.idleTimeoutMs;
+    o.idleTimeoutMs = 3000;
+    try {
+      const t0 = Date.now();
+      const r = await chat("HANG please");
+      expect(r.reply).toBe("⚠️ 代理 3 秒没有任何进展，已自动中止并重启代理进程。卡在：等待 mock-agent 回复。可以重新发送，或用 /model 换个模型试试。");
+      expect(Date.now() - t0).toBeLessThan(30_000);
+    } finally {
+      o.idleTimeoutMs = prev;
+    }
+    const d = await console_();
+    const last = d.messages.at(-1);
+    expect(last.steps).toBe(2);
+    const a = await api(`/conversations/${encodeURIComponent(d.conversationId)}/messages/${last.id}/activity`);
+    expect(a.steps.map((s: any) => [s.kind, s.title, s.status, !!s.cut])).toEqual([["model", "mock-agent", "error", true], ["error", "已中止", "error", false]]);
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+    expect((await chat("hello again")).reply).toBe("好的");
+  }, 120_000);
+
+  it("/stop ends a stuck turn right away; status and the info panel show where it is", async () => {
+    const conv = encodeURIComponent((await console_()).conversationId);
+    const pending = chat("HANG again");
+    let turn: any = null;
+    for (let i = 0; i < 200 && !turn?.steps?.length; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      turn = (await api(`/conversations/${conv}/turn`)).turn;
+    }
+    expect(turn.steps.at(-1)).toMatchObject({ kind: "model", title: "mock-agent", status: "running" });
+    expect((await chat("/status")).reply).toMatch(/本会话上一条消息还在处理（已 \d+ 秒，1 步，现在：等待 mock-agent 回复），新消息会排在它后面。发送 \/stop 可以中止/);
+    expect((await chat("/stop")).reply).toMatch(/^正在中止上一条消息（已处理 \d+ 秒）…$/);
+    expect((await pending).reply).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect((await api(`/conversations/${conv}/turn`)).turn).toBeNull();
+    expect((await chat("/stop")).reply).toBe("当前没有正在处理的消息。");
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+    expect((await chat("hello once more")).reply).toBe("好的");
+  }, 120_000);
+
+  it("a normal agent reply records its model and tool steps", async () => {
+    const r = await chat("QUICKSORT again");
+    expect(r.reply).toContain("[1, 2, 3, 5, 7, 9]");
+    const d = await console_();
+    const a = await api(`/conversations/${encodeURIComponent(d.conversationId)}/messages/${d.messages.at(-1).id}/activity`);
+    expect(a.steps.map((s: any) => [s.kind, s.status])).toEqual([["model", "ok"], ["tool", "ok"], ["model", "ok"]]);
+    expect(a.steps[1]).toMatchObject({ title: "bash", output: expect.stringContaining("[1, 2, 3, 5, 7, 9]") });
+  }, 120_000);
 });

@@ -3,7 +3,7 @@ import type { OutboundOp, ReplySession } from "../core/types.js";
 
 /**
  * 网页对话渠道：把运行时的 OutboundOp 写成 text/event-stream。
- * 事件：text（到目前为止的完整回复，覆盖式）、typing、prompt（审批/提问）、file、done、error。
+ * 事件：text（到目前为止的完整回复，覆盖式）、typing、prompt（审批/提问）、file、activity（代理的一步，按 id 覆盖）、done、error。
  * 运行时的 stream.update 本身就是累计文本，所以前端只需整体替换，不用拼接增量。
  */
 export class SseReply implements ReplySession {
@@ -53,6 +53,8 @@ export class SseReply implements ReplySession {
         return this.send("file", { name: op.name });
       case "interactive":
         return this.send("prompt", { kind: op.kind, prompt: op.prompt, requestId: op.requestId, code: op.code });
+      case "activity":
+        return this.send("activity", op.step);
     }
   }
 

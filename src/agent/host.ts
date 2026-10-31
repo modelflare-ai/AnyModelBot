@@ -121,7 +121,23 @@ function loadSdk(runtimeDir: string): Promise<SdkModule> {
 /** 回合中的可见进度（工具调用等），由渠道批量发送。 */
 export interface TurnObserver {
   onProgress?(text: string): void;
-  onEvent?(type: string, data: any): void;
+  /** DSH 会话事件（time 是事件自带的时间）；子代理的开始/结束以 subagent/started、subagent/finished 送来 */
+  onEvent?(type: string, data: any, time?: number): void;
+  /** 消息已经交给代理（之前是等进程、等会话） */
+  onStart?(): void;
+}
+
+/**
+ * 回合被中止：用户 /stop、长时间没有进展（idle）、超过单回合上限（timeout）。
+ * SDK 没有中断单个回合的接口，只能关掉子进程；ms 是触发时的时长（idle、timeout 为阈值）。
+ */
+export class TurnStopped extends Error {
+  constructor(
+    readonly reason: "user" | "idle" | "timeout",
+    readonly ms: number,
+  ) {
+    super(`agent turn stopped (${reason})`);
+  }
 }
 
 export interface AgentHostOptions {
@@ -205,6 +221,8 @@ export interface TurnInput {
   observer?: TurnObserver;
   /** 只在模型能看图时传（acceptsImages），否则模型只拿到文字里的工作区路径 */
   images?: TurnImage[];
+  /** 中止这个回合（reason 为 TurnStopped）：会关掉子进程，同一机器人其它进行中的回合也会失败 */
+  signal?: AbortSignal;
 }
 
 /** 回合结束时的上下文用量（来自 DSH 事件）。 */
@@ -792,6 +810,8 @@ exec "$REAL" "$@"
   async runTurn(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
     const h = await this.ensure(input.model);
     const s = await this.sessionFor(h, input.conversationId);
+    // 在等进程 / 会话时就被中止了：消息还没交出去，不用重启子进程
+    if (input.signal?.aborted) throw input.signal.reason instanceof TurnStopped ? input.signal.reason : new TurnStopped("user", 0);
     this.active++;
     let timer: NodeJS.Timeout | undefined;
     let turnError: string | undefined;
@@ -799,12 +819,15 @@ exec "$REAL" "$@"
     const lim = modelLimits(input.model);
     const usage: TurnUsage = { tokens: 0, window: lim.window, maxTokens: lim.maxTokens };
     const images = this.imageInput ? (input.images ?? []) : [];
+    let unlisten = () => {};
     try {
       const timeoutMs = this.o.turnTimeoutMs ?? 30 * 60_000;
       const prompt = images.length ? [{ type: "text", text: input.text }, ...images.map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType }))] : input.text;
+      input.observer?.onStart?.();
       const run = s.run(prompt, {
         onNotification: (n) => {
           if (process.env.AMB_DSH_TRACE) fs.appendFileSync(process.env.AMB_DSH_TRACE, JSON.stringify(n).slice(0, 2000) + "\n");
+          if (n.method === "subagent.started" || n.method === "subagent.finished") return input.observer?.onEvent?.(n.method.replace(".", "/"), n.params, Date.now());
           if (n.method !== "session.event" || n.params?.sessionId !== s.id) return;
           const ev = n.params.event;
           const data = ev?.data ?? {};
@@ -821,25 +844,37 @@ exec "$REAL" "$@"
             if (t > 0) usage.tokens = t;
           }
           if (ev?.type === "turn/end" && data?.reason?.kind === "error") turnError = String(data.reason.error?.message ?? "unknown error");
-          input.observer?.onEvent?.(String(ev?.type), data);
+          input.observer?.onEvent?.(String(ev?.type), data, Number(ev?.time) || Date.now());
         },
       });
-      const timeout = new Promise<never>((_, rej) => {
-        timer = setTimeout(() => rej(new Error("agent turn timed out")), timeoutMs);
+      // 中止后子进程被关掉，run 随后以"runtime closed"失败，已经没人等它
+      run.catch(() => undefined);
+      const stopped = new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new TurnStopped("timeout", timeoutMs)), timeoutMs);
+        const sig = input.signal;
+        if (!sig) return;
+        const onAbort = () => rej(sig.reason instanceof TurnStopped ? sig.reason : new TurnStopped("user", 0));
+        if (sig.aborted) return onAbort();
+        sig.addEventListener("abort", onAbort, { once: true });
+        unlisten = () => sig.removeEventListener("abort", onAbort);
       });
-      const r = await Promise.race([run, timeout]);
+      const r = await Promise.race([run, stopped]);
       this.failures = 0;
       if (!r.finalResponse && turnError) throw new Error(turnError);
       return { text: r.finalResponse, sessionId: s.id, files: deliverables(this.workspace, presented), usage };
     } catch (e) {
-      if (/timed out/.test((e as Error).message)) await this.closeHarness();
-      else if (images.length && this.state !== "running") {
+      if (e instanceof TurnStopped) {
+        log.warn("agent turn stopped, restarting dsh", { bot: this.o.botId, reason: e.reason, ms: e.ms, otherTurns: this.active - 1 });
+        await this.closeHarness();
+        this.state = "stopped";
+      } else if (images.length && this.state !== "running") {
         this.imageInput = false;
         log.warn("dsh died on a turn with images; sending images by path only until the app restarts", { bot: this.o.botId, message: (e as Error).message.slice(0, 200) });
       }
       throw e;
     } finally {
       clearTimeout(timer);
+      unlisten();
       this.active--;
     }
   }

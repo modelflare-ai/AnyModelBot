@@ -95,15 +95,14 @@ export class FeishuChannel {
       receivedAt: Date.now(),
     };
     // 审批/提问回复在入队前处理（正在进行的回合正等着它）
+    // 没处理掉但带 ack 的（前一条还在处理）：先说一声，消息照常入队
     const intercepted = this.runtime.interceptReply(inbound);
-    if (intercepted.handled) {
-      if (intercepted.ack) {
-        const p = this.transport.replyText(ev.messageId, intercepted.ack).catch((e) => this.log.warn("ack failed", { message: (e as Error).message }));
-        this.pending.add(p);
-        void p.finally(() => this.pending.delete(p));
-      }
-      return;
+    if (intercepted.ack) {
+      const p = this.transport.replyText(ev.messageId, intercepted.ack).catch((e) => this.log.warn("ack failed", { message: (e as Error).message }));
+      this.pending.add(p);
+      void p.finally(() => this.pending.delete(p));
     }
+    if (intercepted.handled) return;
     const p = this.queue.run(`feishu:${this.botId}:${ev.chatId}`, async () => {
       const reply = new FeishuReply(this.transport, ev.messageId, this.throttleMs);
       try {

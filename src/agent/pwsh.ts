@@ -33,6 +33,7 @@ import {
   type PrivatePwshStatus,
   type Runner,
 } from "./pwsh-private.js";
+import { t, type MessageKey } from "../i18n/index.js";
 
 const log = logger("pwsh");
 const W = path.win32;
@@ -580,73 +581,86 @@ export function pwshPatchLines(pwshPath: string | undefined): string[] {
   return pwshPath ? ["- id: pwsh-sandbox", "  config:", `    pwshPath: ${JSON.stringify(pwshPath)}`] : [];
 }
 
-const SOURCE: Record<PwshSource, string> = { "program-files": "安装目录", path: "PATH", preview: "预览版", store: "Microsoft Store", private: "应用内置" };
+const SOURCE: Record<PwshSource, MessageKey> = { "program-files": "pwsh.sourceProgramFiles", path: "pwsh.sourcePath", preview: "pwsh.sourcePreview", store: "pwsh.sourceStore", private: "pwsh.sourcePrivate" };
 const mb = (n?: number) => (n === undefined ? "?" : (n / 1048576).toFixed(0));
 
-/** 安装进度的一句话 */
+/** 安装进度的一句话（按当前语言） */
 export function installProgressText(p: InstallProgress): string {
   switch (p.state) {
     case "waiting":
-      return p.error ?? "准备中";
+      return p.error ?? t("pwsh.installWaiting");
     case "downloading":
-      return `下载 ${mb(p.received)} / ${mb(p.total)} MB${p.total ? `（${Math.min(100, Math.floor(((p.received ?? 0) / p.total) * 100))}%）` : ""}`;
+      return t("pwsh.installDownloading", {
+        received: mb(p.received),
+        total: mb(p.total),
+        pct: p.total ? t("pwsh.installPct", { n: Math.min(100, Math.floor(((p.received ?? 0) / p.total) * 100)) }) : "",
+      });
     case "extracting":
-      return "解压";
+      return t("pwsh.installExtracting");
     case "verifying":
-      return "核对签名";
+      return t("pwsh.installVerifying");
     case "testing":
-      return "试运行";
+      return t("pwsh.installTesting");
     case "done":
-      return "已装好";
+      return t("pwsh.installDone");
     case "failed":
-      return `没装上：${p.error ?? "未知原因"}`;
+      return t("pwsh.installFailed", { error: p.error ?? t("pwsh.unknownReason") });
     default:
       return "";
   }
 }
 
-const SLOW = "代理执行命令用的是系统自带的 Windows PowerShell 5.1，每条可能要二三十秒";
+/** "代理在用 5.1，每条要二三十秒"：按当前语言，用的时候才取 */
+const slow = () => t("pwsh.slow");
 
-/** 聊天里 /status 的一行（只在 Windows 上有） */
+/** 聊天里 /status 的一行（只在 Windows 上有；按当前语言，读的时候才拼） */
 export function pwshStatusLine(st: PwshStatus): string {
   if (!st.applicable) return "";
-  if (st.checking) return "PowerShell：检测中";
-  const fb = st.fallback ? `；之前用的 ${st.fallback.from} 起不来（${st.fallback.reason.slice(0, 120)}），已自动换掉` : "";
-  if (!st.missing) return `PowerShell：${st.version ?? "7"}（${st.source === "private" ? "应用内置，" : ""}代理用它执行命令）${fb}`;
+  if (st.checking) return t("pwsh.statusChecking");
+  const fb = st.fallback ? t("pwsh.statusFallback", { from: st.fallback.from, reason: st.fallback.reason.slice(0, 120) }) : "";
+  if (!st.missing) return t(st.source === "private" ? "pwsh.statusOkPrivate" : "pwsh.statusOk", { version: st.version ?? "7" }) + fb;
   const p = st.private;
-  if (p && isInstalling(p.install)) return `PowerShell：正在为代理安装 PowerShell 7…${installProgressText(p.install)}。装好之前命令照常用 Windows PowerShell 5.1`;
-  if (p?.bad && st.mode !== "system") return `PowerShell：应用内置的 PowerShell 7 用不了（${p.bad.reason.slice(0, 160)}），${SLOW}。在 设置 → 故障排查 里可以一键重新安装`;
-  if (p?.install.state === "failed" && st.mode !== "system") return `PowerShell：为代理安装 PowerShell 7 没有成功（${p.install.error ?? "未知原因"}），${SLOW}。在 设置 → 故障排查 里可以重试，或者自己安装：${PWSH_WINGET}`;
-  if (p && !p.supported && p.reason) return `PowerShell：${p.reason}，${SLOW}`;
-  const now = st.systemIssue ? `系统里的 PowerShell 7 用不了（${st.systemIssue.slice(0, 120)}），${SLOW}` : st.found && st.version ? `PowerShell ${st.version} 版本较旧，${SLOW}` : `没有安装 PowerShell 7，${SLOW}`;
-  const how = st.mode === "system" || !p?.supported ? `装上 PowerShell 7，命令执行快得多，也更稳定：${PWSH_WINGET}（或打开 ${PWSH_INSTALL_URL}）` : `应用可以自己装一份（不需要管理员权限）：设置 → 故障排查 → 安装；或者：${PWSH_WINGET}`;
-  return `PowerShell：${now}。${how}`;
+  if (p && isInstalling(p.install)) return t("pwsh.statusInstalling", { progress: installProgressText(p.install) });
+  if (p?.bad && st.mode !== "system") return t("pwsh.statusPrivateBad", { reason: p.bad.reason.slice(0, 160), slow: slow() });
+  if (p?.install.state === "failed" && st.mode !== "system") return t("pwsh.statusInstallFailed", { error: p.install.error ?? t("pwsh.unknownReason"), slow: slow(), winget: PWSH_WINGET });
+  if (p && !p.supported && p.reason) return t("pwsh.statusUnsupported", { reason: p.reason, slow: slow() });
+  const now = st.systemIssue
+    ? t("pwsh.statusSystemIssue", { issue: st.systemIssue.slice(0, 120), slow: slow() })
+    : st.found && st.version
+      ? t("pwsh.statusOld", { version: st.version, slow: slow() })
+      : t("pwsh.statusNone", { slow: slow() });
+  const how = st.mode === "system" || !p?.supported ? t("pwsh.adviceInstall", { winget: PWSH_WINGET, url: PWSH_INSTALL_URL }) : t("pwsh.advicePrivate", { winget: PWSH_WINGET });
+  return t("pwsh.statusAdvice", { now, how });
 }
 
 /** 诊断报告里的 PowerShell 行（只在 Windows 上有；内置副本另起一行） */
 export function pwshReportLine(st: PwshStatus): string | undefined {
   if (!st.applicable) return undefined;
-  if (st.checking) return "[PowerShell] 检测中";
-  const where = st.path ? ` · ${st.path}（${SOURCE[st.source!] ?? st.source}）` : "";
+  if (st.checking) return t("pwsh.reportChecking");
+  const source = st.source && SOURCE[st.source] ? t(SOURCE[st.source]) : st.source;
+  const where = st.path ? t("pwsh.reportWhere", { path: st.path, source }) : "";
   const lines: string[] = [];
-  if (!st.missing) lines.push(`[PowerShell] ${st.version ?? "7（版本未知）"}${where} · 代理用它执行命令`);
-  else if (st.systemIssue) lines.push(`[PowerShell] 系统里的 PowerShell 7 用不了${where} · ${st.systemIssue} · 代理用 ${st.using ?? "Windows PowerShell 5.1（DSH 默认）"}`);
-  else if (st.found) lines.push(`[PowerShell] ${st.version ?? "?"} 版本较旧${where} · 建议安装 PowerShell 7`);
-  else lines.push(`[PowerShell] 未安装 PowerShell 7：代理用 Windows PowerShell 5.1 执行命令（经沙箱每条约 25 秒，7 约 1 秒）${st.forced ? " · AMB_PWSH_FORCE 模拟" : ""}`);
-  if (st.fallback) lines.push(`  自动退回 ${new Date(st.fallback.at).toISOString()}：${st.fallback.from} → ${st.fallback.to ?? "DSH 默认"} · ${st.fallback.reason}`);
+  if (!st.missing) lines.push(t("pwsh.reportOk", { version: st.version ?? t("pwsh.reportUnknownVersion"), where }));
+  else if (st.systemIssue) lines.push(t("pwsh.reportSystemIssue", { where, issue: st.systemIssue, using: st.using ?? t("pwsh.reportDshDefault51") }));
+  else if (st.found) lines.push(t("pwsh.reportOld", { version: st.version ?? "?", where }));
+  else lines.push(t("pwsh.reportNone", { forced: st.forced ? t("pwsh.reportForced") : "" }));
+  if (st.fallback) lines.push(t("pwsh.reportFallback", { at: new Date(st.fallback.at).toISOString(), from: st.fallback.from, to: st.fallback.to ?? t("pwsh.reportDshDefault"), reason: st.fallback.reason }));
   const p = st.private;
   if (p) {
     const state = !p.supported
-      ? `不能装：${p.reason ?? "?"}`
+      ? t("pwsh.privateUnsupported", { reason: p.reason ?? "?" })
       : p.ready
-        ? `已就绪 · 试运行通过${p.test ? `（${p.test.ms} ms，${new Date(p.test.at).toISOString()}）` : ""}`
+        ? t("pwsh.privateReady", { test: p.test ? t("pwsh.privateTest", { ms: p.test.ms, at: new Date(p.test.at).toISOString() }) : "" })
         : p.bad
-          ? `用不了：${p.bad.reason}`
+          ? t("pwsh.privateBad", { reason: p.bad.reason })
           : p.installed
-            ? "已装，还没试运行"
-            : "未安装";
-    const inst = p.install.state !== "idle" ? ` · 安装：${installProgressText(p.install)}` : "";
-    lines.push(`  内置 PowerShell ${p.version}${p.arch ? ` ${p.arch}` : ""} · ${state}${inst}${p.dir ? ` · ${p.dir}` : ""} · ${st.mode === "system" ? "已改回系统默认" : st.autoInstall ? "缺 7 时自动安装" : "不自动安装"}${st.ignoreSystem ? " · AMB_PWSH_IGNORE_SYSTEM=1" : ""}`);
+            ? t("pwsh.privateUntested")
+            : t("pwsh.privateNotInstalled");
+    const inst = p.install.state !== "idle" ? t("pwsh.privateInstall", { progress: installProgressText(p.install) }) : "";
+    const policy = st.mode === "system" ? t("pwsh.policySystem") : st.autoInstall ? t("pwsh.policyAuto") : t("pwsh.policyManual");
+    lines.push(
+      t("pwsh.privateLine", { version: p.version, arch: p.arch ? ` ${p.arch}` : "", state, inst, dir: p.dir ? ` · ${p.dir}` : "", policy, ignore: st.ignoreSystem ? " · AMB_PWSH_IGNORE_SYSTEM=1" : "" }),
+    );
   }
   return lines.join("\n");
 }

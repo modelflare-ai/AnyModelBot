@@ -1,0 +1,32 @@
+/* 分隔条 .splitter：两块面板之间那道空隙，拖动它调整一侧面板的宽度（Splitter 组件，README「分隔条」）。
+   平时看不见，指针移上去只变成 ↔；停住一会儿（--dur-intent，只是划过不闪）空隙中间才从中点长出一道细线；
+   拖动时、键盘焦点时细线是 --accent，到了最窄 / 最宽，指针换成单向箭头（只能往另一边拖了）。
+   容器给 --split-x（分隔条中线离容器左边多远）并且 position: relative。
+   定制：--split-x --split-hit（能抓住的宽度）--split-line-w --split-inset（细线离上下边）--split-line-on；
+   悬停时的颜色是语义 token --split-line，要换就在分隔条上覆盖它 */
+.splitter {
+  --split-hit: 12px;
+  --split-line-w: 2px;
+  --split-inset: 0px;
+  --split-line-on: var(--accent);
+  position: absolute; z-index: var(--z-raised); top: 0; bottom: 0; left: var(--split-x, 50%); width: var(--split-hit);
+  translate: -50% 0; cursor: col-resize; touch-action: none;
+  -webkit-app-region: no-drag;   /* Electron：盖在顶栏的拖动区上也要能抓住 */
+}
+.splitter::after {
+  content: ""; position: absolute; top: var(--split-inset); bottom: var(--split-inset); left: 50%; width: var(--split-line-w);
+  translate: -50% 0; border-radius: var(--r-full); background: var(--split-line);
+  opacity: 0; transform: scaleY(calc(1 - .4 * var(--motion)));
+  transition: opacity var(--t-base), transform var(--dur-slow) var(--ease-spring), background var(--t-fast);
+}
+/* 悬停：停够 --dur-intent 才亮；移开立刻消失 */
+.splitter:hover::after { opacity: 1; transform: none; transition-delay: var(--dur-intent); }
+.splitter.dragging::after, .splitter:focus-visible::after { opacity: 1; transform: none; background: var(--split-line-on); transition-delay: 0s; }
+/* 键盘焦点就是那道 accent 细线，不再画一圈外描边 */
+.splitter:focus-visible { outline: none; }
+
+/* 拖动中（Splitter 在 <html> 上设 data-resizing）：整个窗口都是这个指针、不会选中文字；
+   到头了换成单向箭头：e = 只能往右，w = 只能往左 */
+:root[data-resizing], :root[data-resizing] * { cursor: col-resize !important; user-select: none !important; -webkit-user-select: none !important; }
+:root[data-resizing="e"], :root[data-resizing="e"] * { cursor: e-resize !important; }
+:root[data-resizing="w"], :root[data-resizing="w"] * { cursor: w-resize !important; }

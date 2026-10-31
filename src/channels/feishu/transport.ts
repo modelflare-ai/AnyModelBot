@@ -3,6 +3,7 @@ import path from "node:path";
 import * as Lark from "@larksuiteoapi/node-sdk";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../log.js";
+import { t } from "../../i18n/index.js";
 
 const FEISHU_IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
 const FEISHU_FILE_TYPES: Record<string, string> = {
@@ -62,7 +63,7 @@ export function streamingCardSpec(initial: string) {
     schema: "2.0",
     config: {
       streaming_mode: true,
-      summary: { content: "[生成中…]" },
+      summary: { content: t("channel.card_generating") },
       streaming_config: {
         print_frequency_ms: { default: 50 },
         print_step: { default: 2 },
@@ -140,7 +141,7 @@ export class LarkTransport implements FeishuTransport {
           return { toast: { type: r.ok ? "success" : "warning", content: r.toast } };
         } catch (e) {
           this.log.warn("card action failed", { message: (e as Error).message });
-          return { toast: { type: "error", content: "处理失败" } };
+          return { toast: { type: "error", content: t("channel.card_action_failed") } };
         }
       },
       "im.message.receive_v1": async (data: any) => {

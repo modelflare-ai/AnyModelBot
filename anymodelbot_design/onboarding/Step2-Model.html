@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 2 步 · 换个模型 · 新手引导预览</title>
+<style>
+body{margin:0;background:#060706}
+*,*::before,*::after{box-sizing:border-box}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+input,textarea{font:inherit}
+a{color:#d7ff00}a:hover{color:#e9ff66}
+</style>
+<link rel="stylesheet" href="css/bots.css">
+<link rel="stylesheet" href="css/proto.css">
+</head>
+<body data-page="model">
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #060706; color: #fafaf7; font-family: Geist, 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <aside aria-label="机器人" style="flex: 1 1 248px; max-width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 14px 12px 12px; background: #0a0b0a; border-right: 1px solid rgba(255,255,255,.10)">
+    <div aria-hidden="true" style="display: flex; gap: 8px; padding: 4px 6px 14px">
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: rgba(127,127,127,.45)"></span>
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: rgba(127,127,127,.45)"></span>
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: rgba(127,127,127,.45)"></span>
+    </div>
+    <button type="button" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 10px; color: #a1a1aa; font-size: 13.5px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      新建机器人
+    </button>
+    <div style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; color: #a1a1aa; padding: 10px 10px 4px">机器人</div>
+    <a href="Main.html" style="display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 10px; border-radius: 12px; background: rgba(255,255,255,.06); color: #fafaf7; text-decoration: none">
+      <span class="face" data-char="blue" style="width: 34px; height: 34px; flex: none"></span>
+      <span style="display: flex; flex-direction: column; min-width: 0">
+        <span style="font-weight: 600; font-size: 14px">小蓝</span>
+        <span style="color: #a1a1aa; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">我能帮你聊天答疑、写东西…</span>
+      </span>
+    </a>
+    <div style="flex: 1"></div>
+    <a href="Main.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 12px; background: rgba(215,255,0,.10); box-shadow: inset 0 0 0 1px rgba(215,255,0,.30); color: #fafaf7; font-size: 13.5px; text-decoration: none">
+      <span style="display: flex; gap: 3px" aria-hidden="true">
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: #d7ff00"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+      </span>
+      <span style="flex: 1; font-weight: 500">上手清单</span>
+      <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">1 / 6</span>
+    </a>
+    <button type="button" style="display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 10px; border-radius: 12px; text-align: left">
+      <span aria-hidden="true" style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #d7ff00; color: #161a00; font-weight: 700; font-size: 13px">Z</span>
+      <span style="flex: 1; font-size: 13.5px">我的账户</span>
+      <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #a1a1aa">$12.40</span>
+    </button>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; min-height: 100vh">
+    <header style="display: flex; align-items: center; gap: 8px; height: 54px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,.10)">
+      <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 6px; border-radius: 999px; background: rgba(255,255,255,.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); font-weight: 600; font-size: 14px">
+        <span class="face" data-char="blue" style="width: 24px; height: 24px"></span>
+        小蓝
+      </button>
+      <span style="flex: 1"></span>
+      <button type="button" aria-label="开始新的一段对话" style="display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: #a1a1aa">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
+      <button type="button" aria-label="信息面板" style="display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: #a1a1aa">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></svg>
+      </button>
+    </header>
+
+    <div style="flex: 1; overflow: auto">
+      <div id="log" style="max-width: 760px; margin: 0 auto; padding: 32px 24px 24px; display: flex; flex-direction: column; gap: 22px">
+        <div style="align-self: flex-end; max-width: 80%; padding: 10px 16px; border-radius: 18px; background: rgba(255,255,255,.07)">你能帮我做什么？</div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; color: #a1a1aa">用时 4 秒</span>
+          <p style="margin: 0; line-height: 1.75">我能帮你聊天答疑、写东西、整理资料，也能在自己的工作区里写文件、跑命令，还能画图、做视频。把我接到微信，出门也能找我。想先试试哪个？</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 0 24px 24px">
+      <div style="position: relative; max-width: 760px; margin: 0 auto">
+
+        <!-- 模型选择器（已展开） -->
+        <div id="picker" hidden role="listbox" aria-label="选择模型" style="transform-origin: 75% 100%; position: absolute; right: 36px; bottom: calc(100% + 10px); z-index: 2; width: 380px; max-width: calc(100vw - 48px); padding: 6px; border-radius: 16px; background: #0b0b10; box-shadow: 0 0 0 1px rgba(255,255,255,.18), 0 24px 60px -16px rgba(0,0,0,.7)">
+          <label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; margin-bottom: 4px; border-radius: 10px; background: #101110; color: #a1a1aa">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" placeholder="搜索模型" aria-label="搜索模型" style="flex: 1; min-width: 0; border: 0; background: none; outline: none; color: #fafaf7; font-size: 13.5px">
+          </label>
+          <button type="button" role="option" aria-selected="false" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0 10px; border-radius: 10px; text-align: left; font-size: 13.5px">
+            <span style="flex: 1">跟随机器人默认</span>
+            <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #a1a1aa">claude-sonnet-5-5</span>
+          </button>
+          <div style="height: 1px; margin: 4px 6px; background: rgba(255,255,255,.10)"></div>
+
+          <button type="button" aria-expanded="true" style="display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 0 10px; border-radius: 10px; color: #a1a1aa; font-size: 12.5px; text-align: left">
+            <span style="flex: 1; font-weight: 500; color: #fafaf7">Anthropic</span>
+            <span style="font-family: 'Geist Mono', ui-monospace, monospace">3</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+          </button>
+          <button type="button" role="option" aria-selected="false" style="display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px 10px 8px 22px; border-radius: 10px; text-align: left">
+            <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px">claude-opus-5-5</span>
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #a1a1aa; font-size: 11.5px">
+              <span style="font-family: 'Geist Mono', ui-monospace, monospace">1M</span>
+              <span style="padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">视觉</span>
+              <span style="padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">工具</span>
+              <span style="padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">推理</span>
+              <span style="flex: 1"></span>
+              <span style="font-family: 'Geist Mono', ui-monospace, monospace">$1.26 / $6.30</span>
+            </span>
+          </button>
+          <button type="button" role="option" aria-selected="true" style="display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px 10px 8px 22px; border-radius: 10px; background: rgba(215,255,0,.10); text-align: left">
+            <span style="display: flex; align-items: center; gap: 8px">
+              <span style="flex: 1; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px">claude-sonnet-5-5</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d7ff00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>
+            </span>
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #a1a1aa; font-size: 11.5px">
+              <span style="padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">视觉</span>
+              <span style="padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">工具</span>
+              <span style="padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">推理</span>
+              <span style="flex: 1"></span>
+              <span style="font-family: 'Geist Mono', ui-monospace, monospace">$0.63 / $3.15</span>
+            </span>
+          </button>
+          <button type="button" role="option" aria-selected="false" style="display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px 10px 8px 22px; border-radius: 10px; text-align: left">
+            <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px">claude-haiku-5-5</span>
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #a1a1aa; font-size: 11.5px">
+              <span style="font-family: 'Geist Mono', ui-monospace, monospace">1M</span>
+              <span style="padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">视觉</span>
+              <span style="padding: 0 6px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18)">工具</span>
+              <span style="flex: 1"></span>
+              <span style="font-family: 'Geist Mono', ui-monospace, monospace">$0.03 / $0.16</span>
+            </span>
+          </button>
+
+          <button type="button" aria-expanded="false" style="display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 0 10px; border-radius: 10px; color: #a1a1aa; font-size: 12.5px; text-align: left">
+            <span style="flex: 1; font-weight: 500; color: #fafaf7">OpenAI</span><span style="font-family: 'Geist Mono', ui-monospace, monospace">gpt-6.1-terra 等 6 个</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <button type="button" aria-expanded="false" style="display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 0 10px; border-radius: 10px; color: #a1a1aa; font-size: 12.5px; text-align: left">
+            <span style="flex: 1; font-weight: 500; color: #fafaf7">Google</span><span style="font-family: 'Geist Mono', ui-monospace, monospace">gemini-3.8-flash 等 5 个</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <button type="button" aria-expanded="false" style="display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 0 10px; border-radius: 10px; color: #a1a1aa; font-size: 12.5px; text-align: left">
+            <span style="flex: 1; font-weight: 500; color: #fafaf7">DeepSeek</span><span style="font-family: 'Geist Mono', ui-monospace, monospace">deepseek-v4-flash 等 3 个</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+
+          <div style="height: 1px; margin: 4px 6px; background: rgba(255,255,255,.10)"></div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 2px 10px">
+            <span style="color: #a1a1aa; font-size: 11.5px">价格：每百万 tokens 输入 / 输出</span>
+            <button type="button" style="min-height: 34px; padding: 0 12px; border-radius: 999px; background: rgba(215,255,0,.14); color: #d7ff00; font-size: 13px; font-weight: 500" id="set-default">设为此机器人的默认模型</button>
+          </div>
+        </div>
+
+        <!-- 引导卡片：在选择器左侧 -->
+        <section id="coach" hidden aria-label="上手引导" style="position: absolute; right: 440px; bottom: 64px; z-index: 3; width: 320px; padding: 20px 20px 16px; border-radius: 20px; background: #0b0b10; box-shadow: 0 0 0 1px rgba(255,255,255,.18), 0 30px 80px -20px rgba(0,0,0,.75)">
+          <span class="face" data-char="blue" style="position: absolute; right: 18px; top: -40px; width: 52px; height: 52px"></span>
+          <span id="arrow" aria-hidden="true" style="position: absolute; right: -7px; bottom: 34px; width: 14px; height: 14px; transform: rotate(45deg); background: #0b0b10; box-shadow: 1px -1px 0 rgba(255,255,255,.18)"></span>
+          <p id="c-kick" style="display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 12.5px; letter-spacing: .06em; color: #a1a1aa">
+            <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">02 / 06</span>上手清单
+          </p>
+          <h2 id="c-title" style="margin: 0 0 6px; font-size: 19px; font-weight: 600; letter-spacing: -.01em">换个模型</h2>
+          <p id="c-body" style="margin: 0 0 12px; color: #a1a1aa; line-height: 1.7">一个账户就能用 GPT、Claude、Gemini 等模型。点输入框右下角的模型名，挑一个就换好了。</p>
+          <ul id="c-list" style="list-style: none; margin: 0 0 16px; padding: 12px 0 0; border-top: 1px solid rgba(255,255,255,.10); display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #a1a1aa">
+            <li style="display: flex; gap: 10px"><span aria-hidden="true" style="flex: none; width: 10px; height: 6px; margin-top: 6px; border-left: 2px solid #d7ff00; border-bottom: 2px solid #d7ff00; transform: rotate(-45deg)"></span>只对当前对话生效</li>
+            <li style="display: flex; gap: 10px"><span aria-hidden="true" style="flex: none; width: 10px; height: 6px; margin-top: 6px; border-left: 2px solid #d7ff00; border-bottom: 2px solid #d7ff00; transform: rotate(-45deg)"></span>想一直用它，点列表底部「设为此机器人的默认模型」</li>
+            <li style="display: flex; gap: 10px"><span aria-hidden="true" style="flex: none; width: 10px; height: 6px; margin-top: 6px; border-left: 2px solid #d7ff00; border-bottom: 2px solid #d7ff00; transform: rotate(-45deg)"></span>每行标着上下文长度、能力和参考价</li>
+          </ul>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+            <button type="button" id="c-later" style="min-height: 36px; padding: 0 4px; color: #a1a1aa; font-size: 13.5px">稍后再说</button>
+            <a id="c-next" href="Step3-Weixin.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px; border-radius: 999px; background: #d7ff00; color: #161a00; font-weight: 600; font-size: 14px; text-decoration: none">下一步</a>
+          </div>
+        </section>
+
+        <div style="border-radius: 18px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <textarea id="input" class="input" rows="1" aria-label="消息" placeholder="给「小蓝」发消息，/ 查看命令"></textarea>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px">
+            <button type="button" aria-label="更多操作" style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #a1a1aa">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button type="button" style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; color: #a1a1aa; font-size: 12.5px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>
+              工作区可写
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <span style="flex: 1"></span>
+            <button type="button" id="chip" aria-expanded="false" aria-haspopup="listbox" class="spot" style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; color: #fafaf7; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px">
+              <span id="chip-label">claude-sonnet-5-5</span>
+              <svg id="chip-chev" style="transition: transform .3s" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <button type="button" id="send" aria-label="发送" style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #161a00; color: #d7ff00; opacity: .5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script type="module" src="js/page-model.js"></script>
+</body>
+</html>

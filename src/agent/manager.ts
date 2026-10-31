@@ -13,6 +13,7 @@ import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import type { TaskHost, TaskService } from "../tasks/service.js";
 import { DEFAULT_SETTINGS, type BotSettings, type MediaConfirm } from "./settings.js";
+import { t, tl } from "../i18n/index.js";
 import {
   HANDOFF_SYSTEM,
   REVIEW_SYSTEM,
@@ -78,8 +79,8 @@ export interface TurnProgress {
   media: number;
 }
 
-/** 生成确认里"取消"那一项 */
-const CANCEL = "取消";
+/** 生成确认里"取消"那一项（问题建好后界面语言可能变了：两种语言的都认） */
+const CANCELS = [tl("zh-CN", "media.cancel"), tl("en", "media.cancel")];
 
 /** 预计花费超过它（美元）就先问用户 */
 export const MEDIA_ASK_USD = 0.5;
@@ -252,13 +253,13 @@ export class AgentManager {
   computerUse(botId: string): ComputerUseInfo {
     const st = this.settings(botId).computerUse;
     if (!this.o.runtimeDir) {
-      const reason = "Computer Use: 不可用（代理运行时缺失）";
+      const reason = t("agent.cuNoRuntime");
       return { available: false, enabled: st.enabled, active: false, backend: st.backend, selectedBackend: st.backend, approval: st.approval, reason, backends: [] };
     }
     const sys = resolveComputerUse(st.backend, this.o.runtimeDir);
     const active = this.available && sys.available && st.enabled;
-    const mode = st.approval === "ask-input" ? "点击/输入前先问我" : "操作自动执行";
-    const reason = !st.enabled ? "Computer Use: 已在本机器人设置中关闭" : sys.available ? `${sys.reason}；${mode}` : sys.reason;
+    const mode = t(st.approval === "ask-input" ? "agent.cuModeAsk" : "agent.cuModeAuto");
+    const reason = !st.enabled ? t("agent.cuDisabled") : sys.available ? t("agent.cuReasonMode", { reason: sys.reason, mode }) : sys.reason;
     return {
       available: sys.available,
       enabled: st.enabled,
@@ -682,17 +683,27 @@ export class AgentManager {
 
   /** 生成前的确认：问用户这次用哪个模型（本次的、默认的和几个推荐的，或回复别的模型名），等到回答、取消或过期 */
   private async confirmMedia(botId: string, conv: string, sessionId: string, plan: MediaPlan, tool: string, why: MediaAskReason): Promise<{ model?: MediaModel; cancel?: boolean; reply?: string }> {
-    const name = plan.kind === "image" ? "图片" : "视频";
+    const image = plan.kind === "image";
     const opt = (m: MediaModel, tag = "") => ({ label: m.id, description: [tag, m.price].filter(Boolean).join(" · ") || undefined });
     // 为什么问：花费高、不是默认模型时说一句（每次都问、代理要问的不用解释）
     const reason =
-      why === "cost" ? (plan.estimate !== undefined ? `预计花费约 $${Math.round(plan.estimate * 100) / 100}，超过 $${MEDIA_ASK_USD}` : "这次的花费估算不出来") : why === "model" ? `不是默认模型（默认是 ${plan.default.id}）` : "";
+      why === "cost"
+        ? plan.estimate !== undefined
+          ? t("media.reasonCost", { amount: Math.round(plan.estimate * 100) / 100, limit: MEDIA_ASK_USD })
+          : t("media.reasonCostUnknown")
+        : why === "model"
+          ? t("media.reasonModel", { model: plan.default.id })
+          : "";
     const q: QuestionItem = {
       id: "model",
-      header: `生成${name}`,
-      question: `这次用 ${plan.model.id} 生成${name}吗？`,
-      detail: `${plan.summary}${reason ? `\n${reason}` : ""}\n也可以直接回复其他模型名。`,
-      options: [opt(plan.model, plan.model === plan.default ? "默认" : "机器人选的"), ...plan.candidates.map((m) => opt(m, m === plan.default ? "默认" : "")), { label: CANCEL, description: "这次不生成" }],
+      header: t(image ? "media.confirmHeaderImage" : "media.confirmHeaderVideo"),
+      question: t(image ? "media.confirmQuestionImage" : "media.confirmQuestionVideo", { model: plan.model.id }),
+      detail: t("media.confirmDetail", { summary: plan.summary, reason: reason ? `\n${reason}` : "" }),
+      options: [
+        opt(plan.model, t(plan.model === plan.default ? "media.tagDefault" : "media.tagBotPick")),
+        ...plan.candidates.map((m) => opt(m, m === plan.default ? t("media.tagDefault") : "")),
+        { label: t("media.cancel"), description: t("media.cancelDesc") },
+      ],
     };
     const row = this.approvals.create({ kind: "question", botId, conversationId: conv, sessionId, tool, detail: q.question, reason: "", payload: JSON.stringify([q]) });
     const deadline = Date.now() + (this.o.approvalTtlMs ?? APPROVAL_TTL_MS) + 10_000;
@@ -715,9 +726,9 @@ export class AgentManager {
     }
     const pick = (a?.selected?.[0] ?? "").trim();
     const text = (a?.custom ?? "").trim();
-    if (pick === CANCEL || /^(取消|不要?|不用|算了|no?|cancel)$/i.test(text)) return { cancel: true };
-    if (!pick && /^(好的?|行|可以|确认|确定|是的?|对|嗯|ok(ay)?|y(es)?|生成吧?|就用它)$/i.test(text)) return { model: plan.model };
-    const want = (pick || text).replace(/^(用|换成|改用)\s*/, "");
+    if (CANCELS.includes(pick) || /^(取消|不要?|不用|算了|no?|cancel|don'?t|stop|skip)$/i.test(text)) return { cancel: true };
+    if (!pick && /^(好的?|行|可以|确认|确定|是的?|对|嗯|ok(ay)?|y(es)?|sure|confirm|go( ahead)?|generate( it)?|生成吧?|就用它)$/i.test(text)) return { model: plan.model };
+    const want = (pick || text).replace(/^(用|换成|改用)\s*/, "").replace(/^(use|switch to)\s+/i, "");
     const hit = plan.all.find((m) => m.id.toLowerCase() === want.toLowerCase());
     if (hit) return { model: hit };
     return text ? { reply: text } : { cancel: true };
@@ -863,15 +874,15 @@ export class AgentManager {
   hostSummary(botId: string): string {
     if (!this.available) return "";
     const h = this.hosts.get(botId);
-    if (!h || h.state === "stopped") return "代理进程：未启动（收到消息时启动）";
+    if (!h || h.state === "stopped") return t("agent.hostNotStarted");
     const d = h.diagnostics() as any;
-    if (h.state === "running") return `代理进程：运行中（pid ${h.pid ?? "?"}${d.lastInitMs ? `，启动用时 ${Math.round(d.lastInitMs / 1000)} 秒` : ""}）`;
+    if (h.state === "running") return t("agent.hostRunning", { pid: h.pid ?? "?", init: d.lastInitMs ? t("agent.hostRunningInit", { s: Math.round(d.lastInitMs / 1000) }) : "" });
     if (h.state === "starting") {
       const s = Math.round((d.startingForMs ?? 0) / 1000);
-      return `代理进程：正在启动（已 ${s} 秒${d.firstStart ? "；第一次启动可能要几分钟" : ""}）`;
+      return t("agent.hostStarting", { s, first: d.firstStart ? t("agent.hostStartingFirst") : "" });
     }
-    if (h.state === "backoff") return `代理进程：上次启动失败，稍后重试（${h.lastError.slice(0, 120)}）`;
-    return `代理进程：启动失败，已暂停（${h.lastError.slice(0, 120)}）`;
+    if (h.state === "backoff") return t("agent.hostBackoff", { error: h.lastError.slice(0, 120) });
+    return t("agent.hostPaused", { error: h.lastError.slice(0, 120) });
   }
 
   /** 故障排查的"重启代理进程"：关掉（全部或指定机器人的）子进程并清掉退避；返回重启了哪些。 */

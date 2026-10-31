@@ -7,6 +7,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { t } from "../../i18n/index.js";
 
 export const ILINK_APP_ID = "bot";
 export const DEFAULT_ILINK_BASE = "https://ilinkai.weixin.qq.com";
@@ -43,7 +44,7 @@ export function parseAesKey(aesKeyBase64: string): Buffer {
   if (decoded.length === 16) return decoded;
   const ascii = decoded.toString("ascii");
   if (decoded.length === 32 && /^[0-9a-fA-F]{32}$/.test(ascii)) return Buffer.from(ascii, "hex");
-  throw new Error(`aes_key 解码后为 ${decoded.length} 字节，应为 16 字节或 32 位十六进制`);
+  throw new Error(t("channel.aes_key_bad", { len: decoded.length }));
 }
 
 export type ImageMime = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
@@ -398,14 +399,14 @@ export class IlinkClient {
     } else if (item.type === MessageItemType.FILE || item.type === MessageItemType.VIDEO) {
       kind = item.type === MessageItemType.FILE ? "file" : "video";
       media = kind === "file" ? item.file_item?.media : item.video_item?.media;
-      if (!media?.aes_key) throw new Error("缺少 aes_key");
+      if (!media?.aes_key) throw new Error(t("channel.aes_key_missing"));
       key = parseAesKey(media.aes_key);
     } else {
-      throw new Error(`不支持下载的条目类型 ${item.type}`);
+      throw new Error(t("channel.item_unsupported", { type: item.type }));
     }
     const full = media?.full_url?.trim();
-    if (full && !/^https?:\/\//i.test(full)) throw new Error("full_url 不是 http(s) 地址");
-    if (!full && !media?.encrypt_query_param) throw new Error("没有 CDN 引用");
+    if (full && !/^https?:\/\//i.test(full)) throw new Error(t("channel.full_url_bad"));
+    if (!full && !media?.encrypt_query_param) throw new Error(t("channel.no_cdn_ref"));
     const url = full || `${this.cdnBase}/download?encrypted_query_param=${encodeURIComponent(media!.encrypt_query_param!)}`;
 
     let raw: Buffer | undefined;
@@ -415,28 +416,28 @@ export class IlinkClient {
         const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(CDN_TIMEOUT_MS) });
         if (!res.ok) {
           await res.arrayBuffer().catch(() => {});
-          const err = new Error(`CDN 下载失败 HTTP ${res.status} ${res.headers.get("x-error-message") ?? ""}`.trim());
+          const err = new Error(t("channel.cdn_failed_http", { status: res.status, message: res.headers.get("x-error-message") ?? "" }).trim());
           throw res.status < 500 ? Object.assign(err, { fatal: true }) : err;
         }
         const declared = Number(res.headers.get("content-length") ?? 0);
         if (declared > maxBytes) {
           await res.body?.cancel().catch(() => {});
-          throw Object.assign(new Error(`文件过大（${(declared / 1048576).toFixed(1)} MB，上限 ${maxBytes / 1048576} MB）`), { fatal: true });
+          throw Object.assign(new Error(t("channel.too_large", { size: (declared / 1048576).toFixed(1), max: maxBytes / 1048576 })), { fatal: true });
         }
         const buf = Buffer.from(await res.arrayBuffer());
-        if (buf.length > maxBytes) throw Object.assign(new Error(`文件过大（${(buf.length / 1048576).toFixed(1)} MB，上限 ${maxBytes / 1048576} MB）`), { fatal: true });
+        if (buf.length > maxBytes) throw Object.assign(new Error(t("channel.too_large", { size: (buf.length / 1048576).toFixed(1), max: maxBytes / 1048576 })), { fatal: true });
         raw = buf;
       } catch (e) {
         lastErr = e;
         if ((e as { fatal?: boolean }).fatal) throw e;
       }
     }
-    if (!raw) throw lastErr instanceof Error ? lastErr : new Error("CDN 下载失败");
+    if (!raw) throw lastErr instanceof Error ? lastErr : new Error(t("channel.cdn_failed"));
     let data: Buffer;
     try {
       data = key ? decryptAesEcb(raw, key) : raw;
     } catch {
-      throw new Error("解密失败（密钥不对？）");
+      throw new Error(t("channel.decrypt_failed"));
     }
     if (kind === "image") return { kind, data, mime: sniffImageMime(data) };
     if (kind === "file") return { kind, data, name: item.file_item?.file_name || "file" };

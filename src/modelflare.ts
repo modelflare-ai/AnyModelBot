@@ -4,6 +4,8 @@
  *   飞行中的 POST 不跨主机重定向，所以线路由用户事先选定，不自动切换。
  * - 连接前用 GET {base}/models + Bearer 校验密钥；错误按状态码给出可操作的说明。
  */
+import { t } from "./i18n/index.js";
+
 export type ModelflareLine = "auto" | "global" | "cn";
 
 export const MODELFLARE_LINES: Record<Exclude<ModelflareLine, "auto">, string> = {
@@ -133,14 +135,14 @@ export async function verifyModelflareKey(
     return {
       ok: false,
       code: "network",
-      message: `连不上 ${host}（${(e as Error).name === "TimeoutError" ? "超时" : (e as Error).message}）`,
+      message: t("modelflare.unreachable", { host, reason: (e as Error).name === "TimeoutError" ? t("modelflare.timeout") : (e as Error).message }),
       ...(opts.line !== "cn" ? { suggestLine: "cn" as const } : {}),
     };
   }
-  if (res.status === 401) return { ok: false, code: "invalid_key", status: 401, message: "Key 无效或已被撤销" };
-  if (res.status === 403) return { ok: false, code: "forbidden", status: 403, message: "这个 Key 没有权限调用该模型或分组" };
-  if (res.status === 429) return { ok: false, code: "rate_limited", status: 429, message: `Modelflare 暂时不可用（HTTP 429）${retryAfter(res)}` };
-  if (!res.ok) return { ok: false, code: "upstream", status: res.status, message: `Modelflare 暂时不可用（HTTP ${res.status}）` };
+  if (res.status === 401) return { ok: false, code: "invalid_key", status: 401, message: t("modelflare.invalid_key") };
+  if (res.status === 403) return { ok: false, code: "forbidden", status: 403, message: t("modelflare.forbidden") };
+  if (res.status === 429) return { ok: false, code: "rate_limited", status: 429, message: t("modelflare.unavailable", { status: 429, retry: retryAfter(res) }) };
+  if (!res.ok) return { ok: false, code: "upstream", status: res.status, message: t("modelflare.unavailable", { status: res.status, retry: "" }) };
   try {
     const body = (await res.json()) as { data?: Array<{ id?: unknown; kind?: unknown }> };
     if (!Array.isArray(body.data)) throw new Error("no data[]");
@@ -152,13 +154,13 @@ export async function verifyModelflareKey(
       chatModels: rows.filter((m) => !classified || m.kind === "text").map((m) => m.id).sort(),
     };
   } catch {
-    return { ok: false, code: "bad_response", status: res.status, message: "Modelflare 返回了无法识别的模型列表" };
+    return { ok: false, code: "bad_response", status: res.status, message: t("modelflare.bad_models") };
   }
 }
 
 function retryAfter(res: Response): string {
   const s = res.headers.get("retry-after");
-  return s ? `，${s} 秒后重试` : "";
+  return s ? t("modelflare.retry_after", { s }) : "";
 }
 
 function safeHost(url: string): string {
@@ -190,10 +192,10 @@ export async function fetchKeyBalance(baseUrl: string, apiKey: string, fetchImpl
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
     signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) throw new Error(`读取余额失败（HTTP ${res.status}）`);
+  if (!res.ok) throw new Error(t("modelflare.balance_failed", { status: res.status }));
   const body = (await res.json()) as { total_available?: unknown; total_used?: unknown; unit?: unknown };
   const available = Number(body.total_available);
   const used = Number(body.total_used);
-  if (!Number.isFinite(available)) throw new Error("Modelflare 返回了无法识别的余额");
+  if (!Number.isFinite(available)) throw new Error(t("modelflare.bad_balance"));
   return { available, used: Number.isFinite(used) ? used : 0, unit: typeof body.unit === "string" && body.unit ? body.unit : "USD" };
 }

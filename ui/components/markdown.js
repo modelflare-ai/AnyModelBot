@@ -2,6 +2,7 @@
 import { h } from "preact";
 import { parseMarkdown, linkify } from "../lib/markdown.js";
 import { html, CopyButton } from "./ui.js";
+import { t } from "../lib/i18n.js";
 
 function inline(nodes) {
   return nodes.map((n, i) => {
@@ -27,7 +28,7 @@ function inline(nodes) {
 
 function CodeBlock({ lang, text }) {
   return html`<div class="codeblock">
-    <div class="bar"><span class="lang">${lang || "代码"}</span><${CopyButton} text=${text} label="复制代码" /></div>
+    <div class="bar"><span class="lang">${lang || t("markdown.code")}</span><${CopyButton} text=${text} label=${t("markdown.copyCode")} /></div>
     <pre><code>${text}</code></pre>
   </div>`;
 }

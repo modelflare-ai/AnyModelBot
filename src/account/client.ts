@@ -4,6 +4,7 @@
  */
 import { OAuthError, refreshTokens, type OidcEndpoints } from "./oauth.js";
 import type { AccountRecord } from "./vault.js";
+import { lang, t } from "../i18n/index.js";
 
 /** 授权已失效（用户在网页上撤销、账户被停用等）：需要重新登录 */
 export class AccountRevokedError extends Error {}
@@ -87,7 +88,7 @@ export class AccountSession {
         this.access = { token: t.accessToken, expiresAt: t.expiresAt };
         return t.accessToken;
       } catch (e) {
-        if (e instanceof OAuthError && e.code === "invalid_grant") throw new AccountRevokedError("Modelflare 授权已失效，请重新登录");
+        if (e instanceof OAuthError && e.code === "invalid_grant") throw new AccountRevokedError(t("account.revoked"));
         throw e;
       } finally {
         this.refreshing = undefined;
@@ -108,18 +109,18 @@ export class AccountSession {
             Authorization: `Bearer ${token}`,
             Accept: "application/json",
             // 通知等内容按语言返回
-            "Accept-Language": "zh-CN",
+            "Accept-Language": lang(),
             ...(body !== undefined ? { "content-type": "application/json" } : {}),
           },
           body: body !== undefined ? JSON.stringify(body) : undefined,
           signal: AbortSignal.timeout(20_000),
         });
       } catch (e) {
-        throw new ApiError(`连不上 Modelflare（${(e as Error).message}）`, 0);
+        throw new ApiError(t("account.unreachable", { reason: (e as Error).message }), 0);
       }
       if (res.status === 401) {
         if (attempt === 0) continue;
-        throw new AccountRevokedError("Modelflare 授权已失效，请重新登录");
+        throw new AccountRevokedError(t("account.revoked"));
       }
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; data?: T; message?: string; error_description?: string };
       // 部分校验沿用控制台的写法：HTTP 200 + success:false

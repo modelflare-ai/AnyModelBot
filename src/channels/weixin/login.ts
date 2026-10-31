@@ -7,6 +7,7 @@ import path from "node:path";
 import QRCode from "qrcode";
 import { IlinkClient, type QrStatusResp } from "./api.js";
 import { logger } from "../../log.js";
+import { t } from "../../i18n/index.js";
 
 const log = logger("weixin.login");
 const MAX_QR_REFRESH = 3;
@@ -72,7 +73,7 @@ export class WeixinLogin {
 
   cancel(): void {
     this.abort.abort();
-    if (!["confirmed", "failed", "already_bound"].includes(this.snapshot.state)) this.set({ state: "cancelled", message: "已取消" });
+    if (!["confirmed", "failed", "already_bound"].includes(this.snapshot.state)) this.set({ state: "cancelled", message: t("channel.login_cancelled") });
   }
 
   private async showQr(client: IlinkClient): Promise<string> {
@@ -85,10 +86,10 @@ export class WeixinLogin {
     }
     if (this.opts.printTerminal) {
       const qt = (await import("qrcode-terminal")).default;
-      qt.generate(content, { small: true }, (s: string) => process.stdout.write(`\n用微信扫描二维码登录：\n${s}\n`));
-      if (this.opts.pngPath) process.stdout.write(`二维码图片已保存：${this.opts.pngPath}\n`);
+      qt.generate(content, { small: true }, (s: string) => process.stdout.write(`\n${t("channel.login_terminal_scan")}\n${s}\n`));
+      if (this.opts.pngPath) process.stdout.write(`${t("channel.login_terminal_saved", { path: this.opts.pngPath })}\n`);
     }
-    this.set({ state: "wait", message: "请用微信扫码", qrContent: content, qrDataUrl, qrPngPath: this.opts.pngPath });
+    this.set({ state: "wait", message: t("channel.login_wait"), qrContent: content, qrDataUrl, qrPngPath: this.opts.pngPath });
     return qr.qrcode;
   }
 
@@ -99,7 +100,7 @@ export class WeixinLogin {
     const deadline = Date.now() + LOGIN_TIMEOUT_MS;
     let refreshCount = 0;
     try {
-      this.set({ state: "fetching", message: "正在获取二维码…", refreshCount });
+      this.set({ state: "fetching", message: t("channel.login_fetching"), refreshCount });
       let qrcode = await this.showQr(client);
       while (!signal.aborted && Date.now() < deadline) {
         let st: QrStatusResp;
@@ -110,10 +111,10 @@ export class WeixinLogin {
           case "wait":
             break;
           case "scaned":
-            if (this.snapshot.state !== "scaned") this.set({ state: "scaned", message: "已扫码，请在微信上确认" });
+            if (this.snapshot.state !== "scaned") this.set({ state: "scaned", message: t("channel.login_scanned") });
             break;
           case "need_verifycode":
-            if (this.snapshot.state !== "need_verifycode") this.set({ state: "need_verifycode", message: "请输入微信上显示的验证码" });
+            if (this.snapshot.state !== "need_verifycode") this.set({ state: "need_verifycode", message: t("channel.login_need_code") });
             break;
           case "scaned_but_redirect":
             if (st.redirect_host) {
@@ -122,24 +123,24 @@ export class WeixinLogin {
             }
             break;
           case "binded_redirect":
-            this.set({ state: "already_bound", message: "该微信已绑定过此机器人，无需重复连接" });
+            this.set({ state: "already_bound", message: t("channel.login_already_bound") });
             return undefined;
           case "expired":
           case "verify_code_blocked":
             refreshCount++;
             if (refreshCount > MAX_QR_REFRESH) {
-              this.set({ state: "failed", message: "二维码多次过期，请重新开始登录" });
+              this.set({ state: "failed", message: t("channel.login_qr_expired_too_often") });
               return undefined;
             }
-            this.set({ refreshCount, message: `二维码已过期，正在刷新（${refreshCount}/${MAX_QR_REFRESH}）` });
+            this.set({ refreshCount, message: t("channel.login_qr_refreshing", { n: refreshCount, max: MAX_QR_REFRESH }) });
             qrcode = await this.showQr(client);
             break;
           case "confirmed": {
             if (!st.ilink_bot_id || !st.bot_token) {
-              this.set({ state: "failed", message: "登录失败：服务器未返回 ilink_bot_id/bot_token" });
+              this.set({ state: "failed", message: t("channel.login_no_token") });
               return undefined;
             }
-            this.set({ state: "confirmed", message: "✅ 微信已连接", qrDataUrl: undefined, qrContent: undefined });
+            this.set({ state: "confirmed", message: t("channel.login_confirmed"), qrDataUrl: undefined, qrContent: undefined });
             log.info("weixin login confirmed", { ilinkBotId: st.ilink_bot_id });
             return {
               botToken: st.bot_token,
@@ -151,11 +152,11 @@ export class WeixinLogin {
         }
         await new Promise((r) => setTimeout(r, this.opts.pollDelayMs ?? 1000));
       }
-      if (!signal.aborted) this.set({ state: "failed", message: "登录超时，请重试" });
+      if (!signal.aborted) this.set({ state: "failed", message: t("channel.login_timeout") });
       return undefined;
     } catch (e) {
       if (signal.aborted) return undefined;
-      this.set({ state: "failed", message: `登录失败：${(e as Error).message}` });
+      this.set({ state: "failed", message: t("channel.login_failed", { message: (e as Error).message }) });
       return undefined;
     }
   }

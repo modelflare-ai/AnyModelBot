@@ -3,7 +3,7 @@
      弹出层与对话框的弹性入场用 slow/slower + spring。
    - 入场用 ease-out（或 spring），退场用 ease-in，循环用 ease-in-out 或 linear。
    - 位移量也是 token（--rise / --slide / --pop-*），组件可以局部覆盖；关键帧把它们乘以 --motion，
-     减少动态效果时 --motion = 0，所有入场自动退化成纯淡入。 */
+     减少动态效果时 --motion = 0，所有入场自动退化成纯淡入；关闭动画时连淡入也没有（见文末 data-motion）。 */
 :root {
   --dur-fast: 120ms;
   --dur-base: 180ms;
@@ -26,10 +26,12 @@
   --dur-spin: 800ms;
   --dur-blink: 1s;
   --dur-shimmer: 1.2s;
+  --dur-sheen: 2.4s;    /* 文字微光（思考中 / 正在回复）：扫过一遍后停一拍，比骨架慢，不抢正文的注意力 */
   --dur-pulse: 1.4s;
   --dur-flash: 1.2s;
   --dur-ambient: 1.2s;  /* 环境光换色（切换机器人时） */
   --stagger: 150ms;
+  --dur-intent: 240ms;  /* 悬停意图：指针停这么久才亮起提示（分隔条的细线），只是划过去不闪 */
   --dur-off: .01ms;   /* 减少动态效果时代替 0：时长为 0 的过渡不触发 transitionend */
 
   /* 机器人头像的一次性反应（avatar.js 用 ms() 读，播完回到持续状态） */
@@ -46,14 +48,26 @@
   --slide: 12px;
   --pop-dy: -6px;
   --pop-scale: .94;
+  --scale-from: .6;     /* scale-in 的起点：发送钮里换图标、小圆点出现 */
   --press: .96;
   --press-strong: .94;
 }
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --motion: 0;
-    --press: 1;
-    --press-strong: 1;
-    --dur-spin: 1.6s;
-  }
+/* 动画偏好：<html data-motion> 由 lib/prefs.js 解析（设置 › 外观 › 动画；跟随系统时看 prefers-reduced-motion）。
+   reduce：位移归零，入场只剩淡入，按下不缩放，过渡几乎瞬时（base/motion.css）。
+   off：在 reduce 之上，出现 / 消失 / 视图切换也瞬时完成；只留表示"正在进行"的循环（转圈、骨架、光标）和定位闪烁。 */
+:root:is([data-motion="reduce"], [data-motion="off"]) {
+  --motion: 0;
+  --press: 1;
+  --press-strong: 1;
+  --dur-spin: 1.6s;
+}
+:root[data-motion="off"] {
+  --dur-fast: var(--dur-off);
+  --dur-base: var(--dur-off);
+  --dur-moderate: var(--dur-off);
+  --dur-slow: var(--dur-off);
+  --dur-slower: var(--dur-off);
+  --dur-ambient: var(--dur-off);
+  --dur-intent: 0ms;
+  --stagger: 0ms;
 }

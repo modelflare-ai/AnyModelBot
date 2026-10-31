@@ -2,6 +2,7 @@ import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { t } from "../i18n/index.js";
 
 /**
  * Cua Driver（trycua/cua libs/cua-driver，MIT）：默认的电脑操作后端，三个平台都用官方预编译的
@@ -60,7 +61,7 @@ export interface CuaProbe {
 
 export interface CuaStatus {
   available: boolean;
-  /** 给界面与 /status 的说明（中文） */
+  /** 给界面与 /status 的说明（检测时的当前语言；每次读状态都重新检测） */
   reason: string;
   /** 平台提示（权限、Wayland 降级等） */
   notice?: string;
@@ -102,31 +103,26 @@ export function cuaRoots(runtimeDir: string, platform = process.platform, arch =
   ].filter((x): x is string => !!x);
 }
 
-const LINUX_ATSPI = "需要 AT-SPI（at-spi2-core）才能读取窗口元素";
-
 export function detectCua(roots: string[], probe: CuaProbe = defaultCuaProbe()): CuaStatus {
-  const off = (why: string): CuaStatus => ({ available: false, reason: `Cua Driver: 不可用（${why}）` });
-  if (!["linux", "darwin", "win32"].includes(probe.platform)) return off(`不支持 ${probe.platform}`);
+  const off = (why: string): CuaStatus => ({ available: false, reason: t("cu.cuaOff", { why }) });
+  if (!["linux", "darwin", "win32"].includes(probe.platform)) return off(t("cu.cuaUnsupported", { platform: probe.platform }));
   const exe = probe.platform === "win32" ? "cua-driver.exe" : "cua-driver";
   const root = roots.find((r) => probe.isFile(path.join(r, exe)));
-  if (!root) return off(`安装包缺少 ${probe.platform}-${probe.arch} 的 cua-driver ${CUA_VERSION}`);
+  if (!root) return off(t("cu.cuaMissing", { plat: `${probe.platform}-${probe.arch}`, version: CUA_VERSION }));
   const bin = path.join(root, exe);
   const env = probe.env;
   if (probe.platform === "linux") {
     const x11 = !!env.DISPLAY;
     const wayland = !!env.WAYLAND_DISPLAY || env.XDG_SESSION_TYPE === "wayland";
-    if (!x11 && !wayland) return off("没有图形会话：DISPLAY / WAYLAND_DISPLAY 均未设置");
-    const notice = wayland
-      ? `Wayland 会话：功能降级——窗口读取依赖 AT-SPI，键鼠输入走 XWayland，只能操作前台窗口；${LINUX_ATSPI}`
-      : `X11 会话；${LINUX_ATSPI}`;
-    return { available: true, reason: "Cua Driver: 可用（Linux）", notice, bin };
+    if (!x11 && !wayland) return off(t("cu.cuaNoDisplay"));
+    const notice = t(wayland ? "cu.cuaWayland" : "cu.cuaX11", { atspi: t("cu.cuaAtspi") });
+    return { available: true, reason: t("cu.cuaAvailable", { os: "Linux" }), notice, bin };
   }
   if (probe.platform === "darwin") {
     return {
       available: true,
-      reason: "Cua Driver: 可用（macOS）",
-      notice:
-        "首次使用需在「系统设置 → 隐私与安全性」给本应用打开「辅助功能」和「屏幕录制」。以 --direct 模式运行，授权应归属本应用（尚未在真机验证）。",
+      reason: t("cu.cuaAvailable", { os: "macOS" }),
+      notice: t("cu.cuaMacNotice"),
       bin,
       direct: true,
     };
@@ -135,8 +131,8 @@ export function detectCua(roots: string[], probe: CuaProbe = defaultCuaProbe()):
   if (env.SESSIONNAME) {
     return {
       available: true,
-      reason: "Cua Driver: 可用（Windows）",
-      notice: "需在已登录用户的交互式桌面会话中运行；无法操作以管理员权限运行的窗口（除非本应用也以管理员运行）。",
+      reason: t("cu.cuaAvailable", { os: "Windows" }),
+      notice: t("cu.cuaWinNotice"),
       bin,
     };
   }
@@ -145,12 +141,12 @@ export function detectCua(roots: string[], probe: CuaProbe = defaultCuaProbe()):
     // 仅在真实 Windows 进程上查询；交叉平台单测不注入时走下方启发式，避免误起 PowerShell。
     sid = process.platform === "win32" ? (queryWindowsSessionId() ?? null) : null;
   }
-  if (sid === 0) return off("需要在已登录用户的交互式会话中运行（检测到服务或非交互会话）");
+  if (sid === 0) return off(t("cu.cuaNonInteractive"));
   if (typeof sid === "number" && sid > 0) {
     return {
       available: true,
-      reason: "Cua Driver: 可用（Windows）",
-      notice: "需在已登录用户的交互式桌面会话中运行；无法操作以管理员权限运行的窗口（除非本应用也以管理员运行）。",
+      reason: t("cu.cuaAvailable", { os: "Windows" }),
+      notice: t("cu.cuaWinNotice"),
       bin,
     };
   }
@@ -158,12 +154,12 @@ export function detectCua(roots: string[], probe: CuaProbe = defaultCuaProbe()):
   if (looksLikeWindowsUserDesktop(env)) {
     return {
       available: true,
-      reason: "Cua Driver: 可用（Windows）",
-      notice: "需在已登录用户的交互式桌面会话中运行；无法操作以管理员权限运行的窗口（除非本应用也以管理员运行）。",
+      reason: t("cu.cuaAvailable", { os: "Windows" }),
+      notice: t("cu.cuaWinNotice"),
       bin,
     };
   }
-  return off("需要在已登录用户的交互式会话中运行（检测到服务或非交互会话）");
+  return off(t("cu.cuaNonInteractive"));
 }
 
 /** 进程的 SessionId 不会变：只查一次（每次查都要同步起一个 PowerShell，冷启动时会卡住主进程好几秒）。 */

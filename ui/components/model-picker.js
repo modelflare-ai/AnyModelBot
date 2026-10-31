@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Popover, Icon } from "./ui.js";
 import { api } from "../lib/api.js";
 import { createStore, useStore } from "../lib/store.js";
-import { groupModels, modelFamily, normModel, sameModel, shortModel } from "../lib/models.js";
+import { t } from "../lib/i18n.js";
+import { OTHER_FAMILY, groupModels, modelFamily, normModel, sameModel, shortModel } from "../lib/models.js";
 
 export { groupModels, normModel, sameModel, shortModel } from "../lib/models.js";
 
@@ -32,12 +33,14 @@ export function modelNote(info, id) {
   if (!i) return "";
   const parts = [];
   if (i.context) parts.push(i.context >= 1e6 ? `${num(i.context / 1e6)}M` : `${Math.round(i.context / 1000)}K`);
-  const caps = [i.vision && "视觉", i.tools && "工具", i.reasoning && "推理"].filter(Boolean).join(" ");
+  const caps = [i.vision && t("models.caps.vision"), i.tools && t("models.caps.tools"), i.reasoning && t("models.caps.reasoning")].filter(Boolean).join(" ");
   if (caps) parts.push(caps);
-  if (i.price) parts.push(i.price.perCall !== undefined ? `$${num(i.price.perCall)}/次` : `$${num(i.price.input)}/${i.price.output !== undefined ? num(i.price.output) : "—"}`);
+  if (i.price) parts.push(i.price.perCall !== undefined ? t("models.perCall", { price: `$${num(i.price.perCall)}` }) : `$${num(i.price.input)}/${i.price.output !== undefined ? num(i.price.output) : "—"}`);
   return parts.join(" · ");
 }
-const NOTE_TITLE = "上下文 · 能力 · 每百万 tokens 输入/输出的起步参考价（美元，以账单为准）";
+
+/** 族名的显示：认不出的族（OTHER_FAMILY）按当前语言显示，其余是品牌名原样 */
+export const familyName = (g) => (g === OTHER_FAMILY ? t("models.otherFamily") : g);
 
 // —— 模型族的开合：当前模型所在的族默认展开（没有当前模型时展开第一个）；用户点过的按点的算，本次运行内记住 ——
 const famOpen = new Map();
@@ -54,7 +57,7 @@ export function useFamilies(groups, current) {
 
 /** 组头的内容：族名、收起时里面的当前模型、数量、箭头（展开时转向下） */
 export function FamilyHead({ name, count, current }) {
-  return html`<span class="v">${name}</span><span class="n">${current || ""}</span><span class="cnt">${count}</span><${Icon} name="chevRight" size=${12} class="chev" />`;
+  return html`<span class="v">${familyName(name)}</span><span class="n">${current || ""}</span><span class="cnt">${count}</span><${Icon} name="chevRight" size="xs" class="chev" />`;
 }
 
 /**
@@ -122,8 +125,8 @@ export function ModelPicker({ anchor, models, error, current, onPick, onClose, r
     const i = idx;
     return html`<li role="option" aria-selected=${sel === i} class=${`${sel === i ? "sel" : ""} ${(!it.reset && sameModel(it.m, current)) || (it.reset && !current) ? "cur" : ""}`}
       onPointerMove=${() => setSel(i)} onClick=${() => choose(it)}>
-      <span class="v">${label}</span>${note && html`<span class="n" title=${it.reset || it.custom ? undefined : NOTE_TITLE}>${note}</span>`}
-      <span class="check"><${Icon} name="check" size=${14} /></span>
+      <span class="v">${label}</span>${note && html`<span class="n" title=${it.reset || it.custom ? undefined : t("models.noteTitle")}>${note}</span>`}
+      <span class="check"><${Icon} name="check" size="sm" /></span>
     </li>`;
   };
   const head = (g, ms) => {
@@ -136,20 +139,20 @@ export function ModelPicker({ anchor, models, error, current, onPick, onClose, r
     </li>`;
   };
   const rows = (ms) => ms.map(([m, label]) => item({ m }, label, modelNote(info, m)));
-  return html`<${Popover} anchor=${anchor} onClose=${onClose} class="model-picker" width=${340} maxHeight=${420} prefer=${prefer} align=${align} label="选择模型">
-    <div class="search"><${Icon} name="search" size=${14} />
-      <input placeholder="筛选，或输入任意模型 ID" value=${q} onInput=${(e) => { setQ(e.target.value); setSel(0); }} onKeyDown=${onKey} aria-label="筛选模型" />
+  return html`<${Popover} anchor=${anchor} onClose=${onClose} class="model-picker" width=${340} maxHeight=${420} prefer=${prefer} align=${align} label=${t("models.choose")}>
+    <div class="search"><${Icon} name="search" size="sm" />
+      <input placeholder=${t("models.filterOrId")} value=${q} onInput=${(e) => { setQ(e.target.value); setSel(0); }} onKeyDown=${onKey} aria-label=${t("models.filter")} />
     </div>
     <ul role="listbox" ref=${listRef}>
       ${models === null && !error && [0, 1, 2, 3, 4].map((k) => html`<li key=${k}><span class="skel" style=${{ width: 60 + ((k * 37) % 30) + "%" }}></span></li>`)}
-      ${error && html`<li class="explained" style="pointer-events:auto"><span class="v" style="white-space:normal;color:var(--red)">获取模型列表失败：${error}</span>
-        ${onRetry && html`<button type="button" class="text" onClick=${onRetry}>重试</button>`}</li>`}
+      ${error && html`<li class="explained" style="pointer-events:auto"><span class="v" style="white-space:normal;color:var(--red)">${t("models.loadFailed", { error })}</span>
+        ${onRetry && html`<button type="button" class="text" onClick=${onRetry}>${t("common.retry")}</button>`}</li>`}
       ${reset && !q && item({ reset: true }, reset.label, reset.note)}
       ${groups.map(([g, ms]) =>
-        folding ? html`${head(g, ms)}${isOpen(g) && rows(ms)}` : html`${groups.length > 1 && html`<li class="group">${g}</li>`}${rows(ms)}`,
+        folding ? html`${head(g, ms)}${isOpen(g) && rows(ms)}` : html`${groups.length > 1 && html`<li class="group">${familyName(g)}</li>`}${rows(ms)}`,
       )}
-      ${custom && item({ m: custom, custom: true }, `使用「${custom}」`, "自定义模型 ID")}
-      ${models && !models.length && !q && html`<li class="explained"><span class="v" style="white-space:normal">没有可用模型：这个 Key 所在的分组还没有开放模型</span></li>`}
+      ${custom && item({ m: custom, custom: true }, t("models.useCustom", { id: custom }), t("models.customId"))}
+      ${models && !models.length && !q && html`<li class="explained"><span class="v" style="white-space:normal">${t("models.none")}</span></li>`}
     </ul>
     ${foot && html`<div class="foot"><button type="button" disabled=${foot.disabled} onClick=${() => { onClose(); foot.onClick(); }}>${foot.label}</button></div>`}
   <//>`;
@@ -159,7 +162,7 @@ export function ModelPicker({ anchor, models, error, current, onPick, onClose, r
  * 菜单按钮 + 模型选择器（设置页、首次设置用）。value 为空时按钮显示 resetLabel；
  * 给了 resetLabel 时列表顶部有一项"恢复默认"，选它 onChange("")。
  */
-export function PickModel({ value, models, modelsError, reloadModels, onChange, resetLabel, align = "right", label = "选择模型" }) {
+export function PickModel({ value, models, modelsError, reloadModels, onChange, resetLabel, align = "right", label = t("models.choose") }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   return html`<button type="button" class="pick" ref=${ref} aria-haspopup="listbox" aria-expanded=${open} aria-label=${label} onClick=${() => setOpen((v) => !v)}>

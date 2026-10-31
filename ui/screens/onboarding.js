@@ -2,22 +2,25 @@
 // 回来后自动签发本机 Key 并连接）。只有 Docker / 远程部署（浏览器登录的回调回不到这台机器）才显示粘贴 API Key。
 // 不是向导路由。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, Notice, Seg, Spinner, CopyButton } from "../components/ui.js";
+import { html, Icon, Menu, Notice, Seg, Spinner, CopyButton } from "../components/ui.js";
 import { BotAvatar, MAIN_CHAR } from "../components/avatar.js";
-import { FamilyHead, PickModel, groupModels, useFamilies } from "../components/model-picker.js";
+import { FamilyHead, PickModel, familyName, groupModels, useFamilies } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
+import { failed } from "../lib/store.js";
+import { LANG_NAMES, changeLang, getLangPref, t, useLang } from "../lib/i18n.js";
 import { MF_CONSOLE, MF_DOCS, MF_KEYS } from "../lib/links.js";
 
 export { MF_CONSOLE, MF_DOCS };
-export const LINE_OPTIONS = [
-  ["auto", "自动"],
-  ["global", "国际"],
-  ["cn", "中国大陆优化"],
+/** Modelflare 线路的选项 [值, 显示名]（引导页"高级"和设置页共用；按当前语言，渲染时再调） */
+export const lineOptions = () => [
+  ["auto", t("common.auto")],
+  ["global", t("onboarding.line.global")],
+  ["cn", t("onboarding.line.cn")],
 ];
 
 /** 粘贴 Key → 校验（GET /v1/models）→ 写入。onConnected(result) 收到 { models, keyTail, … } */
 /** onFace(state)：给旁边的头像用——"listening"（在输入）/ "thinking"（正在校验）/ "idle" / "error"（一次性） */
-export function KeyForm({ line: initialLine = "auto", onConnected, onFace, showLine = true, submitLabel = "连接 Modelflare" }) {
+export function KeyForm({ line: initialLine = "auto", onConnected, onFace, showLine = true, submitLabel = t("onboarding.key.submit") }) {
   const [key, setKey] = useState("");
   const [show, setShow] = useState(false);
   const [line, setLine] = useState(initialLine);
@@ -37,7 +40,7 @@ export function KeyForm({ line: initialLine = "auto", onConnected, onFace, showL
     setBusy(true);
     setErr(null);
     setSlow(false);
-    const t = setTimeout(() => setSlow(true), 4000);
+    const slowTimer = setTimeout(() => setSlow(true), 4000);
     try {
       const r = await api("/modelflare", { method: "PUT", body: { apiKey: k, line: useLine } });
       setKey("");
@@ -46,16 +49,16 @@ export function KeyForm({ line: initialLine = "auto", onConnected, onFace, showL
       setErr({ message: e.message, code: e.data?.code, suggestLine: e.data?.suggestLine });
       onFace?.("error");
     } finally {
-      clearTimeout(t);
+      clearTimeout(slowTimer);
       setBusy(false);
       setSlow(false);
     }
   };
   const paste = async () => {
     try {
-      const t = (await navigator.clipboard.readText()).trim();
-      if (t) {
-        setKey(t);
+      const text = (await navigator.clipboard.readText()).trim();
+      if (text) {
+        setKey(text);
         setErr(null);
         requestAnimationFrame(() => btn.current?.focus());
       }
@@ -69,35 +72,35 @@ export function KeyForm({ line: initialLine = "auto", onConnected, onFace, showL
   };
 
   return html`<form class="list" onSubmit=${(e) => { e.preventDefault(); submit(); }}>
-    <label class="k" for="mf-key">API Key</label>
+    <label class="k" for="mf-key">${t("onboarding.key.label")}</label>
     <div class="field-wrap">
       <input id="mf-key" ref=${input} class=${`field mono${err?.code === "invalid_key" ? " err" : ""}`} type=${show ? "text" : "password"}
-        autocomplete="off" spellcheck="false" placeholder="粘贴你的 Modelflare API Key" value=${key} readonly=${busy}
+        autocomplete="off" spellcheck="false" placeholder=${t("onboarding.key.placeholder")} value=${key} readonly=${busy}
         aria-invalid=${!!err} aria-describedby="mf-key-note"
         onInput=${(e) => { setKey(e.target.value); setErr(null); }}
         onPaste=${() => requestAnimationFrame(() => btn.current?.focus())} />
       <span class="tail">
-        <button type="button" class="icon-btn" title="从剪贴板粘贴" aria-label="从剪贴板粘贴" onClick=${paste}><${Icon} name="paste" size=${14} /></button>
-        <button type="button" class="icon-btn" title=${show ? "隐藏" : "显示"} aria-label=${show ? "隐藏 Key" : "显示 Key"} onClick=${() => setShow((v) => !v)}><${Icon} name=${show ? "eyeOff" : "eye"} size=${14} /></button>
+        <button type="button" class="icon-btn" title=${t("onboarding.key.paste")} aria-label=${t("onboarding.key.paste")} onClick=${paste}><${Icon} name="paste" size="sm" /></button>
+        <button type="button" class="icon-btn" title=${show ? t("onboarding.key.hide") : t("onboarding.key.show")} aria-label=${show ? t("onboarding.key.hideKey") : t("onboarding.key.showKey")} onClick=${() => setShow((v) => !v)}><${Icon} name=${show ? "eyeOff" : "eye"} size="sm" /></button>
       </span>
     </div>
     ${err && html`<div class="err-text" role="alert">
       <span>${err.message}</span>
-      ${err.code === "invalid_key" && html`<button type="button" class="text" onClick=${retype}>重新输入</button>`}
-      ${err.code === "forbidden" && html`<a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">去控制台检查分组 ↗</a>`}
-      ${(err.code === "rate_limited" || err.code === "upstream" || err.code === "bad_response") && html`<button type="button" class="text" onClick=${() => submit()}>重试</button>`}
-      ${err.code === "network" && err.suggestLine === "cn" && html`<button type="button" class="text accent" onClick=${() => submit("cn")}>改用大陆优化线路并重试</button>`}
+      ${err.code === "invalid_key" && html`<button type="button" class="text" onClick=${retype}>${t("onboarding.key.retype")}</button>`}
+      ${err.code === "forbidden" && html`<a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">${t("onboarding.key.checkGroup")}</a>`}
+      ${(err.code === "rate_limited" || err.code === "upstream" || err.code === "bad_response") && html`<button type="button" class="text" onClick=${() => submit()}>${t("common.retry")}</button>`}
+      ${err.code === "network" && err.suggestLine === "cn" && html`<button type="button" class="text accent" onClick=${() => submit("cn")}>${t("onboarding.key.useCn")}</button>`}
     </div>`}
-    <p class="hint" id="mf-key-note">密钥只保存在本机，不会写入日志或命令行参数。</p>
+    <p class="hint" id="mf-key-note">${t("onboarding.key.note")}</p>
     <button type="submit" ref=${btn} class="btn primary lg block" disabled=${!key.trim() || busy}>
-      ${busy ? html`<${Spinner} /> 正在连接…` : submitLabel}
+      ${busy ? html`<${Spinner} /> ${t("onboarding.key.connecting")}` : submitLabel}
     </button>
-    ${slow && html`<p class="slow">网络较慢${showLine ? "，可在「高级」里切换线路" : ""}。</p>`}
+    ${slow && html`<p class="slow">${showLine ? t("onboarding.key.slowLine") : t("onboarding.key.slow")}</p>`}
     ${showLine && html`<details>
-      <summary>高级 <${Icon} name="chevDown" size=${12} /></summary>
+      <summary>${t("onboarding.key.advanced")} <${Icon} name="chevDown" size="xs" /></summary>
       <div class="row compact">
-        <div class="who"><div class="name">线路</div><div class="sub">中国大陆访问可选优化线路</div></div>
-        <${Seg} label="线路" options=${LINE_OPTIONS} value=${line} onChange=${setLine} disabled=${busy} />
+        <div class="who"><div class="name">${t("onboarding.line.label")}</div><div class="sub">${t("onboarding.line.sub")}</div></div>
+        <${Seg} label=${t("onboarding.line.label")} options=${lineOptions()} value=${line} onChange=${setLine} disabled=${busy} />
       </div>
     </details>`}
   </form>`;
@@ -107,7 +110,7 @@ export function KeyForm({ line: initialLine = "auto", onConnected, onFace, showL
  * 登录 / 注册 Modelflare：桌面版由主进程在系统浏览器里打开授权页；浏览器版在新标签页打开（被拦截时
  * 用下面的链接）。等待期间每秒读一次账户状态，登录完成（本机 Key 已接上）后 onSignedIn(status)。
  */
-export function AccountLogin({ onSignedIn, onFace, label = "登录 / 注册 Modelflare" }) {
+export function AccountLogin({ onSignedIn, onFace, label = t("onboarding.login.label") }) {
   const [waiting, setWaiting] = useState(false);
   const [url, setUrl] = useState("");
   const [err, setErr] = useState("");
@@ -115,7 +118,7 @@ export function AccountLogin({ onSignedIn, onFace, label = "登录 / 注册 Mode
   useEffect(() => {
     if (!waiting) return;
     let stop = false;
-    const t = setInterval(async () => {
+    const poll = setInterval(async () => {
       const s = await api("/account").catch(() => null);
       if (!s || stop) return;
       if (s.state === "signed_in") {
@@ -131,7 +134,7 @@ export function AccountLogin({ onSignedIn, onFace, label = "登录 / 注册 Mode
         }
       }
     }, 1000);
-    return () => clearInterval(t);
+    return () => clearInterval(poll);
   }, [waiting]);
   const start = async () => {
     setErr("");
@@ -151,11 +154,11 @@ export function AccountLogin({ onSignedIn, onFace, label = "登录 / 注册 Mode
   };
   if (waiting) {
     return html`<div class="login-cta" role="status">
-      <div class="login-wait"><${Spinner} /> 在浏览器里完成登录后，会自动回到这里</div>
+      <div class="login-wait"><${Spinner} /> ${t("onboarding.login.waiting")}</div>
       <div class="login-links">
-        <a class="text" href=${url} target="_blank" rel="noopener noreferrer">重新打开登录页 ↗</a>
-        <${CopyButton} text=${url} label="复制链接" />
-        <button type="button" class="text" onClick=${cancel}>取消</button>
+        <a class="text" href=${url} target="_blank" rel="noopener noreferrer">${t("onboarding.login.reopen")}</a>
+        <${CopyButton} text=${url} label=${t("onboarding.login.copyLink")} />
+        <button type="button" class="text" onClick=${cancel}>${t("common.cancel")}</button>
       </div>
     </div>`;
   }
@@ -201,36 +204,53 @@ function ModelStep({ models, initial, onDone }) {
     }
   };
   return html`<div class="list">
-    <div class="connected"><span class="dot ok"></span>已连接 · 找到 <span class="num">${models.length}</span> 个模型</div>
+    <div class="connected"><span class="dot ok"></span>${t("onboarding.model.found", { count: models.length, n: html`<span class="num">${models.length}</span>` })}</div>
     ${models.length
-      ? html`<p class="hint">选一个默认模型，之后随时可在对话里切换。</p>
-        <input class="field" placeholder="筛选模型" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="筛选模型" />
-        <div class="picklist" role="listbox" aria-label="默认模型">
+      ? html`<p class="hint">${t("onboarding.model.hint")}</p>
+        <input class="field" placeholder=${t("onboarding.model.filter")} value=${q} onInput=${(e) => setQ(e.target.value)} aria-label=${t("onboarding.model.filter")} />
+        <div class="picklist" role="listbox" aria-label=${t("onboarding.model.default")}>
           ${groups.map(([g, ms]) => {
             const rows = ms.map(([m, label]) => html`<button type="button" role="option" aria-selected=${m === cur} class=${m === cur ? "cur" : ""} onClick=${() => setCur(m)} onDblClick=${start}>
-              <span class="v">${label}</span>${m === cur && html`<span class="check"><${Icon} name="check" size=${14} /></span>`}
+              <span class="v">${label}</span>${m === cur && html`<span class="check"><${Icon} name="check" size="sm" /></span>`}
             </button>`);
-            if (!folding) return html`${groups.length > 1 && html`<div class="group">${g}</div>`}${rows}`;
+            if (!folding) return html`${groups.length > 1 && html`<div class="group">${familyName(g)}</div>`}${rows}`;
             const open = isOpen(g);
             const hit = open ? undefined : ms.find(([m]) => m === cur);
             return html`<button type="button" class="fam" aria-expanded=${open} onClick=${() => toggle(g)}><${FamilyHead} name=${g} count=${ms.length} current=${hit?.[1]} /></button>${open && rows}`;
           })}
-          ${!groups.length && html`<p class="hint">没有匹配的模型</p>`}
+          ${!groups.length && html`<p class="hint">${t("onboarding.model.noMatch")}</p>`}
         </div>
         ${hasMedia && html`<div class="media-pick">
-          <p class="hint">生成图片和视频时默认用的模型。每次生成前都会先问你，也可以当场换。</p>
+          <p class="hint">${t("onboarding.model.mediaHint")}</p>
           ${media.image.length > 0 && html`<div class="row compact">
-            <div class="who"><div class="name">图片</div></div>
-            <${PickModel} value=${img} models=${media.image} onChange=${setImg} label="默认图片模型" />
+            <div class="who"><div class="name">${t("onboarding.model.image")}</div></div>
+            <${PickModel} value=${img} models=${media.image} onChange=${setImg} label=${t("onboarding.model.imageLabel")} />
           </div>`}
           ${media.video.length > 0 && html`<div class="row compact">
-            <div class="who"><div class="name">视频</div></div>
-            <${PickModel} value=${vid} models=${media.video} onChange=${setVid} label="默认视频模型" />
+            <div class="who"><div class="name">${t("onboarding.model.video")}</div></div>
+            <${PickModel} value=${vid} models=${media.video} onChange=${setVid} label=${t("onboarding.model.videoLabel")} />
           </div>`}
         </div>`}`
-      : html`<${Notice} tone="amber" action=${html`<a class="btn" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">去控制台 ↗</a>`}>这个 Key 所在的分组暂无可用模型。可以在控制台给分组开放模型后再回来刷新。<//>`}
+      : html`<${Notice} tone="amber" action=${html`<a class="btn" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">${t("onboarding.model.console")}</a>`}>${t("onboarding.model.empty")}<//>`}
     ${err && html`<div class="err-text" role="alert">${err}</div>`}
-    <button type="button" class="btn primary lg block" disabled=${busy} onClick=${start}>${busy ? html`<${Spinner} /> 正在保存…` : models.length ? "开始对话" : "仍然开始"}</button>
+    <button type="button" class="btn primary lg block" disabled=${busy} onClick=${start}>${busy ? html`<${Spinner} /> ${t("onboarding.model.saving")}` : models.length ? t("onboarding.model.start") : t("onboarding.model.startAnyway")}</button>
+  </div>`;
+}
+
+/** 语言切换：在引导列顶上靠右。新用户连接前就能换语言（按钮上是当前界面语言的名字，菜单里勾的是偏好） */
+function LangSwitch() {
+  const lang = useLang();
+  const pref = getLangPref();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const label = t("common.lang.label");
+  const opts = [["system", t("common.lang.system")], ["zh-CN", LANG_NAMES["zh-CN"]], ["en", LANG_NAMES.en]];
+  return html`<div class="onboard-lang">
+    <button type="button" class="pick" ref=${ref} aria-haspopup="menu" aria-expanded=${open} aria-label=${label} title=${label} onClick=${() => setOpen((v) => !v)}>
+      <${Icon} name="globe" size="sm" class="lead" /><span class="v">${LANG_NAMES[lang]}</span><${Icon} name="chevDown" />
+    </button>
+    ${open && html`<${Menu} anchor=${ref.current} width=${180} align="right" label=${label} onClose=${() => setOpen(false)}
+      items=${opts.map(([v, text]) => ({ label: text, cur: v === pref, onSelect: () => v !== pref && changeLang(v).catch(failed) }))} />`}
   </div>`;
 }
 
@@ -257,19 +277,20 @@ export function Onboarding({ status, gateway, defaultModel, onDone }) {
       .catch(() => setModels([]));
   return html`<main class="onboard" data-screen="onboarding">
     <div class="onboard-col">
+      <${LangSwitch} />
       <div class="onboard-hero">
         <${BotAvatar} char=${MAIN_CHAR} size=${models === null ? 168 : 88} state=${face} cue=${cue} lively pokeable greet />
-        <h1>任意模型，一个助手</h1>
+        <h1>${t("onboarding.slogan")}</h1>
       </div>
-      ${gateway && gateway.mode === "managed" && gateway.state === "failed" && html`<${Notice} tone="red">内置模型网关没有启动：${gateway.lastError || "未知原因"}。修复后重启应用再连接。<//>`}
+      ${gateway && gateway.mode === "managed" && gateway.state === "failed" && html`<${Notice} tone="red">${t("onboarding.gatewayFailed", { error: gateway.lastError || t("onboarding.unknownReason") })}<//>`}
       ${why && models === null && html`<${Notice} tone="amber">${why}<//>`}
       ${models !== null
         ? html`<${ModelStep} models=${models} initial=${defaultModel} onDone=${onDone} />`
         : useKey
           ? html`<${KeyForm} line=${status.line} onFace=${onFace} onConnected=${(r) => (setFace("idle"), setModels(r.models || []))} />
             <div class="links">
-              <span>Docker 或远程部署无法用浏览器登录，请填写 API Key</span>
-              <a href=${MF_KEYS} target="_blank" rel="noopener noreferrer">在 Modelflare 控制台创建 Key ↗</a>
+              <span>${t("onboarding.keyOnly")}</span>
+              <a href=${MF_KEYS} target="_blank" rel="noopener noreferrer">${t("onboarding.createKey")}</a>
             </div>`
           : html`<${AccountLogin} onFace=${onFace} onSignedIn=${loadModels} />`}
     </div>

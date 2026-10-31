@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { t, tl, lang, type Lang } from "../i18n/index.js";
 
 /**
  * 三层长期记忆（机器人 / 群 / 团队），Markdown 存储：
@@ -32,6 +33,9 @@ export interface Entry {
 }
 
 export class MemoryError extends Error {}
+
+/** 记忆操作的回执与报错：回给代理（工具结果），也显示在界面的记忆页（删除），按当前语言。remember 里的局部变量 t 会遮住 t()，所以起个别名 */
+const msg: typeof t = (key, params) => t(key, params);
 
 // ---------- 秘密检测（模式移植自 DS Bot ds-bot/src/host/memory.js，Apache-2.0） ----------
 const KEY_PATTERNS = [
@@ -76,10 +80,10 @@ export function parseEntries(md: string): Entry[] {
   return out;
 }
 
-export function validTopic(t: string): string {
-  const s = t.trim().toLowerCase().replace(/\s+/g, "-");
-  if (!/^[\p{L}\p{N}_-]{1,40}$/u.test(s)) throw new MemoryError(`主题名「${t}」无效：只能用字母、数字、中文、- 和 _，最长 40 字`);
-  if (s === "memory" || s === "index") throw new MemoryError(`主题名「${t}」是保留名`);
+export function validTopic(topic: string): string {
+  const s = topic.trim().toLowerCase().replace(/\s+/g, "-");
+  if (!/^[\p{L}\p{N}_-]{1,40}$/u.test(s)) throw new MemoryError(msg("agent.memTopicInvalid", { topic }));
+  if (s === "memory" || s === "index") throw new MemoryError(msg("agent.memTopicReserved", { topic }));
   return s;
 }
 
@@ -93,9 +97,14 @@ function today(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-export function scopeLabel(s: Scope): string {
-  return s.kind === "team" ? "团队记忆" : s.kind === "group" ? "本群记忆" : "机器人记忆";
+/**
+ * 作用域名称：默认按当前语言（界面的记忆页、记忆操作的回执）。
+ * 写进 MEMORY.md 的标题和给模型的快照 / 检索结果固定用中文（FILE_LANG）：文件内容与提示前缀不随界面语言变。
+ */
+export function scopeLabel(s: Scope, l: Lang = lang()): string {
+  return tl(l, s.kind === "team" ? "agent.scopeTeam" : s.kind === "group" ? "agent.scopeGroup" : "agent.scopeBot");
 }
+const FILE_LANG: Lang = "zh-CN";
 
 function safeKey(s: string): string {
   return s.replace(/[^A-Za-z0-9@._-]/g, "_").slice(0, 120) || "_";
@@ -172,41 +181,43 @@ export class MemoryStore {
     if (topic) return [`# ${topic}`, "", ...lines, ""].join("\n");
     const topics = this.topics(s);
     const idx = topics.length ? ["", "## Index", "", ...topics.map((t) => `- [[${t}]] — ${this.entries(s, t).length} 条`)] : [];
-    return [`# ${scopeLabel(s)}`, "", ...lines, ...idx, ""].join("\n");
+    return [`# ${scopeLabel(s, FILE_LANG)}`, "", ...lines, ...idx, ""].join("\n");
   }
 
   remember(s: Scope, text: string, opts: { topic?: string; source: string; by?: string }): string {
     const t = text.replace(/\s+/g, " ").trim();
-    if (!t) throw new MemoryError("内容为空");
-    if (t.length > ENTRY_MAX) throw new MemoryError(`单条记忆最多 ${ENTRY_MAX} 字（现在 ${t.length} 字），请精简后再保存`);
-    if (looksSecret(t)) throw new MemoryError("内容看起来含有密码、密钥、令牌或证件号，记忆里不能保存这类信息");
+    if (!t) throw new MemoryError(msg("agent.memEmpty"));
+    if (t.length > ENTRY_MAX) throw new MemoryError(msg("agent.memTooLong", { max: ENTRY_MAX, n: t.length }));
+    if (looksSecret(t)) throw new MemoryError(msg("agent.memSecret"));
     const topic = opts.topic ? validTopic(opts.topic) : undefined;
-    if (topic && !this.topics(s).includes(topic) && this.topics(s).length >= TOPICS_MAX) throw new MemoryError(`主题已达上限 ${TOPICS_MAX} 个，请把内容记到已有主题里`);
+    if (topic && !this.topics(s).includes(topic) && this.topics(s).length >= TOPICS_MAX) throw new MemoryError(msg("agent.memTopicsFull", { max: TOPICS_MAX }));
     const list = this.entries(s, topic);
-    if (list.some((e) => squash(e.text) === squash(t))) return "这条已经记过了";
+    if (list.some((e) => squash(e.text) === squash(t))) return msg("agent.memDuplicate");
     const entry: Entry = { text: t, meta: `source: ${opts.source.replace(/[\];]/g, "")}; added: ${today()}`, line: "" };
     const next = this.render(s, [...list, entry], topic);
     const cap = topic ? TOPIC_MAX : MEMORY_MAX;
     if (next.length > cap)
-      throw new MemoryError(topic ? `主题「${topic}」已满（上限 ${cap} 字），请先 forget 过时的内容` : `MEMORY.md 已满（上限 ${cap} 字），请把细节记到某个 topic 里，或先 forget 过时的内容`);
+      throw new MemoryError(topic ? msg("agent.memTopicFull", { topic, cap }) : msg("agent.memMainFull", { cap }));
     this.write(this.file(s, topic), next);
     if (topic) this.write(this.file(s), this.render(s, this.entries(s)));
     this.journal({ scope: this.key(s), file: topic ?? "MEMORY", op: "add", text: t, by: opts.by ?? opts.source });
-    return `已记住（${scopeLabel(s)}${topic ? ` · ${topic}` : ""}）`;
+    return msg("agent.memRemembered", { where: `${scopeLabel(s)}${topic ? ` · ${topic}` : ""}` });
   }
 
   /** 按内容片段删除；多条匹配且未指定 all 时报错并列出候选。 */
   forget(s: Scope, match: string, opts: { topic?: string; all?: boolean; by: string }): string {
     const key = squash(match);
-    if (!key) throw new MemoryError("请给出要删除的内容片段");
+    if (!key) throw new MemoryError(msg("agent.memForgetEmpty"));
     const topics = opts.topic ? [validTopic(opts.topic)] : [undefined, ...this.topics(s)];
     const hits: Array<{ topic?: string; e: Entry }> = [];
     for (const t of topics) for (const e of this.entries(s, t)) if (squash(e.text).includes(key)) hits.push({ topic: t, e });
-    if (!hits.length) throw new MemoryError(`${scopeLabel(s)}里没有包含「${match}」的条目`);
+    if (!hits.length) throw new MemoryError(msg("agent.memForgetNone", { scope: scopeLabel(s), match }));
     const exact = hits.filter((h) => squash(h.e.text) === key);
     const chosen = exact.length === 1 ? exact : hits;
     if (chosen.length > 1 && !opts.all)
-      throw new MemoryError(`有 ${chosen.length} 条匹配，请写得更具体，或传 all: true 全部删除：\n${chosen.map((h) => `- ${h.e.text}${h.topic ? `（${h.topic}）` : ""}`).join("\n")}`);
+      throw new MemoryError(
+        msg("agent.memForgetMany", { count: chosen.length, list: chosen.map((h) => `- ${h.e.text}${h.topic ? msg("agent.memInTopic", { topic: h.topic }) : ""}`).join("\n") }),
+      );
     const byTopic = new Map<string | undefined, Entry[]>();
     for (const h of chosen) byTopic.set(h.topic, [...(byTopic.get(h.topic) ?? []), h.e]);
     for (const [t, gone] of byTopic) {
@@ -216,7 +227,7 @@ export class MemoryStore {
       for (const g of gone) this.journal({ scope: this.key(s), file: t ?? "MEMORY", op: "remove", text: g.text, by: opts.by });
     }
     this.write(this.file(s), this.render(s, this.entries(s)));
-    return `已删除 ${chosen.length} 条（${scopeLabel(s)}）`;
+    return msg("agent.memForgotten", { count: chosen.length, scope: scopeLabel(s) });
   }
 
   /** 检索：所有关键词都出现的条目（不区分大小写）；中文无空格时按整串匹配。 */
@@ -228,7 +239,7 @@ export class MemoryStore {
       for (const t of [undefined, ...this.topics(s)]) {
         for (const e of this.entries(s, t)) {
           const hay = e.text.toLowerCase();
-          if (terms.every((w) => hay.includes(w))) out.push(`[${scopeLabel(s)}${t ? ` · ${t}` : ""}] ${e.text}`);
+          if (terms.every((w) => hay.includes(w))) out.push(`[${scopeLabel(s, FILE_LANG)}${t ? ` · ${t}` : ""}] ${e.text}`);
           if (out.length >= limit) return out;
         }
       }
@@ -243,7 +254,7 @@ export class MemoryStore {
       const es = this.entries(s);
       const ts = this.topics(s);
       if (!es.length && !ts.length) continue;
-      parts.push(`## ${scopeLabel(s)}`, ...es.map((e) => `- ${e.text}`));
+      parts.push(`## ${scopeLabel(s, FILE_LANG)}`, ...es.map((e) => `- ${e.text}`));
       if (ts.length) parts.push(`（主题，用 recall 读取：${ts.join("、")}）`);
       parts.push("");
     }

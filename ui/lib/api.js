@@ -1,4 +1,6 @@
 // 本机后端接口：JSON 请求 + 流式对话（POST + text/event-stream，EventSource 不支持 POST）。
+// 每个请求带 x-amb-lang（界面当前语言），服务端的报错和状态文字用同一种语言（src/i18n）。
+import { getLang } from "./i18n.js";
 export class ApiError extends Error {
   constructor(message, status, data) {
     super(message);
@@ -10,7 +12,7 @@ export class ApiError extends Error {
 export async function api(path, opts = {}) {
   const res = await fetch("/amb/api" + path, {
     method: opts.method || "GET",
-    headers: opts.body !== undefined ? { "content-type": "application/json" } : {},
+    headers: { "x-amb-lang": getLang(), ...(opts.body !== undefined ? { "content-type": "application/json" } : {}) },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     signal: opts.signal,
   });
@@ -99,7 +101,7 @@ export function streamChat(botId, text, handlers, signal) {
   return readEvents(
     fetch(`/amb/api/bots/${encodeURIComponent(botId)}/chat/stream`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-amb-lang": getLang() },
       body: JSON.stringify({ text }),
       signal,
     }),
@@ -109,5 +111,5 @@ export function streamChat(botId, text, handlers, signal) {
 
 /** 接上进行中的那条消息（切走再切回、刷新后）：先 snapshot（到目前为止的样子），之后的事件同 streamChat，最后 done */
 export function attachChat(botId, turnId, handlers, signal) {
-  return readEvents(fetch(`/amb/api/bots/${encodeURIComponent(botId)}/chat/live?turn=${encodeURIComponent(turnId)}`, { signal }), handlers);
+  return readEvents(fetch(`/amb/api/bots/${encodeURIComponent(botId)}/chat/live?turn=${encodeURIComponent(turnId)}`, { headers: { "x-amb-lang": getLang() }, signal }), handlers);
 }

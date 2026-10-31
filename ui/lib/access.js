@@ -1,11 +1,8 @@
 // 谁能使用机器人：信息面板（使用请求）和机器人设置（主人、允许名单）共用的说法。
-export const CHANNEL_NAME = { web: "网页", feishu: "飞书", weixin: "微信" };
+// 文案跟着界面语言：写成函数，渲染时再取。不认识的渠道 / 来源原样显示。
+import { t, has } from "./i18n.js";
+
+export const channelName = (c) => (has(`access.channel.${c}`) ? t(`access.channel.${c}`) : c);
 
 /** 允许名单里每个人是怎么来的 */
-export const SOURCE_LABEL = {
-  request: "你允许的",
-  migration: "升级前已在使用",
-  "previous-owner": "之前的主人",
-  app: "在应用里添加",
-  test: "测试",
-};
+export const sourceLabel = (s) => (has(`access.source.${s}`) ? t(`access.source.${s}`) : s);

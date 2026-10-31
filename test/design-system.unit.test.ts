@@ -100,6 +100,7 @@ const SIDE_BAR = /inset\s+-?([\d.]+)px\s+0\s+0\b/;
 /** 宽度：取声明里第一个长度（px 或 calc/var 都算"有宽度"） */
 const edgeWidth = (v: string) => {
   if (/^\s*(0|none)\s*(!important)?\s*$/.test(v) || /^\s*(0|none)\s/.test(v)) return 0;
+  if (/^\s*var\(--hairline\)/.test(v)) return 1; // 细线 token：一个物理像素（1px / 高分屏 .5px）
   const px = v.match(/(?<![\w.-])([\d.]+)px\b/);
   return px ? parseFloat(px[1]) : /calc\(|var\(|\b(thin|medium|thick)\b/.test(v) ? Infinity : 0;
 };
@@ -173,8 +174,10 @@ describe("设计规范", () => {
         ".g { border: 1px solid var(--ctl-edge); }   /* 描边：输入框的边 */",
         ".h { --x-edge: 0 0 0 var(--w) var(--line); }",
         ".i { border-bottom: 2px solid var(--accent); }",
+        ".j { border-top: var(--hairline) solid var(--line-2); }",
+        ".k { border-left: var(--w) solid var(--red); }",
       ].join("\n"));
-      expect(lintEdgesCss(tmp).map((h) => h.split(" ")[0].split(":").pop())).toEqual(["1", "2", "3", "4", "8", "9"]);
+      expect(lintEdgesCss(tmp).map((h) => h.split(" ")[0].split(":").pop())).toEqual(["1", "2", "3", "4", "8", "9", "11"]);
     } finally {
       fs.rmSync(path.dirname(tmp), { recursive: true, force: true });
     }

@@ -4,40 +4,42 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { html } from "./ui.js";
 import { ms, reducedMotion } from "../design/motion.js";
+import { t } from "../lib/i18n.js";
 
 /**
  * 角色。eyes：两眼中心；r：眼睛半径；earL / earR / top：耳朵与头顶配件的转轴；tip：配件的中心（特效从这里发出）；
- * lens：护目镜镜片（只有探险者有）。pick：适合配给哪些机器人（新建页模板按这个配对）。
+ * lens：护目镜镜片（只有探险者有）。
+ * 名字 name、定位 role、介绍 pick（适合配给哪些机器人，新建页模板按这个配对）在词典 avatar.chars.<key> 里，
+ * 用 charText(key) 取；BOT_CHARS[key].name / .role / .pick 也能读（getter，读的时候按当前语言翻译）。
  */
 export const BOT_CHARS = {
   blue: {
-    name: "小蓝", role: "主角 · 通用助手", pick: "天线一直在线，什么信号都接得住。默认助手、会议纪要。",
     eyes: [[38.81, 62.99], [60.82, 62.99]], r: 3.41, earL: [18.14, 62.21], earR: [81.94, 62.21], top: [49.96, 31.78], tip: [49.8, 21.2],
   },
   yellow: {
-    name: "小萌", role: "客服 · 陪聊", pick: "头顶一颗小星星，一笑就脸红。客服、答疑、陪聊。",
     eyes: [[38.34, 63.5], [61.4, 63.48]], r: 3.57, earL: [17.91, 62.13], earR: [82.25, 62.13], top: [50.04, 31.32], tip: [50, 19.7],
   },
   green: {
-    name: "绿草", role: "日报 · 整理", pick: "每天长高一点点。群聊日报、记忆整理、知识库。",
     eyes: [[38.8, 63.07], [61.09, 63.08]], r: 3.49, earL: [17.91, 62.71], earR: [82.02, 62.71], top: [50, 31.32], tip: [50.2, 21.2],
   },
   red: {
-    name: "红魔", role: "代码 · 自动化", pick: "戴上耳机就进入状态。写代码、跑脚本、自动化。",
     eyes: [[37.53, 59.46], [62.24, 59.45]], r: 3.88, earL: [19.53, 58.06], earR: [80.47, 58.06], top: [50.04, 28.37], tip: [50, 15],
   },
   purple: {
-    name: "紫钻", role: "写作 · 创意", pick: "灵感会在头顶结晶。写作、润色、出点子。",
     eyes: [[38.86, 63.04], [60.96, 63.04]], r: 3.49, earL: [18.14, 62.91], earR: [81.94, 62.91], top: [49.84, 32.87], tip: [50, 22],
   },
   orange: {
-    name: "探险者", role: "翻译 · 搜索", pick: "护目镜一戴，满世界找答案。翻译、搜索、操作电脑。",
     eyes: [[38.18, 61.84], [61.83, 61.84]], r: 3.57, earL: [15.66, 61.47], earR: [84.34, 61.47], top: [50.12, 27.44], tip: [50, 17],
     lens: [[35.27, 40.85], [64.81, 40.85], 6.4],
   },
 };
 export const CHAR_KEYS = Object.keys(BOT_CHARS);
 export const MAIN_CHAR = "blue";
+
+/** 角色的名字、定位和介绍（按当前语言） */
+export const charText = (key) => ({ name: t(`avatar.chars.${key}.name`), role: t(`avatar.chars.${key}.role`), pick: t(`avatar.chars.${key}.pick`) });
+for (const k of CHAR_KEYS)
+  for (const f of ["name", "role", "pick"]) Object.defineProperty(BOT_CHARS[k], f, { get: () => t(`avatar.chars.${k}.${f}`), enumerable: true });
 
 function hash(s) {
   let h = 2166136261;
@@ -225,14 +227,17 @@ export function BotAvatar({ bot, id, name, char, size = 34, state = "idle", work
 }
 
 /** 选角色：一排 6 个头像（单选）。value 为空时高亮 fallback（当前由 id 决定的那个） */
-export function AvatarPicker({ value, fallback, onChange, size = 44, label = "头像" }) {
+export function AvatarPicker({ value, fallback, onChange, size = 44, label = t("avatar.label") }) {
   const cur = value || fallback;
   return html`<div class="avatar-picker" role="radiogroup" aria-label=${label}>
-    ${CHAR_KEYS.map((k) => html`<button type="button" key=${k} class=${`avatar-opt${k === cur ? " on" : ""}`} role="radio" aria-checked=${k === cur}
-        title=${`${BOT_CHARS[k].name} · ${BOT_CHARS[k].pick}`} onClick=${() => k !== cur && onChange(k)}>
-      <${BotAvatar} char=${k} size=${size} state=${k === cur ? "listening" : "idle"} />
-      <span class="avatar-name">${BOT_CHARS[k].name}</span>
-    </button>`)}
+    ${CHAR_KEYS.map((k) => {
+      const c = charText(k);
+      return html`<button type="button" key=${k} class=${`avatar-opt${k === cur ? " on" : ""}`} role="radio" aria-checked=${k === cur}
+          title=${`${c.name} · ${c.pick}`} onClick=${() => k !== cur && onChange(k)}>
+        <${BotAvatar} char=${k} size=${size} state=${k === cur ? "listening" : "idle"} />
+        <span class="avatar-name">${c.name}</span>
+      </button>`;
+    })}
   </div>`;
 }
 

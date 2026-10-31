@@ -2,7 +2,7 @@
 
 界面样式的唯一来源。无构建步骤：原生 CSS（`@layer` + 自定义属性）+ Preact/htm 组件。
 
-- 样例页：本机服务的 `/amb/static/design/index.html`。token 表直接从 `tokens/*.css` 解析，不会和代码脱节；支持浅色/深色和双主题对照，也能模拟"减少动态效果"。
+- 样例页：本机服务的 `/amb/static/design/index.html`。token 表直接从 `tokens/*.css` 解析，不会和代码脱节；支持浅色/深色和双主题对照，也能模拟"减少动态效果"；设置 › 外观里的偏好（字体大小、字体、动画、毛玻璃）在样例页里同样生效。
 - 守卫测试：`test/design-system.unit.test.ts`。`npm test` 时检查规范有没有被破坏（规则见文末）。
 
 ## 目录
@@ -12,18 +12,18 @@ ui/design/
   index.css              入口：声明层顺序并按层引入下面所有文件
   tokens/
     primitives.css       L1 原始值：品牌/状态色板，间距、字号、圆角、控件高度、层级等尺度
-    semantic.css         L2 语义 token：按用途命名、按主题取值（浅色 + 深色）；另有与主题无关的间距角色
+    semantic.css         L2 语义 token：按用途命名、按主题取值（浅色 + 深色）；另有与主题无关的间距角色、字体与用户偏好
     motion.css           动效 token：时长、缓动、位移量、--motion 开关
   base/
     reset.css            重置、焦点环、可选中规则
     motion.css           关键帧库 + .anim-* 工具类 + 减少动态效果
     typography.css       文字角色 .t-*（在 utilities 层）
     utilities.css        .stack .cluster .grow .truncate .tone-* .sr-only
-  components/            一个组件一个文件：glass button field badge list seg switch popover model-family sheet toast notice feedback avatar
+  components/            一个组件一个文件：icon glass button field badge list seg switch popover model-family sheet splitter toast notice feedback avatar
   motion.js              ms("--dur-base")、usePresence()、reducedMotion()
   index.html / gallery.* 样例页
-ui/css/                  页面样式（shell / chat / settings），放在 app 层
-ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton Seg Switch Menu MenuButton Sheet …
+ui/css/                  页面样式（shell / chat / settings / guide），放在 app 层
+ui/components/ui.js      组件的 JS 写法：Icon Button IconButton Notice Skeleton Seg Switch Menu MenuButton Sheet …
 ```
 
 ## 层叠顺序
@@ -45,10 +45,13 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 | 类别 | 规则 |
 |---|---|
 | 颜色 | 页面和组件**只用语义色**。原始色板只在 `semantic.css` 里引用。新颜色先加语义 token（两个主题都要给值），再用。 |
-| 字号 | 9 级 `--fs-2xs … --fs-4xl`（11 / 11.5 / 12.5 / 13 / 14 / 15 / 17 / 20 / 24）。新界面优先用文字角色 `.t-*`。 |
+| 字号 | 9 级 `--fs-2xs … --fs-4xl`（11 / 11.5 / 12.5 / 13 / 14 / 15 / 17 / 20 / 22），都乘以 `--fs-scale`（设置 › 外观 › 字体大小）。新界面优先用文字角色 `.t-*`；跟着文字走的长度（比如输入框行高 `--composer-line`）也乘 `--fs-scale`。 |
+| 字重与字距 | `--fw-semibold` 只给标题：页面、分组、对话框、顶栏与面板标题、提问卡的问题、正文里的标题、11px 小标签。名称一类（机器人名、文件名、模板名、账户名、信息面板的行）用 `--fw-medium`；设置页的行名称用常规字重，层次交给分组标题和 `--muted` 的说明。大标题用 `--tracking-tighter`（-.015em）、二级标题 `--tracking-tight`（-.01em）——中文字形本来就满，不要收得更紧；行高用 `--lh-*`，不写 1.45 这类散值。 |
+| 字体 | 只用 `--font` / `--code`。它们默认是各平台的系统字体 `--font-system` / `--code-system`，用户可以换成衬线 `--font-serif` 或自定义字体（见「用户偏好」）。 |
 | 圆角 | `--r-xs … --r-3xl`、`--r-full`。同一种面用同一个圆角角色：`--r-well`（内容里的一组）、`--r-pane`（面板与浮层）、`--r-bubble`（消息气泡），见「容器与层次」。嵌套时内层 = 外层 − 内边距（`.seg`、`.pop` 里的列表项就是这样算的）。圆形用 `50%`。 |
 | 间距 | 4 的倍数 `--space-1 … --space-16`，另有 `-0-5 / -1-5 / -2-5 / -3-5` 半步。页面和组件先用按用途命名的间距角色（见下文「间距」）。写死的像素只允许 0、≤1px 的细线，以及同一行带 `/* 微调：… */` 注释的光学微调。 |
 | 控件高度 | `--ctl-xs … --ctl-2xl`（22 / 24 / 28 / 32 / 36 / 44）。 |
+| 细线 | `--hairline`：一个物理像素（普通屏 1px，高分屏 .5px）。面板、玻璃浮层、黄绿填充面的细边都用它——写死 `.5px` 在 1x 屏上会被抗锯齿成一道若有若无的虚影。 |
 | 层次 | `--well` / `--well-hover` / `--well-press`（内容里的一组，只有这一层）；`--line-2`（行间细线）；`--ctl-edge` / `--ctl-edge-hover`（输入框的边，≥ 3:1）；`--red-wash` / `--amber-wash`（提示行的淡底）。规则见「容器与层次」。 |
 | 投影 | `--shadow-xs / sm / md / lg`；`--shadow-pane`（浮在环境光上的面板）、`--shadow-tile`（侧栏选中项，只有投影）、`--shadow-float` / `--shadow-pop`（玻璃的边 + 投影）、`--primary-edge`、`--seg-edge`（分段 thumb、开关圆钮，只有投影）。深色下更重，都是主题 token。内容里的组不加投影。 |
 | 层级 | 只用 `--z-*`；同一窗格内的浮动件用 `calc(var(--z-float) ± 1)`。 |
@@ -81,10 +84,13 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 
 **对齐的线**，改间距时守住：
 
-- **顶部中线**：侧栏顶部先让出 `--pane-gap` 再放 `--head-h`，新建按钮和主区、信息面板的顶栏按钮在同一条水平线上；搜索框的上沿就是顶栏的下沿。
+- **顶部中线**：侧栏顶部先让出 `--pane-gap` 再放 `--head-h`，新建按钮和主区、信息面板的顶栏按钮在同一条水平线上；搜索框的上沿就是顶栏的下沿。顶栏里的图标按钮一律 28（`--ctl-md`）：16 的图标四周各 6，算对齐时按图标的外沿算。
+- **窗口标题栏**：桌面版没有系统标题栏，侧栏顶部这一行就是标题栏。左上角看平台：macOS 让给红绿灯（`--titlebar-inset`），不放 Logo（应用名在菜单栏里）；Windows（`:root.win-app`）放应用图标（`--brand-mark` 20）+「AnyModelBot」，图标的左沿落在侧栏竖线上，整块是拖动区。Windows 的右上角是系统画的最小化 / 最大化 / 关闭，和这一行一样高、贴住窗口右上角；最右边的顶栏（信息面板开着时是面板的顶栏，关着时是主区的顶栏）右边多让出 `--caption-reserve`，这时两种顶栏不再左右对称。信息面板自己的关闭钮在 Windows 上不放，免得和窗口的关闭钮挨成两个 ×。浏览器里和 Linux 桌面版用的是系统 / 浏览器的标题栏，这些都不出现。
 - **底边**：侧栏的账户行离窗口下沿 `--pane-gap`，和主区、信息面板的下沿对齐；"已保存"浮在账户行上方一个 `--side-inset`，左边和侧栏的行对齐。
-- **侧栏竖线**：行、搜索框、账户的边离侧栏边缘 `--side-inset`；头像、导航图标、搜索图标、返回箭头都在 `--side-inset + --side-row-px`（18）；搜索框的文字和设置导航的文字对齐。
-- **面板竖线**：信息面板的标题、分组标题、行文字、展开编辑区、待审批说明都在 `--pane-px`（16）；对话顶栏是 `--head-px` + 按钮自带的 6，头像也落在 16。
+- **侧栏竖线**：行、搜索框、账户的边离侧栏边缘 `--side-inset`；头像、导航图标、搜索图标、返回箭头都在 `--side-inset + --side-row-px`（18）；搜索框的文字、"返回应用"和设置导航的文字在同一条竖线上（搜索图标 14 + 间隙 12 = 导航图标 16 + 间隙 10）。新建按钮的图标右沿落在行文字的右边线上（同样离侧栏右边 18），和机器人行的时间右对齐。机器人列表的右边距用外边距：滚动条贴着行的右边，不落进侧栏和主区之间的空隙（那里是分隔条）。
+- **空隙**：侧栏与主区、主区与信息面板之间都是 `--pane-gap`；分隔条就放在空隙正中（见「分隔条」）。
+- **面板竖线**：信息面板的标题、分组标题、行文字、展开编辑区、待审批说明都在 `--pane-px`（16）；对话顶栏是 `--head-px` + 按钮自带的 6，头像也落在 16。两种顶栏都左右对称：最右边那个图标的外沿同样离面板右边 16。
+- **输入框**：加号钮和发送钮都是 32 的圆、离输入框的边 `--composer-pad`（8），加号的图标框正好落在文字的起点（16）上；模型、权限胶囊矮一档（28），不和两端的圆钮抢。
 - **居中列**：对话列和输入框同宽 `min(--col-w, 100% − 2 × --page-gutter)`，设置页、新建页、引导页两侧也至少 `--page-gutter`。对话列的下边距和"回到底部"的位置由输入框高度 `--composer-h` 算出来。
 - **弹出层**：列表离边缘 `--pop-pad`（4），项再缩进 8，于是项的文字、分组名、分隔线、搜索图标、空状态都在离边缘 12 的线上。
 - **行**：默认行上下 6，"标题 + 说明"两行的行和一行的行一样高（48）；`.row.compact` 只是矮一些，左右和默认行一样；`.row-edit` 的左右也和行一样，输入框和上面那行的文字对齐。
@@ -129,7 +135,7 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 
 - **填充、悬停、描边都是半透明的一层**（`--pill*`、`--side-*`、`--line*`、`--sel*`），放在玻璃和实色上都对。不要在玻璃上用实色灰。
 - **`backdrop-filter` 会让元素变成 `position: fixed` 子元素的包含块**。里面会渲染菜单、对话框的容器（侧栏、主区、`.chat`）不要加，模糊只加在叶子级的浮层上。
-- 系统开了"降低透明度"（`prefers-reduced-transparency`），材质自动换成接近实色，层次靠浮层的细边和投影。
+- 关掉毛玻璃（`<html data-glass="off">`：设置 › 外观 › 毛玻璃效果；跟随系统时看"降低透明度" `prefers-reduced-transparency`），材质换成接近实色、`--glass-filter*` 变成 `none`，层次靠浮层的细边和投影。
 - **模糊只给浮层**：对话框、命令面板后面的遮罩只压暗、不模糊——对话框自己的玻璃已经模糊了一层，两层叠在一起既糊又费 GPU。
 
 ## 容器与层次
@@ -169,7 +175,7 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 
 | 状态 | 怎么表现 | 用什么 |
 |---|---|---|
-| 悬停 | 叠一层半透明，静默控件的字从 `--ctl-fg` 变 `--fg`；可点的组（模板卡）底色深一级，不浮起、不加描边 | `--pill` → `--pill-hover`，`--well` → `--well-hover`；侧栏里是更亮的一层玻璃 `--side-hover` |
+| 悬停 | 叠一层半透明，静默控件的字从 `--ctl-fg` 变 `--fg`；可点的组（模板卡）底色深一级，不浮起、不加描边 | `--pill` → `--pill-hover`，`--well` → `--well-hover`；侧栏里也是一层淡灰 `--side-hover`（侧栏本来就接近白色，再亮一层看不出来），和选中的白色玻璃片一暗一亮 |
 | 按下 | 再深一级，并轻微缩小（`--press` / `--press-strong`）；列表行只变色不缩放 | `--pill-press`、`--sel-press`、`--side-press` |
 | 键盘焦点 | `:focus-visible` 2px `--accent` 描边；输入框是描边 + 光晕 | `--focus-offset`、`--ring` |
 | 打开 | 菜单展开时触发它的按钮保持"按住"的样子，箭头翻转，加号转成叉 | `[aria-expanded="true"]`，`.icon-btn.on` |
@@ -180,12 +186,53 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 | 只读 | 次级底，聚焦不发光 | `[readonly]` |
 | 滚动边缘 | 内容滚到顶栏底下时，顶栏才出现细线和投影 | `.chat.scrolled` |
 
+## 分隔条
+
+两块面板之间的空隙可以拖：侧栏 | 主区、主区 | 信息面板。组件是 `Splitter`（`ui/components/ui.js`），样式在 `components/splitter.css`。
+
+| 方面 | 规范 |
+|---|---|
+| 位置 | 就是面板之间那道 `--pane-gap` 空隙，分隔条的中线落在空隙正中；能抓住的宽度 `--split-hit`（12）比空隙宽一点，两边各探进面板 2px。Electron 里是 `no-drag`，盖在顶栏的拖动区上也抓得住 |
+| 平时 | 看不见，指针移上去只变成 ↔（`col-resize`） |
+| 悬停 | 停住 `--dur-intent` 后空隙中间从中点长出一道 2px 的细线 `--split-line`；只是划过去不闪，移开立刻消失。细线只画在面板直边那一段（上下让出 `--pane-gap + --r-pane`） |
+| 拖动 | 细线换成 `--split-line-on`（`--accent`：浅色墨、深色黄绿）；整个窗口都是 ↔、不会选中文字（`<html data-resizing>`）；宽度跟手（直接写 CSS 变量，不经过渲染，列宽不过渡）；离默认宽度 6px 以内吸附回默认；到了最窄 / 最宽，指针换成单向箭头 |
+| 范围 | `--side-w-min … min(--side-w-max, --side-w-cap)`（220 … 400，且不超过窗口的 36%），信息面板 `--panel-w-min … min(--panel-w-max, --panel-w-cap)`（280 … 440，34%）；拖动时还要给主区留至少 `--main-w-min` |
+| 恢复 | 双击分隔条恢复默认宽度，列宽用 `--dur-slow` + `--ease-spring` 滑回去 |
+| 键盘 | `role="separator"`，可以 Tab 到；焦点就是那道 accent 细线（不画外描边）。← → 一次 8px、Shift 一次 32px，Home / End 最窄 / 最宽，Enter 恢复默认 |
+| 保存 | 松手、键盘、双击时提交一次：`lib/prefs.js` 的 `sideW` / `panelW`（px，0 = 默认），每个窗口各一份；首帧前 `index.html` 先写到 `<html>` 上的 `--side-w-user` / `--panel-w-user`，不闪 |
+| 不出现 | 窗口窄于 1180px 时信息面板是浮在对话上的抽屉，它的分隔条隐藏 |
+
+页面怎么接：列宽在 `.app` 上用 `clamp(-min, var(-user, 默认), min(-max, -cap))` 算出来（`--side-col`、`--panel-col`），分隔条用 `--split-x` 定位到空隙中线：
+
+```css
+.app > .split-side { --split-x: calc(var(--side-col) - var(--pane-gap) / 2); }
+<${Splitter} class="split-side" size="--side-w" label="调整侧栏宽度" value=${sideW} room=${…} onCommit=${(px) => setPrefs({ sideW: px })} />
+```
+
+`--side-col`、`--panel-track`（信息面板那一列此刻的宽度：关着是 0）注册成 `<length>`（`@property`，不继承），所以信息面板开合、恢复默认时列宽能平滑过渡：面板本身定宽，列变窄时它往右滑出窗口，里面的内容不会被挤扁重排。
+
 ## 主题
 
 - `<html data-theme>` 总是解析后的 `light` / `dark`（`index.html` 首帧前设置，`lib/theme.js` 同步）。
 - **主题可以局部生效**：任何元素加 `data-theme="dark"`，它的子树就换一套语义 token（样例页的双主题对照就是这样做的）。
 - 因此**不要写** `:root[data-theme="dark"] .xxx { … }` 这类按主题的覆盖。需要两个主题不同的值，就加一个语义 token。
 - 由其他语义 token 推导的值（`--ring`、`--code-bg`）写在 `:root, [data-theme] { … }` 里，每个作用域都会重新计算。
+
+## 用户偏好
+
+设置 › 外观（和常规里的发送键、通知）是**本机界面偏好**，和主题一样存在 localStorage（`amb-prefs`，`lib/prefs.js`），每个浏览器 / 桌面窗口各一份。外观类的偏好解析成 `<html>` 上的属性，`semantic.css` 的「用户偏好」块和 `motion.css` 把属性翻译成 token——**页面和组件只用 token，不认这些属性**：
+
+| 属性 | 取值 | 翻译成 |
+|---|---|---|
+| `data-text` | `sm / md / lg / xl` | `--fs-scale`（.92 / 1 / 1.1 / 1.2）：只放大文字，控件高度、图标、间距不变；整体放大是桌面版的「界面缩放」（Electron zoom） |
+| `data-font` | `system / serif / custom` | `--font`；`custom` 时 `prefs.js` 在 `<html>` 上内联 `--font: "自定义", var(--font-system)`。自定义代码字体同样内联 `--code` |
+| `data-width` | `normal / wide / full` | `--col-w`、`--bubble-w`（对话列和输入框） |
+| `data-code-wrap` | `on / off` | `--code-wrap`（代码块的 `white-space`） |
+| `data-glass` | `on / off` | 材质（见「材质」） |
+| `data-motion` | `full / reduce / off` | `--motion`、`--press*`、`--dur-*`（见「动效」） |
+
+- 首帧前 `index.html` 的内联脚本按同样的规则先套一遍，避免闪；改解析规则时它和 `prefs.js` 的 `apply()` 一起改。
+- "跟随系统"在 JS 里解析：属性永远是解析后的值，CSS 里不写 `@media (prefers-reduced-*)`。
 
 ## 组件
 
@@ -200,7 +247,8 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 |---|---|---|
 | 按钮 | `.btn [primary\|ghost\|danger] [sm\|lg] [block]` | `--btn-h --btn-px --btn-r --btn-fs --btn-bg --btn-bg-hover --btn-bg-press --btn-fg --btn-fg-hover --btn-edge` |
 | 毛玻璃 | `.glass`（组件自己是玻璃时直接写三行，见「材质」） | `--glass-bg --glass-blur --glass-shadow` |
-| 图标按钮 | `.icon-btn [xs] [on]` | `--ib-size --ib-r --ib-fg --ib-fg-hover --ib-bg-hover --ib-bg-on --ib-bg-press` |
+| 图标 | `Icon`（`svg.ic [ic-xs\|ic-sm\|ic-md\|ic-lg\|ic-xl] [ic-strong]`），见下文「图标」 | `--ic-size --ic-w` |
+| 图标按钮 | `.icon-btn [xs] [on]`；`IconButton` 的 `iconSize` 缺省 `sm` | `--ib-size --ib-r --ib-fg --ib-fg-hover --ib-bg-hover --ib-bg-on --ib-bg-press` |
 | 文字按钮 | `.text [danger\|accent]` | — |
 | 输入框 | `.field [mono] [err]`，`.field-wrap > .field + .tail`；边是 `--ctl-edge`（≥ 3:1），底透明 | `--field-h --field-px --field-r --field-bg --field-edge --field-edge-hover --field-edge-focus --field-ring` |
 | 状态 / 计数 / 点 | `.badge [ok\|err\|warn\|off]`（状态点 + 文字），`.badge.count [warn]`（计数，唯一带底的徽标），`.dot [ok\|err\|warn]` | `--badge-fg`（点的颜色；计数的字色）`--badge-bg`（只对计数），`--dot-bg` |
@@ -209,12 +257,31 @@ ui/components/ui.js      组件的 JS 写法：Button IconButton Notice Skeleton
 | 开关 | `Switch` 组件（`button.switch[role=switch] [sm]`），只有开 / 关 | `--switch-w --switch-h --switch-pad --switch-track --switch-track-hover --switch-dot --switch-stretch` |
 | 菜单 | `.pick`，`.pop [up]`，`.palette`，`Menu` / `MenuButton` / `Popover` | `--pop-r --pop-pad` |
 | 对话框 | `Sheet` / `confirmSheet()`（`.scrim > .sheet [wide]`） | `--sheet-w --sheet-r` |
+| 分隔条 | `Splitter`（`.splitter [dragging]`），见下文「分隔条」 | `--split-x --split-hit --split-line-w --split-inset --split-line-on`；悬停色是语义 token `--split-line` |
 | 提示胶囊 | `toast()` / `saved()` / `failed()`（`.toast [ok\|err\|warn]`） | `--toast-bg --toast-fg --toast-edge` |
 | 行内提示 | `Notice`（自带图标）/ `.notice [amber\|red]`：淡底 + 图标 + `--fg` 字，不描边 | `--notice-bg --notice-ic` |
 | 加载 | `Spinner`、`Skeleton`（`.skel [circle]`）、`.empty-state` | — |
 | 头像 | `BotAvatar [bot\|char] [state] [cue] [lively] [pokeable] [greet] [neutral]`、`AvatarPicker`、`AppMark`；6 个内置角色，见下文「头像」 | `--avatar-aura --avatar-shadow`（主题），角色颜色 `--bot-*`（原画色，两个主题相同） |
 
 JS 组件（`ui/components/ui.js`）只是给常用组合一个带逻辑的写法（loading、图标、无障碍属性）；直接写类名同样合法。
+
+## 图标
+
+线性图标，16 格画布、`currentColor`、圆头圆角（`ui.js` 的 `P`，样式 `components/icon.css`）。**细、轻、少**：图标是文字旁边的记号，不和文字抢分量。
+
+| 档 | `size` | 像素 | 用在 |
+|---|---|---|---|
+| xs | `"xs"` | 12 | 下拉箭头（`.pick`、模型胶囊，上下文自动给）、`.icon-btn.xs` 里的关闭、实心圆点里的勾、列表行尾的 › |
+| sm | `"sm"` | 14 | **默认**：`Button` / `IconButton` / `Notice` / 菜单的图标和勾、输入框尾部、行内操作（刷新、删除、复制）、侧栏和弹出层的搜索 |
+| md | `"md"` | 16 | 顶栏与工具栏按钮（新对话、信息面板、关闭）、侧栏的新建 / 导航 / 账户 / 返回、对话输入框（加号、发送、停止、回到底部）、命令面板搜索 |
+| lg | `"lg"` | 20 | 模板卡 |
+| xl | `"xl"` | 24 | 文件卡片 |
+
+- **线宽按显示像素算**：`--ic-stroke`（1.25px）对所有尺寸都一样，12px 的箭头和 24px 的文件图标一样细；`icon.css` 把它换算回画布单位（× 16 / 尺寸）。只有实心面上的图标加 `strong`（`--ic-stroke-strong` 1.6px）：发送钮的箭头、完成圆点里的勾——细线压在墨色 / 黄绿上会发虚。不要再传任意的 `stroke`。
+- **只用这五档**，不写 13、15、17 这类中间值。图标和旁边的文字差不多高或略高一点：12.5–13px 的控件文字配 14，侧栏和顶栏配 16。
+- **上下文改尺寸只改 `--ic-size`**（`.pick .ic { --ic-size: var(--ic-xs) }`），不要直接写 `width / height`——那样线宽会跟着缩放。`icon.css` 全部包在 `:where()` 里，任何上下文选择器都能盖过 `size` 属性。
+- **实心的小部件**（信息 / 警告的点、省略号、停止方块、调色盘的色点）在 `P` 里写成 `{ s: 描边, f: 实心 }`，用 `dot(x, y, r)` 画圆点，不靠加粗线头冒充圆点。
+- 新图标：留 1.75 格左右的边距（主体落在 2–14 之间），拐角 .75 的圆角，能用一条线就不用两条；画好在样例页「图标」一节里和现有图标并排看一遍粗细和大小。
 
 ## 动效
 
@@ -223,15 +290,30 @@ JS 组件（`ui/components/ui.js`）只是给常用组合一个带逻辑的写�
 | 悬停、按下、颜色变化 | `--dur-fast` 120ms（`--t-fast`） | `--ease-out` |
 | 出现 / 消失、提示胶囊、遮罩 | `--dur-base` 180ms | 入场 `--ease-out`，退场 `--ease-in` |
 | 视图切换、面板、分段 thumb | `--dur-moderate` 240ms | `--ease-out` |
+| 布局滑动：信息面板开合、分隔条恢复默认 / 键盘调宽 | `--dur-slow` 360ms | `--ease-spring` |
+| 悬停意图：停住多久才亮起提示（分隔条的细线） | `--dur-intent` 240ms | 只延迟出现，移开立刻消失 |
 | 对话框 / 弹出层的弹性入场 | `--dur-slow` 360ms / `--dur-slower` 420ms | `--ease-spring` |
-| 循环（转圈、骨架、呼吸、光标） | `--dur-spin --dur-shimmer --dur-pulse --dur-blink` | `linear` / `--ease-in-out` |
+| 循环（转圈、骨架、文字微光、呼吸、光标） | `--dur-spin --dur-shimmer --dur-sheen --dur-pulse --dur-blink` | `linear` / `--ease-in-out` |
 
-- **关键帧库**（`base/motion.css`）：`fade-in/out`、`rise-in`、`sink-out`、`slide-in`、`pop-in/out`、`bump`、`flash`、`spin`、`shimmer`、`breathe`、`blink`。关键帧只描述起止，时长缓动由使用处给 token。
-- **位移量是 token**：`--rise`、`--slide`、`--pop-dy`、`--pop-scale`，组件可以局部覆盖（`.toast { --rise: 6px }`）。
-- **减少动态效果**：关键帧里的位移都乘以 `--motion`；系统开启"减少动态效果"时 `--motion: 0`，所有入场自动退化成纯淡入，按下不缩放，过渡几乎瞬时。新写的关键帧也要乘 `--motion`。
+- **关键帧库**（`base/motion.css`）：`fade-in/out`、`rise-in`、`sink-out`、`slide-in/out`、`pop-in/out`、`scale-in`、`bump`、`flash`、`spin`、`shimmer`、`sheen`（文字微光，配 `background-clip: text`）、`breathe`、`blink`。关键帧只描述起止，时长缓动由使用处给 token。
+- **位移量是 token**：`--rise`、`--slide`、`--pop-dy`、`--pop-scale`、`--scale-from`，组件可以局部覆盖（`.toast { --rise: 6px }`）。
+- **减少 / 关闭动画**：看 `<html data-motion>`（`full | reduce | off`，设置 › 外观 › 动画；跟随系统时看 `prefers-reduced-motion`）。关键帧里的位移都乘以 `--motion`；`reduce` 时 `--motion: 0`，所有入场自动退化成纯淡入，按下不缩放，过渡几乎瞬时；`off` 时 `--dur-fast … --dur-slower` 也变成 `--dur-off`，出现 / 消失 / 视图切换瞬时完成，只留转圈、骨架、光标这类"正在进行"的循环和定位闪烁。新写的关键帧也要乘 `--motion`；CSS 里不要再写 `@media (prefers-reduced-motion)`，JS 用 `reducedMotion()`（`design/motion.js`）。
 - **退场动画**：用 `usePresence(open)`（`design/motion.js`）让组件在退场时长内保持挂载，并给元素加 `.leaving` / `.anim-*-out`。`DialogHost` 是参考实现。
 - **JS 里不写死毫秒数**：`ms("--dur-base")` 读 token（toast 的移除时机就是这样同步的）。
-- 只给 `transform` 和 `opacity` 做动画；空闲列表保持安静（头像空闲时只在指针靠近时看过去、悬停时抖一下天线，不自己动）。
+- **每个动画都要有明确的表意**：只用来表达状态变化（出现 / 消失、选中、成功 / 失败）、对操作的反馈、真实在进行的过程（加载、生成、传输）、机器人的状态。**严禁背景 / 装饰层的动画**——背景、光晕、边框、纹理一律静止：不做自己循环的光圈 / 光框扩散（"隧道"、涟漪、雷达波）、呼吸的光晕、沿边框巡游的扫光、漂浮的光斑 / 粒子、跟随指针的点阵 / 聚光灯。说不出"它在告诉用户什么"的动画一律不加（官网同一条，见 `site/README.md`）。
+- 只给 `transform` 和 `opacity` 做动画；空闲列表保持安静（头像空闲时只在指针靠近时看过去、悬停时抖一下天线，不自己动）。唯一的例外是对话里很快答完时工作状态行的收起（`.work.gone`，grid `1fr → 0fr`，只播一次），为的是正文不跳。
+
+**对话流的编排**（`ui/css/chat.css`）：发出 → 思考 → 输出 → 收尾，每一步只动一样东西，幅度小，循环都放慢、对比只差一档，余光里知道"在动"就够了。
+
+| 环节 | 动什么 | 怎么动 |
+|---|---|---|
+| 发出 | 你的气泡 | `fade-in`（base）+ `pop-in`（slow，spring），从下方 12px、缩放 .96，原点右下角（从发送钮那边送出去） |
+| 思考 | 工作状态行 | 比气泡晚 `--stagger` 淡入；"思考中"是 `sheen` 微光：`--muted` 底上一道 `--fg-2` 的光，`--dur-sheen` 扫过去再停一拍 |
+| 输出 | 新段落 / 列表项 | 新挂载的块淡入（moderate），已在的不重播；最后一段末尾一个 `breathe` 小点（代码块、表格结尾不画） |
+| 收尾 | 状态行、操作 | "用时"换字淡入、细线淡入；短于 3 秒的整行平滑收起；最后一条回复的复制 / 时刻晚一拍淡入 |
+| 插入 | 提问 / 审批卡、文件、出错提示 | `rise-in`（6px，moderate） |
+| 输入框 | 投影、发送钮 | 聚焦时投影 moderate 长大；空时箭头小一号，有字时 `--ease-back` 回弹到位；发出后停止方块 `scale-in`，结束后箭头 `rise-in` 升回（只在发过之后）；点发送 / 停止不抢输入框焦点 |
+| 其他 | 首次加载、回到底部 | 历史读到后整列淡入一次；回到底部 `rise-in` 出现、`sink-out` 退场，新消息点 `scale-in` |
 
 ## 头像
 
@@ -270,7 +352,7 @@ JS 组件（`ui/components/ui.js`）只是给常用组合一个带逻辑的写�
 - 间距写死 px：`margin` / `padding` / `gap` / `inset` / `top|right|bottom|left` / `scroll-margin|padding`，以及 `--*-gap|pad|px|py|pl|pr|pt|pb|inset|gutter` 这类间距变量；`calc()` 里加减写死的 px。0、≤1px 细线、同一行带 `/* 微调：… */` 注释的除外
 - JS 内联样式里写死颜色、字号或间距
 - 描边容器：`border` / `outline` 带宽度，或 `box-shadow`（包括自定义属性的值）里画一圈 `0 0 0 <宽>` 的边，而同一行没有 `/* 描边：… */`；`:focus*` 选择器里的焦点描边除外
-- 侧边色条：左右两侧 ≥ 2px 的 `border`，或 `box-shadow: inset Npx 0 0`；以及上下 > 1px 的分隔线
+- 侧边色条：左右两侧 ≥ 2px 的 `border`，或 `box-shadow: inset Npx 0 0`；以及上下 > 1px 的分隔线（`var(--hairline)` 算 1px）
 - JS 内联样式里画边框
 - `text-transform: uppercase` 和正的 `letter-spacing`（小标签不全大写、不加字距）
 - 引用了没定义的 `var(--x)`（带回退值的除外）

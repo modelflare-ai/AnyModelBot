@@ -6,7 +6,21 @@ export type ChannelId = "feishu" | "weixin" | "web";
 
 export type Part =
   | { type: "text"; text: string }
-  | { type: "image" | "file" | "video"; ref?: string; name?: string }
+  | {
+      type: "image" | "file" | "video";
+      ref?: string;
+      name?: string;
+      /** 渠道下载到的内容（运行时存进工作区后填 path） */
+      data?: Buffer;
+      /** 图片格式（按文件头识别） */
+      mime?: string;
+      /** 存进机器人工作区后的相对路径，如 inbox/20261031-143012-ab12cd.jpg */
+      path?: string;
+      /** 下载失败的原因 */
+      error?: string;
+      /** 来自被引用的消息 */
+      quoted?: boolean;
+    }
   | { type: "voice"; ref?: string; transcript?: string }
   | { type: "quote"; text: string };
 
@@ -69,6 +83,8 @@ export type ChannelStatus = {
   since: number;
 };
 
+const MEDIA_LABEL = { image: "图片", file: "文件", video: "视频" } as const;
+
 export function eventText(ev: InboundEvent): string {
   return ev.parts
     .map((p) => {
@@ -80,11 +96,13 @@ export function eventText(ev: InboundEvent): string {
         case "voice":
           return p.transcript ? p.transcript : "[语音]";
         case "image":
-          return "[图片]";
         case "file":
-          return `[文件${p.name ? " " + p.name : ""}]`;
-        case "video":
-          return "[视频]";
+        case "video": {
+          // [图片 inbox/x.jpg]、[引用的文件 报告.pdf → inbox/x-报告.pdf]、[视频（未能下载：…）]
+          const label = `${p.quoted ? "引用的" : ""}${MEDIA_LABEL[p.type]}${p.type === "file" && p.name ? " " + p.name : ""}`;
+          if (p.path) return `[${label}${p.type === "file" && p.name ? " →" : ""} ${p.path}]`;
+          return p.error ? `[${label}（未能下载：${p.error}）]` : `[${label}]`;
+        }
       }
     })
     .join("\n")

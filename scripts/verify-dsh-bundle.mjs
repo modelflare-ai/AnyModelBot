@@ -68,7 +68,9 @@ await step("DSH host answers through a mock model", async () => {
     if (!body.stream) return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "title" }, finish_reason: "stop" }] }));
     res.writeHead(200, { "content-type": "text/event-stream" });
     const send = (o) => res.write(`data: ${JSON.stringify({ id: "c1", object: "chat.completion.chunk", model: body.model, ...o })}\n\n`);
-    send({ choices: [{ index: 0, delta: { role: "assistant", content: "bundle-pong" } }] });
+    // a user image reaches the model as an image_url part (after DSH admitted and normalized it with sharp)
+    const image = body.messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p?.type === "image_url"));
+    send({ choices: [{ index: 0, delta: { role: "assistant", content: image ? "bundle-image-seen" : "bundle-pong" } }] });
     send({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
     send({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
     res.end("data: [DONE]\n\n");
@@ -91,6 +93,7 @@ await step("DSH host answers through a mock model", async () => {
       "            name: mock",
       "            contextWindow: 128000",
       "            maxTokens: 16000",
+      "            input: [text, image]",
       "",
     ].join("\n"),
   );
@@ -106,11 +109,26 @@ await step("DSH host answers through a mock model", async () => {
     console.log(`DSH_HOST_INIT_MS=${started}`);
     const r = await withTimeout(h.session().run("ping"), 60_000, "turn");
     if (!String(r.finalResponse).includes("bundle-pong")) throw new Error(`unexpected reply ${JSON.stringify(r.finalResponse)}`);
-    return `(sdk import ${sdkMs} ms, host spawn -> initialized ${started} ms)`;
+    // An image the user sent in chat (src/agent/host.ts imageInput). Not on Linux: sharp crashes under Electron
+    // there, so the app never passes images to DSH on Linux.
+    let image = "";
+    if (process.platform !== "linux") {
+      const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+      const ri = await withTimeout(h.session().run([{ type: "text", text: "what is this?" }, { type: "image", data: png, mimeType: "image/png" }]), 60_000, "image turn");
+      if (!String(ri.finalResponse).includes("bundle-image-seen")) throw new Error(`image did not reach the model: ${JSON.stringify(ri.finalResponse)}`);
+      image = ", image turn ok";
+    }
+    return `(sdk import ${sdkMs} ms, host spawn -> initialized ${started} ms${image})`;
   } finally {
     await h.close().catch(() => {});
     llm.close();
-    fs.rmSync(home, { recursive: true, force: true, maxRetries: 5 });
+    // Windows can keep a file under the DSH home locked for a moment after close (the image turn writes the
+    // attachment store there); a leftover temp dir must not hide the turn's own result.
+    try {
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 10 });
+    } catch (e) {
+      console.log(`  (left ${home}: ${e.code ?? e.message})`);
+    }
   }
 });
 await step("koffi", () => `v${from("@deepseek-ai/dsh-subprocess-local")("koffi").version}`);

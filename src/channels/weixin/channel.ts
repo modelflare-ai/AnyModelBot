@@ -3,7 +3,7 @@ import { splitText } from "../../core/types.js";
 import { Dedup, KeyedQueue } from "../../core/queue.js";
 import type { BotRuntime } from "../../core/runtime.js";
 import type { Store } from "../../store/db.js";
-import { IlinkClient, MessageItemType, MessageType, WeixinApiError, type MessageItem, type WeixinMessage } from "./api.js";
+import { IlinkClient, MessageItemType, MessageType, WeixinApiError, hasDownloadableMedia, type InboundMedia, type MessageItem, type WeixinMessage } from "./api.js";
 import { StreamingMarkdownFilter } from "./markdown-filter.js";
 import { WeixinQuota } from "./quota.js";
 import { logger } from "../../log.js";
@@ -25,14 +25,30 @@ export function filterMarkdown(text: string): string {
   return (f.feed(text) + f.flush()).trim();
 }
 
-export function weixinParts(items: MessageItem[] | undefined): Part[] {
+/** 媒体下载结果，按条目对象对应（含 ref_msg 里被引用的条目） */
+export type WeixinMediaResults = Map<MessageItem, InboundMedia | Error>;
+
+function mediaPart(it: MessageItem, got: InboundMedia | Error | undefined, quoted: boolean): Part {
+  const type = it.type === MessageItemType.IMAGE ? "image" : it.type === MessageItemType.FILE ? "file" : "video";
+  const part: Part = { type, ...(type === "file" ? { name: it.file_item?.file_name } : {}), ...(quoted ? { quoted: true } : {}) };
+  if (got instanceof Error) return { ...part, error: got.message.slice(0, 120) };
+  if (got) return { ...part, data: got.data, ...(got.mime ? { mime: got.mime } : {}) };
+  return part;
+}
+
+export function weixinParts(items: MessageItem[] | undefined, media?: WeixinMediaResults): Part[] {
   const parts: Part[] = [];
   for (const it of items ?? []) {
     switch (it.type) {
       case MessageItemType.TEXT: {
         const t = it.text_item?.text ?? "";
-        const ref = it.ref_msg?.message_item?.text_item?.text || it.ref_msg?.title;
-        if (ref) parts.push({ type: "quote", text: ref });
+        const quoted = it.ref_msg?.message_item;
+        // 引用了一张图片/一个文件：把它本身交给运行时，而不是只给标题
+        if (quoted && hasDownloadableMedia(quoted)) parts.push(mediaPart(quoted, media?.get(quoted), true));
+        else {
+          const ref = quoted?.text_item?.text || it.ref_msg?.title;
+          if (ref) parts.push({ type: "quote", text: ref });
+        }
         if (t) parts.push({ type: "text", text: t });
         break;
       }
@@ -40,17 +56,18 @@ export function weixinParts(items: MessageItem[] | undefined): Part[] {
         parts.push({ type: "voice", transcript: it.voice_item?.text });
         break;
       case MessageItemType.IMAGE:
-        parts.push({ type: "image" });
-        break;
       case MessageItemType.FILE:
-        parts.push({ type: "file", name: it.file_item?.file_name });
-        break;
       case MessageItemType.VIDEO:
-        parts.push({ type: "video" });
+        parts.push(mediaPart(it, media?.get(it), false));
         break;
     }
   }
   return parts;
+}
+
+/** 消息里需要下载的条目（含被引用的） */
+function mediaItems(items: MessageItem[] | undefined): MessageItem[] {
+  return (items ?? []).flatMap((it) => [it, ...(it.ref_msg?.message_item ? [it.ref_msg.message_item] : [])]).filter(hasDownloadableMedia);
 }
 
 /**
@@ -186,7 +203,7 @@ export class WeixinChannel {
     private store: Store,
     private runtime: BotRuntime,
     private queue: KeyedQueue,
-    private opts: { fetchImpl?: typeof fetch; pollTimeoutMs?: number; retryDelayMs?: number; backoffMs?: number } = {},
+    private opts: { fetchImpl?: typeof fetch; cdnBaseUrl?: string; pollTimeoutMs?: number; retryDelayMs?: number; backoffMs?: number } = {},
   ) {
     this.quota = new WeixinQuota(store, botId);
   }
@@ -202,7 +219,7 @@ export class WeixinChannel {
       this.status = { state: "login_required", detail: "尚未扫码登录", since: Date.now() };
       return;
     }
-    this.client = new IlinkClient({ baseUrl: acct.baseUrl, token: acct.botToken, fetchImpl: this.opts.fetchImpl });
+    this.client = new IlinkClient({ baseUrl: acct.baseUrl, token: acct.botToken, fetchImpl: this.opts.fetchImpl, cdnBaseUrl: this.opts.cdnBaseUrl });
     this.abort = new AbortController();
     this.loop = this.run(this.abort.signal).finally(() => (this.loop = undefined));
   }
@@ -302,9 +319,11 @@ export class WeixinChannel {
       }
       return;
     }
+    const media = mediaItems(m.item_list);
     const p = this.queue.run(`weixin:${this.botId}:${userId}`, async () => {
       const reply = new WeixinReply(this.client!, userId, this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? peer.contextToken, this.quota);
       try {
+        if (media.length) ev.parts = weixinParts(m.item_list, await this.download(media));
         await this.runtime.handle(ev, reply);
       } catch (e) {
         this.log.error("handle failed", { message: (e as Error).message });
@@ -313,6 +332,20 @@ export class WeixinChannel {
     });
     this.pending.add(p);
     void p.finally(() => this.pending.delete(p));
+  }
+
+  /** 逐个下载解密；失败的记下原因（消息照常处理，文字里会说明没下载成功） */
+  private async download(items: MessageItem[]): Promise<WeixinMediaResults> {
+    const out: WeixinMediaResults = new Map();
+    for (const it of items) {
+      try {
+        out.set(it, await this.client!.downloadMedia(it));
+      } catch (e) {
+        this.log.warn("weixin media download failed", { type: it.type, message: (e as Error).message.slice(0, 200) });
+        out.set(it, e as Error);
+      }
+    }
+    return out;
   }
 
   async idle(): Promise<void> {

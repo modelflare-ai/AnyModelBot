@@ -110,7 +110,10 @@ export async function mockIlink() {
   const state = {
     statusSeq: ["wait", "scaned", "confirmed"] as string[],
     inbox: [] as any[],
-    sent: [] as Array<{ to: string; text: string; contextToken?: string }>,
+    sent: [] as Array<{ to: string; text: string; contextToken?: string; item?: any }>,
+    /** 假 CDN：encrypt_query_param → 密文（下载）；上传的密文也存这里 */
+    cdn: new Map<string, Buffer>(),
+    cdnDownloads: [] as string[],
     typing: [] as number[],
     expireNext: false,
     authSeen: [] as string[],
@@ -121,6 +124,19 @@ export async function mockIlink() {
     const u = new URL(req.url!, "http://x");
     const json = (o: unknown) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(o));
     if (req.headers.authorization) state.authSeen.push(String(req.headers.authorization));
+    if (u.pathname === "/c2c/download") {
+      const q = u.searchParams.get("encrypted_query_param") ?? "";
+      state.cdnDownloads.push(q);
+      const b = state.cdn.get(q);
+      return b ? res.writeHead(200, { "content-type": "application/octet-stream" }).end(b) : res.writeHead(400, { "x-error-message": "invalid encrypted_param" }).end();
+    }
+    if (u.pathname === "/c2c/upload") {
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      const id = `down-${state.cdn.size + 1}`;
+      state.cdn.set(id, Buffer.concat(chunks));
+      return res.writeHead(200, { "x-encrypted-param": id }).end();
+    }
     switch (u.pathname) {
       case "/ilink/bot/get_bot_qrcode":
         return json({ qrcode: "qr-1", qrcode_img_content: "https://liteapp.weixin.qq.com/q/mock?qrcode=qr-1" });
@@ -142,8 +158,13 @@ export async function mockIlink() {
       }
       case "/ilink/bot/sendmessage": {
         const b = await body(req);
-        state.sent.push({ to: b.msg.to_user_id, text: b.msg.item_list[0].text_item.text, contextToken: b.msg.context_token });
+        const item = b.msg.item_list[0];
+        state.sent.push({ to: b.msg.to_user_id, text: item.text_item?.text ?? "", contextToken: b.msg.context_token, ...(item.text_item ? {} : { item }) });
         return json({ ret: 0 });
+      }
+      case "/ilink/bot/getuploadurl": {
+        const b = await body(req);
+        return json({ ret: 0, upload_param: `up-${b.filekey}` });
       }
       case "/ilink/bot/getconfig":
         await body(req);
@@ -158,9 +179,26 @@ export async function mockIlink() {
   });
   base = srv.url;
   let seq = 0;
-  const push = (from: string, text: string, ctx = "ctx-1") =>
-    state.inbox.push({ seq: ++seq, message_id: `m${seq}`, from_user_id: from, to_user_id: "bot@im.bot", create_time_ms: Date.now(), message_type: 1, message_state: 2, context_token: ctx, item_list: [{ type: 1, text_item: { text } }] });
-  return { ...srv, state, push };
+  const pushItems = (from: string, items: any[], ctx = "ctx-1") =>
+    state.inbox.push({ seq: ++seq, message_id: `m${seq}`, from_user_id: from, to_user_id: "bot@im.bot", create_time_ms: Date.now(), message_type: 1, message_state: 2, context_token: ctx, item_list: items });
+  const push = (from: string, text: string, ctx = "ctx-1") => pushItems(from, [{ type: 1, text_item: { text } }], ctx);
+  /** 像微信那样把明文用随机密钥加密放到假 CDN，返回图片条目（密钥放在 image_item.aeskey） */
+  const imageItem = (plain: Buffer) => {
+    const key = crypto.randomBytes(16);
+    const c = crypto.createCipheriv("aes-128-ecb", key, null);
+    const q = `img+${crypto.randomBytes(4).toString("hex")}/=`;
+    state.cdn.set(q, Buffer.concat([c.update(plain), c.final()]));
+    return { type: 2, image_item: { aeskey: key.toString("hex"), media: { encrypt_query_param: q, aes_key: key.toString("base64"), encrypt_type: 1 } } };
+  };
+  /** 文件条目：aes_key 是十六进制密钥字符串的 base64（与微信一致） */
+  const fileItem = (plain: Buffer, name: string) => {
+    const key = crypto.randomBytes(16);
+    const c = crypto.createCipheriv("aes-128-ecb", key, null);
+    const q = `file+${crypto.randomBytes(4).toString("hex")}/=`;
+    state.cdn.set(q, Buffer.concat([c.update(plain), c.final()]));
+    return { type: 4, file_item: { file_name: name, len: String(plain.length), media: { encrypt_query_param: q, aes_key: Buffer.from(key.toString("hex")).toString("base64"), encrypt_type: 1 } } };
+  };
+  return { ...srv, state, push, pushItems, imageItem, fileItem, cdnBase: `${srv.url}/c2c` };
 }
 
 /** 假飞书传输层：记录全部调用 */

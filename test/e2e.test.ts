@@ -330,23 +330,40 @@ describe("网页对话（流式）", () => {
     const ev = await sse("/bots/default/chat/stream", { text: "/status" });
     expect(ev.find(([e, d]) => e === "text" && d.final)?.[1].text).toContain("当前模型");
   });
-  it("停止：客户端断开 → 上游请求被中止，已生成的部分保留为助手消息", async () => {
+  it("客户端断开（切走、刷新）不中止：回复照常生成并存下", async () => {
     const before = llm.calls.length;
+    const aborted = llm.aborted;
     const ac = new AbortController();
     let got = 0;
     await sse("/bots/default/chat/stream", { text: "长".repeat(400) }, ac.signal, (e) => {
       if (e === "text" && ++got === 3) ac.abort();
     });
     expect(llm.calls.length).toBe(before + 1);
-    await until(() => llm.aborted > 0, 3000, 20);
+    await until(async () => (await api("/bots/default/chat")).json.live.length === 0, 5000, 20);
+    expect(llm.aborted).toBe(aborted);
+    const last = (await api("/bots/default/chat")).json.messages.at(-1);
+    expect(last.role).toBe("assistant");
+    expect(last.content).toMatch(/你说：长{400}$/);
+  });
+  it("停止：经 /conversations/:id/stop 中止上游请求，已生成的部分保留为助手消息", async () => {
+    const before = llm.calls.length;
+    const aborted = llm.aborted;
+    let got = 0;
+    const ev = await sse("/bots/default/chat/stream", { text: "长".repeat(4000) }, undefined, (e) => {
+      if (e === "text" && ++got === 3) void api(`/conversations/${encodeURIComponent("default:web:console")}/stop`, { method: "POST", body: {} });
+    });
+    expect(llm.calls.length).toBe(before + 1);
+    await until(() => llm.aborted > aborted, 3000, 20);
+    expect(ev.map(([e]) => e)).toContain("stopping");
+    expect(ev.at(-1)![0]).toBe("done");
     const msgs = (await api("/bots/default/chat")).json.messages;
     const last = msgs.at(-1);
     expect(last.role).toBe("assistant");
-    expect(last.content.length).toBeGreaterThan(0);
-    expect(last.content.length).toBeLessThan(400);
+    expect(last.content).toMatch(/\n\n（已中止）$/);
+    expect(last.content.length).toBeLessThan(4000);
     // 中止后同一会话还能继续对话（队列没被卡住）
-    const ev = await sse("/bots/default/chat/stream", { text: "还在吗" });
-    expect(ev.at(-1)![0]).toBe("done");
+    const next = await sse("/bots/default/chat/stream", { text: "还在吗" });
+    expect(next.at(-1)![0]).toBe("done");
   });
   it("日志与数据库外文件中不含明文密钥", () => {
     const files = fs.readdirSync(dataDir, { recursive: true }).map(String).filter((f) => !f.endsWith(".db") && !f.includes(".db-") && !f.endsWith(".png"));

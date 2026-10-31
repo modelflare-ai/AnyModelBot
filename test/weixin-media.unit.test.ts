@@ -7,7 +7,7 @@ import path from "node:path";
 import { IlinkClient, hasDownloadableMedia, parseAesKey, sniffImageMime, type MessageItem } from "../src/channels/weixin/api.js";
 import { weixinParts } from "../src/channels/weixin/channel.js";
 import { eventText, type InboundEvent, type Part } from "../src/core/types.js";
-import { inboundImages, storeInbound } from "../src/core/runtime.js";
+import { inboundImages, safeFileName, storeInbound } from "../src/core/runtime.js";
 import { acceptsImages } from "../src/llm/client.js";
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crypto.randomBytes(200)]);
@@ -141,6 +141,41 @@ describe("storeInbound / inboundImages", () => {
     expect(fs.readFileSync(path.join(ws, paths[0])).equals(PNG)).toBe(true);
     expect(fs.readdirSync(ws)).toEqual(["inbox"]);
     expect(eventText(e)).toBe(`看看\n[图片 ${paths[0]}]\n[图片 ${paths[1]}]\n[文件 ../../etc/evil\u0007.txt → ${paths[2]}]\n[视频 ${paths[3]}]\n[图片（未能下载：CDN 下载失败 HTTP 400）]`);
+  });
+
+  it("file names from the sender are valid on Windows, macOS and Linux", () => {
+    // Windows 不允许的字符（冒号在 NTFS 上会写进备用数据流）、结尾的点和空格；中文保留
+    expect(safeFileName('季度报告: 草稿?.docx')).toBe("季度报告 草稿.docx");
+    expect(safeFileName('a<b>c"d|e*f.txt')).toBe("abcdef.txt");
+    expect(safeFileName("C:\\Users\\me\\合同 v2.pdf")).toBe("合同 v2.pdf");
+    expect(safeFileName("notes. . ")).toBe("notes");
+    expect(safeFileName("..\\..\\.env")).toBe("env");
+    expect(safeFileName("tab\there\u0007.md")).toBe("tabhere.md");
+    // 保留设备名
+    expect(safeFileName("CON")).toBe("_CON");
+    expect(safeFileName("nul.txt")).toBe("_nul.txt");
+    expect(safeFileName("com1.log")).toBe("_com1.log");
+    expect(safeFileName("lpt9")).toBe("_lpt9");
+    expect(safeFileName("COM10.txt")).toBe("COM10.txt");
+    expect(safeFileName("console.log")).toBe("console.log");
+    // 什么都不剩
+    for (const n of [undefined, "", "   ", "...", "?*:", "/"]) expect(safeFileName(n), String(n)).toBe("file");
+    // 按 UTF-8 字节限长，保留扩展名，不切开字符
+    const long = safeFileName(`${"报".repeat(100)}.pdf`);
+    expect(long).toBe(`${"报".repeat(48)}.pdf`);
+    const emoji = safeFileName(`${"😀".repeat(60)}.png`);
+    expect(emoji).toBe(`${"😀".repeat(36)}.png`);
+    expect(Buffer.byteLength(safeFileName("x".repeat(400)))).toBe(150);
+  });
+
+  it("saves a file whose name Windows would reject", () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "amb-inbox-"));
+    const e = ev([{ type: "file", name: "会议纪要 10:30 <终版>?.docx", data: Buffer.from("x") }]);
+    storeInbound(ws, e, new Date("2026-10-31T06:43:12Z"));
+    const p = (e.parts[0] as any).path as string;
+    expect(p).toMatch(/^inbox\/20261031-064312-[0-9a-f]{6}-会议纪要 1030 终版\.docx$/);
+    expect(fs.readFileSync(path.join(ws, p), "utf8")).toBe("x");
+    fs.rmSync(ws, { recursive: true, force: true });
   });
 
   it("only recognised, reasonably small images go to the model, at most 4", () => {

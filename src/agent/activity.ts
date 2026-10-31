@@ -152,6 +152,12 @@ export class ActivityLog {
         if (prev) this.put({ ...prev, status: "ok", ms: Math.max(0, time - prev.at) });
         return true;
       }
+      // bridge 在后台让上游压缩了这个会话的历史（不是 DSH 事件，见 server-compaction.ts）；不算代理有进展
+      case "server-compaction": {
+        const k = (n: unknown) => `${Math.round((Number(n) || 0) / 1000)}k`;
+        this.put({ id: `sc${time}`, kind: "compact", title: "服务端压缩上下文", summary: `约 ${k(data.before)} → ${k(data.after)} tokens`, status: "ok", at: time, ms: Number(data.ms) || undefined });
+        return false;
+      }
       case "subagent/started":
         this.put({ id: `s${data.childSessionId}`, kind: "subagent", title: "子代理", status: "running", at: time });
         return true;

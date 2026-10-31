@@ -13,6 +13,7 @@ import { listen } from "./helpers.js";
 /**
  * 真实 DSH 子进程 + 脚本化的模型（会发出工具调用），Chat Completions、Responses、Anthropic Messages 三种接口都能答。
  * 验证：插件加载、bridge 注入密钥、bash 沙箱、审批流程（API 批准/拒绝）、读围栏、回环 API 防护、按模型选接口。
+ * 服务端压缩（server-compaction.ts）全程接着：目录列出压缩端点的模型，压缩端点就是这个 mock。
  */
 const runtime = locateDshRuntime(findAppRoot());
 /** workflow 脚本先剥离 TS 类型；Electron 自带的 Node 支持，部分发行版的系统 Node 不带 amaro。 */
@@ -153,7 +154,10 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   let llm: Awaited<ReturnType<typeof listen>>;
   const seenAuth = new Set<string>();
   /** 上游收到的每个模型请求：走的接口、模型、请求体与请求头 */
-  const calls: Array<{ api: "chat" | "responses" | "messages"; model: string; body: any; headers: http.IncomingHttpHeaders; error?: string }> = [];
+  const calls: Array<{ api: "chat" | "responses" | "messages"; model: string; body: any; headers: http.IncomingHttpHeaders; error?: string; sealed?: boolean }> = [];
+  /** 服务端压缩：/v1/responses/compact 收到的请求；sealedRejects 里的模型，带 compaction 项的 Responses 请求一律 400 */
+  const compacts: Array<{ model: string; body: any }> = [];
+  const sealedRejects = new Set<string>();
   /** 测试注入的 Modelflare 目录：模型 → 支持的接口（外部端点模式下 App 不查目录） */
   const catalog: Record<string, string[]> = {};
   /** FLAKY：每条这样的用户消息第一次请求先失败一次（Responses 503、Messages 429），看代理会不会重试 */
@@ -172,12 +176,14 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): Step {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|PADDED|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
     // 卡住的模型：请求收下了，一直不回
     if (/HANG/.test(user)) return { hang: true };
+    // 长回复：让会话历史很快长过系统提示和工具（服务端压缩用例）
+    if (/PADDED/.test(user)) return { text: "PADDED-OK " + "z".repeat(12_000) };
     // 看图：回报模型收到的图片（data URL 的头）和文字里有没有工作区路径
     if (/LOOKIMG/.test(user)) {
       const content = messages[lastUser]?.content;
@@ -231,14 +237,29 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
         return;
       }
       const b = await body(req);
+      // 服务端压缩的压缩端点：照 Modelflare 实测的样子回（object 是 response，output 只有一个 compaction 项）
+      if (url.endsWith("/v1/responses/compact")) {
+        compacts.push({ model: b.model, body: b });
+        const item = { type: "compaction", id: "cmp_" + rnd(), status: "completed", summary: "earlier turns", encrypted_content: `ENC.${b.model}.${compacts.length}` };
+        const usage = { input_tokens: 900, output_tokens: 1200, output_tokens_details: { reasoning_tokens: 1000 }, total_tokens: 2100 };
+        return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ id: "resp_" + rnd(), object: "response", status: "completed", model: b.model, output: [item], usage }));
+      }
       const api = url.endsWith("/v1/responses") ? "responses" : url.endsWith("/v1/messages") ? "messages" : "chat";
+      const sealed = api === "responses" && (b.input ?? []).some((it: any) => it?.type === "compaction");
       const msgs = api === "responses" ? fromResponses(b.input) : api === "messages" ? fromAnthropic(b.messages) : b.messages;
       const error = api === "responses" ? responsesError(b) : api === "messages" ? messagesError(b) : undefined;
       const said = (msgs ?? []).filter((m: any) => m.role === "user").map((m: any) => textOf(m.content)).findLast((t: string) => /FLAKY/.test(t));
       const flaky = api !== "chat" && b.tools && said && !flaked.has(said) ? (flaked.add(said), api === "responses" ? 503 : 429) : 0;
-      calls.push({ api, model: b.model, body: b, headers: req.headers, error: error ?? (flaky ? `${flaky}` : undefined) });
+      calls.push({ api, model: b.model, body: b, headers: req.headers, error: error ?? (flaky ? `${flaky}` : undefined), sealed });
       if (error) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: error } }));
       if (flaky) return void res.writeHead(flaky, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: flaky === 429 ? "rate_limit_error" : "api_error", message: "slow down" } }));
+      // Modelflare 实测：带着 compaction 项的 /v1/responses 回 400「无效的参数」
+      if (sealed && sealedRejects.has(b.model)) {
+        calls[calls.length - 1].error = "400";
+        return void res
+          .writeHead(400, { "content-type": "application/json" })
+          .end(JSON.stringify({ error: { message: `无效的参数 (request id: ${rnd()})`, type: "invalid_request_error", param: "", code: "invalid_request" } }));
+      }
       const rule = api === "chat" ? undefined : rejects[b.model];
       if (rule === "busy") {
         calls[calls.length - 1].error = "503";
@@ -253,6 +274,11 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       const step = b.tools ? plan(msgs) : { text: "标题" };
       if ("hang" in step && step.hang) return void hung.push(res);
       if (process.env.AMB_TEST_LLM_LOG) fs.appendFileSync(process.env.AMB_TEST_LLM_LOG, JSON.stringify({ url: req.url, stream: b.stream, tools: (b.tools ?? []).map((t: any) => t.function?.name ?? t.name), msgs: msgs.map((m: any) => [m.role, textOf(m.content).slice(0, 200), m.tool_calls?.map((t: any) => t.function?.name)]), step }) + "\n");
+      // 非流式的 Responses（服务端压缩探测的续接请求）
+      if (api === "responses" && b.stream === false) {
+        const msg = { type: "message", id: "msg_" + rnd(), role: "assistant", status: "completed", content: [{ type: "output_text", text: step.text ?? "", annotations: [] }] };
+        return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ id: "resp_" + rnd(), object: "response", status: "completed", model: b.model, output: [msg], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } }));
+      }
       if (api === "responses") return responsesStream(res, b, step);
       if (api === "messages") return messagesStream(res, b, step);
       if (!b.stream) {
@@ -280,6 +306,11 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     );
     // 外部端点模式下 App 不查 Modelflare 目录（只当它会 Chat）；这里注入目录，让模型名决定接口
     (app.agent as any).o.apiInfo = async (model: string) => (catalog[model] ? { endpoints: catalog[model] } : undefined);
+    // 服务端压缩：外部端点模式下 App 不给压缩端点（代理只走 Chat）；这里按注入的目录打开，压缩端点就是这个 mock。
+    // 模型窗口都很大，平常的用例到不了压缩线，只有压缩用例把线调低
+    const sc = (app.agent as any).o.serverCompaction;
+    sc.listed = async (model: string) => (catalog[model] ? catalog[model].includes("openai-response-compact") : undefined);
+    sc.endpoint = (model: string) => ({ baseUrl: llm.url + "/v1", apiKey: "gw-key", model });
     await app.start();
     base = app.web!.url.replace(/\/+$/, "");
   }, 60_000);
@@ -479,6 +510,118 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect((await chat("/stop")).reply).toBe("当前没有正在处理的消息。");
     expect((await chat("/reset")).reply).toMatch(/已清空/);
     expect((await chat("hello once more")).reply).toBe("好的");
+  }, 120_000);
+
+  // —— 网页对话：切走再切回接上进行中的回合；停止按钮在各种状态下都停得下来 ——
+  const stream = (p: string, text?: string) => {
+    const ac = new AbortController();
+    const events: Array<[string, any]> = [];
+    const done = (async () => {
+      const res = await fetch(`${base}/amb/api${p}`, text === undefined ? { signal: ac.signal } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }), signal: ac.signal });
+      let buf = "";
+      const dec = new TextDecoder();
+      try {
+        for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+          buf += dec.decode(chunk, { stream: true });
+          let i: number;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const block = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            const ev = /^event: (.*)$/m.exec(block)?.[1];
+            const data = /^data: (.*)$/m.exec(block)?.[1];
+            if (ev && data) events.push([ev, JSON.parse(data)]);
+          }
+        }
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") throw e;
+      }
+    })();
+    const texts = () => events.filter(([e]) => e === "text").map(([, d]) => d.text as string);
+    return { events, done, abort: () => ac.abort(), texts };
+  };
+  const stopWeb = async () => api(`/conversations/${encodeURIComponent("default:web:console")}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  const waitFor = async (fn: () => boolean | Promise<boolean>, ms = 30_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) if (await fn()) return;
+    throw new Error("waitFor: timeout");
+  };
+
+  it("web chat: a running agent turn is shown again after switching back (question + steps), re-attaches, and the stop button ends it", async () => {
+    const s = stream("/bots/default/chat/stream", "HANG 网页里的这条");
+    let d: any;
+    await waitFor(async () => !!(d = await api("/bots/default/chat")).live?.[0]?.steps?.length);
+    expect(d.live[0]).toMatchObject({ userText: "HANG 网页里的这条", stopping: false });
+    expect(d.live[0].steps.at(-1)).toMatchObject({ kind: "model", title: "mock-agent", status: "running" });
+    // 代理路径回合结束才存用户消息：进行中时由 live 显示
+    expect(d.messages.map((m: any) => m.content)).not.toContain("HANG 网页里的这条");
+    expect((await api("/agent")).busy).toEqual(["default"]);
+    // 切走：断开发消息的请求，回合照常进行
+    s.abort();
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await api(`/conversations/${encodeURIComponent(d.conversationId)}/turn`)).turn).not.toBeNull();
+    // 切回：接上，先 snapshot（步骤还在），再停止
+    const a = stream("/bots/default/chat/live");
+    await waitFor(() => a.events.length > 0);
+    expect(a.events[0][0]).toBe("snapshot");
+    expect(a.events[0][1]).toMatchObject({ id: d.live[0].id, userText: "HANG 网页里的这条", startedAt: d.live[0].startedAt });
+    expect(a.events[0][1].steps.length).toBeGreaterThan(0);
+    const t0 = Date.now();
+    expect(await stopWeb()).toEqual({ stopped: true });
+    await a.done;
+    expect(Date.now() - t0).toBeLessThan(15_000);
+    expect(a.events.map(([e]) => e)).toContain("stopping");
+    const final = a.texts().at(-1)!;
+    expect(final).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect(a.events.at(-1)![0]).toBe("done");
+    const after = await api("/bots/default/chat");
+    expect(after.live).toEqual([]);
+    expect(after.messages.filter((m: any) => m.content === "HANG 网页里的这条")).toHaveLength(1);
+    expect(after.messages.slice(-2).map((m: any) => [m.role, m.content])).toEqual([
+      ["user", "HANG 网页里的这条"],
+      ["assistant", final],
+    ]);
+    expect((await api("/agent")).busy).toEqual([]);
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+  }, 120_000);
+
+  it("web chat: stop while the agent is still starting ends the message at once; the agent never gets it", async () => {
+    const h = app.agent.host("default");
+    await h.restart();
+    expect(h.state).toBe("stopped");
+    // 启动慢一点（真实冷启动可能要几分钟）
+    const ensure = h.ensure.bind(h);
+    (h as any).ensure = async (m: string) => (await new Promise((r) => setTimeout(r, 5000)), ensure(m));
+    const before = calls.length;
+    try {
+      const s = stream("/bots/default/chat/stream", "hello while starting");
+      await waitFor(() => s.texts().some((t) => t.startsWith("代理正在启动")));
+      expect((await api("/bots/default/chat")).live[0].text).toMatch(/^代理正在启动/);
+      const t0 = Date.now();
+      expect(await stopWeb()).toEqual({ stopped: true });
+      await s.done;
+      expect(Date.now() - t0).toBeLessThan(2000);
+      expect(s.texts().at(-1)).toMatch(/^已中止（处理了 \d+ 秒）。$/);
+      expect(s.events.at(-1)![0]).toBe("done");
+      expect(app.agent.turnsInProgress.size).toBe(0);
+    } finally {
+      delete (h as any).ensure;
+    }
+    await new Promise((r) => setTimeout(r, 5500));
+    expect(calls.slice(before).some((c) => JSON.stringify(c.body).includes("hello while starting"))).toBe(false);
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+    expect((await chat("hello after the stop")).reply).toBe("好的");
+  }, 120_000);
+
+  it("web chat: stop while a question card waits cancels the card and ends the turn", async () => {
+    const s = stream("/bots/default/chat/stream", "ASKQ 然后停下");
+    await waitFor(() => s.events.some(([e]) => e === "prompt"), 60_000);
+    const id = s.events.find(([e]) => e === "prompt")![1].requestId;
+    expect((await api(`/bots/default/chat`)).live[0].prompts.map((p: any) => p.requestId)).toEqual([id]);
+    expect(await stopWeb()).toEqual({ stopped: true });
+    await s.done;
+    expect(s.texts().at(-1)).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect((await api(`/approvals/${id}`)).approval.status).toBe("cancelled");
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+    expect((await chat("hello once again")).reply).toBe("好的");
   }, 120_000);
 
   it("a normal agent reply records its model and tool steps", async () => {
@@ -760,4 +903,115 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(approvalCount()).toBe(before);
     expect((await chat("/status")).reply).toContain("运行方式：代理模式（DeepSeek Harness，工作区沙箱）");
   }, 180_000);
+
+  // —— 服务端压缩：改写过（换上压缩历史）的请求被拒，bridge 先用原请求重发；这不算接口被拒，模型不改走 Chat ——
+  it("server compaction over Responses: a rewritten request the upstream rejects is resent unmodified; no Chat fallback", async () => {
+    const M = "gpt-6-compact-mock";
+    catalog[M] = ["openai", "openai-response", "openai-response-compact"];
+    const sc = app.agent.serverCompaction!;
+    const host = app.agent.host("default");
+    process.env.AMB_SERVER_COMPACTION_TOKENS = "2000";
+    try {
+      const from = calls.length;
+      // 过线：后台探测（直连压缩 + 经网关续接）；会话往后长、历史长过系统提示后在后台压缩，下一轮带着压缩窗口发
+      let n = 0;
+      while (!callsFor(M, from).some((c) => c.sealed && c.body.stream) && n < 8) {
+        expect((await turnOn("sc-user", M, `PADDED ${++n}`)).reply).toMatch(/^PADDED-OK z+$/);
+        await sc.settled();
+      }
+      expect(sc.status()[M]).toMatchObject({ ok: true, reason: "probe passed" });
+      expect(compacts.filter((c) => c.model === M).length).toBeGreaterThanOrEqual(2);
+      const first = callsFor(M, from).find((c) => c.sealed && c.body.stream)!;
+      expect(first).toBeDefined();
+      expect(first.error).toBeUndefined();
+      expect(first.body.input[0].role).toBe("system");
+      expect(host.api).toBe("openai-responses");
+
+      // 上游开始拒收 compaction 项（Modelflare 实测的 400「无效的参数」）：bridge 用原请求重发，回合照常
+      sealedRejects.add(M);
+      const next = calls.length;
+      const r = await turnOn("sc-user", M, `PADDED ${++n}`);
+      expect(r.reply).toMatch(/^PADDED-OK z+$/);
+      const mine = callsFor(M, next).filter((c) => c.body.tools && c.body.stream);
+      expect(mine.map((c) => `${c.api}:${c.sealed ? "sealed" : "plain"}:${c.error ?? "ok"}`)).toEqual(["responses:sealed:400", "responses:plain:ok"]);
+      // 不改走 Chat：没有回退记录，代理进程仍走 Responses，活动里没有"改用 Chat Completions 重试"
+      expect(app.agent.apiFallbacks.get(M)).toBeUndefined();
+      expect(host.api).toBe("openai-responses");
+      expect(r.steps.some((s) => s.kind === "retry")).toBe(false);
+      expect(sc.status()[M]).toMatchObject({ ok: false, reason: expect.stringContaining("rewritten request rejected (400): 无效的参数") });
+
+      // 之后原样发，照常走 Responses
+      const after = calls.length;
+      expect((await turnOn("sc-user", M, `PADDED ${++n}`)).reply).toMatch(/^PADDED-OK z+$/);
+      const later = callsFor(M, after).filter((c) => c.body.tools);
+      expect(later.length).toBeGreaterThan(0);
+      expect(later.map((c) => `${c.api}:${c.sealed ? "sealed" : "plain"}:${c.error ?? "ok"}`)).toEqual(later.map(() => "responses:plain:ok"));
+      expect(app.agent.apiFallbacks.get(M)).toBeUndefined();
+    } finally {
+      delete process.env.AMB_SERVER_COMPACTION_TOKENS;
+      sealedRejects.delete(M);
+      await sc.settled();
+    }
+  }, 300_000);
+
+  it("server compaction: when the unmodified resend is rejected too, the Chat fallback still applies, with the original's reason", async () => {
+    const M = "gpt-6-compact-fb-mock";
+    catalog[M] = ["openai", "openai-response", "openai-response-compact"];
+    const sc = app.agent.serverCompaction!;
+    process.env.AMB_SERVER_COMPACTION_TOKENS = "2000";
+    try {
+      const from = calls.length;
+      let n = 0;
+      while (!callsFor(M, from).some((c) => c.sealed && c.body.stream) && n < 8) {
+        expect((await turnOn("sc-fb", M, `PADDED ${++n}`)).reply).toMatch(/^PADDED-OK z+$/);
+        await sc.settled();
+      }
+      expect(callsFor(M, from).some((c) => c.sealed && c.body.stream && !c.error)).toBe(true);
+      // 改写的被拒（「无效的参数」），原请求重发后也被拒（参数不支持）：只有后者报给代理接口回退
+      sealedRejects.add(M);
+      rejects[M] = "always";
+      const next = calls.length;
+      const r = await turnOn("sc-fb", M, `PADDED ${++n}`);
+      expect(r.reply).toMatch(/^PADDED-OK z+$/);
+      const mine = callsFor(M, next).filter((c) => c.body.tools && c.body.stream);
+      expect(mine.map((c) => `${c.api}:${c.sealed ? "sealed" : "plain"}:${c.error ?? "ok"}`)).toEqual(["responses:sealed:400", "responses:plain:400", "chat:plain:ok"]);
+      const fb = app.agent.apiFallbacks.get(M);
+      expect(fb).toMatchObject({ from: "openai-responses", reason: expect.stringContaining("HTTP 400: Unsupported parameter") });
+      expect(fb!.reason).not.toContain("无效的参数");
+      expect(r.steps.find((s) => s.kind === "retry")).toMatchObject({ title: "改用 Chat Completions 重试" });
+      expect(app.agent.host("default").api).toBe("openai-completions");
+    } finally {
+      delete process.env.AMB_SERVER_COMPACTION_TOKENS;
+      sealedRejects.delete(M);
+      delete rejects[M];
+      await sc.settled();
+    }
+  }, 300_000);
+
+  it("server compaction probe on a grok-like upstream: compact works, the follow-up with its item is rejected → unsupported, no rewrite, no Chat fallback", async () => {
+    const M = "gpt-6-grokish-mock";
+    catalog[M] = ["openai", "openai-response", "openai-response-compact"];
+    sealedRejects.add(M);
+    const sc = app.agent.serverCompaction!;
+    process.env.AMB_SERVER_COMPACTION_TOKENS = "2000";
+    try {
+      const from = calls.length;
+      for (let n = 1; n <= 3; n++) {
+        expect((await turnOn("sc-grok", M, `PADDED ${n}`)).reply).toMatch(/^PADDED-OK z+$/);
+        await sc.settled();
+      }
+      expect(compacts.filter((c) => c.model === M)).toHaveLength(1);
+      expect(sc.status()[M]).toMatchObject({ ok: false, reason: expect.stringMatching(/^probe: compact call ok, but the follow-up \/v1\/responses carrying its compaction item was rejected \(HTTP 400\): 无效的参数/) });
+      // 探测的续接不经 bridge：不算这个机器人的请求被拒；真实请求都原样发、都成功
+      const real = callsFor(M, from).filter((c) => c.body.stream);
+      expect(real.length).toBeGreaterThan(0);
+      expect(real.every((c) => c.api === "responses" && !c.sealed && !c.error)).toBe(true);
+      expect(app.agent.apiFallbacks.get(M)).toBeUndefined();
+      expect(app.agent.host("default").api).toBe("openai-responses");
+    } finally {
+      delete process.env.AMB_SERVER_COMPACTION_TOKENS;
+      sealedRejects.delete(M);
+      await sc.settled();
+    }
+  }, 300_000);
 });

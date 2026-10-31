@@ -128,7 +128,10 @@ function loadSdk(runtimeDir: string): Promise<SdkModule> {
 /** 回合中的可见进度（工具调用等），由渠道批量发送。 */
 export interface TurnObserver {
   onProgress?(text: string): void;
-  /** DSH 会话事件（time 是事件自带的时间）；子代理的开始/结束以 subagent/started、subagent/finished 送来 */
+  /**
+   * DSH 会话事件（time 是事件自带的时间）；子代理的开始/结束以 subagent/started、subagent/finished 送来，
+   * 子代理会话里的事件以 subagent/event（data = { sessionId, event }）送来
+   */
   onEvent?(type: string, data: any, time?: number): void;
   /** 消息已经交给代理（之前是等进程、等会话） */
   onStart?(): void;
@@ -661,7 +664,6 @@ exec "$REAL" "$@"
       AMB_ALLOW_READ: JSON.stringify([path.resolve(this.workspace), path.resolve(this.home)]),
       HOME: this.home,
       LANG: "C.UTF-8",
-      TZ: process.env.TZ || "Asia/Shanghai",
       DSH_PERMISSION_MODE: permissionMode(this.settings().permission),
       AMB_MEMORY: this.settings().memory.enabled ? "1" : "0",
       AMB_CU_APPROVAL: this.settings().computerUse.approval,
@@ -671,14 +673,15 @@ exec "$REAL" "$@"
       AMB_BRIDGE_TOKEN: this.o.bridge.token,
       AMB_BOT_ID: this.o.botId,
     };
+    // 时区：本进程设了 TZ 才传下去；没设就不设，子进程用系统时区（各平台都是，Windows 上 TZ 也只认 POSIX 写法）
+    if (process.env.TZ) env.TZ = process.env.TZ;
     if (process.platform === "win32") {
       // Windows：系统目录类变量不是密钥，但工具进程离不开（npm/pip 找 APPDATA，脚本找 ProgramFiles、ComSpec…）。
-      // libuv 只自动补 SystemRoot/TEMP/USERPROFILE 等少数几个。TZ 只认 POSIX 写法，不设，用系统时区。
+      // libuv 只自动补 SystemRoot/TEMP/USERPROFILE 等少数几个。
       for (const k of WIN_SYSTEM_ENV) {
         const v = process.env[k];
         if (v) env[k] = v;
       }
-      if (!process.env.TZ) delete env.TZ;
     }
     if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
     if (process.env.AMB_DSH_LOG_LEVEL) env.DSH_LOG_LEVEL = process.env.AMB_DSH_LOG_LEVEL;
@@ -1023,7 +1026,9 @@ exec "$REAL" "$@"
         onNotification: (n) => {
           if (process.env.AMB_DSH_TRACE) fs.appendFileSync(process.env.AMB_DSH_TRACE, JSON.stringify(n).slice(0, 2000) + "\n");
           if (n.method === "subagent.started" || n.method === "subagent.finished") return input.observer?.onEvent?.(n.method.replace(".", "/"), n.params, Date.now());
-          if (n.method !== "session.event" || n.params?.sessionId !== s.id) return;
+          if (n.method !== "session.event") return;
+          // 子代理会话的事件（SDK 只送来本会话和它的子代理的通知）：不进本回合的用量和步骤，只说明子代理还在干活
+          if (n.params?.sessionId !== s.id) return input.observer?.onEvent?.("subagent/event", { sessionId: n.params?.sessionId, event: n.params?.event }, Number(n.params?.event?.time) || Date.now());
           const ev = n.params.event;
           const data = ev?.data ?? {};
           if (ev?.type === "tool/call") {

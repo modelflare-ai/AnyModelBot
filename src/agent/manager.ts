@@ -3,7 +3,8 @@ import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
-import { AgentHost, TurnStopped, callDetail, type ModelApiInfo, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { AgentHost, TurnStopped, callDetail, modelLimits, type ModelApiInfo, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { ServerCompaction, type CompactEndpoint, type CompactionEvent } from "./server-compaction.js";
 import { ActivityLog, type ActivityStep } from "./activity.js";
 import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
@@ -47,6 +48,14 @@ export interface AgentManagerOptions {
   contextWindow?: (model: string) => Promise<number | undefined>;
   /** 模型支持的接口与是否推理（Modelflare 模型资料），DSH 按它选对话接口 */
   apiInfo?: (model: string) => Promise<ModelApiInfo | undefined>;
+  /**
+   * 服务端压缩（见 server-compaction.ts）：listed = 价格目录是否列出该模型的压缩端点（只是提示，用前还要探测）；
+   * endpoint = 该模型（网关里的名字）直连的压缩端点。缺省则不做。
+   */
+  serverCompaction?: {
+    listed(model: string): Promise<boolean | undefined>;
+    endpoint(model: string): CompactEndpoint | undefined;
+  };
 }
 
 /** 一个进行中的回合（/status、/stop、排队提示、信息面板和故障排查用） */
@@ -59,10 +68,24 @@ export interface TurnProgress {
   abort: AbortController;
   /** 已经提示过"后来的消息排在它后面" */
   queuedNotice?: boolean;
+  /** 正在运行的工具调用（含子代理的）：工具运行期间 DSH 不发事件，看门狗不把它当成卡住 */
+  tools: Set<string>;
+  /** 进行中的生图 / 生视频任务 */
+  media: number;
 }
 
 /** 生成确认里"取消"那一项 */
 const CANCEL = "取消";
+
+/**
+ * 记下正在运行的工具调用（"session:callId"，本会话的 session 记为空）：tool/call 加入、tool/result 移除；
+ * 同一会话开始下一步（下一次模型请求要等所有工具结果）或回合结束时，清掉它剩下的。
+ */
+function trackTools(tools: Set<string>, session: string, type: string, data: any): void {
+  if (type === "tool/call") tools.add(`${session}:${data?.callId}`);
+  else if (type === "tool/result") tools.delete(`${session}:${data?.message?.toolCallId}`);
+  else if (type === "step/start" || type === "turn/end") for (const k of tools) if (k.startsWith(`${session}:`)) tools.delete(k);
+}
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -89,7 +112,8 @@ export class AgentManager {
   private decisions = new Map<string, { promise: Promise<boolean>; resolve: (v: boolean) => void }>();
   /** 会话 → 下一回合开始前要等的事（判定、压缩完成） */
   private gates = new Map<string, Promise<unknown>>();
-  private compactDone = new Map<string, (v: unknown) => void>();
+  /** DSH session → 进行中的原地压缩；插件回报、超时、会话被重置或换段、代理进程退出时结束 */
+  private compactDone = new Map<string, { botId: string; conv: string; resolve: (v: unknown) => void }>();
   private judgedAt = new Map<string, number>();
   private reviewTimers = new Map<string, NodeJS.Timeout>();
   /** 会话 → 用户在生成确认里换了模型、代理要按新模型文档重写请求：重写后的那一次免确认 */
@@ -97,8 +121,22 @@ export class AgentManager {
   /** 最近一次管家/整理结果（状态页展示） */
   readonly stewardLog: Array<{ at: number; conversationId: string; action: string; detail: string }> = [];
 
+  /** 服务端压缩（经 bridge 改写长会话的 Responses 请求）；没有注入时为空 */
+  readonly serverCompaction: ServerCompaction | undefined;
+
   constructor(private o: AgentManagerOptions) {
     this.approvals = new ApprovalCenter(o.store, { ttlMs: o.approvalTtlMs });
+    const sc = o.serverCompaction;
+    this.serverCompaction = sc
+      ? new ServerCompaction({
+          dir: path.join(o.dataDir, "dsh", "server-compaction"),
+          upstream: o.upstream,
+          endpoint: (model) => sc.endpoint(model),
+          listed: (model) => sc.listed(model),
+          limits: async (model) => modelLimits(model, await o.contextWindow?.(model).catch(() => undefined)),
+          onEvent: (e) => this.onServerCompaction(e),
+        })
+      : undefined;
     this.bridge = new AgentBridge({
       upstream: o.upstream,
       ask: (b) => this.ask(b),
@@ -107,6 +145,7 @@ export class AgentManager {
       memory: (b) => this.memoryOp(b),
       steward: (b) => this.stewardCall(b),
       media: (b) => this.mediaOp(b),
+      compaction: this.serverCompaction,
     });
     this.memory = new MemoryStore(path.join(o.dataDir, "memory"));
     this.apiFallbacks = new ApiFallbacks(path.join(o.dataDir, "dsh", "api-fallback.json"));
@@ -143,6 +182,10 @@ export class AgentManager {
         contextWindow: this.o.contextWindow,
         apiInfo: this.o.apiInfo,
         apiFallbacks: this.apiFallbacks,
+      });
+      // 代理进程退出（/stop、看门狗、换模型或设置、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它
+      h.on((e) => {
+        if (e.type === "exit") this.endCompaction((c) => c.botId === botId);
       });
       this.hosts.set(botId, h);
     }
@@ -200,13 +243,14 @@ export class AgentManager {
   /** onStep：活动记录里每新增或更新一步就回调一次（网页对话实时显示、回合结束后存进消息） */
   async runTurn(botId: string, input: TurnInput & { onStep?: (step: ActivityStep) => void }) {
     const conv = input.conversationId;
-    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model), abort: new AbortController() };
+    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model), abort: new AbortController(), tools: new Set(), media: 0 };
     this.turnsInProgress.set(conv, t);
-    // 看门狗：代理已经在处理，却长时间没有进展（模型不回、工具不动、只在重试），又不是在等用户批准或回答 → 中止
+    // 看门狗：代理已经在处理，却长时间没有进展（模型不回、只在重试），又不是在等用户批准或回答、
+    // 也没有工具或生成任务在跑（生视频、长命令、子代理里的工具）→ 中止
     const idleMs = this.o.idleTimeoutMs ?? 10 * 60_000;
     const watchdog = setInterval(() => {
       if (!t.lastProgress || t.abort.signal.aborted) return;
-      if (this.approvals.pending(conv).length) t.lastProgress = Date.now();
+      if (this.approvals.pending(conv).length || t.tools.size || t.media) t.lastProgress = Date.now();
       else if (Date.now() - t.lastProgress > idleMs) {
         log.warn("agent turn idle, stopping", { bot: botId, conversationId: conv, idleMs, lastStep: t.activity.last });
         this.halt(conv, t, new TurnStopped("idle", idleMs));
@@ -219,7 +263,15 @@ export class AgentManager {
         input.observer?.onStart?.();
       },
       onEvent: (type, data, time) => {
-        if (t.activity.apply(type, data, time)) t.lastProgress = Date.now();
+        if (type === "subagent/event") {
+          // 子代理在干活：它的工具调用同样记下；它在重试模型请求不算进展
+          const ev = data?.event ?? {};
+          trackTools(t.tools, String(data?.sessionId ?? ""), String(ev.type), ev.data);
+          if (ev.type !== "llm/retry" && ev.type !== "llm/retry-started") t.lastProgress = Date.now();
+        } else {
+          trackTools(t.tools, "", type, data);
+          if (t.activity.apply(type, data, time)) t.lastProgress = Date.now();
+        }
         input.observer?.onEvent?.(type, data, time);
       },
     };
@@ -266,7 +318,7 @@ export class AgentManager {
       return r;
     } finally {
       set.delete(conv);
-      if (r) this.afterTurn(botId, conv, r.sessionId, input.model, r.usage, d.resolve);
+      if (r) this.afterTurn(botId, conv, r.sessionId, input.model, r.usage, d);
       else d.resolve(false);
     }
   }
@@ -305,6 +357,14 @@ export class AgentManager {
     log.info("steward", { conversationId, action, detail: detail.slice(0, 200) });
   }
 
+  /** 服务端压缩做完：记进管家日志；会话正在进行回合时在活动记录里加一步（失败只记日志，请求照常发） */
+  private onServerCompaction(e: CompactionEvent): void {
+    const conv = e.session ? this.o.store.conversationForSession(e.session) : undefined;
+    if (!conv) return;
+    this.note(conv, e.ok ? "server-compact" : "server-compact-failed", `${e.model} ≈${e.before}${e.after !== undefined ? `→${e.after}` : ""} tokens${e.error ? `: ${e.error}` : ""}`);
+    if (e.ok) this.turnsInProgress.get(conv)?.activity.apply("server-compaction", e, e.at);
+  }
+
   private utilityModel(botId: string, model: string): string {
     return this.settings(botId).utilityModel || model;
   }
@@ -317,12 +377,12 @@ export class AgentManager {
   }
 
   /** 回合结束：上下文管家判定 + 安排记忆整理。不抛错。 */
-  private afterTurn(botId: string, conv: string, sessionId: string, model: string, usage: TurnUsage, decide: (compact: boolean) => void): void {
+  private afterTurn(botId: string, conv: string, sessionId: string, model: string, usage: TurnUsage, d: { promise: Promise<boolean>; resolve: (v: boolean) => void }): void {
     const st = this.settings(botId);
     if (st.memory.enabled && st.memory.review && this.o.complete) this.scheduleReview(botId, conv, model);
     const lines = linesFor(usage.window, usage.maxTokens);
     if (!st.steward.enabled || !this.o.complete || !shouldJudge(usage.tokens, lines, this.judgedAt.get(sessionId))) {
-      decide(false);
+      d.resolve(false);
       return;
     }
     this.judgedAt.set(sessionId, usage.tokens);
@@ -337,16 +397,24 @@ export class AgentManager {
       }
       // 过了硬线还判不出来时换段（DS-Bot 的做法：判不出 = switch）
       if (action === "compact") {
+        // 插件等判定已经超时（120 秒）走了：没人会去压缩，不设闸门，下一回合再判
+        if (this.decisions.get(conv) !== d) {
+          this.judgedAt.delete(sessionId);
+          this.note(conv, "compact-skipped", "判定太慢，插件没等到");
+          return;
+        }
         const done = deferred<unknown>();
-        this.compactDone.set(sessionId, done.resolve);
+        this.compactDone.set(sessionId, { botId, conv, resolve: done.resolve });
         this.gates.set(conv, done.promise);
         this.note(conv, "compact", `tokens=${usage.tokens}/${lines.usable}`);
-        decide(true);
+        d.resolve(true);
+        // 插件迟迟不回报也只等 200 秒：闸门不能比这次压缩活得久
         await withTimeout(done.promise, 200_000, undefined);
-        this.compactDone.delete(sessionId);
+        this.endCompaction((_, sid) => sid === sessionId);
+        if (this.gates.get(conv) === done.promise) this.gates.delete(conv);
         return;
       }
-      decide(false);
+      d.resolve(false);
       if (action === undefined && usage.tokens < lines.hard) return;
       await this.switchSegment(botId, conv, sessionId, model, action ?? "fallback");
     })();
@@ -373,6 +441,17 @@ export class AgentManager {
     this.o.store.setKV(`seed:${conv}`, handoff);
     this.judgedAt.delete(sessionId);
     this.note(conv, "switch", reason);
+    // 旧段上还没回报的压缩（/new 不等闸门）不用再等
+    this.endCompaction((c) => c.conv === conv);
+  }
+
+  /** 结束匹配的原地压缩：等着它的回合随即放行，闸门随之清掉 */
+  private endCompaction(match: (c: { botId: string; conv: string }, sessionId: string) => boolean): void {
+    for (const [sid, c] of this.compactDone) {
+      if (!match(c, sid)) continue;
+      this.compactDone.delete(sid);
+      c.resolve(true);
+    }
   }
 
   private scheduleReview(botId: string, conv: string, model: string): void {
@@ -458,11 +537,30 @@ export class AgentManager {
           model = r.model;
         }
       }
-      return { text: await media.execute(botId, model, args) };
+      // 生成可能要十几分钟，期间没有会话事件：看门狗不把它当成卡住
+      const turn = this.turnsInProgress.get(conv);
+      if (turn) turn.media++;
+      let text: string;
+      try {
+        text = await media.execute(botId, model, args);
+      } finally {
+        if (turn) turn.media--;
+      }
+      // 回合已经中止（/stop、超过上限、代理进程被关）：结果到不了代理，已扣费的文件留在工作区，告诉用户
+      if (turn && (turn.abort.signal.aborted || this.turnsInProgress.get(conv) !== turn)) this.orphanedMedia(botId, plan.kind, text);
+      return { text };
     } catch (e) {
       log.warn("media tool failed", { bot: botId, op, message: (e as Error).message.slice(0, 300) });
       return { error: (e as Error).message };
     }
+  }
+
+  /** 生成完了，请求它的回合却已经结束：文件在工作区 media/，用界面通知告诉用户 */
+  private orphanedMedia(botId: string, kind: string, text: string): void {
+    const files = text.match(/media\/[\w.-]+/g) ?? ["media/"];
+    log.warn("media finished after its turn ended", { bot: botId, files });
+    const name = this.o.store.getBot(botId)?.name ?? botId;
+    this.o.onNotice?.(`机器人「${name}」生成的${kind === "image" ? "图片" : "视频"}已保存在它的工作区（${files.join("、")}），但请求它的那条消息已经中止，没有发到聊天里。需要的话在对话里让机器人把它发出来。`);
   }
 
   /** 生成前的确认：问用户这次用哪个模型（本次的、默认的和几个推荐的，或回复别的模型名），等到回答、取消或过期 */
@@ -560,13 +658,15 @@ export class AgentManager {
   /** 插件 → 宿主：代理空闲时取管家判定（phase=idle），压缩完成后回报（phase=done）。 */
   private async stewardCall(b: any): Promise<Record<string, unknown>> {
     const sessionId = String(b?.sessionId ?? "");
-    const conv = this.o.store.conversationForSession(sessionId);
-    if (!conv || this.o.store.getAgentSession(conv) !== sessionId) return { compact: false };
     if (b?.phase === "done") {
-      this.note(conv, "compact-result", String(b?.result ?? ""));
-      this.compactDone.get(sessionId)?.(true);
+      // 按 session 结束：会话可能已被 /reset、/new 换掉，闸门也得放开
+      const c = this.compactDone.get(sessionId)?.conv ?? this.o.store.conversationForSession(sessionId);
+      if (c) this.note(c, "compact-result", String(b?.result ?? ""));
+      this.endCompaction((_, sid) => sid === sessionId);
       return { ok: true };
     }
+    const conv = this.o.store.conversationForSession(sessionId);
+    if (!conv || this.o.store.getAgentSession(conv) !== sessionId) return { compact: false };
     const d = this.decisions.get(conv);
     if (!d) return { compact: false };
     const compact = await withTimeout(d.promise, 120_000, false);
@@ -575,6 +675,8 @@ export class AgentManager {
   }
 
   resetConversation(conversationId: string): void {
+    // 会话换掉了：它上面还没回报的压缩不用再等
+    this.endCompaction((c) => c.conv === conversationId);
     this.o.store.clearAgentSession(conversationId);
     this.o.store.setKV(`seed:${conversationId}`, "");
     this.mediaGrants.delete(conversationId);
@@ -617,11 +719,14 @@ export class AgentManager {
     hosts: Record<string, Record<string, unknown>>;
     apiFallbacks: Array<ApiFallback & { model: string }>;
     turns: Array<{ conversationId: string; botId: string; forMs: number; idleMs?: number; lastStep?: ActivityStep }>;
+    serverCompaction?: { enabled: boolean; models: Record<string, { ok: boolean; at: number; reason: string }> };
   } {
     return {
       enabled: this.o.enabled,
       available: this.available,
       runtimeDir: this.o.runtimeDir,
+      // 服务端压缩：各模型的探测结论（支持 / 不支持及原因）
+      ...(this.serverCompaction ? { serverCompaction: { enabled: this.serverCompaction.enabled, models: this.serverCompaction.status() } } : {}),
       hosts: Object.fromEntries([...this.hosts].map(([id, h]) => [id, h.diagnostics()])),
       apiFallbacks: this.apiFallbacks.list(),
       turns: [...this.turnsInProgress].map(([conversationId, t]) => ({

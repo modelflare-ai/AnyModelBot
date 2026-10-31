@@ -1,13 +1,13 @@
 // 对话页（参考 Grok Bot 的顶栏、Codex 的对话与输入框）：顶栏左侧头像 + 名称，右侧新对话 / 信息面板；
 // 760 阅读列，用户消息是浅灰气泡，机器人回复是整列正文，上方一行"思考中 / 正在回复 / 用时"；底部两行输入框。
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, IconButton, CopyButton, Menu, Popover, Badge, Notice, Skeleton, autoGrow } from "../components/ui.js";
+import { html, Icon, IconButton, CopyButton, Menu, Popover, Badge, Notice, Skeleton, Spinner, autoGrow } from "../components/ui.js";
 import { BotAvatar } from "../components/avatar.js";
 import { Markdown, Linkified } from "../components/markdown.js";
 import { ModelPicker, shortModel, sameModel } from "../components/model-picker.js";
 import { PwshHint } from "../components/pwsh-hint.js";
 import { ActivityLine, currentStep, upsertStep } from "../components/activity.js";
-import { api, streamChat } from "../lib/api.js";
+import { api, attachChat, streamChat } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
 import { fmtSep, fmtClock, fmtDur } from "../lib/format.js";
 import { PERMS, confirmPermission } from "../lib/perms.js";
@@ -37,6 +37,16 @@ function toItems(messages) {
       ? { kind: "error", id: "m" + m.id, mid: m.id, text: errText(m.content), at: m.createdAt, steps: m.steps }
       : { kind: "msg", id: "m" + m.id, mid: m.id, role: m.role === "user" ? "user" : "assistant", text: m.content, at: m.createdAt, steps: m.steps },
   );
+}
+
+// 进行中的一条消息（服务端的 live 快照）：用户消息 + 到目前为止的回复；turn 标记这些项属于哪条进行中的消息
+function liveItems(t, cards = []) {
+  return [
+    { kind: "msg", id: "u" + t.id, role: "user", text: t.userText, at: t.startedAt, turn: t.id },
+    ...cards.map((c) => ({ ...c, turn: t.id })),
+    { kind: "msg", id: "a" + t.id, role: "assistant", text: t.text, at: t.startedAt, live: true, startedAt: t.startedAt, activity: t.steps, turn: t.id },
+    ...t.files.map((name, i) => ({ kind: "file", id: `f${t.id}-${i}`, name, turn: t.id })),
+  ];
 }
 
 // —— 审批 / 提问卡片 ——
@@ -148,7 +158,7 @@ function FileCard({ name }) {
  * 回复上方的工作状态：没出字时"思考中 · 正在做的那一步"，出字后"正在回复 N 秒"，结束后"用时 N 秒"（短于 3 秒且没有步骤时不显示）。
  * 代理回合有步骤时这一行可以展开成处理过程（默认折叠）；历史消息只知道步数，展开时用 load 取。
  */
-function WorkLine({ live, text, startedAt, workedMs, steps, count, load }) {
+function WorkLine({ live, stopping, text, startedAt, workedMs, steps, count, load }) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (!live) return;
@@ -158,8 +168,11 @@ function WorkLine({ live, text, startedAt, workedMs, steps, count, load }) {
   const ms = live ? Date.now() - startedAt : workedMs;
   if (!live && !(ms >= 3000) && !steps?.length && !count) return null;
   const cur = live && !text ? currentStep(steps) : "";
+  // 按了停止：代理要重启进程，可能要几秒，先说清楚在停
   const label = live
-    ? `${text ? `正在回复 ${fmtDur(ms)}` : ms >= 3000 ? `思考中 ${fmtDur(ms)}` : "思考中"}${cur ? ` · ${cur}` : ""}`
+    ? stopping
+      ? `正在停止…${ms >= 3000 ? ` 已处理 ${fmtDur(ms)}` : ""}`
+      : `${text ? `正在回复 ${fmtDur(ms)}` : ms >= 3000 ? `思考中 ${fmtDur(ms)}` : "思考中"}${cur ? ` · ${cur}` : ""}`
     : ms >= 3000 ? `用时 ${fmtDur(ms)}` : "处理过程";
   return html`<${ActivityLine} label=${label} live=${live} steps=${steps} count=${count} load=${load} />`;
 }
@@ -179,7 +192,9 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const [items, setItems] = useState(null);
   const [convModel, setConvModel] = useState("");
   const [text, setText] = useState("");
+  // generating：正在跟着一条消息（本页发出的，或切回 / 刷新后接上的）；stopping：按了停止，等服务端收尾
   const [generating, setGenerating] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [scrolled, setScrolled] = useState(false); // 内容滚到顶栏底下了：顶栏出现细线
   const [unseen, setUnseen] = useState(false);
@@ -195,21 +210,32 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const plusRef = useRef(null);
   const modelRef = useRef(null);
   const permRef = useRef(null);
-  const ctrl = useRef(null);
+  // 正在跟的那条消息的事件流 { ac, local }：同一时刻只跟一条，切走时断开（消息在服务端照常处理）
+  const following = useRef(null);
   const mounted = useRef(true);
   const lastUser = useRef("");
   const convId = useRef("");
+  const attachRef = useRef(null);
 
-  const load = useCallback(async () => {
+  // ended：刚接着的那条消息结束了 { since, ms }，存下的回复照样显示"用时"（和一直停在这页时一样）
+  const load = useCallback(async (ended) => {
     try {
       const d = await api(`/bots/${encodeURIComponent(bot.id)}/chat`);
       if (!mounted.current) return;
       convId.current = d.conversationId || "";
       setConvModel(d.model || "");
       const list = toItems(d.messages || []);
-      for (const a of d.pending || []) list.push({ kind: "prompt", id: "p" + a.id, requestId: a.id, prompt: "" });
-      setItems(list);
+      const reply = ended && list.findLast((x) => x.role !== "user");
+      if (reply && reply.at >= ended.since) reply.workedMs = ended.ms;
+      const cards = (d.pending || []).map((a) => ({ kind: "prompt", id: "p" + a.id, requestId: a.id, prompt: "" }));
+      // 进行中的消息（切走前、刷新前或别的窗口发的）：显示用户消息和到目前为止的回复，再接上它继续更新。
+      // 已经在跟一条了（本页刚发的）就保留本页的那几项，不重复接
+      const turns = following.current ? [] : d.live || [];
+      turns.forEach((t, i) => list.push(...liveItems(t, i === 0 ? cards : [])));
+      if (!turns.length && !following.current) list.push(...cards);
+      setItems((prev) => (following.current ? [...list, ...(prev || []).filter((x) => x.turn)] : list));
       setLoadErr("");
+      if (turns.length) attachRef.current(turns[0]);
     } catch (e) {
       if (mounted.current) {
         setItems((v) => v || []);
@@ -224,6 +250,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     requestAnimationFrame(() => ta.current?.focus());
     return () => {
       mounted.current = false;
+      following.current?.ac.abort();
     };
   }, [load]);
   useEffect(() => {
@@ -255,9 +282,73 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
 
   const patchLive = (id, fn) => mounted.current && setItems((l) => (l || []).map((it) => (it.id === id ? fn(it) : it)));
 
+  /**
+   * 跟着一条消息走到结束：本页发出的（chat/stream）和接上的（chat/live）事件一样。返回最后的回复文字；
+   * 切走了（组件卸载、事件流被断开）返回 null。liveId 是回复那一项，turn 是这条消息的几项共用的标记。
+   */
+  const follow = async (liveId, turn, open) => {
+    const f = { ac: new AbortController(), local: false };
+    following.current = f;
+    setGenerating(true);
+    let finalText = "";
+    const card = (d) =>
+      mounted.current &&
+      setItems((l) => {
+        if (d.requestId && l.some((x) => x.kind === "prompt" && x.requestId === d.requestId)) return l;
+        const i = l.findIndex((x) => x.id === liveId);
+        const c = { kind: "prompt", id: uid(), requestId: d.requestId, prompt: d.prompt, turn };
+        return i < 0 ? [...l, c] : [...l.slice(0, i), c, ...l.slice(i)];
+      });
+    try {
+      await open(
+        {
+          snapshot: (d) => {
+            finalText = d.text;
+            patchLive(liveId, (it) => ({ ...it, text: d.text, activity: d.steps, startedAt: d.startedAt }));
+            d.prompts.forEach(card);
+            if (d.stopping && mounted.current) setStopping(true);
+          },
+          text: (d) => {
+            finalText = d.text;
+            patchLive(liveId, (it) => ({ ...it, text: d.text }));
+          },
+          activity: (d) => patchLive(liveId, (it) => ({ ...it, activity: upsertStep(it.activity, d) })),
+          prompt: card,
+          file: (d) => mounted.current && setItems((l) => [...l, { kind: "file", id: uid(), name: d.name, turn }]),
+          stopping: () => mounted.current && setStopping(true),
+          error: (d) => {
+            finalText = "⚠️ " + (d.message || "出错了");
+          },
+        },
+        f.ac.signal,
+      );
+    } catch (e) {
+      if (e.name !== "AbortError") finalText = "⚠️ " + e.message;
+    }
+    if (following.current === f) following.current = null;
+    if (!mounted.current || (f.ac.signal.aborted && !f.local)) return null;
+    setGenerating(false);
+    setStopping(false);
+    return finalText;
+  };
+
+  // 接上进行中的消息；结束后重新读历史（存下的用户消息和回复替换掉这几项，不重复）
+  const attach = async (t) => {
+    if (following.current) return;
+    stick.current = true;
+    const finalText = await follow("a" + t.id, t.id, (h, signal) => attachChat(bot.id, t.id, h, signal));
+    if (finalText === null) return;
+    if (isError(finalText)) {
+      setCue({ kind: "error", at: Date.now() });
+      failed(errText(finalText));
+    }
+    load({ since: t.startedAt, ms: Date.now() - t.startedAt });
+  };
+  attachRef.current = attach;
+
   const send = async (raw) => {
     const t = (raw ?? text).trim();
-    if (!t || generating) return;
+    if (!t || generating || following.current) return;
     if (raw === undefined) {
       setText("");
       requestAnimationFrame(() => autoGrow(ta.current, LINE_PX * 8 + 8));
@@ -266,44 +357,18 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     stick.current = true;
     const liveId = uid();
     const isReset = /^\/reset\b/i.test(t);
-    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: t, at: Date.now(), enter: true }, { kind: "msg", id: liveId, role: "assistant", text: "", at: Date.now(), live: true, startedAt: Date.now() }]);
-    const ac = new AbortController();
-    ctrl.current = ac;
-    setGenerating(true);
-    let finalText = "";
-    try {
-      await streamChat(
-        bot.id,
-        t,
-        {
-          text: (d) => {
-            finalText = d.text;
-            patchLive(liveId, (it) => ({ ...it, text: d.text }));
-          },
-          activity: (d) => patchLive(liveId, (it) => ({ ...it, activity: upsertStep(it.activity, d) })),
-          prompt: (d) => mounted.current && setItems((l) => {
-            const i = l.findIndex((x) => x.id === liveId);
-            const card = { kind: "prompt", id: uid(), requestId: d.requestId, prompt: d.prompt };
-            return i < 0 ? [...l, card] : [...l.slice(0, i), card, ...l.slice(i)];
-          }),
-          file: (d) => mounted.current && setItems((l) => [...l, { kind: "file", id: uid(), name: d.name }]),
-          error: (d) => {
-            finalText = "⚠️ " + (d.message || "出错了");
-          },
-        },
-        ac.signal,
-      );
-    } catch (e) {
-      // 在收到第一个字节前就点了停止：不是错误
-      if (e.name !== "AbortError") finalText = "⚠️ " + e.message;
-    }
-    if (!mounted.current) return;
-    ctrl.current = null;
-    setGenerating(false);
+    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: t, at: Date.now(), enter: true, turn: liveId }, { kind: "msg", id: liveId, role: "assistant", text: "", at: Date.now(), live: true, startedAt: Date.now(), turn: liveId }]);
+    const finalText = await follow(liveId, liveId, (h, signal) => streamChat(bot.id, t, h, signal));
+    if (finalText === null) return;
     if (isError(finalText)) setCue({ kind: "error", at: Date.now() });
     setItems((l) => {
       const out = [];
-      for (const it of l || []) {
+      for (const item of l || []) {
+        if (item.turn !== liveId) {
+          out.push(item);
+          continue;
+        }
+        const { turn, ...it } = item; // 结束了：不再属于进行中的消息
         if (it.id !== liveId) out.push(it);
         else if (isError(finalText)) out.push({ kind: "error", id: liveId, text: errText(finalText), retry: t.startsWith("/") ? undefined : t, at: it.at, activity: it.activity, workedMs: Date.now() - it.startedAt });
         else if (finalText || it.activity?.length) out.push({ ...it, text: finalText, live: false, workedMs: Date.now() - it.startedAt });
@@ -313,11 +378,29 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     if (/^\/model\s+\S/i.test(t)) load();
   };
 
-  // 停止：代理回合在服务端中止（会重启代理进程），回复流照常收到"已中止"再结束；纯对话直接断开请求
-  const stop = () => {
-    const agentTurn = (items || []).some((x) => x.live && x.activity?.length);
-    if (convId.current) api(`/conversations/${encodeURIComponent(convId.current)}/stop`, { method: "POST" }).catch(() => {});
-    if (!agentTurn) ctrl.current?.abort();
+  /**
+   * 停止：交给服务端（/conversations/:id/stop），纯对话、排队中、等代理启动、代理回合、接上的消息都是这一条路；
+   * 事件流照常收到"已中止"再结束。代理要重启进程，可能要几秒，这期间显示"正在停止…"。
+   */
+  const stop = async () => {
+    if (stopping || !following.current) return;
+    setStopping(true);
+    try {
+      const r = await api(`/conversations/${encodeURIComponent(convId.current || `${bot.id}:web:console`)}/stop`, { method: "POST", body: {} });
+      // 服务端已经没有在处理的了（刚好结束）：事件流马上会收尾；万一没有，几秒后在本页收尾
+      if (!r.stopped) {
+        const f = following.current;
+        setTimeout(() => {
+          if (f && following.current === f) {
+            f.local = true;
+            f.ac.abort();
+          }
+        }, 3000);
+      }
+    } catch (e) {
+      if (mounted.current) setStopping(false);
+      failed(`停止失败：${e.message}`);
+    }
   };
   const loadActivity = (mid) => () => api(`/conversations/${encodeURIComponent(convId.current)}/messages/${mid}/activity`).then((d) => d.steps);
 
@@ -429,7 +512,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
         out.push(html`<div class=${`${cls}${it.id === lastAi ? " last" : ""}`} key=${it.id}>
           ${it.role === "user"
             ? html`<div class="msg"><${Linkified} text=${it.text} /></div><${MsgActions} text=${it.text} at=${it.at} />`
-            : html`${(it.live || it.workedMs || it.steps) && html`<${WorkLine} live=${it.live} text=${it.text} startedAt=${it.startedAt} workedMs=${it.workedMs}
+            : html`${(it.live || it.workedMs || it.steps) && html`<${WorkLine} live=${it.live} stopping=${it.live && stopping} text=${it.text} startedAt=${it.startedAt} workedMs=${it.workedMs}
                 steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}
               ${it.text && html`<div class="msg"><${Markdown} text=${it.text} /></div>`}
               ${!it.live && html`<${MsgActions} text=${it.text} at=${it.at} />`}`}
@@ -447,7 +530,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       prev = it;
     }
     return out;
-  }, [items, generating]);
+  }, [items, generating, stopping]);
 
   const empty = items && items.length === 0;
   // 头像跟着对话走：等你批准 > 还没出字（思考）/ 出字了（回复）> 你在输入（在听）
@@ -465,7 +548,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     </header>
     <div class="chat-scroll" ref=${scroller} onScroll=${onScroll}>
       <div class="chat-col" role="log" aria-live="polite" aria-busy=${generating}>
-        ${loadErr && html`<${Notice} tone="red" action=${html`<button type="button" class="btn" onClick=${load}>重试</button>`}>读取历史消息失败：${loadErr}<//>`}
+        ${loadErr && html`<${Notice} tone="red" action=${html`<button type="button" class="btn" onClick=${() => load()}>重试</button>`}>读取历史消息失败：${loadErr}<//>`}
         ${items === null && html`<div class="chat-skel"><${Skeleton} w="40%" /><${Skeleton} w="28%" /></div>`}
         ${empty && html`<div class="chat-empty">
           <${BotAvatar} bot=${bot} size=${88} state=${face} cue=${cue} lively pokeable greet />
@@ -498,7 +581,8 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
           <span class="v">${effective ? shortModel(effective) : "选择模型"}</span><${Icon} name="chevDown" />
         </button>
         ${generating
-          ? html`<button type="button" class="send stop" aria-label="停止生成（Esc）" title="停止（Esc）" onClick=${stop}><${Icon} name="stop" size=${12} /></button>`
+          ? html`<button type="button" class="send stop" aria-label=${stopping ? "正在停止…" : "停止生成（Esc）"} title=${stopping ? "正在停止…" : "停止（Esc）"}
+              disabled=${stopping} aria-busy=${stopping} onClick=${stop}>${stopping ? html`<${Spinner} />` : html`<${Icon} name="stop" size=${12} />`}</button>`
           : html`<button type="button" class="send" aria-label="发送" title="发送（Enter）" disabled=${!text.trim()} onClick=${() => send()}><${Icon} name="up" size=${15} stroke=${2} /></button>`}
         </div>
       </div>

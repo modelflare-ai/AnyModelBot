@@ -17,6 +17,7 @@ import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
 import { isBotProviderModel } from "../modelflare.js";
 import type { ApprovalRow, Conversation } from "../store/db.js";
 import type { AccessControl } from "./access.js";
+import { takeTaskNotes } from "../tasks/service.js";
 
 const log = logger("runtime");
 
@@ -110,6 +111,8 @@ const HELP = [
   "/new — 开始新的一段对话：旧对话归档并生成交接便条，长期记忆保留",
   "/status — 查看当前模型、代理状态和正在处理的消息走到了哪一步",
   "/stop — 中止正在处理的消息（只停这个会话，机器人的其它会话照常进行）",
+  "/tasks — 列出这个会话的后台任务",
+  "/stop <编号> — 停止 /tasks 里的一个后台任务",
   "/help — 显示本帮助",
 ].join("\n");
 
@@ -398,10 +401,20 @@ export class BotRuntime {
       if (bot) return { handled: true, ack: cmd === "/help" ? HELP : this.statusText(bot.id, convId, this.opts.store.getConversation(convId)?.model ?? "", bot.defaultModel) };
     }
     const agent = this.opts.agent;
+    const tasks = agent?.tasks;
+    // 后台任务：/tasks 列出，/stop 编号 停止一个（只读本地状态、不碰聊天回合，不进会话队列）
+    if (cmd === "/tasks") return { handled: true, ack: tasks ? tasks.listText(convId) : "后台任务只在代理模式下可用。" };
+    const stopTask = /^\/stop\s+(\d{1,2})$/.exec(cmd);
+    if (stopTask) return { handled: true, ack: tasks ? tasks.stopByIndex(convId, Number(stopTask[1]), `${ev.channel}:${ev.sender.id}`) : "后台任务只在代理模式下可用。" };
     // /stop 必须插队：它要停的正是排在前面、卡住的那个回合（纯对话、代理还在启动时也算）
     if (cmd === "/stop") {
       const since = this.busySince(convId) ?? agent?.turnsInProgress.get(convId)?.since;
-      if (since === undefined || !this.stop(convId)) return { handled: true, ack: "当前没有正在处理的消息。" };
+      if (since === undefined || !this.stop(convId)) {
+        // 没有在处理的消息，但有后台任务在跑：说一声怎么停它（/stop 不停后台任务）
+        const working = tasks?.working(convId) ?? [];
+        const hint = working.length ? `\n后台任务在进行：${working.map((t, i) => `${i + 1}. ${t.title}`).join("；")}。发 /stop 编号 可停止。` : "";
+        return { handled: true, ack: `当前没有正在处理的消息。${hint}` };
+      }
       return { handled: true, ack: `正在中止上一条消息（已处理 ${fmtSecs(Date.now() - since)}）…` };
     }
     if (!agent) return { handled: false };
@@ -434,7 +447,10 @@ export class BotRuntime {
     const turn = a?.turnsInProgress.get(convId);
     const busy = turn ? [busyLine(turn.since, turn.lastProgress, turn.activity.steps, !!a?.canSteer(convId))] : [];
     const who = this.opts.access ? [this.opts.access.policyLine(botId)] : [];
-    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...who, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
+    // 这个会话有后台任务在进行时说一句（没有就不说）
+    const working = a?.tasks?.working(convId) ?? [];
+    const bg = working.length ? [`后台任务：${working.map((t) => `「${t.title}」${t.stage.label}`).join("，")}`] : [];
+    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...who, ...host, ...(ps ? [ps] : []), ...busy, ...bg, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
   }
 
   /** 卡片按钮回调：批准/拒绝/选择选项。 */
@@ -532,7 +548,10 @@ export class BotRuntime {
         }
       }
       if (signal.aborted) return await stoppedEarly();
-      const input = store.getAgentSession(convId) ? text : firstInput(agent, botId, convId, text, place);
+      const first = store.getAgentSession(convId) ? text : firstInput(agent, botId, convId, text, place);
+      // 后台任务的结果发出去之后，下一条聊天消息带上那张便条：聊天代理知道发生了什么
+      const notes = takeTaskNotes(store, convId);
+      const input = notes ? `${notes}\n\n${first}` : first;
       // runTurn 同步登记回合，之后的停止交给代理（TurnStopped，会重启代理进程）
       const turn = agent.runTurn(botId, {
         conversationId: convId,

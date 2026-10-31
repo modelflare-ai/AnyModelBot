@@ -46,6 +46,8 @@ export interface BotSettings {
    * （包括这把 Key 已经花掉的）；关闭时与其他机器人共用本机的 Key。
    */
   budget: { enabled: boolean; limitUsd: number };
+  /** 后台任务最多同时跑几个（聊天不占名额；见 tasks/slots.ts） */
+  taskSlots: number;
 }
 
 export const DEFAULT_SETTINGS: BotSettings = {
@@ -57,6 +59,7 @@ export const DEFAULT_SETTINGS: BotSettings = {
   utilityModel: "",
   avatar: "",
   budget: { enabled: false, limitUsd: 5 },
+  taskSlots: 2,
 };
 
 export function normalizeSettings(raw: unknown): BotSettings {
@@ -67,6 +70,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
   const bg = r.budget && typeof r.budget === "object" ? r.budget : {};
   const md = r.media && typeof r.media === "object" ? r.media : {};
   const limit = Number(bg.limitUsd);
+  const slots = Number(r.taskSlots);
   const b = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
   return {
     permission: r.permission === "readonly" || r.permission === "full" ? r.permission : "workspace",
@@ -90,6 +94,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
       enabled: b(bg.enabled, DEFAULT_SETTINGS.budget.enabled),
       limitUsd: Number.isFinite(limit) && limit >= 0 && limit <= 100_000 ? Math.round(limit * 100) / 100 : DEFAULT_SETTINGS.budget.limitUsd,
     },
+    taskSlots: Number.isInteger(slots) && slots >= 1 && slots <= 8 ? slots : DEFAULT_SETTINGS.taskSlots,
   };
 }
 

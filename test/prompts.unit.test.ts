@@ -17,8 +17,14 @@ import {
   agentPersona,
   botIdentity,
   botPrompt,
+  NUDGE,
+  TASK_RULES,
+  TASK_SECTION,
+  TASK_SECTION_ORDER,
   placeLine,
+  recoveryNote,
   segmentInput,
+  taskBrief,
 } from "../src/agent/prompts/index.js";
 import { AgentHost, locateDshRuntime } from "../src/agent/host.js";
 import { normalizeSettings } from "../src/agent/settings.js";
@@ -30,15 +36,29 @@ const runtime = locateDshRuntime(findAppRoot());
 /** 一个典型的用户人设（量长度用） */
 const PERSONA = "你是一个乐于助人的中文助手，回答简洁准确。用户是一名独立开发者，平时用 TypeScript 和 Go，喜欢先看结论再看细节。";
 
-/** 用真实的 dsh-tools 加载我们的工具插件，拿到模型看到的工具定义 */
-async function ourTools(): Promise<Array<{ name: string; description: string; parameters: unknown }>> {
+type ToolDef = { name: string; description: string; parameters: unknown };
+const def = ({ name, description, parameters }: any): ToolDef => ({ name, description, parameters });
+
+/**
+ * 用真实的 dsh-tools 加载我们的工具插件，拿到模型看到的工具定义：聊天会话的（记忆、生图、后台任务的 task_start 等），
+ * 以及 amb-tasks 在任务会话建出来时给它的（task_report、任务规则段、去掉的工具）
+ */
+async function ourTools(): Promise<ToolDef[]> {
+  return (await loadPlugins()).chat;
+}
+async function loadPlugins(): Promise<{ chat: ToolDef[]; task: { tools: ToolDef[]; sections: any[]; deny: string[][] } }> {
   const env = { ...process.env };
   try {
-    Object.assign(process.env, { AMB_BRIDGE_URL: "http://127.0.0.1:9", AMB_BRIDGE_TOKEN: "t", AMB_MEMORY: "1" });
+    Object.assign(process.env, { AMB_BRIDGE_URL: "http://127.0.0.1:9", AMB_BRIDGE_TOKEN: "t", AMB_MEMORY: "1", AMB_TASK_RULES: TASK_RULES });
     const tools: any[] = [];
-    const ctx = { tools: { register: (t: any) => tools.push(t) }, inject: () => {} };
-    for (const f of ["amb-memory.mjs", "amb-media.mjs"]) (await import(path.join(runtime!, "plugins", f))).apply(ctx);
-    return tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
+    const created: Array<(e: any) => void> = [];
+    const ctx = { tools: { register: (t: any) => tools.push(t), get: (n: string) => tools.find((t) => t.name === n) ?? (n === "present" ? {} : undefined) }, inject: () => {}, on: (ev: string, fn: any) => ev === "agent/created" && created.push(fn), get: () => undefined };
+    for (const f of ["amb-memory.mjs", "amb-media.mjs", "amb-tasks.mjs"]) (await import(path.join(runtime!, "plugins", f))).apply(ctx);
+    // 任务会话建出来（或重启后恢复）：amb-tasks 给它限定工具、加规则段、注册 task_report
+    const task = { tools: [] as ToolDef[], sections: [] as any[], deny: [] as string[][] };
+    const agent = { id: "task-t_1", ctx: { tools: { restrict: (f: any) => task.deny.push(f.deny), register: (t: any) => task.tools.push(def(t)), guard: () => {} }, systemPrompt: { section: (s: any) => task.sections.push(s) } } };
+    for (const fn of created) fn({ agent });
+    return { chat: tools.map(def), task };
   } finally {
     process.env = env;
   }
@@ -62,6 +82,13 @@ async function parts(): Promise<Record<string, string>> {
     "skill computer-use": CUA_SKILL,
     "tool generate_image": tool("generate_image"),
     "tool generate_video": tool("generate_video"),
+    "tool task_start": tool("task_start"),
+    "tool task_message": tool("task_message"),
+    task: TASK_RULES,
+    "task brief": taskBrief({ title: "GPU 价格调研", original: "帮我调研三家云的 GPU 价格", brief: "比较 A100 包月价", recent: [], attachments: [], memory: "", folder: "tasks/gpu-abc123" }),
+    "task recovery": recoveryNote(["sleep 600"]),
+    "task nudge": NUDGE,
+    "tool task_report": runtime ? JSON.stringify((await loadPlugins()).task.tools.find((t) => t.name === "task_report") ?? "") : "",
   };
   out["*"] = Object.values(out).join("\n\n");
   return out;
@@ -97,6 +124,16 @@ const RULES: [rule: string, part: string, says: string[], gone?: string[]][] = [
     ["so the user confirms the model before anything is generated", "they will be asked again"]],
   ["生图工具：默认模型、花费不高直接生成", "tool generate_image", ["generates right away", "\"confirm\""], ["Before anything is generated the user is asked"]],
   ["生视频工具：默认模型、花费不高直接生成", "tool generate_video", ["generates right away", "\"confirm\""], ["Before anything is generated the user is asked"]],
+  // —— 后台任务（3a）——
+  ["聊天代理：长活或用户说后台做才开任务，能马上答的不开；开了只说一句，不自己做", "tool task_start", ["more than a few minutes or many steps", "后台做", "not for what you can answer now", "前台做", "in one sentence", "do not do the work yourself"]],
+  ["用户提到某个任务时把话转给它", "tool task_message", ["when they refer to it", "next step", "resumes"]],
+  ["任务规则优先于聊天规则；不问用户，自己决定并说明", "task", ["优先于上面的聊天规则", "不要问用户", "在结果里说明"], ["ask_user_question"]],
+  ["任务：外部动作前后记日志（重启后靠它不重复做）", "task", [".task/journal.md"]],
+  ["任务：做完或做不下去才说话，一句话，结果和在哪里；中途不汇报", "task", ["task_report", "done 或 failed", "不超过 300 字", "在哪里", "中途不用汇报", "不会发给用户"]],
+  ["task_report：done / failed 的那句话是用户收到的，progress 不发；报完结束这一轮", "tool task_report", ["one line the user receives", "at most 300 characters", "never sent", "end your turn"]],
+  ["任务的第一条输入：用户原话在前，说明在后", "task brief", ["[用户的原话]\n帮我调研三家云的 GPU 价格", "[对话助手的说明]\n比较 A100 包月价", "tasks/gpu-abc123"]],
+  ["恢复说明：被停的后台命令；重复外部动作之前先查日志和外部系统", "task recovery", ["The app restarted", "sleep 600", "Before repeating any outside action", ".task/journal.md", "task_report"]],
+  ["没报告时提醒一次：done 带一句话、failed 带原因", "task nudge", ["task_report", "done", "failed"]],
 ];
 
 describe.skipIf(!runtime)("提示词约定", () => {
@@ -107,20 +144,41 @@ describe.skipIf(!runtime)("提示词约定", () => {
     for (const words of gone) expect(text.toLowerCase()).not.toContain(words.toLowerCase());
   });
 
-  it("聊天规则和人设都短", () => {
+  it("聊天规则、人设和任务规则都短", () => {
     expect(CHAT_RULES.length).toBeLessThan(440);
     expect(agentPersona({ computerUse: true }).length).toBeLessThan(180);
+    expect(TASK_RULES.length).toBeLessThan(400);
+  });
+
+  it("任务会话：只去掉注册了的聊天专用工具，规则段在机器人段之后（优先），有 task_report；子代理拿不到任务工具", async () => {
+    const { task } = await loadPlugins();
+    // 只有 present 和三个任务工具是"注册了的"：ask_user_question、rule_create 在这个假环境里没有，不能交给 restrict（它会抛错）
+    expect(task.deny).toEqual([["present", "task_start", "task_message", "task_list"]]);
+    expect(task.sections).toHaveLength(1);
+    expect(task.sections[0]).toMatchObject({ name: TASK_SECTION, order: TASK_SECTION_ORDER, interpolate: false });
+    expect(TASK_SECTION_ORDER).toBeGreaterThan(BOT_SECTION_ORDER);
+    expect(task.sections[0].text()).toBe(TASK_RULES);
+    expect(task.tools.map((t) => t.name)).toEqual(["task_report"]);
   });
 
   /**
-   * 我们交给模型的部分：人设 + 机器人段（典型人设、开着记忆）+ 我们的工具定义（记忆、生图）。基线 7,145（提示词 907 + 工具 6,238），上限高约 5%。
+   * 我们交给模型的部分：人设 + 机器人段（典型人设、开着记忆）+ 我们的工具定义（记忆、生图、后台任务）。
+   * 基线 8,514（提示词 907 + 工具 7,607，其中 task_start、task_message、task_list 1,370），上限高约 5%。
    * 缩短了就调低；要调高，在提交说明里写清原因。
    */
-  const BUDGET = 7_500;
+  const BUDGET = 8_950;
   it("我们的提示词加工具定义不超过字符数上限", async () => {
     const prompt = agentPersona({ computerUse: true }).length + botPrompt({ name: "小蓝", persona: PERSONA, memory: true }).length;
     const tools = JSON.stringify(await ourTools()).length;
     expect(prompt + tools, `${prompt} characters of prompt and ${tools} of tools`).toBeLessThanOrEqual(BUDGET);
+  });
+
+  /** 任务会话在聊天会话之外多出来的：任务规则段 + task_report（去掉的工具不算）。基线 1,255（规则 363 + task_report 892），上限高约 5%。 */
+  const TASK_BUDGET = 1_320;
+  it("任务会话多出来的提示词和工具不超过字符数上限", async () => {
+    const { task } = await loadPlugins();
+    const extra = TASK_RULES.length + JSON.stringify(task.tools).length;
+    expect(extra, `${TASK_RULES.length} characters of rules and ${JSON.stringify(task.tools).length} of task_report`).toBeLessThanOrEqual(TASK_BUDGET);
   });
 });
 

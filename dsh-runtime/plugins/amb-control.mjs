@@ -14,6 +14,9 @@
 //   cancel    {sessionId}                   cancel just this session's turn (agent.cancel), its subagents
 //                                            and the shell jobs the turn started
 //
+// Ops this plugin does not know go to the handlers other plugins put on globalThis[Symbol.for('amb.control.handlers')]
+// (amb-tasks: task-quiet, task-stop), so there is one command channel per child.
+//
 // Long shell commands move to background jobs (the host patches the shell timeouts); when one ends,
 // tool-jobs wakes the idle session with its result and the host follows that turn like any other.
 import { boundContextSummary, createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
@@ -254,7 +257,7 @@ export function apply(ctx) {
   const run = async (cmd) => {
     let out
     try {
-      const fn = handlers[cmd.op]
+      const fn = handlers[cmd.op] ?? globalThis[Symbol.for('amb.control.handlers')]?.[cmd.op]
       if (!fn) throw new Error(`unknown command ${cmd.op}`)
       out = { ok: true, result: await fn(cmd) }
     } catch (e) {

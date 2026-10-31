@@ -132,6 +132,8 @@ function App() {
   const [previews, setPreviews] = useState({});
   const [pending, setPending] = useState({});
   const [agentWorking, setAgentWorking] = useState({});
+  // 有后台任务在进行的机器人：侧栏头像也是"工作中"（不算对话在忙，对话页不因此去接进行中的消息）
+  const [bgWorking, setBgWorking] = useState({});
   const [localWorking, setLocalWorking] = useState({});
   const [infoOpen, setInfoOpen] = useState(false);
   const [palette, setPalette] = useState(false);
@@ -212,6 +214,9 @@ function App() {
           for (const [id, h] of Object.entries(a.hosts || {})) map[id] = Number(h.activeTurns || 0) > 0;
           for (const id of a.busy || []) map[id] = true;
           setAgentWorking(map);
+          const bg = {};
+          for (const [id, n] of Object.entries(a.background || {})) if (Number(n) > 0) bg[id] = true;
+          setBgWorking(bg);
         })
         .catch(() => {}),
     [],
@@ -219,9 +224,9 @@ function App() {
   useInterval(pollWorking, 3000, connected);
   const working = useMemo(() => {
     const m = { ...agentWorking };
-    for (const [k, v] of Object.entries(localWorking)) if (v) m[k] = true;
+    for (const src of [bgWorking, localWorking]) for (const [k, v] of Object.entries(src)) if (v) m[k] = true;
     return m;
-  }, [agentWorking, localWorking]);
+  }, [agentWorking, bgWorking, localWorking]);
   const wantWorking = useRef({});
   const onWorking = useCallback((id, on) => {
     wantWorking.current[id] = on;

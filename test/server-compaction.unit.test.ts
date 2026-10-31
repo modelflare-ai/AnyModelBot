@@ -1,7 +1,7 @@
 /**
  * 服务端压缩（server-compaction.ts）：前缀匹配与改写、探测与缓存、各种失败时的退回，以及经真实 bridge 的整条路径。
  * 上游是按 OpenAI 文档行为写的 mock：/v1/responses/compact 保留用户消息并给出一个带密文的 compaction 项；
- * /v1/responses 只接受这个 mock 给同一模型签出的压缩项。
+ * /v1/responses 只接受这个 mock 给同一模型签出的压缩项。另有 grok 模式，照 Modelflare 实测的样子回（见 GROK_*）。
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -9,7 +9,9 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { listen } from "./helpers.js";
-import { AgentBridge } from "../src/agent/bridge.js";
+import { AgentBridge, type Rejection } from "../src/agent/bridge.js";
+import { shapeRejection } from "../src/agent/api-fallback.js";
+import { closeFileLog, initFileLog, readLogTail } from "../src/log.js";
 import { AgentManager } from "../src/agent/manager.js";
 import { ActivityLog } from "../src/agent/activity.js";
 import { Store } from "../src/store/db.js";
@@ -25,6 +27,7 @@ import {
   prefixHashes,
   splitLead,
   sseVerdict,
+  usageOf,
   type CompactionEvent,
 } from "../src/agent/server-compaction.js";
 
@@ -52,9 +55,20 @@ const req = (model: string, items: unknown[], session = "sess-1", lead: unknown[
 const buf = (j: unknown) => Buffer.from(JSON.stringify(j));
 const HEADERS = { session_id: "sess-1" };
 
+/**
+ * Modelflare 上 grok-4.5 / 4.7 实测：/v1/responses/compact 回 200，object 是 "response"，output 只有一个 compaction 项
+ * （不保留用户消息），推理很重；而任何 /v1/responses 请求的 input 里只要带着这个项就回下面这个 400。
+ */
+const GROK_REJECT = { error: { message: "无效的参数 (request id: 2026103112000012345678)", type: "invalid_request_error", param: "", code: "invalid_request" } };
+const GROK_USAGE = { input_tokens: 812, output_tokens: 3400, output_tokens_details: { reasoning_tokens: 3100 }, total_tokens: 4212, cost_in_usd_ticks: 187_000_000 };
+
 interface MockState {
-  compact: "ok" | "404" | "badshape" | "503";
-  items: "ok" | "reject" | "streamfail";
+  /** grok：Modelflare 实测的回复；big：compaction 项比原输入还大；slow：晚 50ms 才回 */
+  compact: "ok" | "404" | "badshape" | "503" | "grok" | "big" | "slow";
+  /** grok：带 compaction 项的 /v1/responses 一律回 GROK_REJECT；429：带 compaction 项的回 429 */
+  items: "ok" | "reject" | "streamfail" | "grok" | "429";
+  /** reject：所有 /v1/responses 都按"参数不支持"回 400（代理接口回退会认的那种） */
+  responses: "ok" | "reject";
   /** 回复里报的 input_tokens = 估算 × boost */
   boost: number;
   /** 助手回复的文字 */
@@ -63,7 +77,7 @@ interface MockState {
 
 /** 按文档行为的上游：记下每个请求 */
 async function mockUpstream() {
-  const state: MockState = { compact: "ok", items: "ok", boost: 1, reply: "ok" };
+  const state: MockState = { compact: "ok", items: "ok", responses: "ok", boost: 1, reply: "ok" };
   const seen: Array<{ path: string; auth?: string; body: any }> = [];
   let n = 0;
   const srv = await listen(async (req, res) => {
@@ -77,6 +91,12 @@ async function mockUpstream() {
     if (p === "/v1/responses/compact") {
       if (state.compact === "404") return json(404, { error: { message: "Invalid URL (POST /v1/responses/compact)", type: "invalid_request_error" } });
       if (state.compact === "503") return json(503, { error: { message: "upstream overloaded" } });
+      if (state.compact === "grok" || state.compact === "big") {
+        const enc = `ENC.${name}.${++n}.` + (state.compact === "big" ? "E".repeat(raw.length * 2) : "gAAAAB");
+        const item = { type: "compaction", id: `cmp_${n}`, status: "completed", summary: "The user asked for the code word; lookup returned teal.", encrypted_content: enc };
+        return json(200, { id: `resp_c${n}`, object: "response", created_at: 1, status: "completed", model: name, output: [item], usage: GROK_USAGE });
+      }
+      if (state.compact === "slow") await new Promise((r) => setTimeout(r, 50));
       // 保留用户（和 developer）消息，其余压进一个 compaction 项
       const kept = body.input.filter((it: any) => it.role === "user" || it.role === "developer").map((it: any, i: number) => ({ id: `msg_${i}`, type: "message", status: "completed", ...it }));
       const output = state.compact === "badshape" ? kept : [...kept, { type: "compaction", id: `cmp_${++n}`, encrypted_content: `ENC.${name}.${n}` }];
@@ -85,9 +105,12 @@ async function mockUpstream() {
     if (p !== "/v1/responses") return json(404, { error: { message: "not found" } });
     const sealed = (body.input as any[]).filter((it) => it?.type === "compaction");
     if (sealed.length) {
+      if (state.items === "grok") return json(400, GROK_REJECT);
+      if (state.items === "429") return json(429, { error: { message: "slow down", type: "rate_limit_error" } });
       if (state.items === "reject") return json(400, { error: { message: "Invalid value: 'compaction'. Supported values are: 'message', 'reasoning', ...", type: "invalid_request_error" } });
       if (sealed.some((it) => String(it.encrypted_content).split(".")[1] !== name)) return json(400, { error: { message: "The encrypted content could not be decrypted", code: "invalid_encrypted_content" } });
     }
+    if (state.responses === "reject") return json(400, { error: { message: "Unsupported parameter: 'reasoning.summary' is not supported with this model.", type: "invalid_request_error", code: "unsupported_parameter" } });
     const input_tokens = Math.round(estimateTokens(body.input) * state.boost);
     const usage = { input_tokens, output_tokens: 10, total_tokens: input_tokens + 10 };
     const output = [{ type: "message", id: `msg_out${seen.length}`, role: "assistant", status: "completed", content: [{ type: "output_text", text: state.reply, annotations: [] }] }];
@@ -175,15 +198,26 @@ describe("服务端压缩：纯函数", () => {
     expect(a[3]).not.toBe(b[3]);
   });
 
-  it("压缩回复的校验：要有带密文的 compaction 项、object 对得上", () => {
+  it("压缩回复的校验：要有带密文的 compaction 项；object 是 response.compaction、response（Modelflare 实测）或没有", () => {
     const ok = { object: "response.compaction", output: [user("hi"), { type: "compaction", id: "cmp_1", encrypted_content: "gAAA" }] };
     expect(compactedWindow(ok)).toEqual(ok.output);
     expect(compactedWindow({ output: ok.output })).toEqual(ok.output);
-    expect(compactedWindow({ ...ok, object: "response" })).toBeUndefined();
+    expect(compactedWindow({ ...ok, object: "response" })).toEqual(ok.output);
+    // grok：object 是 response，output 只有一个 compaction 项（带 status、summary）
+    const grok = { id: "resp_c1", object: "response", status: "completed", output: [{ type: "compaction", id: "cmp_1", status: "completed", summary: "s", encrypted_content: "gAAA" }], usage: GROK_USAGE };
+    expect(compactedWindow(grok)).toEqual(grok.output);
+    expect(compactedWindow({ ...ok, object: "list" })).toBeUndefined();
+    expect(compactedWindow({ ...grok, status: "failed" })).toBeUndefined();
+    expect(compactedWindow({ ...grok, error: { message: "x" } })).toBeUndefined();
+    expect(compactedWindow({ ...grok, error: null })).toEqual(grok.output);
     expect(compactedWindow({ object: "response.compaction", output: [user("hi")] })).toBeUndefined();
     expect(compactedWindow({ object: "response.compaction", output: [{ type: "compaction", encrypted_content: "" }] })).toBeUndefined();
     expect(compactedWindow({ object: "response.compaction", output: [1, { type: "compaction", encrypted_content: "x" }] })).toBeUndefined();
     expect(compactedWindow({ error: { message: "x" } })).toBeUndefined();
+    // 用量与费用（日志用）
+    expect(usageOf(grok)).toEqual({ input: 812, output: 3400, reasoning: 3100, costTicks: 187_000_000 });
+    expect(usageOf({ usage: { input_tokens: 5 } })).toEqual({ input: 5 });
+    expect(usageOf({ output: [] })).toBeUndefined();
   });
 
   it("流开头的判断：created / in_progress 之后看第一个实质事件", async () => {
@@ -291,7 +325,7 @@ describe("服务端压缩：探测、压缩与改写", () => {
     }
   });
 
-  it("压缩端点 404 / 回复里没有压缩项：记为不支持，存盘，一天内不再探测", async () => {
+  it("压缩端点 404 / 回复里没有压缩项：记为不支持，存盘，7 天内不再探测", async () => {
     let now = 1_800_000_000_000;
     for (const mode of ["404", "badshape"] as const) {
       mock.state.compact = mode;
@@ -302,11 +336,16 @@ describe("服务端压缩：探测、压缩与改写", () => {
       for (const n of [3, 5, 7]) await send(sc, req("mf/good", [user("start"), ...calls(1, n)]));
       expect(mock.of("/v1/responses/compact"), mode).toHaveLength(1);
       expect(mock.of("/v1/responses"), mode).toHaveLength(0);
-      expect(sc.status()["mf/good"]).toMatchObject({ ok: false });
-      // 重启后仍记得；过了一天重新探测
+      expect(sc.status()["mf/good"]).toMatchObject({ ok: false, reason: expect.stringMatching(mode === "404" ? /^probe: compact call failed: HTTP 404: Invalid URL/ : /^probe: compact call failed: no usable compaction item/) });
+      // 重启后仍记得；一天、六天后都不探测，过了 7 天重新探测
       const again = make({ now: () => now });
       await send(again, req("mf/good", [user("start"), ...calls(1, 8)]));
       expect(mock.of("/v1/responses/compact"), mode).toHaveLength(1);
+      for (const days of [1, 5]) {
+        now += days * 24 * 3600_000;
+        await send(again, req("mf/good", [user("start"), ...calls(1, 9)]));
+        expect(mock.of("/v1/responses/compact"), mode).toHaveLength(1);
+      }
       now += 25 * 3600_000;
       await send(again, req("mf/good", [user("start"), ...calls(1, 9)]));
       await send(again, req("mf/good", [user("start"), ...calls(1, 9)]));
@@ -319,11 +358,11 @@ describe("服务端压缩：探测、压缩与改写", () => {
     const sc = make();
     await send(sc, req("mf/good", [user("start")]));
     for (const n of [3, 5, 7]) await send(sc, req("mf/good", [user("start"), ...calls(1, n)]));
-    expect(sc.status()["mf/good"]).toMatchObject({ ok: false, reason: expect.stringContaining("HTTP 400") });
+    expect(sc.status()["mf/good"]).toMatchObject({ ok: false, reason: expect.stringContaining("follow-up /v1/responses carrying its compaction item was rejected (HTTP 400): Invalid value: 'compaction'") });
     expect(mock.of("/v1/responses/compact")).toHaveLength(1);
   });
 
-  it("临时失败（5xx）不记结论，10 分钟后再探测", async () => {
+  it("临时失败（5xx）不记结论，10 分钟后再探测；连着失败等得更久", async () => {
     let now = 1_800_000_000_000;
     mock.state.compact = "503";
     const sc = make({ now: () => now });
@@ -332,10 +371,127 @@ describe("服务端压缩：探测、压缩与改写", () => {
     await send(sc, req("mf/good", [user("start"), ...calls(1, 5)]));
     expect(mock.of("/v1/responses/compact")).toHaveLength(1);
     expect(sc.status()).toEqual({});
-    mock.state.compact = "ok";
     now += 11 * 60_000;
     await send(sc, req("mf/good", [user("start"), ...calls(1, 6)]));
+    expect(mock.of("/v1/responses/compact")).toHaveLength(2);
+    // 第二次失败后等 20 分钟
+    now += 11 * 60_000;
+    await send(sc, req("mf/good", [user("start"), ...calls(1, 7)]));
+    expect(mock.of("/v1/responses/compact")).toHaveLength(2);
+    mock.state.compact = "ok";
+    now += 10 * 60_000;
+    await send(sc, req("mf/good", [user("start"), ...calls(1, 8)]));
+    expect(mock.of("/v1/responses/compact")).toHaveLength(3);
     expect(sc.status()["mf/good"]).toMatchObject({ ok: true });
+  });
+
+  it("grok（Modelflare 实测）：压缩调用能过，带着 compaction 项续接被拒 → 不支持，原因写明是续接被拒；用量记日志；7 天内不再探测", async () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-sc-log-"));
+    initFileLog(logDir);
+    try {
+      let now = 1_800_000_000_000;
+      mock.state.compact = "grok";
+      mock.state.items = "grok";
+      const events: CompactionEvent[] = [];
+      const sc = make({ now: () => now, events });
+      const M = "modelflare/grok-4.7";
+      await send(sc, req(M, [user("start")]));
+      for (const n of [3, 5, 7]) await send(sc, req(M, [user("start"), ...calls(1, n)]));
+      // 一次压缩调用 + 一次续接，就此定论
+      expect(mock.of("/v1/responses/compact")).toHaveLength(1);
+      expect(mock.of("/v1/responses/compact")[0].body.model).toBe("grok-4.7");
+      const follow = mock.of("/v1/responses");
+      expect(follow).toHaveLength(1);
+      expect(follow[0].body.input.filter((it: any) => it.type === "compaction")).toEqual([expect.objectContaining({ id: "cmp_1", encrypted_content: "ENC.grok-4.7.1.gAAAAB" })]);
+      const v = sc.status()[M];
+      expect(v.ok).toBe(false);
+      expect(v.reason).toBe("probe: compact call ok, but the follow-up /v1/responses carrying its compaction item was rejected (HTTP 400): 无效的参数 (request id: 2026103112000012345678)");
+      expect(v.reason).not.toContain("no usable compaction item");
+      // 不压缩、不改写
+      expect(events).toEqual([]);
+      expect(sc.prepare("/v1/responses", HEADERS, buf(req(M, [user("start"), ...calls(1, 8)])))!.rewritten).toBe(false);
+      // 用量和费用记进日志
+      const logs = readLogTail(100, logDir).join("\n");
+      expect(logs).toMatch(/server compaction probe: compact call ok .*"usage":\{"input":812,"output":3400,"reasoning":3100,"costTicks":187000000\}/);
+      expect(logs).toMatch(/server compaction probe: follow-up rejected .*"status":400/);
+      // 别的会话、重启以后也一样：7 天内不再探测
+      const again = make({ now: () => now });
+      for (const days of [0, 1, 5]) {
+        now += days * 24 * 3600_000;
+        await send(again, req(M, [user("other"), ...calls(1, 6)], `sess-${days}`), { session_id: `sess-${days}` });
+        await send(again, req(M, [user("other"), ...calls(1, 7)], `sess-${days}`), { session_id: `sess-${days}` });
+      }
+      expect(mock.of("/v1/responses/compact")).toHaveLength(1);
+      now += 25 * 3600_000;
+      await send(again, req(M, [user("other"), ...calls(1, 8)], "sess-5"), { session_id: "sess-5" });
+      expect(mock.of("/v1/responses/compact")).toHaveLength(2);
+      expect(again.status()[M]).toMatchObject({ ok: false, reason: expect.stringContaining("follow-up /v1/responses carrying its compaction item was rejected") });
+    } finally {
+      closeFileLog();
+      fs.rmSync(logDir, { recursive: true, force: true });
+    }
+  });
+
+  it("同一模型 + Key 同时只探测一次（几个会话一起过线）", async () => {
+    const sc = make();
+    const M = "mf/good";
+    await send(sc, req(M, [user("warm")], "warm"), { session_id: "warm" });
+    mock.state.compact = "slow";
+    for (const s of ["a", "b", "c", "d"]) sc.prepare("/v1/responses", { session_id: s }, buf(req(M, [user(s), ...calls(1, 3)], s)));
+    await sc.settled();
+    for (const s of ["a", "b"]) sc.prepare("/v1/responses", { session_id: s }, buf(req(M, [user(s), ...calls(1, 3)], s)));
+    await sc.settled();
+    expect(mock.of("/v1/responses/compact")).toHaveLength(1);
+    expect(mock.of("/v1/responses")).toHaveLength(1);
+    expect(sc.status()[M]).toMatchObject({ ok: true });
+  });
+
+  it("压缩窗口只有一个 compaction 项（不保留用户消息）也照常用：系统提示 + 这一项 + 之后新增的", async () => {
+    mock.state.compact = "grok";
+    const events: CompactionEvent[] = [];
+    const sc = make({ events });
+    const M = "mf/good";
+    const h = [user("start"), ...calls(1, 5)];
+    for (const items of [h.slice(0, 1), [user("start"), ...calls(1, 3)], h]) await send(sc, req(M, items));
+    expect(sc.status()[M]).toMatchObject({ ok: true });
+    expect(events).toEqual([expect.objectContaining({ ok: true })]);
+    expect(events[0].after!).toBeLessThan(events[0].before * 0.7);
+    const plan = sc.prepare("/v1/responses", HEADERS, buf(req(M, [...h, ...call(6)])))!;
+    expect(plan.rewritten).toBe(true);
+    expect(JSON.parse(plan.body.toString()).input).toEqual([LEAD, { type: "compaction", id: "cmp_2", status: "completed", summary: expect.any(String), encrypted_content: "ENC.good.2.gAAAAB" }, ...call(6)]);
+    await sc.settled();
+  });
+
+  it("压缩后要小三成：很大的 compaction 项不用、半小时内这个会话不再压；系统提示和工具占一半以上时先不压", async () => {
+    let now = 1_800_000_000_000;
+    const events: CompactionEvent[] = [];
+    mock.state.compact = "big";
+    const sc = make({ now: () => now, events });
+    const M = "mf/good";
+    const h = [user("start"), ...calls(1, 5)];
+    for (const items of [h.slice(0, 1), [user("start"), ...calls(1, 3)], h]) await send(sc, req(M, items));
+    expect(mock.of("/v1/responses/compact")).toHaveLength(2);
+    expect(events).toEqual([expect.objectContaining({ ok: false, error: expect.stringContaining("not smaller") })]);
+    expect((await send(sc, req(M, [...h, ...call(6)])))!.rewritten).toBe(false);
+    expect(mock.of("/v1/responses/compact")).toHaveLength(2);
+    // 不是临时失败：过了 10 分钟也不重压，半小时后再压（这次压得小）
+    mock.state.compact = "grok";
+    now += 11 * 60_000;
+    await send(sc, req(M, [...h, ...calls(6, 7)]));
+    expect(mock.of("/v1/responses/compact")).toHaveLength(2);
+    now += 20 * 60_000;
+    await send(sc, req(M, [...h, ...calls(6, 8)]));
+    expect(mock.of("/v1/responses/compact")).toHaveLength(3);
+    expect(events.at(-1)).toMatchObject({ ok: true });
+
+    // 系统提示占了大半：过了线也先不压，等历史长到一半以上
+    const bigLead = [{ role: "developer", content: "S".repeat(30_000) }];
+    const lead = (n: number) => send(sc, req(M, [user("lead-heavy"), ...calls(1, n)], "sess-lead", bigLead), { session_id: "sess-lead" });
+    for (const n of [1, 2, 3, 4]) await lead(n);
+    expect(mock.of("/v1/responses/compact")).toHaveLength(3);
+    await lead(14);
+    await lead(15);
+    expect(mock.of("/v1/responses/compact")).toHaveLength(4);
   });
 
   it("改写过的请求被拒、原请求能过：这段映射作废，记下不支持，之后不再改写", async () => {
@@ -437,6 +593,78 @@ describe("服务端压缩：经 bridge", () => {
       expect(r.status).toBe(200);
       expect(mock.of("/v1/responses").at(-1)!.body.input.some((it: any) => it.type === "compaction")).toBe(false);
     } finally {
+      await bridge.stop();
+    }
+  });
+
+  it("改写过的请求被拒不报给代理接口回退（不会让模型改走 Chat）；原请求重发成功，回合照常", async () => {
+    const sc = make();
+    const { bridge, post } = await bridgeWith(sc);
+    const seen: Rejection[] = [];
+    const off = bridge.onRejection((r) => void seen.push(r));
+    try {
+      const h = await compacted(post);
+      // 上游像 Modelflare 那样：带 compaction 项就 400「无效的参数」，原请求能过
+      mock.state.items = "grok";
+      const before = mock.of("/v1/responses").length;
+      const r = await post(req("mf/good", h));
+      expect(r.status).toBe(200);
+      const [rewritten, original] = mock.of("/v1/responses").slice(before);
+      expect(rewritten.body.input.some((it: any) => it.type === "compaction")).toBe(true);
+      expect(original.body.input.some((it: any) => it.type === "compaction")).toBe(false);
+      expect(seen).toEqual([]);
+      expect(sc.status()["mf/good"]).toMatchObject({ ok: false, reason: expect.stringContaining("rewritten request rejected (400): 无效的参数") });
+    } finally {
+      off();
+      await bridge.stop();
+    }
+  });
+
+  it("改写过的请求被拒、原请求重发后也被拒（请求形状的问题）：只报原请求那次，代理接口回退照常认", async () => {
+    const sc = make();
+    const { bridge, post } = await bridgeWith(sc);
+    const seen: Rejection[] = [];
+    const off = bridge.onRejection((r) => void seen.push(r));
+    try {
+      const h = await compacted(post);
+      mock.state.items = "grok";
+      mock.state.responses = "reject";
+      const before = mock.of("/v1/responses").length;
+      const r = await post(req("mf/good", h));
+      expect(r.status).toBe(400);
+      expect(r.text).toContain("Unsupported parameter");
+      expect(mock.of("/v1/responses").slice(before).map((s) => s.body.input.some((it: any) => it.type === "compaction"))).toEqual([true, false]);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ path: "/v1/responses", status: 400 });
+      expect(seen[0].error).toContain("Unsupported parameter");
+      expect(seen[0].error).not.toContain("无效的参数");
+      expect(shapeRejection(seen, "")).toMatch(/^HTTP 400: Unsupported parameter/);
+      // 原请求也不过：不是压缩项的问题，映射丢掉但不记"不支持"
+      expect(sc.status()["mf/good"]).toMatchObject({ ok: true });
+    } finally {
+      off();
+      await bridge.stop();
+    }
+  });
+
+  it("改写过的请求遇到 429：不重发、原样交给 DSH（它会重试），也不报给代理接口回退", async () => {
+    const sc = make();
+    const { bridge, post } = await bridgeWith(sc);
+    const seen: Rejection[] = [];
+    const off = bridge.onRejection((r) => void seen.push(r));
+    try {
+      const h = await compacted(post);
+      mock.state.items = "429";
+      const before = mock.of("/v1/responses").length;
+      expect((await post(req("mf/good", h))).status).toBe(429);
+      expect(mock.of("/v1/responses").length - before).toBe(1);
+      expect(seen).toEqual([]);
+      // 原样发的请求被拒照常报
+      mock.state.responses = "reject";
+      expect((await post(req("mf/good", [user("fresh")]))).status).toBe(400);
+      expect(seen).toHaveLength(1);
+    } finally {
+      off();
       await bridge.stop();
     }
   });

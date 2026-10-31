@@ -7,7 +7,8 @@
  *   所在的 Modelflare 连接），记下"这段历史（逐项哈希）→ 压缩后的窗口"，按会话存盘。之后同一会话的请求只要开头逐项
  *   一致，就把这段换成压缩窗口再发（系统提示用当次请求的）；有任何不一致就原样发。压缩不阻塞当次请求。
  * - 价格目录列出 openai-response-compact 只是提示：每个模型（连同所用的 Key）先做一次很小的压缩 + 续接探测，通过了才用，
- *   结果缓存（内存 + 磁盘，会过期）。
+ *   结果缓存（内存 + 磁盘，会过期）。压缩调用要推理、要付费（实测 30–75 秒），所以目录没列出的不探测，同一模型 + Key
+ *   同时只探测一次，"不支持"的结论 7 天内不再探测。
  * - 改写过的请求被拒（4xx、流一开头就报错）时，bridge 用原请求重发一次，这里记下该模型不支持。压缩项只发回产生它的
  *   同一个模型 + 同一个 Key。AMB_SERVER_COMPACTION=0 整个关掉。
  *
@@ -27,10 +28,11 @@ const log = logger("agent.compaction");
 export const COMPACT_ENDPOINT = "openai-response-compact";
 
 const DAY = 24 * 3600_000;
-/** 探测结果的有效期：支持 3 天，不支持 1 天（之后重新探测）；临时失败 10 分钟后再试 */
+/** 探测结果的有效期：支持 3 天，不支持 7 天（之后重新探测）；临时失败 10 分钟后再试，连着失败每次加倍，最多 6 小时 */
 const OK_TTL = 3 * DAY;
-const NO_TTL = DAY;
+const NO_TTL = 7 * DAY;
 const RETRY_MS = 10 * 60_000;
+const RETRY_MAX_MS = 6 * 3600_000;
 /** 一个会话最多留几段映射；映射文件多久没动就删 */
 const KEEP_MAPPINGS = 3;
 const FILE_TTL = 14 * DAY;
@@ -122,15 +124,48 @@ interface SessionState {
   quietUntil?: number;
 }
 
+/** 回复里报的用量与费用（日志用）：tokens、推理 tokens、cost_in_usd_ticks（原样） */
+export type CallUsage = Partial<Record<"input" | "output" | "reasoning" | "costTicks", number>>;
+
 class CompactError extends Error {
   constructor(
     message: string,
     /** 这个模型不支持（4xx、形状不对）；否则是临时问题 */
     readonly unsupported: boolean,
     readonly status = 0,
+    /** 上游回了用量（这次调用照样计费） */
+    readonly usage?: CallUsage,
   ) {
     super(message);
   }
+}
+
+/** 回复里的用量与费用；一项都没有时 undefined */
+export function usageOf(j: any): CallUsage | undefined {
+  const u = j?.usage;
+  if (!u || typeof u !== "object") return undefined;
+  const out: CallUsage = {};
+  const put = (k: keyof CallUsage, v: unknown) => {
+    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+  };
+  put("input", u.input_tokens);
+  put("output", u.output_tokens);
+  put("reasoning", u.output_tokens_details?.reasoning_tokens);
+  put("costTicks", u.cost_in_usd_ticks ?? j.cost_in_usd_ticks);
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** 上游错误体里的那句话（error.message），不是 JSON 就用原文；已脱敏、压成一行 */
+function errorText(body: string, n = 200): string {
+  let m = body;
+  try {
+    const j = JSON.parse(body);
+    const x = j?.error?.message ?? j?.message;
+    if (typeof x === "string" && x.trim()) m = x;
+  } catch {
+    /* 不是 JSON */
+  }
+  return redactText(m).replace(/\s+/g, " ").trim().slice(0, n);
 }
 
 export function serverCompactionEnabled(): boolean {
@@ -201,10 +236,15 @@ export function splice(lead: unknown[], window: unknown[], tail: unknown[]): unk
   return [...lead, ...window, ...tail];
 }
 
-/** /responses/compact 的回复是否可用：output 里至少有一个带密文的 compaction 项；不可用时 undefined */
+/**
+ * /responses/compact 的回复是否可用：output 里至少有一个带密文的 compaction 项；不可用时 undefined。
+ * object 按文档是 response.compaction；Modelflare（实测 grok）回的是 response，output 只有那一个 compaction 项
+ * （不保留用户消息）。两种都收，object 没有也收。
+ */
 export function compactedWindow(j: any): unknown[] | undefined {
   if (!j || typeof j !== "object" || !Array.isArray(j.output) || !j.output.length) return undefined;
-  if (j.object !== undefined && j.object !== "response.compaction") return undefined;
+  if (j.object !== undefined && j.object !== "response.compaction" && j.object !== "response") return undefined;
+  if ((j.error && typeof j.error === "object") || j.status === "failed") return undefined;
   const items: any[] = j.output;
   if (!items.every((it) => it && typeof it === "object" && !Array.isArray(it) && (typeof it.type === "string" || typeof it.role === "string"))) return undefined;
   if (!items.some((it) => it.type === "compaction" && typeof it.encrypted_content === "string" && it.encrypted_content.length > 0)) return undefined;
@@ -430,13 +470,14 @@ export class ServerCompaction {
       : undefined;
     const input = mapping ? splice(lead, mapping.window, rest.slice(mapping.k)) : j.input;
     const out = mapping ? Buffer.from(JSON.stringify({ ...j, input })) : body;
-    let tokens = estimateTokens(input) + estimateTokens(j.tools);
+    const est = estimateTokens(input) + estimateTokens(j.tools);
+    let tokens = est;
     if (st.usage && st.usage.mapping === (mapping?.id ?? "")) tokens = Math.max(tokens, st.usage.tokens);
     const growing = !!st.last && st.last.model === model && rest.length > st.last.len && hashes[st.last.len] === st.last.hash;
     st.last = { len: rest.length, hash: hashes[rest.length], model };
     if (ep) {
       try {
-        this.consider({ st, key, session, model, ep, fp, verdict, tokens, growing, input, lead, tools: j.tools, instructions: j.instructions, k: rest.length, hash: hashes[rest.length] });
+        this.consider({ st, key, session, model, ep, fp, verdict, tokens, est, growing, input, lead, tools: j.tools, instructions: j.instructions, k: rest.length, hash: hashes[rest.length] });
       } catch (e) {
         log.warn("server compaction check failed", { message: (e as Error).message });
       }
@@ -454,7 +495,7 @@ export class ServerCompaction {
       },
       rejected: (status, error, originalOk) => {
         if (!mapping) return;
-        const snippet = redactText(error).replace(/\s+/g, " ").slice(0, 300);
+        const snippet = errorText(error, 300);
         log.warn("compacted request rejected upstream; resent the original", { model, status, originalOk, error: snippet });
         // 5xx 可能只是上游一时的问题：映射先留着，连着两次才不用；其余（4xx、流开头报错）这段映射不再用
         if (status >= 500 && (mapping.fails = (mapping.fails ?? 0) + 1) < 2) return;
@@ -494,7 +535,10 @@ export class ServerCompaction {
     ep: CompactEndpoint;
     fp: string;
     verdict: Verdict | undefined;
+    /** 发往上游的输入：估算与上游报的用量取大（定什么时候压） */
     tokens: number;
+    /** 只按估算（和压缩后的窗口比大小，同一把尺子） */
+    est: number;
     growing: boolean;
     input: unknown[];
     lead: unknown[];
@@ -513,6 +557,9 @@ export class ServerCompaction {
     if (!c.verdict?.ok || c.tokens < line || !c.growing || c.st.busy || this.now() < (c.st.quietUntil ?? 0)) return;
     const prev = c.st.mappings.at(-1);
     if (prev && !prev.hits && this.now() - prev.at < QUIET_MS) return;
+    // 压缩只换掉系统提示之后的历史，系统提示和工具原样再发：它们占到一半以上时，压得再好请求也很难小三成，
+    // 先不花这次钱，等历史再长些（只在压缩线调得很低时会遇到）
+    if (estimateTokens(c.lead) + estimateTokens(c.tools) > c.est / 2) return;
     this.track(this.compact(c));
   }
 
@@ -549,30 +596,36 @@ export class ServerCompaction {
     st.busy = true;
     const at = this.now();
     const t0 = Date.now();
+    let quiet = RETRY_MS;
     try {
-      const output = await this.callCompact(c.ep, { input: c.input, tools: c.tools, instructions: c.instructions });
+      const { output, usage } = await this.callCompact(c.ep, { input: c.input, tools: c.tools, instructions: c.instructions });
       const window = withoutLead(output, c.lead);
+      // 改写后的请求（系统提示 + 窗口 + 工具）要比这次请求小三成以上，两边都按估算比。窗口可能只有一个 compaction 项
+      // （Modelflare 不保留用户消息），一样算；没小多少就不用，半小时内这个会话不再压
       const after = estimateTokens(splice(c.lead, window, [])) + estimateTokens(c.tools);
-      if (after > c.tokens * 0.7) throw new CompactError(`compacted window is not smaller (${after} vs ${c.tokens})`, false);
+      if (after > c.est * 0.7) {
+        quiet = QUIET_MS;
+        throw new CompactError(`compacted window is not smaller (${after} vs ${c.est})`, false, 200, usage);
+      }
       const m: Mapping = { id: crypto.randomBytes(6).toString("hex"), model, key: fp, k: c.k, hash: c.hash, window, at, before: c.tokens, after };
       st.mappings = [...st.mappings, m].slice(-KEEP_MAPPINGS);
       this.saveSession(c.key, st);
-      log.info("server compaction done", { model, session: c.session.slice(0, 12), before: c.tokens, after, items: window.length, ms: Date.now() - t0 });
+      log.info("server compaction done", { model, session: c.session.slice(0, 12), before: c.tokens, after, items: window.length, ms: Date.now() - t0, ...(usage && { usage }) });
       this.o.onEvent?.({ session: c.session, model, ok: true, before: c.tokens, after, at, ms: Date.now() - t0 });
     } catch (e) {
       const err = e as CompactError;
       const message = redactText(err.message).slice(0, 300);
-      log.warn("server compaction failed; requests go on uncompacted", { model, session: c.session.slice(0, 12), status: err.status, unsupported: !!err.unsupported, message });
+      log.warn("server compaction failed; requests go on uncompacted", { model, session: c.session.slice(0, 12), status: err.status, unsupported: !!err.unsupported, message, ...(err.usage && { usage: err.usage }) });
       if (err.unsupported) this.setVerdict(model, fp, { ok: false, at: this.now(), reason: `compact: ${message}` });
-      st.quietUntil = this.now() + (err.unsupported ? QUIET_MS : RETRY_MS);
+      st.quietUntil = this.now() + (err.unsupported ? QUIET_MS : quiet);
       this.o.onEvent?.({ session: c.session, model, ok: false, before: c.tokens, at, ms: Date.now() - t0, error: message });
     } finally {
       st.busy = false;
     }
   }
 
-  /** POST /responses/compact（直连）：返回压缩后的窗口；失败抛 CompactError */
-  private async callCompact(ep: CompactEndpoint, req: { input: unknown[]; tools?: unknown; instructions?: unknown }): Promise<any[]> {
+  /** POST /responses/compact（直连）：返回压缩后的窗口与上游报的用量；失败抛 CompactError */
+  private async callCompact(ep: CompactEndpoint, req: { input: unknown[]; tools?: unknown; instructions?: unknown }): Promise<{ output: any[]; usage?: CallUsage }> {
     const url = ep.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "") + "/v1/responses/compact";
     const body = { model: ep.model, input: req.input, ...(Array.isArray(req.tools) && req.tools.length ? { tools: req.tools } : {}), ...(typeof req.instructions === "string" && req.instructions ? { instructions: req.instructions } : {}) };
     let r: Response;
@@ -587,22 +640,39 @@ export class ServerCompaction {
       throw new CompactError(`network: ${(e as Error).message}`, false);
     }
     const text = await r.text().catch(() => "");
-    if (r.status >= 400) throw new CompactError(`HTTP ${r.status}: ${text.slice(0, 300)}`, unsupportedStatus(r.status), r.status);
+    if (r.status >= 400) throw new CompactError(`HTTP ${r.status}: ${errorText(text, 300)}`, unsupportedStatus(r.status), r.status);
     let j: any;
     try {
       j = JSON.parse(text);
     } catch {
       throw new CompactError(`not JSON: ${text.slice(0, 120)}`, true, r.status);
     }
-    const out = compactedWindow(j);
-    if (!out) throw new CompactError("no usable compaction item in the reply", true, r.status);
-    return out;
+    const usage = usageOf(j);
+    const output = compactedWindow(j);
+    if (!output) {
+      const items = Array.isArray(j?.output) ? j.output.map((it: any) => String(it?.type ?? it?.role ?? "?")).join(",") : "-";
+      throw new CompactError(`no usable compaction item in the reply (object ${String(j?.object ?? "-")}, output [${items.slice(0, 120)}])`, true, r.status, usage);
+    }
+    return { output: output as any[], usage };
   }
 
-  /** 确认这个模型 + Key 支持服务端压缩（后台；目录没列出就不探测） */
+  /** 连着几次临时失败（探测不出结论） */
+  private retries = new Map<string, number>();
+
+  /**
+   * 确认这个模型 + Key 支持服务端压缩（后台）。探测是付费的推理调用：同一模型 + Key 同时只探测一次；
+   * 目录没列出的不探测；"不支持"没过期（7 天）不再探测；临时失败后等 10 分钟起、每次加倍。
+   */
   private ensureVerdict(model: string, ep: CompactEndpoint, fp: string): void {
     const k = `${model}|${fp}`;
     if (this.probing.has(k) || this.now() < (this.retryAt.get(k) ?? 0)) return;
+    const had = this.verdicts.get(k);
+    if (had && !had.ok && this.now() - had.at < NO_TTL) return;
+    const later = () => {
+      const n = (this.retries.get(k) ?? 0) + 1;
+      this.retries.set(k, n);
+      this.retryAt.set(k, this.now() + Math.min(RETRY_MS * 2 ** (n - 1), RETRY_MAX_MS));
+    };
     const job = (async () => {
       const listed = await this.o.listed(model).catch(() => undefined);
       if (listed !== true) {
@@ -612,12 +682,13 @@ export class ServerCompaction {
         return;
       }
       const v = await this.probe(model, ep);
-      if (v) this.setVerdict(model, fp, v);
-      else this.retryAt.set(k, this.now() + RETRY_MS);
+      if (!v) return later();
+      this.retries.delete(k);
+      this.setVerdict(model, fp, v);
     })()
       .catch((e) => {
         log.warn("server compaction probe crashed", { model, message: (e as Error).message });
-        this.retryAt.set(k, this.now() + RETRY_MS);
+        later();
       })
       .finally(() => this.probing.delete(k));
     this.probing.set(k, job);
@@ -626,21 +697,27 @@ export class ServerCompaction {
 
   /**
    * 探测：① 直连 /responses/compact 压一段很小的对话，回复里要有带密文的 compaction 项；② 把压缩窗口按真实请求的拼法
-   * 经内置网关发一次 /v1/responses 续接，上游要接受。返回 undefined = 临时问题（网络、限流、5xx），过一会儿再试。
+   * 经内置网关发一次 /v1/responses 续接，上游要接受。由 ② 定论：Modelflare 上 grok 的 ① 能过，② 带着 compaction 项
+   * 就回 400。返回 undefined = 临时问题（网络、限流、5xx），过一会儿再试。回复报了用量和费用就记进日志。
    */
   async probe(model: string, ep: CompactEndpoint): Promise<Verdict | undefined> {
     const t0 = Date.now();
+    const no = (reason: string): Verdict => ({ ok: false, at: this.now(), reason: `probe: ${reason}` });
     let window: any[];
     try {
-      window = await this.callCompact(ep, { input: [...PROBE_LEAD, ...PROBE_ITEMS], tools: PROBE_TOOLS });
+      const c = await this.callCompact(ep, { input: [...PROBE_LEAD, ...PROBE_ITEMS], tools: PROBE_TOOLS });
+      window = c.output;
+      log.info("server compaction probe: compact call ok", { model, ms: Date.now() - t0, items: window.map((it) => String(it?.type ?? it?.role)).join(","), ...(c.usage && { usage: c.usage }) });
     } catch (e) {
       const err = e as CompactError;
-      log.warn("server compaction probe: compact call failed", { model, status: err.status, unsupported: err.unsupported, message: redactText(err.message).slice(0, 300) });
-      return err.unsupported ? { ok: false, at: this.now(), reason: `probe compact: ${redactText(err.message).slice(0, 200)}` } : undefined;
+      const message = redactText(err.message).slice(0, 300);
+      log.warn("server compaction probe: compact call failed", { model, status: err.status, unsupported: err.unsupported, ms: Date.now() - t0, message, ...(err.usage && { usage: err.usage }) });
+      return err.unsupported ? no(`compact call failed: ${message.slice(0, 200)}`) : undefined;
     }
     const up = this.o.upstream();
     if (!up.baseUrl) return undefined;
     const input = splice(PROBE_LEAD, withoutLead(window, PROBE_LEAD), [PROBE_ASK]);
+    const t1 = Date.now();
     let r: Response;
     try {
       r = await this.fetch(up.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "") + "/v1/responses", {
@@ -655,20 +732,22 @@ export class ServerCompaction {
     }
     const text = await r.text().catch(() => "");
     if (r.status >= 400) {
-      const message = redactText(text).replace(/\s+/g, " ").slice(0, 300);
-      log.warn("server compaction probe: follow-up rejected", { model, status: r.status, message });
-      return unsupportedStatus(r.status) ? { ok: false, at: this.now(), reason: `probe follow-up HTTP ${r.status}: ${message.slice(0, 200)}` } : undefined;
+      const message = errorText(text, 300);
+      log.warn("server compaction probe: follow-up rejected", { model, status: r.status, ms: Date.now() - t1, message });
+      return unsupportedStatus(r.status) ? no(`compact call ok, but the follow-up /v1/responses carrying its compaction item was rejected (HTTP ${r.status}): ${message.slice(0, 200)}`) : undefined;
     }
     let j: any;
     try {
       j = JSON.parse(text);
     } catch {
-      return { ok: false, at: this.now(), reason: "probe follow-up: not JSON" };
+      return no("compact call ok, but the follow-up /v1/responses reply is not JSON");
     }
+    const usage = usageOf(j);
     if ((j?.object !== undefined && j.object !== "response") || j?.status === "failed" || (j?.error && typeof j.error === "object") || !Array.isArray(j?.output)) {
-      return { ok: false, at: this.now(), reason: `probe follow-up: unexpected reply (${String(j?.status ?? j?.object ?? "?")})` };
+      log.warn("server compaction probe: follow-up failed", { model, ms: Date.now() - t1, status: String(j?.status ?? j?.object ?? "?"), ...(usage && { usage }) });
+      return no(`compact call ok, but the follow-up /v1/responses carrying its compaction item failed (${String(j?.status ?? j?.object ?? "?")}${j?.error?.message ? `: ${errorText(JSON.stringify(j), 160)}` : ""})`);
     }
-    log.info("server compaction probe passed", { model, ms: Date.now() - t0, windowItems: window.length });
+    log.info("server compaction probe passed", { model, ms: Date.now() - t0, windowItems: window.length, ...(usage && { followUpUsage: usage }) });
     return { ok: true, at: this.now(), reason: "probe passed" };
   }
 

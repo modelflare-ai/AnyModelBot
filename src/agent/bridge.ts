@@ -155,7 +155,13 @@ export class AgentBridge {
     res.on("close", () => ac.abort());
     // 上游迟迟不回响应头时每分钟记一条：代理"一直转圈"多半是这里卡住（代理自己要等 5 分钟才判超时并重试）
     const slow = setInterval(() => log.warn("model request still waiting for upstream response", { path: p, waitedMs: Date.now() - t0 }), 60_000);
-    const send = (b: Buffer | undefined) => fetch(target, { method: req.method, headers, body: b ? new Uint8Array(b) : undefined, signal: ac.signal });
+    // 最后发出去的是不是 DSH 的原请求体：改写过（换上压缩历史）的请求被拒先由 checkRewritten 用原请求重发，
+    // 不报给代理接口回退（onRejection）；只有原请求被拒才可能让这个模型改走 Chat
+    let unmodified = true;
+    const send = (b: Buffer | undefined) => {
+      unmodified = b === body;
+      return fetch(target, { method: req.method, headers, body: b ? new Uint8Array(b) : undefined, signal: ac.signal });
+    };
     let plan: CompactionPlan | undefined;
     if (body && req.method === "POST" && this.h.compaction) {
       try {
@@ -186,13 +192,14 @@ export class AgentBridge {
       const bot = typeof req.headers[BOT_HEADER] === "string" ? (req.headers[BOT_HEADER] as string) : undefined;
       log.warn("model request rejected by upstream", { path: p, status: r.status, ms: Date.now() - t0, bot, body: error });
       this.emitProxy({ phase: "response", id, path: p, status: r.status, ms: Date.now() - t0, error });
-      for (const fn of this.rejectionListeners) {
-        try {
-          fn({ bot, path: p, status: r.status, error });
-        } catch {
-          /* ignore */
+      if (unmodified)
+        for (const fn of this.rejectionListeners) {
+          try {
+            fn({ bot, path: p, status: r.status, error });
+          } catch {
+            /* ignore */
+          }
         }
-      }
       res.writeHead(r.status, out);
       return void res.end(text);
     }
@@ -218,7 +225,8 @@ export class AgentBridge {
 
   /**
    * 改写过（换上压缩历史）的请求：被拒（4xx/5xx，Key 与限流问题除外）或流一开头就报错时，用原请求重发一次，
-   * 回合照常进行；server-compaction 据此记下这个模型不支持。
+   * 回合照常进行；server-compaction 据此记下这个模型不支持。这次被拒不算代理接口被拒（不触发改走 Chat），
+   * 原请求重发后再被拒才算。
    */
   private async checkRewritten(plan: CompactionPlan, r: Response, original: () => Promise<Response>, p: string): Promise<Response> {
     if (r.status >= 400 && r.status !== 401 && r.status !== 429) {

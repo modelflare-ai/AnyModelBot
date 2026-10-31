@@ -22,6 +22,16 @@ export class WeixinQuota {
     return peer;
   }
 
+  peer(userId: string): WeixinPeer | undefined {
+    return this.store.getWeixinPeer(this.botId, userId);
+  }
+
+  /** 会话凭证还在 24 小时窗口内（对方最近发过消息） */
+  open(userId: string): boolean {
+    const p = this.peer(userId);
+    return !!p?.contextToken && this.now() - p.windowStartedAt <= QUOTA_WINDOW_MS;
+  }
+
   remaining(userId: string): number {
     const p = this.store.getWeixinPeer(this.botId, userId);
     if (!p) return 0;

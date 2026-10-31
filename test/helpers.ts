@@ -111,13 +111,18 @@ export async function mockIlink() {
     statusSeq: ["wait", "scaned", "confirmed"] as string[],
     inbox: [] as any[],
     sent: [] as Array<{ to: string; text: string; contextToken?: string; item?: any }>,
+    /** 与 sent 一一对应：每条消息的 client_id（出站队列给的是固定的） */
+    clientIds: [] as string[],
+    /** sendmessage 回 HTTP 500（模拟网络/服务端故障）：sendDown 一直失败，failSend 失败接下来的 N 次 */
+    sendDown: false,
+    failSend: 0,
+    sendFailures: 0,
     /** 假 CDN：encrypt_query_param → 密文（下载）；上传的密文也存这里 */
     cdn: new Map<string, Buffer>(),
     cdnDownloads: [] as string[],
     typing: [] as number[],
     expireNext: false,
     authSeen: [] as string[],
-    cursor: 0,
   };
   let base = "";
   const srv = await listen(async (req, res) => {
@@ -146,20 +151,29 @@ export async function mockIlink() {
         return json({ status: s });
       }
       case "/ilink/bot/getupdates": {
-        await body(req);
+        const b = await body(req);
         if (state.expireNext) {
           state.expireNext = false;
           return json({ ret: -14, errcode: -14, errmsg: "session timeout" });
         }
+        // 像真实 iLink 一样按游标投递：inbox 只追加，get_updates_buf = 已经拿到第几条；
+        // 客户端没处理完就停了（游标没前进），下次拉取会再拿到同样的消息
+        const from = Number(/^cur-(\d+)$/.exec(String(b.get_updates_buf ?? ""))?.[1] ?? 0);
         const deadline = Date.now() + 300;
-        while (!state.inbox.length && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
-        const msgs = state.inbox.splice(0);
-        return json({ ret: 0, msgs, get_updates_buf: `cur-${++state.cursor}` });
+        while (state.inbox.length <= from && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+        const msgs = state.inbox.slice(from);
+        return json({ ret: 0, msgs, get_updates_buf: `cur-${from + msgs.length}` });
       }
       case "/ilink/bot/sendmessage": {
         const b = await body(req);
+        if (state.sendDown || state.failSend > 0) {
+          if (state.failSend > 0) state.failSend--;
+          state.sendFailures++;
+          return res.writeHead(500).end();
+        }
         const item = b.msg.item_list[0];
         state.sent.push({ to: b.msg.to_user_id, text: item.text_item?.text ?? "", contextToken: b.msg.context_token, ...(item.text_item ? {} : { item }) });
+        state.clientIds.push(b.msg.client_id);
         return json({ ret: 0 });
       }
       case "/ilink/bot/getuploadurl": {
@@ -235,9 +249,15 @@ export class FakeFeishu implements FeishuTransport {
     if (this.failFinish) throw new Error("finish failed");
     this.finished.add(cardId);
   }
-  async replyText(to: string, text: string) {
-    this.calls.push({ op: "text", args: [to, text] });
+  async replyText(to: string, text: string, uuid?: string) {
+    this.calls.push({ op: "text", args: [to, text, uuid] });
     this.texts.push(text);
+  }
+  /** 主动发到会话（使用请求通知、余额提醒） */
+  notices: Array<{ chatId: string; text: string; uuid?: string }> = [];
+  async sendText(chatId: string, text: string, uuid?: string) {
+    this.calls.push({ op: "send", args: [chatId, text, uuid] });
+    this.notices.push({ chatId, text, uuid });
   }
 }
 

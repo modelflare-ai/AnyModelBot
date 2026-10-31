@@ -531,6 +531,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
     const send = async (user: string, model: string) => {
       const conv = app.store.ensureConversation("default", "weixin", user, user, "dm");
+      app.access.allow("default", "weixin", user, "test");
       app.store.setConversationModel(conv.id, model);
       const ops: any[] = [];
       const ev = { id: `img-${user}`, channel: "weixin" as const, botId: "default", conversation: { kind: "dm" as const, id: user }, sender: { id: user }, parts: [{ type: "text" as const, text: "LOOKIMG" }, { type: "image" as const, data: png, mime: "image/png" }], replyHandle: {}, receivedAt: Date.now() };
@@ -715,6 +716,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   /** 用一个微信会话（可单独设模型）发一条消息：回复与这一轮的步骤 */
   const turnOn = async (user: string, model: string, text: string, images: Buffer[] = []) => {
     const conv = app.store.ensureConversation("default", "weixin", user, user, "dm");
+    app.access.allow("default", "weixin", user, "test");
     app.store.setConversationModel(conv.id, model);
     const ops: any[] = [];
     const parts = [{ type: "text" as const, text }, ...images.map((data) => ({ type: "image" as const, data, mime: "image/png" }))];

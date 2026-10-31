@@ -7,6 +7,8 @@ import { OpenAICompatClient, type ModelClient } from "./llm/client.js";
 import { BotRuntime } from "./core/runtime.js";
 import { KeyedQueue } from "./core/queue.js";
 import { deferNotice, interruptedText, takeInterrupted, type Interrupted } from "./core/recovery.js";
+import { Outbox } from "./core/outbox.js";
+import { AccessControl } from "./core/access.js";
 import type { ChannelStatus } from "./core/types.js";
 import { MagpieSupervisor } from "./magpie/supervisor.js";
 import { FeishuChannel } from "./channels/feishu/channel.js";
@@ -111,6 +113,10 @@ export class App {
   readonly agent: AgentManager;
   readonly queue = new KeyedQueue();
   readonly channels = new Map<string, BotChannels>();
+  /** 持久化的出站队列：最终回复、文件、重要通知先落库再发，重启后接着发 */
+  readonly outbox: Outbox;
+  /** 谁能和机器人对话：主人 + 允许名单 + 使用请求 */
+  readonly access: AccessControl;
   web: WebServer | undefined;
   desktop: DesktopHooks | undefined;
   /** Modelflare 账户（登录、余额、预算）；start() 时创建，桌面外壳的钥匙串那时已就绪 */
@@ -142,6 +148,12 @@ export class App {
       log: logFilePath(),
     });
     this.store = new Store(path.join(config.dataDir, "anymodel.db"));
+    this.outbox = new Outbox(this.store);
+    this.outbox.onGone = (row) => {
+      const bot = this.store.getBot(row.botId);
+      this.notice("warn", `机器人「${bot?.name ?? row.botId}」有一条${row.channel === "weixin" ? "微信" : "飞书"}消息没能发出去：${row.error}`);
+    };
+    this.access = new AccessControl(this.store, { notify: (to, text, id) => this.reach(to, text, id) });
     if (config.magpie.mode === "managed") {
       this.magpie = new MagpieSupervisor({ dataDir: config.dataDir, binPath: config.magpie.binPath || undefined });
     }
@@ -207,7 +219,20 @@ export class App {
       contextMessages: config.llm.contextMessages,
       contextChars: config.llm.contextChars,
       route: (botId, model) => this.routeModel(botId, model),
+      access: this.access,
     });
+  }
+
+  /** 主动给某个渠道的某个人发通知（使用请求、批准结果）：能发就进出站队列，返回是否已排队 */
+  private reach(to: { botId: string; channel: string; peerId: string }, text: string, id: string): boolean {
+    const ch = this.channels.get(to.botId);
+    try {
+      if (to.channel === "weixin") return !!ch?.weixin?.tell(to.peerId, text, id);
+      if (to.channel === "feishu") return !!ch?.feishu?.notify(to.peerId, text, id);
+    } catch (e) {
+      log.warn("notify failed", { bot: to.botId, channel: to.channel, message: (e as Error).message });
+    }
+    return false;
   }
 
   /**
@@ -339,8 +364,9 @@ export class App {
       const ch = this.channels.get(bot.id);
       try {
         if (ch?.weixin && (await ch.weixin.notifyOwner(text))) return true;
-        const chat = ch?.feishu ? this.store.listConversations(bot.id).find((c) => c.channel === "feishu" && c.kind === "dm") : undefined;
-        if (chat && ch?.feishu && (await ch.feishu.notify(chat.peerId, text))) return true;
+        // 飞书：发给主人；还没设主人时发到最近的单聊
+        const chat = ch?.feishu ? (this.access.owner(bot.id, "feishu")?.peerId ?? this.store.listConversations(bot.id).find((c) => c.channel === "feishu" && c.kind === "dm")?.peerId) : undefined;
+        if (chat && ch?.feishu?.notify(chat, text)) return true;
       } catch (e) {
         log.warn("push to owner failed", { bot: bot.id, message: (e as Error).message.slice(0, 200) });
       }
@@ -415,6 +441,8 @@ export class App {
     this.seedDefaultBot();
     // 上次退出或崩溃时没处理完的消息：渠道开始收新消息之前取走标记，渠道起来后告诉用户
     const interrupted = takeInterrupted(this.store);
+    // 出站队列先开：渠道上线时登记发送函数，上次没发完的消息接着发
+    this.outbox.start();
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
     if (interrupted.length) void this.tellInterrupted(interrupted);
     if (!this.opts.noWeb) this.web = await startWebServer(this);
@@ -479,6 +507,8 @@ export class App {
     if (this.picksTimer) clearInterval(this.picksTimer);
     this.account?.cancelLogin();
     await this.web?.close();
+    // 不再开始新的发送，等正在发的结束；没发完的留在库里，下次启动接着发
+    await this.outbox.stop();
     for (const id of [...this.channels.keys()]) await this.stopBot(id);
     await this.agent.stop();
     await this.magpie?.stop();
@@ -588,7 +618,7 @@ export class App {
     this.channels.set(botId, ch);
     if (bot.feishuAppId && bot.feishuAppSecret && !ch.feishu) {
       const transport = this.opts.feishuTransport?.(bot) ?? new LarkTransport(bot.feishuAppId, bot.feishuAppSecret);
-      ch.feishu = new FeishuChannel(bot.id, transport, this.runtime, this.queue, this.config.feishu.throttleMs);
+      ch.feishu = new FeishuChannel(bot.id, transport, this.runtime, this.queue, this.config.feishu.throttleMs, this.outbox);
       ch.feishuError = undefined;
       ch.feishu.start().catch((e) => {
         ch.feishuError = (e as Error).message;
@@ -601,6 +631,7 @@ export class App {
         fetchImpl: this.opts.weixinFetch,
         cdnBaseUrl: this.config.weixin.cdnBaseUrl,
         pollTimeoutMs: this.opts.weixinPollTimeoutMs,
+        outbox: this.outbox,
       });
       ch.weixin.onExpired = () => this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);
       ch.weixin.start();
@@ -636,7 +667,10 @@ export class App {
     ch.weixinLogin = login;
     void login.run().then(async (res) => {
       if (!res) return;
+      // 换了一个微信扫码：原来的主人留在允许名单里（可在机器人设置里移除），不会被拦在外面
+      const prevOwner = this.store.getWeixinAccount(botId)?.ownerUserId;
       this.store.saveWeixinAccount({ botId, botToken: res.botToken, ilinkBotId: res.ilinkBotId, baseUrl: res.baseUrl, ownerUserId: res.userId });
+      if (prevOwner && prevOwner !== res.userId) this.access.allow(botId, "weixin", prevOwner, "previous-owner");
       const bot = this.store.getBot(botId);
       if (bot && !bot.weixinEnabled) this.store.updateBot(botId, { weixinEnabled: true });
       await ch.weixin?.stop();

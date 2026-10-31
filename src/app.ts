@@ -118,6 +118,7 @@ export class App {
   private accountTimer: NodeJS.Timeout | undefined;
   private picksTimer: NodeJS.Timeout | undefined;
   private modelInfoCache: { at: number; data: Record<string, ModelInfo> } | undefined;
+  private modelInfoLoading: Promise<Record<string, ModelInfo>> | undefined;
 
   constructor(readonly config: AppConfig, readonly opts: AppOptions = {}) {
     // 日志文件：<dataDir>/logs/app.log（打包后的桌面版看不到 stdout，故障排查全靠它）
@@ -161,15 +162,17 @@ export class App {
       idleTimeoutMs: config.agent.idleTimeoutMs,
       approvalTtlMs: config.agent.approvalTtlMs,
       // 上下文长度来自 Modelflare 的模型资料（和模型选择器里显示的一致）；内置兜底表跟不上新模型
-      contextWindow: async (model) => {
-        const info = await this.modelInfo();
-        const bare = bareModel(model);
-        return (info[bare] ?? info[bare.split("/").pop() ?? bare])?.context;
+      contextWindow: async (model) => (await this.infoOf(model))?.context,
+      // 代理的对话接口按 Modelflare 目录选（Responses / Anthropic Messages / Chat）；外部端点只当它会 Chat
+      apiInfo: async (model) => {
+        if (!this.magpie) return undefined;
+        const info = await this.infoOf(model);
+        return info && { endpoints: info.endpoints, reasoning: info.reasoning };
       },
       // 服务端压缩：价格目录列出压缩端点只是提示，bridge 用之前会探测
       serverCompaction: {
         listed: async (model) => {
-          const info = await this.modelInfoFor(model);
+          const info = await this.infoOf(model);
           return info?.endpoints ? info.endpoints.includes(COMPACT_ENDPOINT) : undefined;
         },
         endpoint: (model) => this.compactEndpoint(model),
@@ -219,23 +222,13 @@ export class App {
     }
   }
 
-  /** 某个模型（网关里的名字也行）的 Modelflare 模型资料 */
-  private async modelInfoFor(model: string): Promise<ModelInfo | undefined> {
-    const info = await this.modelInfo();
-    const bare = bareModel(model);
-    return info[bare] ?? info[bare.split("/").pop() ?? bare];
-  }
-
   /**
    * 服务端压缩直连的端点：内置网关不转发 /v1/responses/compact（回 404），压缩请求直接发给模型所在的 Modelflare 连接
    * （同一把 Key）。压缩后的请求仍经网关；网关要先开启 nativeCompaction，带压缩项的请求被拒时才会原样报错，
-   * 而不是悄悄删掉压缩项重试（那样会丢掉之前的上下文）。外部端点模式直接用那个端点。
+   * 而不是悄悄删掉压缩项重试（那样会丢掉之前的上下文）。外部端点模式下代理只走 Chat（见 apiInfo），不做。
    */
   private compactEndpoint(model: string): CompactEndpoint | undefined {
-    if (!this.magpie) {
-      const baseUrl = this.config.magpie.externalBaseUrl.replace(/\/+$/, "");
-      return baseUrl ? { baseUrl, apiKey: this.config.magpie.externalApiKey, model } : undefined;
-    }
+    if (!this.magpie) return undefined;
     // 网关里的模型名是 <provider id>/<上游模型名>；provider 必须正好是它（upstreamEndpoint 找不到时会退回共用连接）
     const i = model.indexOf("/");
     const id = i > 0 ? model.slice(0, i) : "";
@@ -373,15 +366,26 @@ export class App {
   /** 模型选择器里的能力与参考价（缓存一小时） */
   async modelInfo(force = false): Promise<Record<string, ModelInfo>> {
     if (!force && this.modelInfoCache && Date.now() - this.modelInfoCache.at < 3600_000) return this.modelInfoCache.data;
-    const key = this.magpie?.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER) ?? "";
-    const data = await loadModelInfo({
-      baseUrl: modelflareBaseUrl(this.config.modelflare.line),
-      apiKey: key,
-      headers: this.requestHeaders(),
-      pricingUrl: `${modelflareIssuer()}/api/pricing`,
-    });
-    this.modelInfoCache = { at: Date.now(), data };
-    return data;
+    // 同时来的几次（代理启动时上下文长度和接口一起问）共用一次加载
+    this.modelInfoLoading ??= (async () => {
+      const key = this.magpie?.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER) ?? "";
+      const data = await loadModelInfo({
+        baseUrl: modelflareBaseUrl(this.config.modelflare.line),
+        apiKey: key,
+        headers: this.requestHeaders(),
+        pricingUrl: `${modelflareIssuer()}/api/pricing`,
+      });
+      this.modelInfoCache = { at: Date.now(), data };
+      return data;
+    })().finally(() => (this.modelInfoLoading = undefined));
+    return this.modelInfoLoading;
+  }
+
+  /** 某个模型的资料：去掉内置网关的 provider 前缀，再试最后一段（openai/x → x） */
+  private async infoOf(model: string): Promise<ModelInfo | undefined> {
+    const info = await this.modelInfo();
+    const bare = bareModel(model);
+    return info[bare] ?? info[bare.split("/").pop() ?? bare];
   }
 
   notice(level: "info" | "warn", text: string): void {

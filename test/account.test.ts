@@ -267,6 +267,23 @@ describe("模型资料", () => {
     const noKey = await loadModelInfo({ ...base, apiKey: "" });
     expect(noKey["gpt-6.1-terra"].context).toBe(999);
   });
+
+  it("支持的接口：公开目录里的 supported_endpoint_types；推理能力来自 model-profiles", async () => {
+    const fetchImpl = (async (url: string) => {
+      if (url.endsWith("/model-profiles")) return Response.json({ data: { "gpt-6.1-terra": { reasoning: true }, "claude-sonnet-5": { reasoning: true } } });
+      return Response.json({
+        data: [
+          { model_name: "gpt-6.1-terra", quota_type: 0, supported_endpoint_types: ["openai-response", "openai-response-compact", "openai"] },
+          { model_name: "claude-sonnet-5", quota_type: 0, supported_endpoint_types: ["anthropic", "openai"] },
+          { model_name: "old-model", quota_type: 0 },
+        ],
+      });
+    }) as any;
+    const info = await loadModelInfo({ baseUrl: "http://mf/v1", apiKey: "k", headers: {}, pricingUrl: "http://mf/api/pricing", fetchImpl });
+    expect(info["gpt-6.1-terra"]).toMatchObject({ reasoning: true, endpoints: ["openai-response", "openai-response-compact", "openai"] });
+    expect(info["claude-sonnet-5"].endpoints).toEqual(["anthropic", "openai"]);
+    expect(info["old-model"]?.endpoints).toBeUndefined();
+  });
 });
 
 describe("生图 / 生视频", () => {

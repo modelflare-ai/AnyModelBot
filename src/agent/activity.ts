@@ -140,6 +140,10 @@ export class ActivityLog {
       }
       case "llm/retry-started":
         return false;
+      case "api/fallback":
+        // 宿主发的：上游不接受这个接口上的请求，换 Chat Completions 重做这一轮
+        this.put({ id: `f${time}`, kind: "retry", title: "改用 Chat Completions 重试", summary: oneLine(`${data.from ?? ""} 被拒：${data.reason ?? ""}`), status: "ok", at: time });
+        return true;
       case "compaction/start":
         this.put({ id: `c${time}`, kind: "compact", title: "压缩上下文", status: "running", at: time });
         return true;

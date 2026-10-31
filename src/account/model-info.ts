@@ -1,7 +1,7 @@
 /**
  * 模型选择器里的能力与参考价：
  * - 能力来自 GET {线路}/v1/model-profiles（带 Key；上下文、视觉、工具调用、推理）。
- * - 价格来自公开价格目录 GET https://modelflare.dev/api/pricing（不带 Key，国内线路不开放）。
+ * - 价格与模型支持的接口来自公开价格目录 GET https://modelflare.dev/api/pricing（不带 Key，国内线路不开放）。
  *   只算按 token 计费和按次计费的模型：价格 = 基础价 × 该模型可用公开分组里最低的分组倍率 ×
  *   模型售价倍率，单位美元 / 百万 tokens（按次为美元 / 次）。这是“起步参考价”，实际以账单为准；
  *   阶梯计费、图片、视频等复杂计费不展示价格。
@@ -12,7 +12,7 @@ export interface ModelInfo {
   tools?: boolean;
   reasoning?: boolean;
   price?: { input?: number; output?: number; perCall?: number };
-  /** 价格目录的 supported_endpoint_types（openai、openai-response、openai-response-compact…） */
+  /** 支持的接口（目录的 supported_endpoint_types：openai、openai-response、openai-response-compact、anthropic、gemini…） */
   endpoints?: string[];
 }
 
@@ -96,9 +96,9 @@ export async function loadModelInfo(o: {
   for (const entry of catalog?.data ?? []) {
     const price = referencePrice(entry, catalog!);
     if (price) out[entry.model_name] = { ...out[entry.model_name], price };
-    if (Array.isArray(entry.supported_endpoint_types)) out[entry.model_name] = { ...out[entry.model_name], endpoints: entry.supported_endpoint_types.map(String) };
     // 没有 Key（拿不到 model-profiles）时，上下文长度用公开目录里的
     if (Number(entry.context_window) > 0 && !out[entry.model_name]?.context) out[entry.model_name] = { ...out[entry.model_name], context: Number(entry.context_window) };
+    if (Array.isArray(entry.supported_endpoint_types)) out[entry.model_name] = { ...out[entry.model_name], endpoints: entry.supported_endpoint_types.map(String) };
   }
   return out;
 }

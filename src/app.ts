@@ -44,7 +44,7 @@ import { MediaService, pickDefault } from "./agent/media.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
 import { TaskService } from "./tasks/service.js";
-import { detached, setLangPref, t } from "./i18n/index.js";
+import { detached, setLangPref, t, t as tr } from "./i18n/index.js";
 import { Attention, approvalItems, deliveryItem, type AttentionItem } from "./tasks/attention.js";
 
 const log = logger("app");
@@ -270,7 +270,7 @@ export class App {
     for (const [botId, ch] of this.channels) {
       const st = ch.weixin?.status;
       if (st?.state !== "expired") continue;
-      out.push({ id: `login:${botId}:weixin`, kind: "login", botId, botName: this.store.getBot(botId)?.name ?? botId, subject: "微信登录已过期", status: "", line: "", since: st.since, severity: "err", actions: ["relogin"], channel: "weixin" });
+      out.push({ id: `login:${botId}:weixin`, kind: "login", botId, botName: this.store.getBot(botId)?.name ?? botId, subject: tr("app.weixinExpiredSubject"), status: "", line: "", since: st.since, severity: "err", actions: ["relogin"], channel: "weixin" });
     }
     return out;
   }

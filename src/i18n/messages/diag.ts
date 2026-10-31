@@ -81,6 +81,10 @@ export const zh = {
   report_passed: "通过",
   report_not_passed: "未通过（{stage}）",
   report_log_tail: "[最近 {count} 行日志]",
+  outboxLine: "[出站队列] 等待发送 {pending} 条（重试中 {retrying}）{lastError}{held} · 最近 7 天没发出去 {gone} 条{lastGone}",
+  outboxLastError: " · 最近错误：{error}",
+  outboxHeld: " · 等对方发消息后再发 {n} 条",
+  outboxLastGone: " · 最近一次：{text}",
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
@@ -162,4 +166,8 @@ export const en: Catalog<typeof zh> = {
   report_passed: "passed",
   report_not_passed: "failed ({stage})",
   report_log_tail: { one: "[Last {count} log line]", other: "[Last {count} log lines]" },
+  outboxLine: "[Outbox] {pending} waiting to send ({retrying} retrying){lastError}{held} · {gone} not sent in the last 7 days{lastGone}",
+  outboxLastError: " · last error: {error}",
+  outboxHeld: " · {n} waiting until they message again",
+  outboxLastGone: " · most recent: {text}",
 };

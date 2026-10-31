@@ -22,6 +22,7 @@ import { DEFAULT_QUIET, fmtWhen, inQuiet, minuteOf, nextAt, quietEnd, quietStart
 import { QUOTA_WINDOW_MS, WeixinQuota } from "../channels/weixin/quota.js";
 import { combineHeld, filterMarkdown } from "../channels/weixin/channel.js";
 import { logger } from "../log.js";
+import { t as tr } from "../i18n/index.js";
 
 const log = logger("delivery");
 
@@ -119,7 +120,7 @@ export interface AttentionItem {
   actions: Array<"retry" | "dismiss">;
 }
 
-const CHANNEL_NAME: Record<string, string> = { weixin: "微信", feishu: "飞书" };
+const channelName = (c: string) => (c === "weixin" ? tr("delivery.chWeixin") : c === "feishu" ? tr("delivery.chFeishu") : c);
 const ACK = /^(ok|okay|k|好|好的|好滴|嗯|嗯嗯|收到|行|可以)[\s!！。.~～]*$/i;
 
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -136,7 +137,7 @@ export function needsPerson(row: OutboxRow | undefined): boolean {
 export function digestText(items: Array<{ purpose: string; text: string }>): string {
   if (items.length === 1) return items[0].text;
   const all = (...k: string[]) => items.every((i) => k.includes(i.purpose));
-  const head = all("result", "failure") ? `${items.length} 个后台任务：` : all("rule", "reminder") ? `${items.length} 条提醒：` : `${items.length} 条消息：`;
+  const head = tr(all("result", "failure") ? "delivery.digestTasks" : all("rule", "reminder") ? "delivery.digestReminders" : "delivery.digestMessages", { count: items.length });
   return [head, ...items.map((i) => `· ${oneLine(i.text)}`)].join("\n");
 }
 
@@ -147,9 +148,9 @@ export function nudgeText(items: Upcoming[], now: number, tz: string): { text: s
   const list = items
     .slice(0, 3)
     .map((i) => (i.at ? `${fmtWhen(i.at, now, tz)} ` : "") + clip(oneLine(i.label), 20))
-    .join("、");
-  const tail = noun === "提醒" ? "回个「ok」我就能继续按时提醒你。" : "回个「ok」我就能继续发给你。";
-  return { text: `接下来还有 ${items.length} 条${noun}要发给你（${list}${items.length > 3 ? " 等" : ""}）。${tail}`, noun };
+    .join(tr("delivery.listSep"));
+  const kind = noun === "提醒" ? "Reminders" : noun === "结果" ? "Results" : "Messages";
+  return { text: tr(`delivery.nudge${kind}` as "delivery.nudgeMessages", { count: items.length, list, more: items.length > 3 ? tr("delivery.andMore") : "" }), noun };
 }
 
 /**
@@ -445,7 +446,7 @@ export class Delivery {
     const last = this.store.lastSentOutbox(`${botId}:${channel}:${peerId}`);
     if (!last || last.purpose !== "nudge" || last.reason === "acked" || this.now() - last.sentAt > QUOTA_WINDOW_MS + NUDGE_BEFORE_MS) return undefined;
     this.store.updateOutbox(last.id, { reason: "acked" }, this.now());
-    return last.subject === "提醒" ? "好的，到时提醒你。" : "好的，到时发给你。";
+    return last.subject === "提醒" ? tr("delivery.ackReminder") : tr("delivery.ackSend");
   }
 
   // ---------- 需要你 ----------
@@ -490,11 +491,11 @@ export class Delivery {
     for (const [id, list] of groups) {
       const r0 = list[0];
       const held = r0.status === "held";
-      const ch = CHANNEL_NAME[r0.channel] ?? r0.channel;
+      const ch = channelName(r0.channel);
       // 合成过的一条按里面的条数算；文件不单算
       const parts = list.flatMap((r) => [r, ...(r.body.digest || r.body.away ? this.store.mergedOutbox(r.id) : [])]).filter((r) => r.kind !== "file");
       const n = Math.max(1, parts.length);
-      const noun = parts.length && parts.every((r) => r.purpose === "result" || r.purpose === "failure") ? "条结果" : "条消息";
+      const results = parts.length > 0 && parts.every((r) => r.purpose === "result" || r.purpose === "failure");
       items.push({
         id,
         kind: "delivery",
@@ -503,10 +504,10 @@ export class Delivery {
         conversationId: r0.conversationId,
         channel: r0.channel,
         severity: held ? "warn" : "error",
-        title: held ? `${n} ${noun}未送达${ch}` : `${n} ${noun}没能发到${ch}`,
-        line: held ? `在${ch}里发条消息就能收到` : list.some((r) => r.status === "pending") ? "还在重试" : "",
+        title: tr(held ? (results ? "delivery.heldResults" : "delivery.heldMessages") : results ? "delivery.failedResults" : "delivery.failedMessages", { count: n, channel: ch }),
+        line: held ? tr("delivery.heldLine", { channel: ch }) : list.some((r) => r.status === "pending") ? tr("delivery.retrying") : "",
         since: Math.min(...list.map((r) => r.createdAt)),
-        messages: list.map((r) => ({ id: r.id, text: r.kind === "file" ? `[文件 ${r.body.name ?? ""}]` : (r.body.text ?? ""), at: r.createdAt, ref: r.ref })),
+        messages: list.map((r) => ({ id: r.id, text: r.kind === "file" ? tr("delivery.fileItem", { name: r.body.name ?? "" }) : (r.body.text ?? ""), at: r.createdAt, ref: r.ref })),
         actions: held ? [] : list.some((r) => r.status === "gone") ? ["retry", "dismiss"] : ["retry"],
       });
     }

@@ -3,6 +3,7 @@
  * 用户看到的只有这几种：进行中、等你、已完成、失败、已停止。改编自 dsh-superagent 的 core/stage.ts（MIT）。
  */
 import type { RunOutcome, RunState } from "../store/db.js";
+import { t as tr, type MessageKey } from "../i18n/index.js";
 
 export type StageKey =
   | "stopped"
@@ -36,15 +37,15 @@ export interface StageInput {
 }
 
 const STAGES: Record<StageKey, Stage> = {
-  stopped: { key: "stopped", label: "已停止", group: "ended" },
-  "needs-you/delivery": { key: "needs-you/delivery", label: "未送达", group: "needs" },
-  "needs-you/answer": { key: "needs-you/answer", label: "等你回答", group: "needs" },
-  "needs-you/approval": { key: "needs-you/approval", label: "等你批准", group: "needs" },
-  "needs-you/budget": { key: "needs-you/budget", label: "预算用完", group: "needs" },
-  failed: { key: "failed", label: "失败", group: "needs" },
-  ready: { key: "ready", label: "已完成", group: "ended" },
-  "working/queued": { key: "working/queued", label: "排队中", group: "working" },
-  working: { key: "working", label: "进行中", group: "working" },
+  stopped: { key: "stopped", get label() { return tr("tasks.stageStopped" as MessageKey); }, group: "ended" },
+  "needs-you/delivery": { key: "needs-you/delivery", get label() { return tr("tasks.stageDelivery" as MessageKey); }, group: "needs" },
+  "needs-you/answer": { key: "needs-you/answer", get label() { return tr("tasks.stageAnswer" as MessageKey); }, group: "needs" },
+  "needs-you/approval": { key: "needs-you/approval", get label() { return tr("tasks.stageApproval" as MessageKey); }, group: "needs" },
+  "needs-you/budget": { key: "needs-you/budget", get label() { return tr("tasks.stageBudget" as MessageKey); }, group: "needs" },
+  failed: { key: "failed", get label() { return tr("tasks.stageFailed" as MessageKey); }, group: "needs" },
+  ready: { key: "ready", get label() { return tr("tasks.stageReady" as MessageKey); }, group: "ended" },
+  "working/queued": { key: "working/queued", get label() { return tr("tasks.stageQueued" as MessageKey); }, group: "working" },
+  working: { key: "working", get label() { return tr("tasks.stageWorking" as MessageKey); }, group: "working" },
 };
 
 export function stageOf(key: StageKey): Stage {

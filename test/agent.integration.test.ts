@@ -8,7 +8,7 @@ import { App } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { RETRY_NOTE, SHELL_LIMITS, locateDshRuntime } from "../src/agent/host.js";
 import { CHAT_RULES, MEMORY_GUIDE, botIdentity } from "../src/agent/prompts/index.js";
-import { STEER_ACK } from "../src/core/runtime.js";
+import { steerAck } from "../src/core/runtime.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
 import { listen, mockIlink } from "./helpers.js";
 
@@ -1215,7 +1215,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       ["STEERTEXT extra-xyz", true],
     ]);
     expect((await first).reply).toBe("SAW<<STEERTEXT extra-xyz>>");
-    expect((await second).reply).toBe(STEER_ACK);
+    expect((await second).reply).toBe(steerAck());
     // 第二条没有单独开一轮：之后的模型请求都带着第一条（同一轮里的下一步）
     expect(calls.slice(before).every((c) => JSON.stringify(c.body).includes("STEERME please"))).toBe(true);
     const after = await console_();
@@ -1241,7 +1241,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     await waitFor(() => b.ops.some((o) => o.type === "text" && o.ack));
     go();
     expect(await a.done).toMatch(/^SAWIMG<<data:image\/(png|jpeg|webp);base64\|path>>$/);
-    expect(await b.done).toBe(STEER_ACK);
+    expect(await b.done).toBe(steerAck());
     const hist = app.store.listMessages(a.conv).map((m) => [m.role, m.content.replace(/inbox\/\S+\.png/, "inbox/X.png")]);
     expect(hist.slice(-3)).toEqual([
       ["user", "STEERME with a picture"],
@@ -1473,9 +1473,9 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       await waitFor(() => sentTo(OWNER, "SAW<<STEERTEXT from wechat>>").length === 1, 60_000);
       await app.outbox.idle();
       const mine = ilink.state.sent.slice(before).filter((s) => s.to === OWNER).map((s) => s.text);
-      expect(mine).toEqual([STEER_ACK, "SAW<<STEERTEXT from wechat>>"]);
+      expect(mine).toEqual([steerAck(), "SAW<<STEERTEXT from wechat>>"]);
       // ack 的出站记录：短有效期、只发一次
-      const ack = outboxRows(OWNER).filter((r) => r.body.text === STEER_ACK);
+      const ack = outboxRows(OWNER).filter((r) => r.body.text === steerAck());
       expect(ack).toHaveLength(1);
       expect(ack[0].status).toBe("sent");
       expect(ack[0].expiresAt - ack[0].createdAt).toBeLessThanOrEqual(10 * 60_000);
@@ -1505,7 +1505,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       await waitFor(() => sentTo(FRIEND, "NOSTEER").length === 1, 60_000);
       await app.outbox.idle();
       expect(sentTo(FRIEND, "SAW<<")).toHaveLength(0);
-      expect(sentTo(FRIEND, STEER_ACK)).toHaveLength(0);
+      expect(sentTo(FRIEND, steerAck())).toHaveLength(0);
       expect(app.store.listMessages(conv).map((m) => m.content)).not.toContain("STEERTEXT should not get in");
       // 模型从没见过这条
       expect(calls.some((c) => JSON.stringify(c.body).includes("STEERTEXT should not get in"))).toBe(false);

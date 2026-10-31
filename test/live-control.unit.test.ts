@@ -6,7 +6,7 @@ import { AgentBridge } from "../src/agent/bridge.js";
 import { ControlChannel } from "../src/agent/control.js";
 import { ActivityLog, describeStep, promotedJob } from "../src/agent/activity.js";
 import { answerText } from "../src/agent/host.js";
-import { BotRuntime, STEER_ACK } from "../src/core/runtime.js";
+import { BotRuntime, steerAck } from "../src/core/runtime.js";
 import { Store } from "../src/store/db.js";
 import { DEFAULT_SETTINGS } from "../src/agent/settings.js";
 import type { AgentManager } from "../src/agent/manager.js";
@@ -209,7 +209,7 @@ describe("runtime: a message sent while an agent turn runs", () => {
     await until(() => s.finishers.length === 1);
     const b = s.send("补充一句");
     await until(() => b.texts().length > 0);
-    expect(b.texts()).toEqual([STEER_ACK]);
+    expect(b.texts()).toEqual([steerAck()]);
     expect(s.steered).toEqual(["补充一句"]);
     // 第二条等第一条的回合结束才算处理完（网页 live 登记里它一直在）
     let bDone = false;

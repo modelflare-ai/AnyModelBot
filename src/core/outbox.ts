@@ -16,6 +16,7 @@
 import crypto from "node:crypto";
 import type { OutboxBody, OutboxKind, OutboxPurpose, OutboxRow, Store } from "../store/db.js";
 import { logger } from "../log.js";
+import { t as tr } from "../i18n/index.js";
 
 const log = logger("outbox");
 
@@ -201,7 +202,7 @@ export class Outbox {
     this.started = true;
     this.stopped = false;
     try {
-      for (const st of ["held", "scheduled"] as const) for (const r of this.store.listOutbox({ status: st, limit: 500 })) if (r.expiresAt <= this.now()) this.gone(r, "等待太久，已不再发送");
+      for (const st of ["held", "scheduled"] as const) for (const r of this.store.listOutbox({ status: st, limit: 500 })) if (r.expiresAt <= this.now()) this.gone(r, tr("delivery.goneTooLong"));
       this.store.pruneOutbox(this.now());
       // 重启了：等着退避的不用再等，马上试一次
       this.store.resumeOutbox(this.now());
@@ -242,11 +243,11 @@ export class Outbox {
   release(botId: string, channel: string, peerId: string, combine?: (rows: OutboxRow[]) => HeldGroup[]): number {
     const conv = `${botId}:${channel}:${peerId}`;
     // 还没发出去的续期提醒：对方已经发消息了，不用再提醒
-    for (const r of this.store.pendingOutbox().filter((x) => x.conversationId === conv && x.purpose === "nudge")) if (!this.inflight.has(conv)) this.gone(r, "对方已经发消息了");
+    for (const r of this.store.pendingOutbox().filter((x) => x.conversationId === conv && x.purpose === "nudge")) if (!this.inflight.has(conv)) this.gone(r, tr("delivery.goneReplied"));
     const waiting = this.store.waitingOutbox(conv);
     if (!waiting.length) return 0;
     const now = this.now();
-    const live = waiting.filter((r) => r.expiresAt > now || (this.gone(r, "等待太久，已不再发送"), false));
+    const live = waiting.filter((r) => r.expiresAt > now || (this.gone(r, tr("delivery.goneTooLong")), false));
     this.apply(combine ? combine(live) : live.map((r): HeldGroup => ({ rows: [r] })), now, "inbound");
     if (live.length) log.info(`releasing ${live.length} waiting message(s)`, { bot: botId, channel });
     this.kick();
@@ -284,7 +285,7 @@ export class Outbox {
     const byConv = new Map<string, OutboxRow[]>();
     for (const r of due) byConv.set(r.conversationId, [...(byConv.get(r.conversationId) ?? []), r]);
     for (const rows of byConv.values()) {
-      const live = rows.filter((r) => r.expiresAt > now || (this.gone(r, "等待太久，已不再发送"), false));
+      const live = rows.filter((r) => r.expiresAt > now || (this.gone(r, tr("delivery.goneTooLong")), false));
       if (!live.length) continue;
       let plan: ReturnType<OutboxPlanner["promote"]> = live.map((r) => ({ rows: [r] }));
       try {
@@ -324,7 +325,7 @@ export class Outbox {
       heads.add(row.conversationId);
       if (this.inflight.has(row.conversationId)) continue;
       if (row.expiresAt <= now) {
-        this.gone(row, row.error ? `一直没能发出去（${row.error}）` : "等待太久，已不再发送");
+        this.gone(row, row.error ? tr("delivery.goneKeptFailing", { error: row.error }) : tr("delivery.goneTooLong"));
         this.kick();
         continue;
       }
@@ -373,7 +374,7 @@ export class Outbox {
     }
     const attempts = row.attempts + 1;
     const rejected = (e as { rejected?: boolean })?.rejected === true;
-    if ((rejected && attempts >= REJECTIONS_BEFORE_GONE) || now >= row.expiresAt) return this.gone(row, `发送失败：${msg}`);
+    if ((rejected && attempts >= REJECTIONS_BEFORE_GONE) || now >= row.expiresAt) return this.gone(row, tr("delivery.goneFailed", { error: msg }));
     const delay = Math.min(max, base * 2 ** Math.min(attempts - 1, 16));
     log.warn("send failed, will retry", { id: row.id, channel: row.channel, attempts, inMs: delay, message: msg });
     this.store.updateOutbox(row.id, { attempts, error: msg, due: now + delay }, now);

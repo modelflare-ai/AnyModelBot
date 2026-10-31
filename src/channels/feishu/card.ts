@@ -5,7 +5,7 @@ import { Gone, ReplyIds, stableId, type Outbox } from "../../core/outbox.js";
 import type { OutboxBody, OutboxKind, OutboxRow } from "../../store/db.js";
 import { CARD_ELEMENT_ID, actionCardSpec, type FeishuTransport } from "./transport.js";
 import { logger } from "../../log.js";
-import { t } from "../../i18n/index.js";
+import { t, t as tr } from "../../i18n/index.js";
 
 const log = logger("feishu.card");
 
@@ -55,12 +55,12 @@ export async function deliverFeishu(transport: FeishuTransport, row: OutboxRow, 
       return replyText(text);
     }
     case "notice": {
-      if (!transport.sendText) throw new Gone("飞书传输层不支持主动发消息");
+      if (!transport.sendText) throw new Gone(tr("channel.feishuNoPush"));
       await transport.sendText(row.peerId, b.text ?? "", stableId(row.id, 0));
       return;
     }
     case "file": {
-      const name = b.name ?? "文件";
+      const name = b.name ?? tr("channel.fileFallback");
       if (transport.replyFile && row.progress === 0) {
         try {
           await transport.replyFile(row.replyTo, b.path ?? "", stableId(row.id, 0));
@@ -71,7 +71,7 @@ export async function deliverFeishu(transport: FeishuTransport, row: OutboxRow, 
         }
         progress(1);
       }
-      await transport.replyText(row.replyTo, `⚠️ 文件「${name}」发送失败，可在工作区中查看。`, stableId(row.id, 1));
+      await transport.replyText(row.replyTo, tr("channel.file_failed", { name }), stableId(row.id, 1));
       return;
     }
     case "card": {

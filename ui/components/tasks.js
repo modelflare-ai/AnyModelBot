@@ -1,7 +1,7 @@
 // 后台任务（3a）：对话里请求那条消息下面的任务胶囊「后台任务 · 标题 · 进行中 ›」，点开是最新进展、每次运行折叠的处理过程和停止；
 // 信息面板里一行一个任务。状态是"点 + 文字"：绿 = 进行中，黄 = 等你，红 = 失败，灰 = 已完成 / 已停止。健康时不多占地方。
 import { useEffect, useState } from "preact/hooks";
-import { html, Icon } from "./ui.js";
+import { html, Icon, Notice } from "./ui.js";
 import { ActivityLine } from "./activity.js";
 import { api } from "../lib/api.js";
 import { failed, toast } from "../lib/store.js";
@@ -108,4 +108,19 @@ export function TaskRow({ task, onChanged, onOpen }) {
     </div>
     ${working && html`<button type="button" class="text danger" disabled=${stopping} onClick=${stop}>${stopping ? t("tasks.stopping") : t("tasks.stop")}</button>`}
   </div>`;
+}
+
+/** 后台工作暂停时，信息面板顶部的一行（没暂停时不画）：任务、规则和主动消息都停着，点「恢复」接着来 */
+export function PausedLine({ onResume }) {
+  const [busy, setBusy] = useState(false);
+  const resume = async () => {
+    setBusy(true);
+    try {
+      await onResume();
+    } catch (e) {
+      failed(e);
+    }
+    setBusy(false);
+  };
+  return html`<${Notice} action=${html`<button type="button" class="btn" disabled=${busy} aria-busy=${busy || undefined} onClick=${resume}>${t("tasks.resume")}</button>`}>${t("tasks.paused")}<//>`;
 }

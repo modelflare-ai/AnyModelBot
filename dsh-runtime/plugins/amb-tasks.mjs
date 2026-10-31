@@ -9,7 +9,8 @@
 //   - registers task_report, which reports the task's state to the host (needs_you carries one question for the
 //     user; the host asks it and hands the answer back as the session's next input),
 //   - refuses every tool call once the host has stopped the task.
-// Chat sessions get task_start / task_message / task_list and rule_create / rule_update; subagents get none of them.
+// Chat sessions get task_start / task_message / task_list, rule_create / rule_update and background_pause (pause or
+// resume all of the bot's background work); subagents get none of them.
 //
 // Rule sessions (`rule-<rule>-<run>`, one fresh session per run of a standing rule, 3d) are decorated from the host's
 // answer to /dsh/task-config (the host owns the mode): the denied tools (observe denies everything that acts), the rule
@@ -30,7 +31,7 @@ export const inject = ['tools']
 
 /** Shared with amb-control: control-channel ops this plugin answers. */
 export const HANDLERS = Symbol.for('amb.control.handlers')
-export const CHAT_TOOLS = ['task_start', 'task_message', 'task_list', 'rule_create', 'rule_update']
+export const CHAT_TOOLS = ['task_start', 'task_message', 'task_list', 'rule_create', 'rule_update', 'background_pause']
 /** Tools a task session never gets (filtered to registered names before tools.restrict). */
 export const TASK_DENY = ['present', 'ask_user_question', ...CHAT_TOOLS]
 /** Shared with amb-permission: sessionId → DSH permission preset for rule sessions (and their subagents). */
@@ -148,6 +149,15 @@ export function apply(ctx) {
       },
       output: TEXT_OUT,
       execute: tool('rule_update'),
+    }))
+    ctx.tools.register(defineTool({
+      name: 'background_pause',
+      description: 'Pause or resume all of this bot\'s background work when the user asks. Paused: no task or rule runs, pushed messages wait; chat still works.',
+      parameters: {
+        paused: { type: 'boolean', required: true },
+      },
+      output: TEXT_OUT,
+      execute: tool('pause'),
     }))
   }
 

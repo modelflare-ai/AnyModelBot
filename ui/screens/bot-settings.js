@@ -287,6 +287,9 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
 
         <div class="list-head">${t("botSettings.proactive.head")}</div>
         <div class="list">
+          <${Row} id="pause" name=${t("botSettings.proactive.pause")} sub=${t("botSettings.proactive.pauseSub")}>
+            <${Switch} label=${t("botSettings.proactive.pause")} value=${s.paused} onChange=${(v) => put({ paused: v })} />
+          <//>
           <${Row} id="quiet" name=${t("botSettings.proactive.quiet")} sub=${t("botSettings.proactive.quietSub")}>
             ${s.quietHours.enabled && html`<${MenuButton} label=${t("botSettings.proactive.quietFrom")} value=${s.quietHours.from} width=${120} options=${HOURS}
                 onChange=${(v) => put({ quietHours: { from: v } })} />

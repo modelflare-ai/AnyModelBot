@@ -8,7 +8,7 @@ import { confirmSheet, failed, saved, toast } from "../lib/store.js";
 import { markDone } from "../lib/guide.js";
 import { fmtAgo, fmtClock, fmtDur, fmtTime } from "../lib/format.js";
 import { channelName as accessChannel } from "../lib/access.js";
-import { TaskRow } from "../components/tasks.js";
+import { PausedLine, TaskRow } from "../components/tasks.js";
 import { t } from "../lib/i18n.js";
 import { RuleRow } from "../components/rules.js";
 
@@ -244,6 +244,7 @@ export function InfoPanel({ bot, leaving, onClose, onOpenBotSettings, onOpenChat
       <button type="button" class="icon-btn panel-close" title=${t("info.closeTitle")} aria-label=${t("info.closeAria")} onClick=${onClose}><${Icon} name="close" size="md" /></button>
     </div>
     <div class="panel-body">
+      ${detail?.bot?.settings?.paused && html`<${PausedLine} onResume=${async () => (await api(`/bots/${bot.id}/settings`, { method: "PUT", body: { paused: false } }), reloadDetail())} />`}
       <div class="list-head">${t("info.channels")}</div>
       <div class="list">
         ${detail && detail.bot

@@ -412,6 +412,49 @@ describe("续期提醒（「回个 ok」）", () => {
   });
 });
 
+describe("暂停后台工作：主动消息排着等恢复，聊天回复照常", () => {
+  let r: ReturnType<typeof rig>;
+  afterEach(() => r.close());
+
+  it("暂停时推的排着（对方发消息也不放）、没发出去的改成排着，不挡后面的回复；不发续期提醒；恢复后按平常的规则发", async () => {
+    r = rig("2026-11-06T10:00");
+    r.store.ensureConversation("b", "weixin", "u1");
+    r.store.upsertWeixinPeer({ botId: "b", userId: "u1", contextToken: "ctx", quotaRemaining: 6, windowStartedAt: at("2026-11-06T10:00") });
+    r.delivery.addUpcoming(() => [{ label: "天气", at: at("2026-11-08T08:00"), kind: "rule" }]);
+    // 暂停前就在等着重发的一条结果（渠道一直失败）
+    r.onFail((row) => (row.id === "early" ? new Error("网络断了") : undefined));
+    r.push("early", "早一点的结果", { anytime: true });
+    await r.settle();
+    expect(r.store.getOutbox("early")).toMatchObject({ status: "pending", attempts: 1 });
+    r.onFail(undefined);
+    r.settings({ paused: true });
+    expect(r.push("a", "A 好了", { anytime: true })).toMatchObject({ reason: "paused" });
+    expect(r.store.getOutbox("a")).toMatchObject({ status: "scheduled", reason: "paused" });
+    // 那条在等重发的改成排着；后面的聊天回复照常马上发
+    await r.go("2026-11-06T10:01");
+    await r.outbox.send({ id: "reply", botId: "b", channel: "weixin", peerId: "u1", kind: "text", body: { text: "聊天回复" } });
+    await r.settle();
+    expect(r.texts()).toEqual(["聊天回复"]);
+    expect(r.store.getOutbox("early")).toMatchObject({ status: "scheduled", reason: "paused" });
+    // 对方发消息：不放
+    expect(r.outbox.release("b", "weixin", "u1", (rows) => r.delivery.combine(rows))).toBe(0);
+    await r.settle();
+    expect(r.texts()).toEqual(["聊天回复"]);
+    // 到了续期提醒的时间也不发；到了该再看一遍的时间还在暂停，再排
+    await r.go("2026-11-07T08:00");
+    r.delivery.tick();
+    await r.settle();
+    expect(r.texts()).toEqual(["聊天回复"]);
+    expect(r.store.getOutbox("a")).toMatchObject({ status: "scheduled", reason: "paused" });
+    // 恢复：排着的按平常的规则发出去（两条一起到，合成一条）
+    r.settings({ paused: false });
+    expect(r.delivery.resume("b")).toBe(2);
+    await r.settle();
+    expect(r.texts()).toEqual(["聊天回复", "2 个后台任务：\n· 早一点的结果\n· A 好了"]);
+    expect(r.delivery.attentionItems()).toEqual([]);
+  });
+});
+
 describe("「需要你」里的未送达", () => {
   let r: ReturnType<typeof rig>;
   afterEach(() => r.close());

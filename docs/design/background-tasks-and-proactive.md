@@ -391,6 +391,7 @@ Expanding a row shows the Report (summary, message, would-do), the steps, the ru
 | Progress | never pushed |
 | Budgets | task $1.00, rule run $0.10, rule $3.00 per month (Q3) |
 | Automatic pause | a rule after 3 failures in a row; background work when the bot's Modelflare budget falls below 20 % |
+| Manual pause | one switch per bot (bot settings › 主动消息, the info panel's 「后台工作已暂停」 line, or asking the bot): no new task runs, scheduled rules are logged as skipped and not caught up, pushes wait; chat and running turns carry on |
 | Observe → act hint | after 3 observed runs, shown in place, never pushed |
 | Desktop notifications | needs-you only, window unfocused, once per item |
 

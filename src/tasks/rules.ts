@@ -28,7 +28,7 @@ export const RULE_APPROVAL_TTL_MS = 3600_000;
  * 规则会话去掉的工具（只去掉注册了的；插件按 tools.restrict 的规矩过滤）。观察：能改变什么的都去掉，记忆只留 recall；
  * 执行：上限是可写工作区（决定 12），电脑操作和生图、生视频不给（设计第 7 节：除非规则上开了，3d 不做这个开关）。
  */
-const COMMON_DENY = ["present", "ask_user_question", "task_start", "task_message", "task_list", "rule_create", "rule_update", "generate_image", "generate_video", "media_models", "media_docs"];
+const COMMON_DENY = ["present", "ask_user_question", "task_start", "task_message", "task_list", "rule_create", "rule_update", "background_pause", "generate_image", "generate_video", "media_models", "media_docs"];
 export const RULE_DENY: Readonly<Record<"observe" | "act", string[]>> = {
   observe: [...COMMON_DENY, "remember", "forget"],
   act: COMMON_DENY,
@@ -107,6 +107,7 @@ export const RUN_ERROR = {
   busy: "busy",
   overlap: "overlap",
   restart: "restart",
+  paused: "paused",
   timeout: "timeout",
   approvalTimeout: "approval_timeout",
   noReport: "no_report",
@@ -121,6 +122,7 @@ const WHY: Record<string, MessageKey> = {
   busy: "rules.whyBusy",
   overlap: "rules.whyOverlap",
   restart: "rules.whyRestart",
+  paused: "rules.whyPaused",
   timeout: "rules.whyTimeout",
   approval_timeout: "rules.whyApprovalTimeout",
   no_report: "tasks.noResult",

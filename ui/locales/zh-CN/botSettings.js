@@ -109,6 +109,8 @@ export default {
   },
   proactive: {
     head: "主动消息",
+    pause: "暂停后台工作",
+    pauseSub: "任务、规则和主动消息都先停下，聊天照常",
     quiet: "免打扰",
     quietSub: "后台结果留到结束后再发",
     quietFrom: "免打扰开始",

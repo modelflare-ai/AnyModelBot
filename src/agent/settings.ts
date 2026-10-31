@@ -53,6 +53,11 @@ export interface BotSettings {
   quietHours: QuietHours;
   /** 微信续期提醒：24 小时窗口快关时，还有消息要发就请用户回一句 */
   nudge: boolean;
+  /**
+   * 暂停后台工作：不开始新的任务 run（排着的等着），规则到点不跑（记为跳过、之后不补），主动消息排着等恢复；
+   * 聊天照常，正在跑的那一轮照常做完（tasks/service.ts setPaused、core/delivery.ts）
+   */
+  paused: boolean;
 }
 
 export const DEFAULT_SETTINGS: BotSettings = {
@@ -67,6 +72,7 @@ export const DEFAULT_SETTINGS: BotSettings = {
   taskSlots: 2,
   quietHours: { ...DEFAULT_QUIET },
   nudge: true,
+  paused: false,
 };
 
 export function normalizeSettings(raw: unknown): BotSettings {
@@ -109,6 +115,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
       to: typeof qh.to === "string" && minuteOf(qh.to) !== undefined ? qh.to : DEFAULT_QUIET.to,
     },
     nudge: b(r.nudge, DEFAULT_SETTINGS.nudge),
+    paused: b(r.paused, DEFAULT_SETTINGS.paused),
   };
 }
 

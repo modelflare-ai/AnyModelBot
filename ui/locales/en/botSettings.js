@@ -109,6 +109,8 @@ export default {
   },
   proactive: {
     head: "Proactive messages",
+    pause: "Pause background work",
+    pauseSub: "Tasks, rules and pushed messages wait; chat works as usual",
     quiet: "Do not disturb",
     quietSub: "Background results wait until it ends",
     quietFrom: "Do not disturb from",

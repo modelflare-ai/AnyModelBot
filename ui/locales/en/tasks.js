@@ -12,4 +12,6 @@ export default {
   view: "View background task",
   chip: "Background task",
   minutes: { one: "{count} min", other: "{count} min" },
+  paused: "Background work is paused",
+  resume: "Resume",
 };

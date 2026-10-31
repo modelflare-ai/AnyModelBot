@@ -46,6 +46,7 @@ export const zh = {
   whyBusy: "一直在忙",
   whyOverlap: "上次还没跑完",
   whyRestart: "应用重启了",
+  whyPaused: "后台工作已暂停",
   whyTimeout: "超时",
   whyApprovalTimeout: "批准超时",
   // 「需要你」
@@ -75,6 +76,7 @@ export const zh = {
   eventNoSchedule: "这条规则由事件触发，没有时间表",
   remindNoObserve: "提醒没有观察模式",
   isOff: "规则关着",
+  isPaused: "后台工作已暂停",
   isRunning: "正在运行",
   // 时间表的报错（tasks/schedule.ts normalizeSchedule）
   needTime: "缺少时间",
@@ -126,6 +128,7 @@ export const en: Catalog<typeof zh> = {
   whyBusy: "no free slot",
   whyOverlap: "the last run was still going",
   whyRestart: "the app restarted",
+  whyPaused: "background work was paused",
   whyTimeout: "timed out",
   whyApprovalTimeout: "approval timed out",
   subject: "Rule “{title}”",
@@ -150,6 +153,7 @@ export const en: Catalog<typeof zh> = {
   eventNoSchedule: "This rule runs on events and has no schedule",
   remindNoObserve: "Reminders have no observe mode",
   isOff: "The rule is off",
+  isPaused: "Background work is paused",
   isRunning: "Already running",
   needTime: "Pick a time",
   pastTime: "That time has passed",

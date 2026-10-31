@@ -563,6 +563,42 @@ describe("规则（假宿主、假时钟）", () => {
     ]);
   });
 
+  it("暂停后台工作：到点的检查、提醒、事件都记为跳过（后台工作已暂停），恢复后不补，立即运行也不行；排着的那次也跳过", async () => {
+    const { rule } = await create();
+    const remind = (await create("daily 09:00", { kind: "remind", message: "该喝水了" })).rule;
+    const event = svc.createRule({ botId: "b", conversationId: CONV, title: "新 issue", instruction: "有新 issue 告诉我", trigger: { kind: "event", source: "repo" } }).rule!;
+    expect(svc.setPaused("b", true, "web")).toBe(true);
+    await go(at("2026-11-02T08:00"));
+    await go(at("2026-11-02T09:00"));
+    expect(svc.emitRuleEvent("repo", { action: "opened" })).toEqual([]);
+    await flush();
+    expect(host.prompts).toEqual([]);
+    expect(store.listOutbox({ limit: 50 })).toEqual([]);
+    for (const [r, t] of [[rule, at("2026-11-02T08:00")], [remind, at("2026-11-02T09:00")], [event, now]] as const) {
+      expect(runsOf(r.id).map((x) => [x.outcome, x.error, x.queuedAt])).toEqual([["skipped", "paused", t]]);
+      expect(svc.ruleLog(r.id)[0].line).toBe("跳过：后台工作已暂停");
+    }
+    expect(store.getRule(rule.id)!.nextRunAt).toBe(at("2026-11-03T08:00"));
+    expect(svc.runRuleNow(rule.id)).toEqual({ error: "后台工作已暂停" });
+    // 恢复：错过的不补，下一次照常
+    now = at("2026-11-02T10:00");
+    svc.setPaused("b", false, "web");
+    await flush();
+    expect(host.prompts).toEqual([]);
+    expect(runsOf(rule.id)).toHaveLength(1);
+    await day("2026-11-03", report("done"));
+    expect(runsOf(rule.id).map((x) => x.outcome)).toEqual(["skipped", "done"]);
+    // 暂停时已经排着（等名额）的那次：跳过，不等到恢复
+    svc.stop();
+    svc = make({ maxBackground: 0 });
+    svc.start();
+    await go(at("2026-11-04T08:00"));
+    expect(runsOf(rule.id).at(-1)!.state).toBe("queued");
+    svc.setPaused("b", true, "web");
+    svc.pump();
+    expect(runsOf(rule.id).at(-1)).toMatchObject({ state: "ended", outcome: "skipped", error: "paused" });
+  });
+
   it("固定提醒：直接执行，到点只发那句话（不进模型、不占名额、不受免打扰限制），一次性的跑完就结束", async () => {
     const r = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "开会", instruction: "明天下午 3 点提醒我开会", schedule: "once 2026-11-03 15:00", kind: "remind", message: "该去开会了。" } });
     expect(r.text).toContain("Created reminder");

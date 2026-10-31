@@ -11,6 +11,8 @@
  * - 微信续期提醒：24 小时窗口关闭前约 2 小时，窗口关闭后还有东西要发给这个人时，发一句「回个 ok」；
  *   每个窗口最多一次，免打扰时不发，用掉 10 条里的 1 条，可按机器人关掉；没有要发的就不发。
  * - 没送到的（微信要对方先发消息、一直失败、放弃了）是「需要你」里的一项（attentionItems），原因没了就自己消失。
+ * - 暂停后台工作（机器人设置 paused）：主动消息都排着（reason paused），对方发消息时也不放，不发续期提醒；
+ *   恢复时（resume）马上按上面的规则重新排。聊天里的回复不受影响。
  *
  * 给 3b / 3d 的接口：addReserver（占配额）、addUpcoming（续期提醒里列出要来的规则）、attentionItems / act / onChange。
  */
@@ -44,6 +46,8 @@ const NUDGE_TICK_MS = 15 * 60_000;
 export const FAILS_FOR_ATTENTION = 3;
 /** 放弃了的、没处理掉的，在「需要你」里留多久 */
 const GONE_SHOWN_MS = 7 * 86400_000;
+/** 暂停时排着的主动消息隔多久再看一次（恢复时由 resume 马上放出来，这只是兜底） */
+const PAUSED_RECHECK_MS = 3600_000;
 /** 摘要一条最长多少字（微信一条 4000 字，留余地） */
 const DIGEST_MAX = 3500;
 
@@ -190,7 +194,7 @@ export class Delivery {
   private offOutbox: (() => void) | undefined;
 
   constructor(private o: DeliveryOptions) {
-    o.outbox.planner = { promote: (rows, now) => this.promote(rows, now) };
+    o.outbox.planner = { promote: (rows, now) => this.promote(rows, now), waits: (r) => (r.purpose && this.paused(r.botId) ? "paused" : undefined) };
   }
 
   private get store(): Store {
@@ -201,6 +205,21 @@ export class Delivery {
   }
   get timeZone(): string {
     return this.o.timeZone ?? systemTimeZone();
+  }
+
+  /** 这个机器人的后台工作暂停了（机器人设置 paused）：主动消息排着，对方发消息时也不放，恢复后按平常的规则发 */
+  paused(botId: string): boolean {
+    return !!this.store.getBot(botId)?.settings?.paused;
+  }
+
+  /** 后台工作恢复了：因为暂停排着的主动消息马上重新排（免打扰、每天上限、合并照旧） */
+  resume(botId: string): number {
+    const now = this.now();
+    const rows = this.store.listOutbox({ botId, status: "scheduled", limit: 500 }).filter((r) => r.reason === "paused");
+    for (const r of rows) this.store.updateOutbox(r.id, { due: now }, now);
+    if (rows.length) log.info("background work resumed; pushes that waited go out", { bot: botId, count: rows.length });
+    this.o.outbox.wake();
+    return rows.length;
   }
 
   /** 这个机器人的免打扰时段与续期提醒开关 */
@@ -248,6 +267,8 @@ export class Delivery {
 
   /** 什么时候发：免打扰 → 每天上限 → 合并（离上一条不到 2 分钟就等，和排着的一起发） */
   plan(p: Peer, purpose: OutboxPurpose, anytime: boolean, now: number): { due: number; reason: string } {
+    // 后台工作暂停了：排着，恢复时再按下面的规则排（resume）
+    if (this.paused(p.botId)) return { due: now + PAUSED_RECHECK_MS, reason: "paused" };
     const { quiet } = this.settingsOf(p.botId);
     const tz = this.timeZone;
     const free = anytime || this.awake(p, now);
@@ -296,6 +317,7 @@ export class Delivery {
     const r0 = rows[0];
     if (!r0.purpose || r0.purpose === "nudge") return rows.map((r) => ({ rows: [r] }));
     const p = peerOf(r0.botId, r0.channel, r0.peerId);
+    if (this.paused(p.botId)) return { later: now + PAUSED_RECHECK_MS, reason: "paused" };
     const { quiet } = this.settingsOf(p.botId);
     const anytime = rows.every((r) => r.body.anytime);
     if (!anytime && !this.awake(p, now) && inQuiet(now, quiet, this.timeZone)) return { later: quietEnd(now, quiet, this.timeZone), reason: "quiet_hours" };
@@ -405,7 +427,7 @@ export class Delivery {
     let next = now + NUDGE_TICK_MS;
     for (const bot of this.store.listBots()) {
       const st = this.settingsOf(bot.id);
-      if (!bot.weixinEnabled || !st.nudge) continue;
+      if (!bot.weixinEnabled || !st.nudge || this.paused(bot.id)) continue;
       const quota = new WeixinQuota(this.store, bot.id, () => now);
       for (const peer of this.store.listWeixinPeers(bot.id)) {
         const close = peer.windowStartedAt + QUOTA_WINDOW_MS;

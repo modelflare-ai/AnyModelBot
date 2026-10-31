@@ -14,9 +14,9 @@ export const BANNED: [RegExp, string][] = [
   [/每次操作都会先征求你同意|asks? before every action/i, "审批夸大"],
   [/7\s?[×x]\s?24 ?自动|定时任务|教它一遍|多机器人协同|scheduled tasks|teach it once/i, "未实现能力"],
   [/群聊支持|supports group chats/i, "群聊"],
-  [/Grok Bot/i, "第三方品牌"],
 ];
 // "零遥测"在安全页里是以否定形式出现的（我们不声称零遥测）——允许"不声称“零遥测”"这一种写法
+// 竞品（Grok Bot、OpenAI dots、Claude Duet）可以用文字名称做对比；仍不用它们的 Logo、配色和素材。
 const ALLOW = [/不声称“零遥测”/, /don't claim “zero telemetry”/];
 
 function walk(dir: string, exts: string[], out: string[] = []) {

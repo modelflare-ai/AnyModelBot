@@ -6,7 +6,7 @@ export const en: Dict = {
     lang: "en",
     title: "AnyModelBot — Local AI bots, any model, pay per use",
     description:
-      "Run AI bots on your own computer or server. Chats, memory, files and keys stay on your device; one Modelflare key unlocks GPT, Claude, Gemini and more. The app is free and you pay per use, with a public price list. Desktop, Docker, WeChat and Feishu, with Slack coming soon.",
+      "An open-source, local-first alternative to Grok Bot, OpenAI dots and Claude Duet. Run AI bots on your own computer or server. Chats, memory, files and keys stay on your device; one Modelflare key unlocks GPT, Claude, Gemini and more. The app is free and you pay per use, with a public price list. Desktop, Docker, WeChat and Feishu, with Slack coming soon.",
     ogImage: "/og/og-en.png",
   },
   nav: {
@@ -368,6 +368,7 @@ export const en: Dict = {
     ask: "Got a question? Open it up.",
     more: "Didn’t find it? Dig into the docs",
     items: [
+      { q: "How is it different from Grok Bot, OpenAI dots or Claude Duet?", a: "They are the same kind of always-on personal AI agent: it works for you in the background and checks in when a decision is yours. The difference: AnyModelBot is open source (MIT) and runs on your own computer or server. It works with GPT, Claude, Gemini, Grok and more; the app is free and models are billed per use, with no single vendor's subscription. The README on GitHub has a full comparison table. Grok Bot, dots and Claude Duet are products of xAI, OpenAI and Anthropic respectively; AnyModelBot is not affiliated with them." },
       { q: "Is my data uploaded to your servers?", a: "Chats, memory, files and keys are stored on your device. Model requests go through Modelflare to the provider you choose; log retention follows Modelflare's “Data retention” doc. Screen content seen during computer use is sent to the chosen model." },
       { q: "Does it work offline?", a: "No. Models come from Modelflare; local models aren't supported." },
       { q: "Can I use it on my phone?", a: "There's no standalone app yet; chat with it in WeChat or Feishu. Slack is coming soon." },

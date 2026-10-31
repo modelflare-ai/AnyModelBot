@@ -5,7 +5,7 @@ export const zh = {
     lang: "zh-CN",
     title: "AnyModelBot｜本地运行的 AI 机器人，任意模型，按量付费",
     description:
-      "在自己的电脑或服务器上运行 AI 机器人：对话、记忆、文件、密钥留在你的设备上；一个 Modelflare Key 接入 GPT、Claude、Gemini 等模型；App 免费，按用量付费，价格表公开。桌面、Docker、微信、飞书可用。",
+      "开源、本地运行的 Grok Bot / OpenAI dots / Claude Duet 替代。在自己的电脑或服务器上运行 AI 机器人：对话、记忆、文件、密钥留在你的设备上；一个 Modelflare Key 接入 GPT、Claude、Gemini 等模型；App 免费，按用量付费，价格表公开。桌面、Docker、微信、飞书可用。",
     ogImage: "/og/og-zh.png",
   },
   nav: {
@@ -371,6 +371,7 @@ export const zh = {
     ask: "有什么想问的？点开就有答案。",
     more: "没找到答案？去文档里翻翻",
     items: [
+      { q: "和 Grok Bot、OpenAI dots、Claude Duet 有什么不同？", a: "它们是同一类常驻的个人 AI 智能体，在后台替你干活，需要你拍板时再来问你。不同的是，AnyModelBot 开源（MIT），跑在你自己的电脑或服务器上；GPT、Claude、Gemini、Grok 等模型都能用，App 免费，模型按用量付费，不绑定某一家的订阅。GitHub 上的 README 有详细对比表。Grok Bot、dots、Claude Duet 分别是 xAI、OpenAI、Anthropic 的产品，AnyModelBot 与它们没有关联。" },
       { q: "我的数据会上传到你们的服务器吗？", a: "对话、记忆、文件和密钥保存在你的设备上。模型请求会经 Modelflare 发往你选择的模型厂商；Modelflare 的日志保留期以其文档《Data retention》为准。电脑操作时的屏幕内容会作为输入发给所选模型。" },
       { q: "不联网能用吗？", a: "不能。模型来自 Modelflare，不支持本地模型。" },
       { q: "能在手机上用吗？", a: "暂无独立 App；用微信或飞书和它聊。" },

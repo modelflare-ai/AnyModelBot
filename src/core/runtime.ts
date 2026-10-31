@@ -31,10 +31,33 @@ export function inboundImages(ev: InboundEvent): TurnImage[] {
   return out;
 }
 
-/** 发送者给的文件名只留最后一段，去掉控制字符和开头的点 */
-function safeFileName(name: string | undefined): string {
-  const base = path.basename((name ?? "").replace(/\\/g, "/")).replace(/[\x00-\x1f\x7f]/g, "").replace(/^\.+/, "").trim();
-  return (base || "file").slice(-80);
+/** Windows 的保留设备名（带不带扩展名都不能用作文件名） */
+const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+/** 文件名上限（UTF-8 字节；前面还要加 23 字节的时间戳前缀，常见文件系统上限 255） */
+const MAX_NAME_BYTES = 150;
+
+/**
+ * 发送者给的文件名，在三个平台上都能用：只留最后一段，去掉控制字符和 Windows 不允许的 <>:"/\|?*
+ * （冒号在 NTFS 上还会写进备用数据流）、开头的点、结尾的点和空格，避开保留设备名，
+ * 按字节限长（保留扩展名，不切开字符）。中文照常保留。
+ */
+export function safeFileName(name: string | undefined): string {
+  const base = path
+    .basename((name ?? "").replace(/\\/g, "/"))
+    .replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, "")
+    .trim()
+    .replace(/^\.+/, "");
+  const ext = path.extname(base).length <= 16 ? path.extname(base) : "";
+  let stem = "";
+  let bytes = Buffer.byteLength(ext);
+  for (const ch of base.slice(0, base.length - ext.length)) {
+    bytes += Buffer.byteLength(ch);
+    if (bytes > MAX_NAME_BYTES) break;
+    stem += ch;
+  }
+  const out = (stem + ext).replace(/[. ]+$/, "");
+  if (!out) return "file";
+  return RESERVED_NAME.test(out) ? `_${out}` : out;
 }
 
 /**

@@ -112,7 +112,16 @@ sha256sum -c SHA256SUMS --ignore-missing
 
 macOS 用 `shasum -a 256 <文件名>`，Windows PowerShell 用 `Get-FileHash <文件名>`，再和 `SHA256SUMS` 里的值对照。
 
-**从源码运行，或用 Docker**
+**用 Docker 部署到 NAS 或服务器**（镜像同时支持 x64 和 arm64）
+
+```bash
+docker run -d --name amb -p 3600:3600 -v amb-data:/data ghcr.io/modelflare-ai/anymodel-bot
+docker exec amb cat /data/ui-token   # 然后打开 http://<主机>:3600/?token=<令牌>
+```
+
+不要把 3600 端口直接暴露到公网。
+
+**从源码运行**
 
 ```bash
 git clone https://github.com/modelflare-ai/AnyModelBot.git
@@ -122,14 +131,7 @@ npm run setup      # 拉取并编译内置网关
 npm start          # 本地管理界面：http://127.0.0.1:3600/
 ```
 
-```bash
-git submodule update --init --depth 1 vendor/magpie   # 镜像要从源码编译内置网关
-docker build -t anymodel-bot .
-docker run -d --name amb -p 3600:3600 -v amb-data:/data anymodel-bot
-docker exec amb cat /data/ui-token   # 然后打开 http://<主机>:3600/?token=<令牌>
-```
-
-从源码构建需要 Node.js 22.13+ 和 Go 1.26.8+。更多内容见[开发文档](./docs/development.md)。
+从源码构建需要 Node.js 22.13+ 和 Go 1.26.8+。想自己构建 Docker 镜像，见[开发文档](./docs/development.md)。
 
 # 🌠 截图
 

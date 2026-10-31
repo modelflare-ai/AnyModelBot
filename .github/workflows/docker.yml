@@ -1,0 +1,208 @@
+# Docker: publish the app image to GitHub Container Registry (GHCR) on every release.
+#
+# How to use
+#   - Release: pushing a tag `v<version>` (the same tag that starts the Release workflow) builds the
+#     image for linux/amd64 and linux/arm64 and publishes it as
+#       ghcr.io/modelflare-ai/anymodel-bot:<version>   every release
+#       ghcr.io/modelflare-ai/anymodel-bot:latest      only releases without "-" (not v0.2.0-rc.1)
+#     Users then need one command (the README and the website show it):
+#       docker run -d --name amb -p 3600:3600 -v amb-data:/data ghcr.io/modelflare-ai/anymodel-bot
+#   - Publish an existing tag (one created before this workflow existed): Actions -> Docker ->
+#     "Run workflow" on master with `tag` set, e.g. v0.1.10. That tag is checked out and published.
+#   - Test build: "Run workflow" with `tag` empty, on any branch. Both architectures are built from
+#     that branch, nothing is pushed.
+#
+# One-time setup after the first publish: GHCR creates the package as private. Open
+# github.com/orgs/modelflare-ai/packages -> anymodel-bot -> Package settings -> Change visibility ->
+# Public, or `docker pull` asks users to log in.
+#
+# Each architecture builds on a runner of its own CPU (the image installs per-arch native packages
+# in dsh-runtime, like the installers in release.yml) and pushes by digest; the merge job then joins
+# the two digests into one multi-arch tag.
+
+name: Docker
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v0.1.10). Empty: test build of this branch, nothing is pushed."
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' && inputs.tag == '' }}
+
+env:
+  # GHCR image names must be lowercase.
+  IMAGE: ghcr.io/modelflare-ai/anymodel-bot
+
+jobs:
+  meta:
+    name: Version check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ref: ${{ steps.version.outputs.ref }}
+      version: ${{ steps.version.outputs.version }}
+      push: ${{ steps.version.outputs.push }}
+      latest: ${{ steps.version.outputs.latest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Read package.json version and match it against the tag
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          tag=""
+          if [ -n "$INPUT_TAG" ]; then tag=$INPUT_TAG; elif [ "$REF_TYPE" = tag ]; then tag=$REF_NAME; fi
+          if [ -n "$tag" ] && [ "$tag" != "v$version" ]; then
+            echo "::error::Tag $tag does not match package.json version $version (expected tag v$version)"
+            exit 1
+          fi
+          if [ -n "$tag" ]; then
+            echo "ref=refs/tags/$tag" >> "$GITHUB_OUTPUT"
+            echo "push=true" >> "$GITHUB_OUTPUT"
+            if [[ "$tag" == *-* ]]; then echo "latest=false" >> "$GITHUB_OUTPUT"; else echo "latest=true" >> "$GITHUB_OUTPUT"; fi
+            echo "Publishing $IMAGE:$version"
+          else
+            echo "ref=$GITHUB_REF" >> "$GITHUB_OUTPUT"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+            echo "Test build of $GITHUB_REF ($version), nothing is pushed"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: linux/${{ matrix.arch }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.meta.outputs.ref }}
+
+      # The Dockerfile compiles the bundled gateway from this submodule.
+      - name: Fetch magpie
+        run: git submodule update --init --depth 1 vendor/magpie
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        if: needs.meta.outputs.push == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build${{ needs.meta.outputs.push == 'true' && ' and push by digest' || ' (test, not pushed)' }}
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ env.IMAGE }}
+          outputs: ${{ needs.meta.outputs.push == 'true' && 'type=image,push-by-digest=true,name-canonical=true,push=true' || 'type=cacheonly' }}
+          # No attestation manifests: registry UIs and NAS apps list them as an extra "unknown/unknown" platform.
+          provenance: false
+          sbom: false
+          labels: |
+            org.opencontainers.image.title=AnyModelBot
+            org.opencontainers.image.description=Local-first AI bots with any model, pay as you go
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://anymodel.bot/
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+
+      - name: Export digest
+        if: needs.meta.outputs.push == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: needs.meta.outputs.push == 'true'
+        with:
+          name: docker-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  merge:
+    name: Publish multi-arch tags
+    needs: [meta, build]
+    if: needs.meta.outputs.push == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: docker-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Create the multi-arch tags
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          LATEST: ${{ needs.meta.outputs.latest }}
+          REPO_URL: https://github.com/${{ github.repository }}
+        run: |
+          tags=(-t "$IMAGE:$VERSION")
+          if [ "$LATEST" = true ]; then tags+=(-t "$IMAGE:latest"); fi
+          sources=()
+          for d in *; do sources+=("$IMAGE@sha256:$d"); done
+          if [ "${#sources[@]}" -ne 2 ]; then
+            echo "::error::Expected 2 digests (amd64, arm64), found ${#sources[@]}"
+            exit 1
+          fi
+          # Index annotations: GHCR reads the description and the source repository of a multi-arch image from here.
+          docker buildx imagetools create "${tags[@]}" \
+            --annotation "index:org.opencontainers.image.source=$REPO_URL" \
+            --annotation "index:org.opencontainers.image.description=Local-first AI bots with any model, pay as you go" \
+            --annotation "index:org.opencontainers.image.licenses=MIT" \
+            "${sources[@]}"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"

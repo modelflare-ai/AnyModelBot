@@ -112,7 +112,16 @@ sha256sum -c SHA256SUMS --ignore-missing
 
 On macOS use `shasum -a 256 <file>`; in Windows PowerShell use `Get-FileHash <file>`. Compare the result with the line in `SHA256SUMS`.
 
-**Run from source or in Docker**
+**Run it in Docker on a NAS or server** (the image covers both x64 and arm64)
+
+```bash
+docker run -d --name amb -p 3600:3600 -v amb-data:/data ghcr.io/modelflare-ai/anymodel-bot
+docker exec amb cat /data/ui-token   # then open http://<host>:3600/?token=<token>
+```
+
+Don't expose port 3600 directly to the internet.
+
+**Run from source**
 
 ```bash
 git clone https://github.com/modelflare-ai/AnyModelBot.git
@@ -122,14 +131,7 @@ npm run setup      # fetches and builds the bundled gateway
 npm start          # opens the local console at http://127.0.0.1:3600/
 ```
 
-```bash
-git submodule update --init --depth 1 vendor/magpie   # the image builds the gateway from source
-docker build -t anymodel-bot .
-docker run -d --name amb -p 3600:3600 -v amb-data:/data anymodel-bot
-docker exec amb cat /data/ui-token   # then open http://<host>:3600/?token=<token>
-```
-
-Requirements for building from source: Node.js 22.13+ and Go 1.26.8+. More in the [development guide](./docs/development_en.md).
+Requirements for building from source: Node.js 22.13+ and Go 1.26.8+. To build the Docker image yourself, see the [development guide](./docs/development_en.md).
 
 # 🌠 Screenshots
 

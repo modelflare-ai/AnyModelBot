@@ -283,6 +283,12 @@ button.act-head:active { background: var(--pill-hover); }
 .composer .model-chip[aria-expanded="true"] .ic:last-child { transform: rotate(180deg); }
 .composer .model-chip .ic.lead { width: 14px; height: 14px; }
 .composer .model-chip.perm { max-width: 160px; }
+/* 完全权限：胶囊常驻一层淡红，图标用 --red；字仍是 --fg（淡红底上的红字对比度不够）。悬停 / 打开 / 按下在淡红上再叠一层 */
+.composer .model-chip.perm.full { background: var(--red-wash); color: var(--fg); }
+.composer .model-chip.perm.full .ic.lead { color: var(--red); }
+.composer .model-chip.perm.full:hover { background: linear-gradient(var(--pill), var(--pill)), var(--red-wash); }
+.composer .model-chip.perm.full[aria-expanded="true"] { background: linear-gradient(var(--pill-hover), var(--pill-hover)), var(--red-wash); }
+.composer .model-chip.perm.full:active { background: linear-gradient(var(--pill-press), var(--pill-press)), var(--red-wash); }
 /* 发送：空的时候是中性的灰钮（不用半透明的墨色或黄绿，会发浑）；能发了才亮起品牌色，悬停时箭头往上提一点 */
 .send {
   width: var(--ctl-lg); height: var(--ctl-lg); border-radius: 50%; flex: none; display: grid; place-items: center;

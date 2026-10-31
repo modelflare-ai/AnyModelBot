@@ -483,11 +483,34 @@ export class AgentHost {
       "    - id: amb-present",
       "      name: '@deepseek-ai/dsh-tool-present'",
       ...this.computerUseLines(apps),
+      ...this.fullAccessLines(),
       "",
     ].join("\n");
     const f = path.join(this.home, "amb.patch.yml");
     fs.writeFileSync(f, text, { mode: 0o600 });
     return f;
+  }
+
+  /**
+   * 完全权限：DSH 的 danger-full-access（不进沙箱、不请求提权）。它自带的这个预设把审批策略设成 never（一律自动拒绝），
+   * 这里改成 ask，递归删除闸门（amb-delete-gate）才能经审批中心问用户；其他两个预设原样保留。
+   * 必须跟在插件 insert 列表的最后：后面两条是顶层的行补丁。
+   */
+  private fullAccessLines(): string[] {
+    if (this.settings().permission !== "full") return [];
+    return [
+      "    - id: amb-delete-gate",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-delete-gate.mjs"))}`,
+      "- id: approval",
+      "  config:",
+      "    policy: ask",
+      "- id: permission",
+      "  config:",
+      "    presets:",
+      "      read-only: { sandbox: read-only, approval: ask }",
+      "      workspace-write: { sandbox: workspace-write, approval: ask }",
+      "      danger-full-access: { sandbox: danger-full-access, approval: ask }",
+    ];
   }
 
   /** media 技能：怎么挑模型、读文档、写请求体、交付结果。没有连接 Modelflare 时删掉。 */

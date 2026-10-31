@@ -88,7 +88,7 @@ describe("steward", () => {
 describe("settings", () => {
   it("normalizes with defaults and clamps unknown values", () => {
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS);
-    const s = normalizeSettings({ permission: "full", memory: { review: false }, computerUse: { approval: "never" } });
+    const s = normalizeSettings({ permission: "root", memory: { review: false }, computerUse: { approval: "never" } });
     expect(s.permission).toBe("workspace");
     expect(s.memory).toEqual({ enabled: true, review: false, teamWrite: false });
     expect(s.computerUse).toEqual({ enabled: true, backend: "cua", approval: "auto" });
@@ -102,6 +102,15 @@ describe("settings", () => {
     expect(normalizeSettings({ avatar: 3 }).avatar).toBe("");
     expect(permissionMode("readonly")).toBe("read-only");
     expect(permissionMode("workspace")).toBe("workspace-write");
+  });
+  it("permission presets: full is kept, anything unknown falls back to the workspace default", () => {
+    expect(normalizeSettings({ permission: "full" }).permission).toBe("full");
+    expect(normalizeSettings({ permission: "readonly" }).permission).toBe("readonly");
+    expect(normalizeSettings({ permission: "workspace" }).permission).toBe("workspace");
+    for (const v of [undefined, null, "", "FULL", "danger-full-access", "bypass", 1, true, {}]) expect(normalizeSettings({ permission: v }).permission).toBe("workspace");
+    expect(normalizeSettings({}).permission).toBe(DEFAULT_SETTINGS.permission);
+    expect(DEFAULT_SETTINGS.permission).toBe("workspace");
+    expect(permissionMode("full")).toBe("danger-full-access");
   });
   it("store persists settings and migrates", () => {
     const store = new Store(path.join(dir, "t.db"));

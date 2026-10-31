@@ -13,7 +13,8 @@
  * - 运行中代理拉不起所用的 pwsh（宿主把 pwsh 工具的结果转过来，observeToolResult）就把它标记为坏，退回下一个，空闲时重启 DSH，并告诉用户。
  * - 选择变了（装好了、坏了、改回系统默认）就通知订阅者：宿主的设置签名里带着路径，空闲的代理进程换用新的。
  * - 版本号：先读 pwsh.deps.json，读不到（Store 别名）再 `pwsh -Version`（20 秒超时）；试运行也会报版本。
- * - AMB_PWSH_FORCE=missing 在任何平台上模拟"未安装"（截图、测试），不影响 DSH；AMB_PWSH_IGNORE_SYSTEM=1 不用系统里的 PowerShell
+ * - AMB_PWSH_FORCE=missing 在任何平台上模拟"未安装"（截图、测试；installing / installed / broken / failed 模拟内置副本的几种状态），
+ *   不影响 DSH；AMB_PWSH_IGNORE_SYSTEM=1 不用系统里的 PowerShell
  *   （CI 用它验证内置副本）；AMB_PWSH_AUTO_INSTALL=0 不自动安装。
  */
 import { execFile } from "node:child_process";
@@ -193,6 +194,28 @@ export function shellStartFailure(text: string, exe: string): string | undefined
   return undefined;
 }
 
+/** 拉不起来的原因，说给用户听：Win32 错误码 / Node 的 spawn 错误码 → 一句话 */
+export function startFailureReason(line: string): string {
+  const code = /\(win32\s+(\d+)\)/i.exec(line)?.[1] ?? /\b(ENOENT|EACCES|EPERM|UNKNOWN|EINVAL)\b/i.exec(line)?.[1]?.toUpperCase();
+  const missing = "找不到 pwsh.exe（可能被杀毒软件删除或隔离）";
+  const denied = "没有权限运行它（可能被安全软件拦截）";
+  const why: Record<string, string> = {
+    "2": missing,
+    "3": missing,
+    ENOENT: missing,
+    "5": denied,
+    EACCES: denied,
+    EPERM: denied,
+    "225": "被杀毒软件拦截",
+    "1260": "被系统策略禁止运行（AppLocker / 软件限制策略）",
+    "4551": "被 Windows Defender 应用程序控制拦截",
+    "193": "文件损坏，或不是这台电脑能运行的程序",
+    "216": "文件损坏，或不是这台电脑能运行的程序",
+    "1392": "文件已损坏",
+  };
+  return `${(code && why[code]) || "拉不起来"}（${code ? (/^\d+$/.test(code) ? `Win32 ${code}` : code) : line.slice(0, 120)}）`;
+}
+
 /** 弱信号：.NET 宿主起不来、沙箱 runner 拉它时出了别的错。重新试运行一次，没通过才退回 */
 const SUSPECT = /hostfxr|hostpolicy|coreclr\.dll|A fatal error (was encountered|occurred)|The application to execute does not exist|Could not load file or assembly 'System\.Management\.Automation|windows-acl-run:.*CreateProcess/i;
 
@@ -232,7 +255,7 @@ export class PwshProbe {
     return this.d.platform ?? process.platform;
   }
   private get forced(): boolean {
-    return this.env.AMB_PWSH_FORCE === "missing";
+    return FORCE_DEMO.includes(this.env.AMB_PWSH_FORCE ?? "");
   }
   private get ignoreSystem(): boolean {
     return this.env.AMB_PWSH_IGNORE_SYSTEM === "1";
@@ -344,7 +367,7 @@ export class PwshProbe {
 
   private compose(): PwshStatus {
     if (!this.applicable) return { applicable: false, found: false, missing: false, checkedAt: this.checkedAt || Date.now() };
-    if (this.forced) return { applicable: true, found: false, missing: true, forced: true, checkedAt: this.checkedAt || Date.now() };
+    if (this.forced) return forcedStatus(this.env.AMB_PWSH_FORCE!, this.priv.pin.version);
     const extra = {
       mode: this.cfg.mode,
       autoInstall: this.cfg.agent && this.cfg.mode === "auto" && this.env.AMB_PWSH_AUTO_INSTALL !== "0",
@@ -472,7 +495,10 @@ export class PwshProbe {
   observeToolResult(exe: string | undefined, text: string): void {
     if (!this.active || !exe || !text) return;
     const hit = shellStartFailure(text, exe);
-    if (hit) return this.markBroken(exe, hit);
+    if (hit) {
+      log.warn("the agent's pwsh tool could not start PowerShell", { exe, line: hit });
+      return this.markBroken(exe, startFailureReason(hit));
+    }
     if (SUSPECT.test(text)) void this.suspect(exe);
   }
 
@@ -508,10 +534,32 @@ export class PwshProbe {
     log.warn("the agent could not start its PowerShell; falling back", { from: exe, to, reason });
     this.update({
       level: "warn",
-      text: `代理用的 PowerShell 起不来（${exe}：${reason.slice(0, 160)}），已自动改用${describe(to, this.priv.exe)}，空闲时生效。可在 设置 → 故障排查 里重新安装或重新检测。`,
+      text: `代理用的 PowerShell 起不来（${exe}：${reason.slice(0, 160)}），已自动改用${describe(to, this.priv.exe)}，代理空闲时生效。可在 设置 → 故障排查 里重新安装或重新检测。`,
     });
     this.maybeAutoInstall("broken");
   }
+}
+
+const FORCE_DEMO = ["missing", "installing", "installed", "broken", "failed"];
+
+/** AMB_PWSH_FORCE 模拟的状态（截图、界面测试；任何平台） */
+function forcedStatus(kind: string, version: string): PwshStatus {
+  const now = Date.now();
+  const dir = "C:\\Users\\you\\AppData\\Local\\AnyModelBot\\pwsh\\" + `${version}-x64`;
+  const exe = `${dir}\\pwsh.exe`;
+  const priv = (o: Partial<PrivatePwshStatus>): PrivatePwshStatus => ({ version, arch: "x64", supported: true, dir, installed: false, ready: false, install: { state: "idle" }, ...o });
+  const base = { applicable: true, forced: true, checkedAt: now, mode: "auto" as const, autoInstall: true };
+  if (kind === "installing") return { ...base, found: false, missing: true, private: priv({ install: { state: "downloading", received: 47 * 1048576, total: 104 * 1048576, startedAt: now - 20_000 } }) };
+  if (kind === "installed") {
+    const test = { ok: true, at: now, ms: 1180, version };
+    return { ...base, found: true, missing: false, path: exe, source: "private", version, using: exe, private: priv({ installed: true, ready: true, test, install: { state: "done", startedAt: now - 60_000, finishedAt: now } }) };
+  }
+  if (kind === "broken") {
+    const reason = "代理拉不起它：找不到 pwsh.exe（可能被杀毒软件删除或隔离）（Win32 2）";
+    return { ...base, found: false, missing: true, private: priv({ installed: true, bad: { reason, at: now } }), fallback: { from: exe, reason, at: now } };
+  }
+  if (kind === "failed") return { ...base, found: false, missing: true, private: priv({ install: { state: "failed", error: "下载失败（https://github.com/…）：90 秒没有收到数据", finishedAt: now } }) };
+  return { applicable: true, found: false, missing: true, forced: true, checkedAt: now };
 }
 
 /** 给用户看的名字 */

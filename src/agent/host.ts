@@ -688,11 +688,13 @@ exec "$REAL" "$@"
   private settings(): BotSettings {
     return this.o.settings?.() ?? DEFAULT_SETTINGS;
   }
-  /** 影响子进程启动参数的设置签名 */
-  private settingsSig(): string {
+  /**
+   * 影响子进程启动参数的设置签名。带上 PowerShell 路径：装好 PowerShell 7、内置的装好或坏了退回时，空闲的代理进程换用新的。
+   * 启动时记的是补丁里实际写的路径（pwsh），不是记签名那一刻的选择：中间隔着几次 await，选择可能刚好变了。
+   */
+  private settingsSig(pwsh = pwshProbe.cachedDshPath): string {
     const st = this.settings();
-    // 带上 PowerShell 路径：用户装好 PowerShell 7 点"重新检测"后，空闲的代理进程在下一条消息时换用它
-    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.backend}|${st.computerUse.approval}|${pwshProbe.cachedDshPath ?? ""}`;
+    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.backend}|${st.computerUse.approval}|${pwsh ?? ""}`;
   }
   private sig = "";
 
@@ -819,7 +821,7 @@ exec "$REAL" "$@"
       this.fallback = fb;
       const patch = this.writePatch(model, apps, pwshPath, modelLimits(model, known), api, info?.reasoning);
       this.pwshPath = pwshPath;
-      this.sig = this.settingsSig();
+      this.sig = this.settingsSig(pwshPath);
       const timeoutMs = this.initTimeoutMs();
       this.stage("patch written", t0, { api, computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
       h = new sdk.DeepSeekHarness({

@@ -81,6 +81,8 @@ const MARKER = ".amb-pwsh.json";
 const RETEST_MS = 7 * 24 * 3600_000;
 /** 锁文件超过这么久没有心跳就当作残留 */
 const LOCK_STALE_MS = 3 * 60_000;
+/** 等另一个进程装完，最多等这么久 */
+const LOCK_WAIT_MS = 30 * 60_000;
 /** 自动安装失败后的等待：第 1 次失败后 1 小时，第 2 次后 1 天，3 次后不再自动装（手动点安装会清零） */
 const AUTO_BACKOFF = [0, 3600_000, 24 * 3600_000];
 
@@ -170,13 +172,16 @@ export async function launchTest(exe: string, run: Runner, o: { timeoutMs: numbe
   return { ok: true, at: Date.now(), ms, version: m[1] };
 }
 
-/** 用 Windows PowerShell 5.1 核对 Authenticode：每个文件都要有效（Valid），签名者和颁发者都是 Microsoft */
+/**
+ * 用 Windows PowerShell 5.1 核对 Authenticode：每个文件都要有效（Valid），签名者和颁发者都是 Microsoft。
+ * 刚解压的文件杀毒软件要先扫一遍，加上证书吊销检查，冷机器上要几十秒（CI 上约 30 秒），给足时间。
+ */
 export async function verifySignatures(files: string[], run: Runner, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; error?: string }> {
   const r = await run(windowsPowerShell(env), ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", SIG_SCRIPT], {
-    timeoutMs: 90_000,
+    timeoutMs: 180_000,
     env: { ...shellEnv(env), AMB_SIG_FILES: files.join("|") },
   });
-  if (r.timedOut) return { ok: false, error: "Windows PowerShell 90 秒内没有给出签名结果" };
+  if (r.timedOut) return { ok: false, error: "Windows PowerShell 3 分钟内没有给出签名结果" };
   if (r.error || r.code !== 0) return { ok: false, error: `Windows PowerShell 核对签名失败：${clip(r.error || r.stderr || r.stdout || `退出码 ${r.code}`)}` };
   let list: Array<{ status?: string; subject?: string; issuer?: string }>;
   try {
@@ -410,8 +415,9 @@ export interface PrivateDeps {
   fetch?: () => typeof fetch | undefined;
   run?: Runner;
   pidAlive?: (pid: number) => boolean;
-  /** 下载重试的间隔基数（测试里调小） */
+  /** 下载重试的间隔基数、等别的进程装完时看锁的间隔（测试里调小） */
   retryDelayMs?: number;
+  lockPollMs?: number;
   /** 测试用：换掉固定的版本与哈希 */
   pin?: PwshPin;
 }
@@ -601,6 +607,12 @@ export class PrivatePwsh {
     if (!this.support.ok || !this.arch) return this.set({ installed: false, ready: false });
     if (this.installing) return;
     await this.cleanup();
+    await this.evaluate(refresh);
+  }
+
+  /** 看已装的副本能不能用（标记文件、指纹、签名、试运行），结果记进 state.json */
+  private async evaluate(refresh: boolean): Promise<void> {
+    if (!this.arch) return;
     const dir = this.dir!;
     const marker = readJson<{ version?: string; arch?: string; sha256?: string }>(path.join(dir, MARKER));
     if (!marker || marker.version !== this.pin.version || marker.sha256 !== this.pin.sha256[this.arch]) return this.set({ installed: false, ready: false });
@@ -700,15 +712,28 @@ export class PrivatePwsh {
       this.setProgress({ state: "done", finishedAt: Date.now() }, true);
       return true;
     }
-    let locked = false;
-    try {
-      locked = this.takeLock();
-    } catch (e) {
-      return fail(`建不了安装目录 ${this.root}：${(e as Error).message}`);
-    }
-    if (!locked) {
-      this.setProgress({ state: "waiting", error: "另一个 AnyModelBot 正在安装 PowerShell 7" }, true);
-      return false;
+    // 另一个 AnyModelBot 正在装：等它（锁没了再看一眼，它装好了就直接用），最多等 LOCK_WAIT_MS
+    const waitUntil = Date.now() + LOCK_WAIT_MS;
+    for (;;) {
+      let locked = false;
+      try {
+        locked = this.takeLock();
+      } catch (e) {
+        return fail(`建不了安装目录 ${this.root}：${(e as Error).message}`);
+      }
+      if (locked) break;
+      if (Date.now() > waitUntil) {
+        this.setProgress({ state: "failed", error: "另一个 AnyModelBot 一直在安装 PowerShell 7，稍后再试", finishedAt: Date.now() }, true);
+        return false;
+      }
+      this.setProgress({ state: "waiting", error: "另一个 AnyModelBot 正在安装 PowerShell 7，等它装完" }, true);
+      await sleep(this.d.lockPollMs ?? 5000);
+      if (this.lockHeld()) continue;
+      await this.evaluate(false);
+      if (this.cur.ready && !o.reinstall) {
+        this.setProgress({ state: "done", finishedAt: Date.now(), error: undefined }, true);
+        return true;
+      }
     }
     const heartbeat = setInterval(() => fs.promises.utimes(this.lockFile, new Date(), new Date()).catch(() => undefined), 30_000);
     heartbeat.unref?.();

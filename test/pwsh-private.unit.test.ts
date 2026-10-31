@@ -87,7 +87,7 @@ function fake(o: FakeOpts = {}) {
     if (fetchFails-- > 0) throw new Error("ECONNRESET");
     return new Response(new Uint8Array(o.body ?? ZIP), { headers: { "content-length": String((o.body ?? ZIP).length) } });
   }) as unknown as typeof fetch;
-  const priv = new PrivatePwsh({ env, platform: "win32", arch: "x64", osRelease: o.osRelease ?? "10.0.22631", run, fetch: () => fetchFn, pin: PIN, pidAlive: o.pidAlive ?? (() => false), retryDelayMs: 1 });
+  const priv = new PrivatePwsh({ env, platform: "win32", arch: "x64", osRelease: o.osRelease ?? "10.0.22631", run, fetch: () => fetchFn, pin: PIN, pidAlive: o.pidAlive ?? (() => false), retryDelayMs: 1, lockPollMs: 5 });
   return { root, env, run, calls, fetches, priv, fetchFn, dir: path.join(root, `${PIN.version}-x64`) };
 }
 
@@ -194,19 +194,31 @@ describe("内置 PowerShell 7：安装", () => {
     await f.priv.prepare();
     expect(leftovers(f.root)).toEqual([]);
     expect(f.priv.status()).toMatchObject({ installed: false, ready: false });
-    // 锁的主人还活着、心跳是新的：等它
+    // 锁的主人还活着、心跳是新的：不清它的文件，等它装完；它装好了就直接用，不再下载
     const g = fake({ root: f.root, pidAlive: () => true });
     fs.writeFileSync(path.join(f.root, ".lock"), JSON.stringify({ pid: 999_999, at: Date.now() }));
     fs.writeFileSync(path.join(f.root, ".dl-other.zip"), "theirs");
     await g.priv.prepare();
     expect(fs.existsSync(path.join(f.root, ".dl-other.zip"))).toBe(true);
-    expect(await g.priv.install({ manual: true })).toBe(false);
+    const waiting = g.priv.install({ manual: true });
+    await new Promise((r) => setTimeout(r, 30));
     expect(g.priv.status().install).toMatchObject({ state: "waiting", error: expect.stringContaining("正在安装") });
+    const other = fake();
+    expect(await other.priv.install({ manual: true })).toBe(true);
+    fs.cpSync(other.dir, f.dir, { recursive: true, preserveTimestamps: true });
+    fs.copyFileSync(path.join(other.root, "state.json"), path.join(f.root, "state.json"));
+    fs.rmSync(path.join(f.root, ".dl-other.zip"));
+    fs.rmSync(path.join(f.root, ".lock"));
+    expect(await waiting).toBe(true);
+    expect(g.priv.status()).toMatchObject({ ready: true, install: { state: "done" } });
     expect(g.fetches).toEqual([]);
-    // 心跳停了 3 分钟以上：当作残留
+    // 心跳停了 3 分钟以上：当作残留，自己装
+    const h = fake({ pidAlive: () => true });
+    fs.writeFileSync(path.join(h.root, ".lock"), JSON.stringify({ pid: 999_999, at: Date.now() }));
     const old = new Date(Date.now() - 10 * 60_000);
-    fs.utimesSync(path.join(f.root, ".lock"), old, old);
-    expect(await g.priv.install({ manual: true })).toBe(true);
+    fs.utimesSync(path.join(h.root, ".lock"), old, old);
+    expect(await h.priv.install({ manual: true })).toBe(true);
+    expect(h.fetches).toHaveLength(1);
   });
 
   it("每次启动只看文件指纹：没变就直接用（不拉起任何进程）；变了重新核对签名、试运行", async () => {
@@ -422,7 +434,7 @@ describe("探测器：优先级、自动安装、自动退回", () => {
     expect(shellStartFailure(text, exe)).toContain("CreateProcessAsUserW failed (Win32 2)");
     probe.observeToolResult(exe, text);
     const st = probe.snapshot();
-    expect(st).toMatchObject({ missing: true, using: PS5, private: { ready: false, bad: { reason: expect.stringContaining("代理拉不起它") } }, fallback: { from: exe, to: PS5 } });
+    expect(st).toMatchObject({ missing: true, using: PS5, private: { ready: false, bad: { reason: "代理拉不起它：找不到 pwsh.exe（可能被杀毒软件删除或隔离）（Win32 2）" } }, fallback: { from: exe, to: PS5 } });
     expect(probe.cachedDshPath).toBe(PS5);
     const ev = events.at(-1)!;
     expect(ev).toMatchObject({ kind: "path", from: exe, to: PS5, notice: { level: "warn" } });
@@ -452,7 +464,7 @@ describe("探测器：优先级、自动安装、自动退回", () => {
     await settle(f.priv, probe);
     expect(probe.cachedDshPath).toBe(SYS_PWSH);
     probe.observeToolResult(SYS_PWSH, `subprocess failed before reporting an outcome: Error: spawn ${SYS_PWSH} ENOENT`);
-    expect(probe.snapshot()).toMatchObject({ systemIssue: expect.stringContaining("代理拉不起它"), missing: true });
+    expect(probe.snapshot()).toMatchObject({ systemIssue: "代理拉不起它：找不到 pwsh.exe（可能被杀毒软件删除或隔离）（ENOENT）", missing: true });
     // 系统的坏了、内置的没装：自动装上
     expect(f.priv.busy).toBe(true);
     await settle(f.priv);

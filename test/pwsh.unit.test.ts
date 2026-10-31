@@ -276,4 +276,16 @@ describe("界面接口与诊断（AMB_PWSH_FORCE=missing）", () => {
     expect((await api("/pwsh")).json.dismissed).toBe(true);
     expect((await api("/pwsh", { method: "DELETE" })).status).toBe(405);
   });
+
+  it("改回系统默认 / 重新用内置的写进 config.json（agent.pwsh）；不是 Windows 时不能安装", async () => {
+    expect(app.config.agent.pwsh).toBe("auto");
+    expect((await api("/pwsh/mode", { method: "PUT", body: { mode: "system" } })).status).toBe(200);
+    expect(JSON.parse(fs.readFileSync(path.join(app.config.dataDir, "config.json"), "utf8")).agent.pwsh).toBe("system");
+    expect(loadConfig({ dataDir: app.config.dataDir, env: {} }).agent.pwsh).toBe("system");
+    await api("/pwsh/mode", { method: "PUT", body: { mode: "auto" } });
+    expect(loadConfig({ dataDir: app.config.dataDir, env: {} }).agent.pwsh).toBe("auto");
+    const r = await api("/pwsh/install", { method: "POST", body: {} });
+    expect(r.status).toBe(400);
+    expect(r.json.error).toContain("只在 Windows 上");
+  });
 });

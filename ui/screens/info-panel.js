@@ -22,7 +22,7 @@ export function usePoll(fn, ms, deps = []) {
   return [data, err, load];
 }
 
-function FeishuRow({ bot, st, reload }) {
+function FeishuRow({ bot, st, owner, reload }) {
   const [open, setOpen] = useState(false);
   const [appId, setAppId] = useState(bot.feishuAppId);
   const [secret, setSecret] = useState("");
@@ -63,6 +63,7 @@ function FeishuRow({ bot, st, reload }) {
         <button type="button" class="btn primary" disabled=${!appId.trim() || busy} onClick=${save}>${busy ? html`<${Spinner} />` : "保存并连接"}</button>
         ${bot.feishuAppId && html`<button type="button" class="text danger" onClick=${clear}>断开</button>`}
       </div>
+      ${bot.feishuAppId && owner === null && html`<p class="hint">用你自己的飞书给机器人发一句话，就完成绑定。</p>`}
       <p class="hint">在飞书开放平台启用「机器人」，事件订阅选「使用长连接接收事件」并订阅 <code>im.message.receive_v1</code>；权限：<code>im:message.p2p_msg:readonly</code>、<code>im:message:send_as_bot</code>、<code>cardkit:card:write</code>。</p>
     </div>`}`;
 }
@@ -103,10 +104,7 @@ function WeixinRow({ bot, st, reload }) {
     </div>`}`;
 }
 
-/**
- * 使用请求：不在允许名单里的人给机器人发了消息（他只收到一句"还没被允许"，没有调用模型）。
- * 允许 / 拒绝；这个渠道还没有主人时，可以把他设为主人（多半就是你自己）。
- */
+/** 使用请求：不在允许名单里的人给机器人发了消息（他只收到一句"还没被允许"，没有调用模型）。允许 / 拒绝。 */
 function AccessRequests({ botId, data, reload }) {
   const [busy, setBusy] = useState("");
   if (!data || !data.requests.length) return null;
@@ -114,7 +112,7 @@ function AccessRequests({ botId, data, reload }) {
     setBusy(r.id + what);
     try {
       await api(`/bots/${botId}/access/${encodeURIComponent(r.id)}/${what}`, { method: "POST", body: {} });
-      toast(what === "approve" ? `已允许「${r.who}」` : what === "deny" ? `已拒绝「${r.who}」` : `已设为${CHANNEL_NAME[r.channel]}主人`);
+      toast(what === "approve" ? `已允许「${r.who}」` : `已拒绝「${r.who}」`);
     } catch (e) {
       failed(e);
     }
@@ -122,9 +120,7 @@ function AccessRequests({ botId, data, reload }) {
     reload();
   };
   return html`<div class="list-head">使用请求<span class="badge count warn">${data.requests.length}</span></div>
-    <div class="stack">${data.requests.map((r) => {
-      const noOwner = !data.owners[r.channel];
-      return html`<div key=${r.id} class="stack approval" style="--gap: var(--space-1)">
+    <div class="stack">${data.requests.map((r) => html`<div key=${r.id} class="stack approval" style="--gap: var(--space-1)">
         <span class="hint">${CHANNEL_NAME[r.channel] || r.channel} · ${fmtAgo(r.createdAt)}${r.requests > 1 ? ` · 发了 ${r.requests} 条消息` : ""}</span>
         <div class="card">
           <div class="meta"><span>想使用这个机器人 · 配对码 <span class="num">${r.code}</span></span></div>
@@ -133,47 +129,10 @@ function AccessRequests({ botId, data, reload }) {
           <div class="actions">
             <${Button} variant="primary" loading=${busy === r.id + "approve"} disabled=${!!busy} onClick=${() => act(r, "approve")}>允许</${Button}>
             <${Button} loading=${busy === r.id + "deny"} disabled=${!!busy} onClick=${() => act(r, "deny")}>拒绝</${Button}>
-            ${noOwner && html`<${Button} variant="ghost" loading=${busy === r.id + "owner"} disabled=${!!busy} onClick=${() => act(r, "owner")}>设为主人</${Button}>`}
           </div>
-          <span class="hint">${noOwner
-            ? `${CHANNEL_NAME[r.channel]}还没有主人。如果这是你自己，点「设为主人」，以后的请求也会发给你。`
-            : `他只收到一句提示，没有调用模型。主人在聊天里回复「同意 ${r.code}」也可以。`}</span>
+          <span class="hint">也可以在聊天里回复「同意 ${r.code}」。</span>
         </div>
-      </div>`;
-    })}</div>`;
-}
-
-/** 没发出去的消息：出站队列还在重试的，和发不出去、已经放弃的（附原因，可以"知道了"） */
-function Undelivered({ botId }) {
-  const [d, , reload] = usePoll(() => api(`/bots/${botId}/outbox`), 8000, [botId]);
-  if (!d || (!d.failed.length && !d.waiting.length)) return null;
-  const dismiss = async (f) => {
-    try {
-      await api(`/bots/${botId}/outbox/${encodeURIComponent(f.id)}/dismiss`, { method: "POST", body: {} });
-      reload();
-    } catch (e) {
-      failed(e);
-    }
-  };
-  return html`<div class="list-head">没发出去的消息${d.failed.length > 0 && html`<span class="badge count warn">${d.failed.length}</span>`}</div>
-    <div class="list">
-      ${d.waiting.map((w) => html`<div key=${w.id} class="row compact">
-        <div class="who">
-          <div class="name">发给${w.to}</div>
-          <div class="sub">${w.preview || "（空）"}</div>
-          <div class="sub wrap">${w.attempts ? `第 ${w.attempts} 次没发出去，稍后自动重试` : "等渠道连上后发送"}${w.error ? `：${w.error}` : ""}</div>
-        </div>
-        <${Badge} s="retrying" />
-      </div>`)}
-      ${d.failed.map((f) => html`<div key=${f.id} class="row compact">
-        <div class="who">
-          <div class="name">发给${f.to} · ${fmtAgo(f.updatedAt)}</div>
-          <div class="sub">${f.preview || "（空）"}</div>
-          <div class="sub wrap">${f.error}</div>
-        </div>
-        <button type="button" class="text" onClick=${() => dismiss(f)}>知道了</button>
-      </div>`)}
-    </div>`;
+      </div>`)}</div>`;
 }
 
 function MemorySection({ botId }) {
@@ -272,7 +231,7 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
       <div class="list-head">渠道</div>
       <div class="list">
         ${detail && detail.bot
-          ? html`<${FeishuRow} bot=${detail.bot} st=${detail.channels.feishu} reload=${reloadDetail} /><${WeixinRow} bot=${detail.bot} st=${detail.channels.weixin} reload=${reloadDetail} />`
+          ? html`<${FeishuRow} bot=${detail.bot} st=${detail.channels.feishu} owner=${access ? access.owners.feishu : undefined} reload=${reloadDetail} /><${WeixinRow} bot=${detail.bot} st=${detail.channels.weixin} reload=${reloadDetail} />`
           : html`<div class="row"><${Skeleton} w="50%" /></div><div class="row"><${Skeleton} w="40%" /></div>`}
       </div>
 
@@ -290,8 +249,6 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
       ${tasks.length > 0 && html`<div class="list-head">任务</div>
         <div class="list">${tasks.slice(0, 8).map((t) => html`<${TaskRow} key=${t.id} task=${t} onChanged=${reloadTasks}
           onOpen=${() => (t.channel === "web" ? onOpenChat() : setViewing((convs?.conversations || []).find((c) => c.id === t.conversationId) || null))} />`)}</div>`}
-
-      <${Undelivered} botId=${bot.id} />
 
       <${MemorySection} botId=${bot.id} />
 

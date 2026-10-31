@@ -109,7 +109,7 @@ Inside the container the console listens on 0.0.0.0, so token access is enforced
 ## Interface
 
 - Sidebar: bot list (avatar + name + latest message), ＋ New, right-click to rename / delete; the account button at the bottom-left opens Settings (`⌘/Ctrl+,`).
-- Chat screen: the floating bot-name pill at the top opens the info panel (`⌘/Ctrl+⇧+I`: channels, requests, pending approvals, undelivered messages, memory, recent sessions; ⚙ opens bot settings). Replies stream in (Markdown, one-click copy for code blocks) and can be stopped at any time (`Esc`). Approvals and questions appear as cards in the chat. Scrolling up is never yanked back to the bottom.
+- Chat screen: the floating bot-name pill at the top opens the info panel (`⌘/Ctrl+⇧+I`: channels, requests, pending approvals, memory, recent sessions; ⚙ opens bot settings). Replies stream in (Markdown, one-click copy for code blocks) and can be stopped at any time (`Esc`). Approvals and questions appear as cards in the chat. Scrolling up is never yanked back to the bottom.
 - Command palette `⌘/Ctrl+K`; appearance (system / light / dark) is in Settings → General.
 - Visuals: neutrals and components are adapted from magpie's UI (MIT); the accent is Modelflare's fluorescent yellow-green `#d7ff00`. The design system is described in `ui/design/README.md`.
 
@@ -136,7 +136,7 @@ In agent mode each bot has a file permission preset. Switch it with the permissi
 
 The agent runs on your own computer (possibly with full access), so by default **only the owner and people you allow** can talk to a bot, per bot and per channel (`src/core/access.ts`):
 
-- **Owner**: on WeChat, the account that scanned the QR code; on Feishu you set it in the app: the first person who messages the bot shows up under "Requests" in the info panel, click "Make owner" (usually that is you). The local web chat is never restricted.
+- **Owner**: on WeChat, the account that scanned the QR code. Feishu connects with an App ID and App Secret and no scan, so **the first person to message the bot one-to-one after it is connected** becomes the owner (trust on first use): once it is connected, send the bot one line from your own Feishu, and that message is answered as usual. A WeChat login that did not report the scanner's id works the same way. Bot settings → Who can use shows the Feishu owner; "Change" (after a confirmation) clears the owner so the next person to message becomes the owner. Switching to another Feishu app or disconnecting Feishu clears it too. People who were denied never become the owner. The local web chat is never restricted.
 - **Anyone else** gets a single line, "you are not allowed to use this bot yet, the owner has been told" (at most once an hour per person); the message is not queued, no model is called and nothing is spent. The request shows in the info panel (allow / deny) and is sent to the owner with a 4-digit pairing code (at most 3 per bot per hour, and only if the owner spoke on that channel in the last 24 hours); the owner replies `同意 1234` / `拒绝 1234` (or `yes 1234` / `no 1234`) in chat. Pairing codes never collide with tool-approval codes. People who were denied get no reply at all.
 - The allowlist is in Bot settings → Who can use; entries can be removed (they can ask again by sending a message). `/status` shows it too.
 - On upgrade, everyone who already had a direct conversation with a bot is put on its allowlist (marked "used before the upgrade"), so nobody is cut off; re-scanning with another WeChat account keeps the previous owner on the list.
@@ -148,7 +148,8 @@ Final replies, delivered files, approval prompts and notices are written to an o
 
 - Messages to one conversation go out one at a time, in order. Network or platform errors are retried (from 5 s, backing off to 5 min); a channel that is offline is waited for.
 - After the app quits or crashes, it carries on at the next start, and what was already sent is not sent again (a long reply resumes from the first unsent part). Ids are derived from the incoming message, so a message the platform delivers twice still gets one final reply; only the part that was in flight at the moment of a crash may go out twice, and it carries a fixed Feishu `uuid` (Feishu dedupes for an hour) and WeChat `client_id`.
-- Messages that can no longer be sent (on WeChat the person has not written for 24 hours or the 10-message quota is used up; waiting for more than a day; repeated platform rejections) are marked with the reason, listed in the info panel under "Undelivered messages", and included in the diagnostics.
+- WeChat only lets a bot reply within 24 hours of the person's last message, and at most 10 times per message. A message that cannot go out for that reason is held, not dropped: the next time the person writes, held messages go out first, before the reply, in their original order and only once, with the text ones merged into one "你不在时：…" ("While you were away: …") message when they fit in one WeChat message (files go as they are). Held messages are kept for up to 7 days; short-lived ones such as the "received" note and approval prompts keep their own deadline.
+- Messages that can no longer be sent (repeated platform rejections, waiting too long) are marked with the reason in the log and the diagnostics.
 
 ## Computer use
 
@@ -174,7 +175,7 @@ Each bot can turn computer use on or off, choose a backend and an approval mode 
    - `cardkit:card:write` (create and update cards, used for streaming replies)
 3. First enter the App ID / App Secret in this app's info panel → Channels → Feishu and save (the long connection must be online before the next step can be saved).
 4. Events & callbacks → subscription mode: "**Receive events through persistent connection**", and add the event `im.message.receive_v1`.
-5. Publish a version, add yourself to the availability scope, then message the bot one-to-one in Feishu.
+5. Publish a version, add yourself to the availability scope, then send the bot one line from your own Feishu: the first person to message it after it is connected becomes its Feishu owner (see "Who can use a bot").
 
 Note: only one-to-one (p2p) chats are handled for now; group messages are ignored.
 

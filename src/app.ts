@@ -505,6 +505,7 @@ export class App {
     if (bot.weixinEnabled && !ch.weixin) {
       ch.weixin = new WeixinChannel(bot.id, this.store, this.runtime, this.queue, {
         fetchImpl: this.opts.weixinFetch,
+        cdnBaseUrl: this.config.weixin.cdnBaseUrl,
         pollTimeoutMs: this.opts.weixinPollTimeoutMs,
       });
       ch.weixin.onExpired = () => this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);

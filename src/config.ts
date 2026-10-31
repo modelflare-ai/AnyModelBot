@@ -35,7 +35,8 @@ export interface AppConfig {
   /** 默认的图片 / 视频模型（生成前确认时默认选中）；空 = 按推荐顺序的第一个 */
   media: { imageModel: string; videoModel: string };
   feishu: { throttleMs: number };
-  weixin: { apiBaseUrl: string };
+  /** cdnBaseUrl：收发图片/文件的微信 CDN（测试时指向假服务） */
+  weixin: { apiBaseUrl: string; cdnBaseUrl: string };
   /** 代理宿主：dsh = DeepSeek Harness（工具/沙箱/审批）；off = 纯对话 */
   agent: { mode: "dsh" | "off"; turnTimeoutMs: number; approvalTtlMs: number };
 }
@@ -94,7 +95,10 @@ export function loadConfig(overrides: { dataDir?: string; env?: NodeJS.ProcessEn
       videoModel: typeof file.media?.videoModel === "string" ? file.media.videoModel : "",
     },
     feishu: { throttleMs: num(env.AMB_FEISHU_THROTTLE_MS, file.feishu?.throttleMs ?? 400) },
-    weixin: { apiBaseUrl: env.AMB_WEIXIN_API_BASE || file.weixin?.apiBaseUrl || "https://ilinkai.weixin.qq.com" },
+    weixin: {
+      apiBaseUrl: env.AMB_WEIXIN_API_BASE || file.weixin?.apiBaseUrl || "https://ilinkai.weixin.qq.com",
+      cdnBaseUrl: env.AMB_WEIXIN_CDN_BASE || file.weixin?.cdnBaseUrl || "https://novac2c.cdn.weixin.qq.com/c2c",
+    },
     agent: {
       mode: (env.AMB_AGENT || file.agent?.mode || "dsh") === "off" ? "off" : "dsh",
       turnTimeoutMs: num(env.AMB_AGENT_TURN_TIMEOUT_MS, file.agent?.turnTimeoutMs ?? 30 * 60_000),

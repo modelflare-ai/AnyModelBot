@@ -3,7 +3,7 @@ import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
-import { AgentHost, callDetail, type TurnObserver, type TurnUsage } from "./host.js";
+import { AgentHost, callDetail, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
@@ -166,7 +166,7 @@ export class AgentManager {
   /** 会话 → 正在进行的回合开始时间（/status 与故障排查用：后来的消息排在它后面） */
   readonly turnsInProgress = new Map<string, { botId: string; since: number }>();
 
-  async runTurn(botId: string, input: { conversationId: string; text: string; model: string; observer?: TurnObserver }) {
+  async runTurn(botId: string, input: TurnInput) {
     const conv = input.conversationId;
     this.turnsInProgress.set(conv, { botId, since: Date.now() });
     try {
@@ -176,7 +176,7 @@ export class AgentManager {
     }
   }
 
-  private async runTurnInner(botId: string, input: { conversationId: string; text: string; model: string; observer?: TurnObserver }) {
+  private async runTurnInner(botId: string, input: TurnInput) {
     const conv = input.conversationId;
     const gate = this.gates.get(conv);
     if (gate) await withTimeout(gate, 240_000, undefined);

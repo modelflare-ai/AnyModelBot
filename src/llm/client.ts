@@ -2,9 +2,21 @@
  * 模型访问接口。默认实现指向受管 magpie 的 OpenAI 兼容 /v1（流式 SSE）。
  * 运行时只依赖 ModelClient，可替换为任意 OpenAI 兼容端点。
  */
+/** OpenAI 兼容的多模态内容；只有用户刚发来的图片会用到（data URL） */
+export type ChatContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ChatContentPart[];
+}
+
+/**
+ * 能看图的模型。Modelflare 的模型目录不带输入模态，只能按名字判断；不在其中的模型
+ * （DeepSeek、GLM 文本版等）收到图片时只拿到它在工作区里的路径。
+ */
+const IMAGE_INPUT_MODELS = /claude|gpt-4o|gpt-4\.1|gpt-[5-9]|gemini|grok-4|kimi-k3|muse-spark|qvq|-vl\b|-omni\b|glm-[\d.]+v\b/i;
+export function acceptsImages(model: string): boolean {
+  return IMAGE_INPUT_MODELS.test(model);
 }
 
 export interface ChatRequest {

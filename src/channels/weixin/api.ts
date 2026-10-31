@@ -26,8 +26,59 @@ export function encryptAesEcb(plain: Buffer, key: Buffer): Buffer {
   const c = crypto.createCipheriv("aes-128-ecb", key, null);
   return Buffer.concat([c.update(plain), c.final()]);
 }
+export function decryptAesEcb(cipher: Buffer, key: Buffer): Buffer {
+  const d = crypto.createDecipheriv("aes-128-ecb", key, null);
+  return Buffer.concat([d.update(cipher), d.final()]);
+}
 export function aesEcbPaddedSize(n: number): number {
   return Math.ceil((n + 1) / 16) * 16;
+}
+
+/**
+ * CDNMedia.aes_key 有两种编码（移植自 openclaw-weixin src/cdn/pic-decrypt.ts）：
+ * 图片是 16 字节原始密钥的 base64；文件/语音/视频是 32 位十六进制字符串的 base64。
+ */
+export function parseAesKey(aesKeyBase64: string): Buffer {
+  const decoded = Buffer.from(aesKeyBase64, "base64");
+  if (decoded.length === 16) return decoded;
+  const ascii = decoded.toString("ascii");
+  if (decoded.length === 32 && /^[0-9a-fA-F]{32}$/.test(ascii)) return Buffer.from(ascii, "hex");
+  throw new Error(`aes_key 解码后为 ${decoded.length} 字节，应为 16 字节或 32 位十六进制`);
+}
+
+export type ImageMime = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+const IMAGE_MIME_EXT: Record<ImageMime, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp" };
+
+/** 按文件头识别图片格式（微信图片条目不带文件名和 MIME）；不认识的返回 undefined。 */
+export function sniffImageMime(buf: Buffer): ImageMime | undefined {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buf.length >= 6 && buf.subarray(0, 4).toString("ascii") === "GIF8") return "image/gif";
+  if (buf.length >= 12 && buf.subarray(0, 4).toString("ascii") === "RIFF" && buf.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  return undefined;
+}
+export function imageExt(mime: string | undefined): string {
+  return IMAGE_MIME_EXT[mime as ImageMime] ?? ".jpg";
+}
+
+/** 单个入站媒体（解密后）的大小上限 */
+export const MAX_INBOUND_MEDIA_BYTES = 50 * 1024 * 1024;
+const CDN_TIMEOUT_MS = 60_000;
+
+export interface InboundMedia {
+  kind: "image" | "file" | "video";
+  data: Buffer;
+  /** 文件条目的原始文件名 */
+  name?: string;
+  /** 图片按文件头识别出的格式 */
+  mime?: ImageMime;
+}
+
+/** 图片/文件/视频条目带有可下载的 CDN 引用。语音不下载：有转写文字，原始音频是 SILK。 */
+export function hasDownloadableMedia(item: MessageItem | undefined): boolean {
+  const media =
+    item?.type === MessageItemType.IMAGE ? item.image_item?.media : item?.type === MessageItemType.FILE ? item.file_item?.media : item?.type === MessageItemType.VIDEO ? item.video_item?.media : undefined;
+  return !!(media?.encrypt_query_param || media?.full_url);
 }
 export const SESSION_EXPIRED_ERRCODE = -14;
 const CHANNEL_VERSION = "0.1.0";
@@ -102,14 +153,17 @@ export interface CdnMedia {
   encrypt_query_param?: string;
   aes_key?: string;
   encrypt_type?: number;
+  /** 完整下载地址（服务端给出时优先用它，不再自己拼） */
+  full_url?: string;
 }
 
 export interface MessageItem {
   type?: number;
   text_item?: { text?: string };
-  voice_item?: { text?: string };
+  voice_item?: { text?: string; media?: CdnMedia };
   file_item?: { file_name?: string; media?: CdnMedia; len?: string };
-  image_item?: { media?: CdnMedia; mid_size?: number };
+  /** aeskey：入站图片的原始密钥（十六进制），优先于 media.aes_key */
+  image_item?: { media?: CdnMedia; aeskey?: string; mid_size?: number };
   video_item?: { media?: CdnMedia; video_size?: number };
   ref_msg?: { title?: string; message_item?: MessageItem };
 }
@@ -282,17 +336,20 @@ export class IlinkClient {
       },
       15_000,
     );
-    const up = parseWeixinApiJson<{ ret?: number; errmsg?: string; upload_full_url?: string; upload_param?: string }>(raw || "{}");
-    const cdnBase = (this.opts.cdnBaseUrl || DEFAULT_CDN_BASE).replace(/\/+$/, "");
-    const url = up.upload_full_url?.trim() || (up.upload_param ? `${cdnBase}/upload?encrypted_query_param=${encodeURIComponent(up.upload_param)}&filekey=${encodeURIComponent(filekey)}` : "");
+    const up = parseWeixinApiJson<{ ret?: number; errcode?: number; errmsg?: string; upload_full_url?: string; upload_param?: string }>(raw || "{}");
+    if ((up.ret && up.ret !== 0) || (up.errcode && up.errcode !== 0)) {
+      throw new WeixinApiError(`getuploadurl ret=${up.ret} errcode=${up.errcode} errmsg=${up.errmsg ?? ""}`, up.ret, up.errcode);
+    }
+    const url = up.upload_full_url?.trim() || (up.upload_param ? `${this.cdnBase}/upload?encrypted_query_param=${encodeURIComponent(up.upload_param)}&filekey=${encodeURIComponent(filekey)}` : "");
     if (!url) throw new WeixinApiError(`getuploadurl returned no upload url (ret=${up.ret ?? ""})`, up.ret);
     const cipher = encryptAesEcb(plain, aeskey);
     let param = "";
     let lastErr: unknown;
     for (let attempt = 1; attempt <= 3 && !param; attempt++) {
       try {
-        const res = await this.fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: new Uint8Array(cipher) });
-        if (res.status >= 400 && res.status < 500) throw Object.assign(new Error(`CDN upload client error ${res.status}`), { fatal: true });
+        const res = await this.fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: new Uint8Array(cipher), signal: AbortSignal.timeout(CDN_TIMEOUT_MS) });
+        await res.arrayBuffer().catch(() => {});
+        if (res.status >= 400 && res.status < 500) throw Object.assign(new Error(`CDN upload client error ${res.status} ${res.headers.get("x-error-message") ?? ""}`.trim()), { fatal: true });
         if (res.status !== 200) throw new Error(`CDN upload server error ${res.status}`);
         param = res.headers.get("x-encrypted-param") ?? "";
         if (!param) throw new Error("CDN upload response missing x-encrypted-param");
@@ -311,6 +368,73 @@ export class IlinkClient {
           ? { type: MessageItemType.VIDEO, video_item: { media, video_size: filesize } }
           : { type: MessageItemType.FILE, file_item: { media, file_name: path.basename(filePath), len: String(plain.length) } };
     await this.sendItem(toUserId, item, contextToken);
+  }
+
+  private get cdnBase(): string {
+    return (this.opts.cdnBaseUrl || DEFAULT_CDN_BASE).replace(/\/+$/, "");
+  }
+
+  /**
+   * 下载并解密用户发来的图片/文件/视频（含被引用消息里的）。
+   * 移植自 openclaw-weixin src/media/media-download.ts、src/cdn/pic-decrypt.ts、src/cdn/cdn-url.ts。
+   */
+  async downloadMedia(item: MessageItem, maxBytes = MAX_INBOUND_MEDIA_BYTES): Promise<InboundMedia> {
+    let kind: InboundMedia["kind"];
+    let media: CdnMedia | undefined;
+    let key: Buffer | undefined;
+    if (item.type === MessageItemType.IMAGE) {
+      kind = "image";
+      media = item.image_item?.media;
+      // image_item.aeskey（十六进制）优先；两者都没有时图片未加密
+      const hex = item.image_item?.aeskey;
+      if (hex && /^[0-9a-fA-F]{32}$/.test(hex)) key = Buffer.from(hex, "hex");
+      else if (media?.aes_key) key = parseAesKey(media.aes_key);
+    } else if (item.type === MessageItemType.FILE || item.type === MessageItemType.VIDEO) {
+      kind = item.type === MessageItemType.FILE ? "file" : "video";
+      media = kind === "file" ? item.file_item?.media : item.video_item?.media;
+      if (!media?.aes_key) throw new Error("缺少 aes_key");
+      key = parseAesKey(media.aes_key);
+    } else {
+      throw new Error(`不支持下载的条目类型 ${item.type}`);
+    }
+    const full = media?.full_url?.trim();
+    if (full && !/^https?:\/\//i.test(full)) throw new Error("full_url 不是 http(s) 地址");
+    if (!full && !media?.encrypt_query_param) throw new Error("没有 CDN 引用");
+    const url = full || `${this.cdnBase}/download?encrypted_query_param=${encodeURIComponent(media!.encrypt_query_param!)}`;
+
+    let raw: Buffer | undefined;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= 3 && !raw; attempt++) {
+      try {
+        const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(CDN_TIMEOUT_MS) });
+        if (!res.ok) {
+          await res.arrayBuffer().catch(() => {});
+          const err = new Error(`CDN 下载失败 HTTP ${res.status} ${res.headers.get("x-error-message") ?? ""}`.trim());
+          throw res.status < 500 ? Object.assign(err, { fatal: true }) : err;
+        }
+        const declared = Number(res.headers.get("content-length") ?? 0);
+        if (declared > maxBytes) {
+          await res.body?.cancel().catch(() => {});
+          throw Object.assign(new Error(`文件过大（${(declared / 1048576).toFixed(1)} MB，上限 ${maxBytes / 1048576} MB）`), { fatal: true });
+        }
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > maxBytes) throw Object.assign(new Error(`文件过大（${(buf.length / 1048576).toFixed(1)} MB，上限 ${maxBytes / 1048576} MB）`), { fatal: true });
+        raw = buf;
+      } catch (e) {
+        lastErr = e;
+        if ((e as { fatal?: boolean }).fatal) throw e;
+      }
+    }
+    if (!raw) throw lastErr instanceof Error ? lastErr : new Error("CDN 下载失败");
+    let data: Buffer;
+    try {
+      data = key ? decryptAesEcb(raw, key) : raw;
+    } catch {
+      throw new Error("解密失败（密钥不对？）");
+    }
+    if (kind === "image") return { kind, data, mime: sniffImageMime(data) };
+    if (kind === "file") return { kind, data, name: item.file_item?.file_name || "file" };
+    return { kind, data };
   }
 
   private async sendItem(toUserId: string, item: MessageItem, contextToken: string): Promise<void> {

@@ -2,6 +2,7 @@
  * 离线端到端：mock OpenAI（流式）+ mock iLink + 假飞书传输层 + 真实 App/Web 服务（外部模型端点模式）。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -31,7 +32,7 @@ beforeAll(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-e2e-"));
   const config = loadConfig({
     dataDir,
-    env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: ilink.url, AMB_FEISHU_THROTTLE_MS: "30", AMB_AGENT: "off" },
+    env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: ilink.url, AMB_WEIXIN_CDN_BASE: ilink.cdnBase, AMB_FEISHU_THROTTLE_MS: "30", AMB_AGENT: "off" },
   });
   process.env.FEISHU_APP_ID = "cli_test";
   process.env.FEISHU_APP_SECRET = "secret_test";
@@ -119,6 +120,47 @@ describe("微信 E2E", () => {
     const st = await api("/bots/default/channels");
     expect(st.json.weixin.quota[0]).toMatchObject({ userId: "alice@im.wechat", remaining: 9 });
     expect(app.store.getWeixinAccount("default")!.cursor).toMatch(/^cur-/);
+  });
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crypto.randomBytes(64)]);
+  it("收图片/文件：CDN 下载解密；能看图的模型收到图片本身，其余模型只收到标注；下载失败照常回复", async () => {
+    const conv = app.store.ensureConversation("default", "weixin", "carol@im.wechat", "carol@im.wechat", "dm");
+    app.store.setConversationModel(conv.id, "gpt-5.4");
+    let prev = llm.calls.length;
+    const img = ilink.imageItem(png);
+    ilink.pushItems("carol@im.wechat", [{ type: 1, text_item: { text: "这是什么？" } }, img]);
+    await until(() => llm.calls.length > prev, 8000);
+    expect(ilink.state.cdnDownloads).toContain(img.image_item.media.encrypt_query_param);
+    let call = llm.calls.at(-1)!;
+    expect(call.model).toBe("gpt-5.4");
+    expect(call.messages.at(-1).content).toEqual([
+      { type: "text", text: "这是什么？\n[图片]" },
+      { type: "image_url", image_url: { url: `data:image/png;base64,${png.toString("base64")}` } },
+    ]);
+    await until(() => ilink.state.sent.some((s) => s.to === "carol@im.wechat"), 8000);
+
+    // 纯文字模型（mock-a）：只有标注，不发图片
+    prev = llm.calls.length;
+    ilink.pushItems("dave@im.wechat", [ilink.imageItem(png), ilink.fileItem(Buffer.from("hi"), "notes.txt")]);
+    await until(() => llm.calls.length > prev, 8000);
+    expect(llm.calls.at(-1)!.messages.at(-1).content).toBe("[图片]\n[文件 notes.txt]");
+
+    prev = llm.calls.length;
+    ilink.pushItems("dave@im.wechat", [{ type: 2, image_item: { media: { encrypt_query_param: "gone" } } }]);
+    await until(() => llm.calls.length > prev, 8000);
+    expect(llm.calls.at(-1)!.messages.at(-1).content).toBe("[图片（未能下载：CDN 下载失败 HTTP 400 invalid encrypted_param）]");
+    await app.channels.get("default")!.weixin!.idle();
+  });
+  it("发图片：getuploadurl → 加密上传 CDN → 图片消息；收件方按消息里的引用和密钥能取回原图", async () => {
+    const f = path.join(dataDir, "out.png");
+    fs.writeFileSync(f, png);
+    const client = (app.channels.get("default")!.weixin as any).client;
+    const before = ilink.state.sent.length;
+    await client.sendMedia("alice@im.wechat", f, "ctx-1");
+    const s = ilink.state.sent.at(-1)!;
+    expect(ilink.state.sent.length).toBe(before + 1);
+    expect(s).toMatchObject({ to: "alice@im.wechat", contextToken: "ctx-1", item: { type: 2, image_item: { mid_size: 80, media: { encrypt_type: 1 } } } });
+    const got = await client.downloadMedia(s.item);
+    expect(got.data.equals(png)).toBe(true);
   });
   it("超长回复按 4000 切分并受配额约束", async () => {
     const big = "段落".repeat(2600) + "\n\n" + "尾".repeat(3000); // ~8200 字

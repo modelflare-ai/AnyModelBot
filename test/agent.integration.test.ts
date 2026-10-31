@@ -49,10 +49,16 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): { tool?: { name: string; args: any }; text?: string } {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
+    // 看图：回报模型收到的图片（data URL 的头）和文字里有没有工作区路径
+    if (/LOOKIMG/.test(user)) {
+      const content = messages[lastUser]?.content;
+      const urls = (Array.isArray(content) ? content : []).filter((p: any) => p?.type === "image_url").map((p: any) => String(p.image_url?.url ?? "").split(",")[0]);
+      return { text: `SEEN<<${urls.join(" ")}|${/\[图片 inbox\/[^\]]+\.png\]/.test(user) ? "path" : "nopath"}>>` };
+    }
     const scripts: Array<[RegExp, Array<{ name: string; args: any }>]> = [
       [/QUICKSORT/, [{ name: "bash", args: { description: "run", command: "cat > qs.py <<'PY'\ndef qs(a):\n    return a if len(a)<2 else qs([x for x in a[1:] if x<a[0]])+[a[0]]+qs([x for x in a[1:] if x>=a[0]])\nprint(qs([5,3,9,1,7,2]))\nPY\npython3 qs.py" } }]],
       [/ESCALATE/, [{ name: "bash", args: { description: "run", command: "echo escalated-$((40+2))", sandbox_permissions: "danger-full-access", justification: "测试提权" } }]],
@@ -243,5 +249,25 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(again.reply).toBeTruthy();
     expect(again.reply).not.toContain("⚠️");
     expect(app.agent.host("default").state).toBe("running");
+  }, 180_000);
+
+  it("images from chat: saved under the workspace inbox/; a vision model gets the image itself, a text model only the path", async () => {
+    // 1x1 PNG（DSH 收图时会校验并规范化，必须是真图）
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    const send = async (user: string, model: string) => {
+      const conv = app.store.ensureConversation("default", "weixin", user, user, "dm");
+      app.store.setConversationModel(conv.id, model);
+      const ops: any[] = [];
+      const ev = { id: `img-${user}`, channel: "weixin" as const, botId: "default", conversation: { kind: "dm" as const, id: user }, sender: { id: user }, parts: [{ type: "text" as const, text: "LOOKIMG" }, { type: "image" as const, data: png, mime: "image/png" }], replyHandle: {}, receivedAt: Date.now() };
+      await app.runtime.handle(ev, { apply: async (op) => void ops.push(op) });
+      return ops.find((o) => o.type === "stream.finish")?.text as string;
+    };
+    // Electron on Linux (scripts/test-dsh-bundle.mjs): sharp crashes there, so the host keeps images to paths
+    if (app.agent.host("default").imageInput) expect(await send("img-vision", "gpt-5-mock")).toMatch(/^SEEN<<data:image\/(png|jpeg|webp);base64\|path>>$/);
+    else expect(await send("img-vision", "gpt-5-mock")).toBe("SEEN<<|path>>");
+    expect(await send("img-text", "mock-agent")).toBe("SEEN<<|path>>");
+    const inbox = fs.readdirSync(path.join(dataDir, "workspaces", "default", "inbox"));
+    expect(inbox.filter((f) => /^\d{8}-\d{6}-[0-9a-f]{6}\.png$/.test(f))).toHaveLength(2);
+    expect(fs.readFileSync(path.join(dataDir, "workspaces", "default", "inbox", inbox[0])).equals(png)).toBe(true);
   }, 180_000);
 });

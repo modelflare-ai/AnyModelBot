@@ -11,6 +11,7 @@ import { adaptSkill, mcpPatchLines, resolveComputerUse, type CuResolved } from "
 import { cuaConfig, cuaMcpEnv, discoverAppsCached, type CuaApp } from "./cua-driver.js";
 import { pwshPatchLines, pwshProbe } from "./pwsh.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
+import { acceptsImages } from "../llm/client.js";
 
 const log = logger("agent.host");
 
@@ -191,6 +192,21 @@ export function modelLimits(model: string): { window: number; maxTokens: number 
   return { window: lim[1], maxTokens: lim[2] };
 }
 
+/** 随消息交给模型的图片（DSH SDK 的内联图片块：base64 + 格式，进会话前存入 DSH 的附件库） */
+export interface TurnImage {
+  data: string;
+  mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+}
+
+export interface TurnInput {
+  conversationId: string;
+  text: string;
+  model: string;
+  observer?: TurnObserver;
+  /** 只在模型能看图时传（acceptsImages），否则模型只拿到文字里的工作区路径 */
+  images?: TurnImage[];
+}
+
 /** 回合结束时的上下文用量（来自 DSH 事件）。 */
 export interface TurnUsage {
   /** 最后一次模型请求的输入+输出 token，约等于当前上下文大小 */
@@ -333,6 +349,8 @@ export class AgentHost {
       `            name: ${yamlStr(model.split("/").pop() || model)}`,
       `            contextWindow: ${lim[1]}`,
       `            maxTokens: ${lim[2]}`,
+      // 默认只收文字；能看图的模型声明图片输入，用户发来的图片才会作为图片交给它
+      ...(acceptsImages(model) ? ["            input: [text, image]"] : []),
       // Windows：命令用检测到的 PowerShell 7（DSH 自己只看 Program Files\PowerShell\7 和 PATH，找不到就退回 5.1）
       ...pwshPatchLines(pwshPath),
       "- insert:",
@@ -764,7 +782,14 @@ exec "$REAL" "$@"
     this.o.store.clearAgentSession(conversationId);
   }
 
-  async runTurn(input: { conversationId: string; text: string; model: string; observer?: TurnObserver }): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
+  /**
+   * 能否把用户发来的图片交给 DSH。DSH 收图时用 sharp 规范化，而 sharp 在 Linux 上的 Electron 里会让进程崩溃
+   * （SharpElectronLinux，见 scripts/verify-dsh-bundle.mjs），那里只给工作区路径。其它平台上如果带图的回合
+   * 让 DSH 崩了，本次运行期间也不再给图。
+   */
+  imageInput = !(process.versions.electron && process.platform === "linux") && process.env.AMB_DSH_IMAGES !== "0";
+
+  async runTurn(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
     const h = await this.ensure(input.model);
     const s = await this.sessionFor(h, input.conversationId);
     this.active++;
@@ -773,9 +798,11 @@ exec "$REAL" "$@"
     const presented: string[] = [];
     const lim = modelLimits(input.model);
     const usage: TurnUsage = { tokens: 0, window: lim.window, maxTokens: lim.maxTokens };
+    const images = this.imageInput ? (input.images ?? []) : [];
     try {
       const timeoutMs = this.o.turnTimeoutMs ?? 30 * 60_000;
-      const run = s.run(input.text, {
+      const prompt = images.length ? [{ type: "text", text: input.text }, ...images.map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType }))] : input.text;
+      const run = s.run(prompt, {
         onNotification: (n) => {
           if (process.env.AMB_DSH_TRACE) fs.appendFileSync(process.env.AMB_DSH_TRACE, JSON.stringify(n).slice(0, 2000) + "\n");
           if (n.method !== "session.event" || n.params?.sessionId !== s.id) return;
@@ -806,6 +833,10 @@ exec "$REAL" "$@"
       return { text: r.finalResponse, sessionId: s.id, files: deliverables(this.workspace, presented), usage };
     } catch (e) {
       if (/timed out/.test((e as Error).message)) await this.closeHarness();
+      else if (images.length && this.state !== "running") {
+        this.imageInput = false;
+        log.warn("dsh died on a turn with images; sending images by path only until the app restarts", { bot: this.o.botId, message: (e as Error).message.slice(0, 200) });
+      }
       throw e;
     } finally {
       clearTimeout(timer);
@@ -900,7 +931,7 @@ You have no Modelflare key and must not call the API yourself (no curl, no scrip
 1. \`media_models\` (kind \`image\` or \`video\`) lists the models this bot may use, the default one, their parameter ranges and reference prices. Use the default unless the user named a model or the request needs something the default cannot do (a reference image, a ratio or length it does not support).
 2. Plain text-to-image or text-to-video with default settings: call \`generate_image\` / \`generate_video\` with a detailed \`prompt\` only.
 3. Anything else (ratio, resolution, size, length, quality, audio, reference images, first/last frames, editing an image): call \`media_docs\` for the chosen model, then pass \`body\` in exactly the format its page shows, without \`model\`. Every family is different (for example Seedance uses \`content[]\`, Kling \`contents\` and \`settings\`, Wan \`input\` and \`parameters\`, Gemini \`contents[].parts[]\` with \`generationConfig\`), so never reuse field names from another model's page. For OpenAI Images models whose page sends references to \`/v1/images/edits\`, also pass \`endpoint: "edits"\`. Keep \`prompt\` the same as the prompt inside \`body\`: the user sees \`prompt\` in the confirmation.
-4. Reference media: a file in the workspace is written as \`"workspace:media/x.png"\` (sent as a data URL) or \`"workspace-base64:media/x.png"\` (raw Base64, e.g. Gemini \`inline_data.data\`), up to 20 MB each. A public https URL can be used as is. Models marked 必须带参考素材 (image-to-video, reference-to-video) only work with references; many models accept reference videos only as public URLs, see the docs. Images the user sent in chat are not in the workspace: if you have no file or link for a reference, ask the user for one.
+4. Reference media: a file in the workspace is written as \`"workspace:media/x.png"\` (sent as a data URL) or \`"workspace-base64:media/x.png"\` (raw Base64, e.g. Gemini \`inline_data.data\`), up to 20 MB each. A public https URL can be used as is. Models marked 必须带参考素材 (image-to-video, reference-to-video) only work with references; many models accept reference videos only as public URLs, see the docs. Images and files the user sends in chat are saved in the workspace under \`inbox/\`, and the message shows where (for example \`[图片 inbox/20261031-143012-ab12cd.jpg]\`), so write such an image as \`"workspace:inbox/20261031-143012-ab12cd.jpg"\`. If you have no file or link for a reference, ask the user for one.
 5. The tool result says what happened:
    - Generated: the file is under \`media/\`; deliver it with \`present\`.
    - The user picked another model while you had passed a \`body\`: read that model's page with \`media_docs\`, rewrite \`body\` for it and call again with \`model\` set to it. That call is not confirmed again.

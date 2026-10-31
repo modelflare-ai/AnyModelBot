@@ -1,7 +1,10 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import type { InboundEvent, ReplySession } from "./types.js";
 import { eventText } from "./types.js";
-import type { ModelClient, ChatMessage } from "../llm/client.js";
+import { acceptsImages, type ModelClient, type ChatMessage } from "../llm/client.js";
+import type { TurnImage } from "../agent/host.js";
 import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
@@ -12,6 +15,48 @@ import { isBotProviderModel } from "../modelflare.js";
 import type { ApprovalRow } from "../store/db.js";
 
 const log = logger("runtime");
+
+const IMAGE_EXT: Record<TurnImage["mimeType"], string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp" };
+const MAX_INLINE_IMAGES = 4;
+const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024;
+
+/** 用户这条消息里能直接交给模型看的图片（格式已识别、不太大） */
+export function inboundImages(ev: InboundEvent): TurnImage[] {
+  const out: TurnImage[] = [];
+  for (const p of ev.parts) {
+    if (p.type !== "image" || !p.data || !(p.mime && p.mime in IMAGE_EXT) || p.data.length > MAX_INLINE_IMAGE_BYTES) continue;
+    if (out.length < MAX_INLINE_IMAGES) out.push({ data: p.data.toString("base64"), mimeType: p.mime as TurnImage["mimeType"] });
+  }
+  return out;
+}
+
+/** 发送者给的文件名只留最后一段，去掉控制字符和开头的点 */
+function safeFileName(name: string | undefined): string {
+  const base = path.basename((name ?? "").replace(/\\/g, "/")).replace(/[\x00-\x1f\x7f]/g, "").replace(/^\.+/, "").trim();
+  return (base || "file").slice(-80);
+}
+
+/**
+ * 把用户发来的图片/文件/视频存进机器人工作区的 inbox/，消息文字里换成相对路径：
+ * 代理可以读取、处理，或当生图的参考素材（workspace:inbox/...）。
+ */
+export function storeInbound(workspace: string, ev: InboundEvent, now = new Date()): void {
+  const stamp = now.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+  for (const p of ev.parts) {
+    if ((p.type !== "image" && p.type !== "file" && p.type !== "video") || !p.data || p.path) continue;
+    const id = `${stamp}-${crypto.randomBytes(3).toString("hex")}`;
+    const name =
+      p.type === "image" ? `${id}${IMAGE_EXT[p.mime as TurnImage["mimeType"]] ?? ".jpg"}` : p.type === "video" ? `${id}.mp4` : `${id}-${safeFileName(p.name)}`;
+    try {
+      fs.mkdirSync(path.join(workspace, "inbox"), { recursive: true });
+      fs.writeFileSync(path.join(workspace, "inbox", name), p.data);
+      p.path = `inbox/${name}`;
+    } catch (e) {
+      log.warn("save inbound media failed", { type: p.type, message: (e as Error).message.slice(0, 200) });
+      p.error = "保存到工作区失败";
+    }
+  }
+}
 
 export interface RuntimeOptions {
   store: Store;
@@ -65,8 +110,12 @@ export class BotRuntime {
     const bot = store.getBot(ev.botId);
     if (!bot) throw new Error(`unknown bot ${ev.botId}`);
     const conv = store.ensureConversation(bot.id, ev.channel, ev.conversation.id, ev.sender.name || ev.sender.id, ev.conversation.kind === "group" ? "group" : "dm");
+    const agent = this.opts.agent;
+    // 代理模式：收到的图片/文件先进工作区，消息里写路径
+    if (agent?.available) storeInbound(agent.host(bot.id).workspace, ev);
     const text = eventText(ev);
     if (!text) return;
+    const images = inboundImages(ev);
 
     if (text.startsWith("/")) {
       const reply = await this.command(text, conv.id, conv.model, bot.defaultModel, bot.id);
@@ -82,11 +131,12 @@ export class BotRuntime {
     });
     if (!model) return;
     const routed = this.opts.route ? this.opts.route(bot.id, model) : model;
+    // 只有能看图的模型才收到图片本身；其余模型只看到文字里的“[图片 …]”
+    const seen = acceptsImages(routed) ? images : [];
 
-    const agent = this.opts.agent;
     let note = "";
     if (agent?.available) {
-      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, bot.systemPrompt, out);
+      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, bot.systemPrompt, out, seen);
       if (handled === true) return;
       // 代理进程还在启动（第一次可能要几分钟）：这条消息先由模型直接回答，不让用户干等
       if (handled === "starting") note = "（代理还在启动，这条消息先由模型直接回答；启动完成后会自动用回代理。）";
@@ -97,6 +147,10 @@ export class BotRuntime {
     const messages: ChatMessage[] = [];
     if (bot.systemPrompt.trim()) messages.push({ role: "system", content: bot.systemPrompt });
     for (const m of history) if (m.role !== "system") messages.push({ role: m.role, content: m.content });
+    const last = messages[messages.length - 1];
+    if (seen.length && last?.role === "user" && typeof last.content === "string") {
+      last.content = [{ type: "text", text: last.content }, ...seen.map((i) => ({ type: "image_url" as const, image_url: { url: `data:${i.mimeType};base64,${i.data}` } }))];
+    }
 
     await out.apply({ type: "typing", on: true });
     await out.apply({ type: "stream.start" });
@@ -176,7 +230,7 @@ export class BotRuntime {
    * 代理回合；返回 false 表示宿主不可用且尚无任何输出（调用方回退到纯对话），
    * "starting" 表示代理进程在等待时限内没有启动好（同样回退，启动在后台继续）。
    */
-  private async handleAgent(agent: AgentManager, botId: string, convId: string, text: string, model: string, systemPrompt: string, out: ReplySession): Promise<boolean | "starting"> {
+  private async handleAgent(agent: AgentManager, botId: string, convId: string, text: string, model: string, systemPrompt: string, out: ReplySession, images: TurnImage[] = []): Promise<boolean | "starting"> {
     const { store } = this.opts;
     let visible = false;
     const unbind = agent.approvals.bindSink(convId, async (row) => {
@@ -223,6 +277,7 @@ export class BotRuntime {
         conversationId: convId,
         text: input,
         model,
+        ...(images.length ? { images } : {}),
         observer: {
           // 工具调用不进入聊天：只用于判断代理已开始工作（不再回退到纯对话），正在输入状态由渠道维持
           onProgress: () => {

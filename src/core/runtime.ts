@@ -10,7 +10,7 @@ import { describeStep, fmtSecs, type ActivityStep } from "../agent/activity.js";
 import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
-import { promptText, type QuestionItem } from "../agent/approvals.js";
+import { promptButtons, promptText } from "../agent/approvals.js";
 import { segmentInput, type ChatPlace } from "../agent/prompts/index.js";
 import { clearInflight, markInflight, takeNotice } from "./recovery.js";
 import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
@@ -436,7 +436,9 @@ export class BotRuntime {
       return { handled: true, ack: `正在中止上一条消息（已处理 ${fmtSecs(Date.now() - since)}）…` };
     }
     if (!agent) return { handled: false };
-    const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`);
+    // 审批、提问的回复；后台任务的只认引用、编号开头，或它是机器人最后一条消息时的选项编号（见 ApprovalCenter.handleReply）
+    const { quote, plain } = quoteOf(ev);
+    const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`, { ...tasks?.replyContext(convId), ...(quote ? { quote, plain } : {}) });
     if (r.handled) return r;
     // 前一条还在处理：能并入进行中的代理回合时由 handle 并入并回一句；不能时说一声这条排在后面、怎么中止（每个回合只说一次），消息照常入队
     const t = agent.turnsInProgress.get(convId);
@@ -482,8 +484,8 @@ export class BotRuntime {
       return agent.approvals.decide(row.id, allow, by) ? { toast: allow ? `已批准 ${row.code}（仅本次）` : `已拒绝 ${row.code}`, ok: true } : { toast: "已过期", ok: false };
     }
     if (value.amb === "question") {
-      const r = agent.approvals.handleReply(row.conversationId, String(value.option ?? ""), by);
-      return r.handled ? { toast: "已提交", ok: true } : { toast: "提交失败", ok: false };
+      // 回答按钮所在的这一个提问（会话里可能同时有几个）
+      return agent.approvals.answerText(row.id, String(value.option ?? ""), by) ? { toast: "已提交", ok: true } : { toast: "提交失败", ok: false };
     }
     return { toast: "未知操作", ok: false };
   }
@@ -806,34 +808,21 @@ export function firstInput(agent: AgentManager, botId: string, convId: string, t
 
 /** 审批/提问 → 出站交互操作（文本渠道用 prompt；卡片渠道用 buttons）。 */
 export function interactiveOp(row: ApprovalRow) {
-  if (row.kind === "approval") {
-    return {
-      type: "interactive" as const,
-      kind: "approval" as const,
-      prompt: promptText(row),
-      requestId: row.id,
-      code: row.code,
-      buttons: [
-        { label: "允许（仅本次）", value: { amb: "approval", id: row.id, decision: "allow" }, style: "primary" as const },
-        { label: "拒绝", value: { amb: "approval", id: row.id, decision: "deny" }, style: "danger" as const },
-      ],
-    };
-  }
-  let qs: QuestionItem[] = [];
-  try {
-    qs = JSON.parse(row.payload);
-  } catch {
-    /* ignore */
-  }
-  const single = qs.length === 1 ? qs[0] : undefined;
   return {
     type: "interactive" as const,
-    kind: "ask_user" as const,
+    kind: row.kind === "approval" ? ("approval" as const) : ("ask_user" as const),
     prompt: promptText(row),
     requestId: row.id,
     code: row.code,
-    buttons: single?.options?.length && !single.multiSelect ? single.options.map((o, i) => ({ label: o.label, value: { amb: "question", id: row.id, option: String(i + 1) }, style: "default" as const })) : undefined,
+    buttons: promptButtons(row),
   };
+}
+
+/** 消息里引用的那段（微信的引用）和用户自己写的（去掉引用） */
+export function quoteOf(ev: InboundEvent): { quote: string; plain: string } {
+  const quote = ev.parts.map((p) => (p.type === "quote" ? p.text : "")).filter(Boolean).join("\n");
+  const plain = eventText({ ...ev, parts: ev.parts.filter((p) => p.type !== "quote") });
+  return { quote, plain };
 }
 
 const clipLine = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : s);

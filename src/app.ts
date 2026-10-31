@@ -43,6 +43,7 @@ import { MediaService, pickDefault } from "./agent/media.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
 import { TaskService } from "./tasks/service.js";
+import { Attention, approvalItems, type AttentionItem } from "./tasks/attention.js";
 
 const log = logger("app");
 
@@ -120,6 +121,8 @@ export class App {
   readonly access: AccessControl;
   /** 后台任务：自己的会话和文件夹，结果经出站队列回到请求它的会话 */
   readonly tasks: TaskService;
+  /** "需要你"：所有机器人里在等人的事（侧栏、托盘角标、系统通知） */
+  readonly attention: Attention;
   web: WebServer | undefined;
   desktop: DesktopHooks | undefined;
   /** Modelflare 账户（登录、余额、预算）；start() 时创建，桌面外壳的钥匙串那时已就绪 */
@@ -210,15 +213,23 @@ export class App {
         : undefined,
       onNotice: (text) => this.notice("warn", text),
     });
+    this.attention = new Attention({ store: this.store });
     this.tasks = new TaskService({
       store: this.store,
       host: this.agent.taskHost(),
       outbox: this.outbox,
+      approvals: this.agent.approvals,
+      onChange: () => this.attention.kick(),
       defaultModel: () => this.config.llm.defaultModel,
       route: (botId, model) => this.routeModel(botId, model),
       maxBackground: config.agent.maxBackground,
     });
     this.agent.tasks = this.tasks;
+    // "需要你"的三份：在等的提问和审批、任务（失败、没送到）、渠道（微信登录过期）
+    this.attention.addSource(() => approvalItems(this.store, this.agent.approvals.pendingAll()));
+    this.attention.addSource(() => this.tasks.attention());
+    this.attention.addSource(() => this.loginAttention());
+    this.agent.approvals.listen(() => this.attention.kick());
     this.runtime = new BotRuntime({
       agent: this.agent,
       store: this.store,
@@ -229,6 +240,17 @@ export class App {
       route: (botId, model) => this.routeModel(botId, model),
       access: this.access,
     });
+  }
+
+  /** 渠道登录过期了（微信 -14）："需要你"里一行，去重新扫码 */
+  private loginAttention(): AttentionItem[] {
+    const out: AttentionItem[] = [];
+    for (const [botId, ch] of this.channels) {
+      const st = ch.weixin?.status;
+      if (st?.state !== "expired") continue;
+      out.push({ id: `login:${botId}:weixin`, kind: "login", botId, botName: this.store.getBot(botId)?.name ?? botId, subject: "微信登录已过期", status: "", line: "", since: st.since, severity: "err", actions: ["relogin"], channel: "weixin" });
+    }
+    return out;
   }
 
   /** 主动给某个渠道的某个人发通知（使用请求、批准结果）：能发就进出站队列，返回是否已排队 */
@@ -515,6 +537,7 @@ export class App {
     this.runtime.shutdown();
     // 后台任务不再开始新的 run；跑着的留在库里，下次启动时恢复
     this.tasks.stop();
+    this.attention.stop();
     this.offPwsh?.();
     if (this.accountTimer) clearInterval(this.accountTimer);
     if (this.picksTimer) clearInterval(this.picksTimer);
@@ -649,7 +672,10 @@ export class App {
         pollTimeoutMs: this.opts.weixinPollTimeoutMs,
         outbox: this.outbox,
       });
-      ch.weixin.onExpired = () => this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);
+      ch.weixin.onExpired = () => {
+        this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);
+        this.attention.kick();
+      };
       const wx = ch.weixin;
       // 代理自己醒来的一轮：经出站队列发给这个微信用户（发送时才查 24 小时窗口和配额）
       this.runtime.registerReplier(bot.id, "weixin", (conv, _handle, key) => ({ out: wx.followUp(conv.peerId, key) }));

@@ -4,10 +4,11 @@
  *  - 在进程内启动 App（机器人运行时 + 渠道 + 管理界面 + 受管 magpie 子进程）
  *  - 窗口加载本机管理界面（每次启动生成随机令牌，其他本机程序/浏览器无法直接访问）
  *  - 托盘：显示 / 开机自启 / 退出；关闭窗口=隐藏到托盘（可在设置 → 常规里改为退出）；退出时干净关闭 magpie
+ *  - 「需要你」：托盘提示和角标是件数（没事时什么都不加），新的一件在窗口不在前台时发一条系统通知（每件最多一次）
  *  - 设置页里的开机自启、缩放、打开数据目录经 core.desktop 回调到这里（同进程，无需 preload/IPC）
  * CLI（npm start）与 Docker 走同一套 src/ 代码，本文件只做桌面外壳。
  */
-import { app, BrowserWindow, Menu, Tray, nativeImage, net, shell, dialog, safeStorage } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, nativeImage, net, shell, dialog, safeStorage } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,6 +17,7 @@ import { loadConfig } from "../src/config.js";
 import { App } from "../src/app.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
 import { initFileLog, logFilePath, logger, registerSecret, setConsoleLog } from "../src/log.js";
+import { notificationOf, trayTitle, type AttentionItem } from "../src/tasks/attention.js";
 
 const log = logger("desktop");
 const SMOKE = process.env.AMB_ELECTRON_SMOKE; // 冒烟测试：截图到该路径后退出
@@ -88,13 +90,69 @@ function createWindow(): void {
   void win.loadURL(entryUrl);
 }
 
+/** 打开窗口并切到「需要你」 */
+function openNeeds(): void {
+  showWindow();
+  const go = () => void win?.webContents.executeJavaScript(`location.hash = "#/needs"`).catch(() => {});
+  if (win?.webContents.isLoading()) win.webContents.once("did-finish-load", go);
+  else go();
+}
+
+/** 「需要你」的件数（托盘菜单、提示、角标用） */
+let needsCount = 0;
+
+/**
+ * 「需要你」变了：托盘提示与角标是件数（macOS 托盘标题和程序坞、Linux 的启动器角标、Windows 任务栏上的小黄点），
+ * 没事时全部清掉；新的一件、窗口又不在前台时发一条系统通知，点开就是「需要你」。每件最多通知一次（core 记着）。
+ */
+function onAttention(items: AttentionItem[]): void {
+  needsCount = items.length;
+  tray?.setToolTip(trayTitle(PRODUCT, needsCount));
+  if (process.platform === "darwin") tray?.setTitle(needsCount ? String(needsCount) : "");
+  app.setBadgeCount(needsCount);
+  if (isWin) win?.setOverlayIcon(needsCount ? overlayDot() : null, needsCount ? `${needsCount} 件事需要你` : "");
+  renderTray?.();
+  const fresh = core?.attention.takeNew(items) ?? [];
+  const looking = !!win && win.isVisible() && win.isFocused();
+  if (looking || !fresh.length || !Notification.isSupported()) return;
+  // 一下来好几件时只发最早的两条，其余在「需要你」里
+  for (const it of fresh.slice(0, 2)) {
+    const n = new Notification({ ...notificationOf(it), icon: windowIconPath() });
+    n.on("click", openNeeds);
+    n.show();
+  }
+}
+
+/** Windows 任务栏图标上的小黄点（16×16，BGRA）：有事时才挂上 */
+let dot: Electron.NativeImage | undefined;
+function overlayDot(): Electron.NativeImage {
+  if (dot) return dot;
+  const size = 16;
+  const buf = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2);
+      const a = Math.max(0, Math.min(1, size / 2 - 1 - d));
+      const i = (y * size + x) * 4;
+      // 琥珀色（设计库的 --amber-300 #f2b544，深色界面里的 --amber）
+      buf[i] = 0x44;
+      buf[i + 1] = 0xb5;
+      buf[i + 2] = 0xf2;
+      buf[i + 3] = Math.round(a * 255);
+    }
+  dot = nativeImage.createFromBitmap(buf, { width: size, height: size });
+  return dot;
+}
+
 function buildTray(): void {
   // 不要 resize：会丢掉 ico 的多尺寸帧和 @2x 图，托盘在高分屏上发糊
   tray = new Tray(nativeImage.createFromPath(trayIconPath()));
-  tray.setToolTip(PRODUCT);
+  tray.setToolTip(trayTitle(PRODUCT, needsCount));
   const render = () =>
     tray!.setContextMenu(
       Menu.buildFromTemplate([
+        // 有事在等你时才有这一项
+        ...(needsCount ? [{ label: `需要你（${needsCount}）`, click: openNeeds }, { type: "separator" as const }] : []),
         { label: `打开 ${PRODUCT}`, click: showWindow },
         { label: "在浏览器中打开", click: () => void shell.openExternal(entryUrl) },
         { type: "separator" },
@@ -154,6 +212,8 @@ async function boot(): Promise<void> {
   log.info(`数据目录：${dataDir}`);
   log.info(`管理界面：${core.web.url}`);
   if (!SMOKE) buildTray();
+  // 「需要你」：托盘、角标、系统通知
+  if (!SMOKE) core.attention.onChange(onAttention);
   const atLogin = process.argv.includes("--hidden") || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin);
   if (!atLogin || SMOKE) createWindow();
   if (SMOKE) await smoke(SMOKE);

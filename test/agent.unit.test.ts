@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Store } from "../src/store/db.js";
-import { ApprovalCenter, parseAnswer, promptText } from "../src/agent/approvals.js";
+import { ApprovalCenter, isOptionReply, parseAnswer, promptText, taskPromptText } from "../src/agent/approvals.js";
 import { WeixinReply } from "../src/channels/weixin/channel.js";
 import { WeixinQuota } from "../src/channels/weixin/quota.js";
 import { AgentHost, SHELL_LIMITS, agentApi, modelLimits, providerFor, providerProfiles, type AgentApi, type ModelRoute } from "../src/agent/host.js";
@@ -84,6 +84,102 @@ describe("ApprovalCenter", () => {
     const q = c.create({ kind: "question", ...base, tool: "", detail: "", payload: JSON.stringify([{ id: "q1", question: "继续吗？", options: [{ label: "是" }, { label: "否" }] }]) });
     expect(c.handleReply("b:weixin:u1", "2", "u1").handled).toBe(true);
     expect(JSON.parse(store.getApproval(q.id)!.result)).toEqual({ answers: [{ id: "q1", selected: ["否"] }] });
+  });
+});
+
+describe("ApprovalCenter：后台任务的提问和审批（3b）", () => {
+  const qPayload = JSON.stringify([{ id: "answer", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }]);
+  const taskQuestion = (c: ApprovalCenter) => c.create({ kind: "question", ...base, tool: "task_report", detail: "报告用中文还是英文？", payload: qPayload, taskId: "t_1", runId: "r_1", blocking: false, ttlMs: 0 });
+
+  it("任务的提问不过期、重启后还在；阻塞的照旧作废", () => {
+    let now = 1_000;
+    const c = new ApprovalCenter(store, { ttlMs: 1000, now: () => now });
+    const q = taskQuestion(c);
+    expect(q).toMatchObject({ expiresAt: 0, blocking: false, taskId: "t_1", runId: "r_1" });
+    const a = c.create({ kind: "approval", ...base, taskId: "t_1", runId: "r_1" });
+    expect(a.blocking).toBe(true);
+    now += 10 * 3600_000;
+    c.sweep();
+    expect(store.getApproval(q.id)!.status).toBe("pending");
+    expect(store.getApproval(a.id)!.status).toBe("expired");
+    const c2 = new ApprovalCenter(store);
+    c2.start();
+    c2.stop();
+    expect(store.getApproval(q.id)!.status).toBe("pending");
+    expect(c2.pendingForTask("t_1").map((r) => r.id)).toEqual([q.id]);
+  });
+
+  it("任务的提示不进聊天回合的出口（由任务服务推），新建和决定都通知订阅者", async () => {
+    const c = new ApprovalCenter(store);
+    const sunk: string[] = [];
+    const events: string[] = [];
+    c.bindSink(base.conversationId, async (r) => void sunk.push(r.id));
+    c.listen((e) => events.push(`${e.type}:${e.row.status}`));
+    const chat = c.create({ kind: "approval", ...base });
+    const q = taskQuestion(c);
+    expect(sunk).toEqual([chat.id]);
+    c.answerText(q.id, "2", "web");
+    expect(events).toEqual(["created:pending", "created:pending", "decided:answered"]);
+    expect(JSON.parse(store.getApproval(q.id)!.result)).toEqual({ answers: [{ id: "answer", selected: ["英文"] }] });
+    // 中止、/reset 只作废聊天回合的
+    expect(c.pendingChat(base.conversationId).map((r) => r.id)).toEqual([chat.id]);
+  });
+
+  it("任务的提问：随便回一句不算；引用、编号开头、或它是最后一条消息时的选项编号 / 原文才算", () => {
+    const c = new ApprovalCenter(store);
+    const q = taskQuestion(c);
+    let latest = false;
+    const ctx = { latest: () => latest, quotes: (_r: any, quote: string) => quote.includes("中文还是英文"), answered: () => "收到" };
+    const conv = base.conversationId;
+    expect(c.handleReply(conv, "你好", "u1", ctx)).toEqual({ handled: false });
+    expect(c.handleReply(conv, "1", "u1", ctx)).toEqual({ handled: false });
+    expect(c.handleReply(conv, "y", "u1", ctx)).toEqual({ handled: false });
+    latest = true;
+    expect(c.handleReply(conv, "你好", "u1", ctx)).toEqual({ handled: false });
+    expect(c.handleReply(conv, "3", "u1", ctx)).toEqual({ handled: false });
+    expect(c.handleReply(conv, "英文", "u1", ctx)).toEqual({ handled: true, ack: "收到" });
+    expect(JSON.parse(store.getApproval(q.id)!.result).answers[0].selected).toEqual(["英文"]);
+    const q2 = taskQuestion(c);
+    latest = false;
+    expect(c.handleReply(conv, `${q2.code}：都要`, "u1", ctx)).toEqual({ handled: true, ack: "收到" });
+    expect(JSON.parse(store.getApproval(q2.id)!.result).answers[0]).toEqual({ id: "answer", selected: [], custom: "都要" });
+    const q3 = taskQuestion(c);
+    expect(c.handleReply(conv, "> 中文还是英文？\n先用中文", "u1", { ...ctx, quote: "报告用中文还是英文？", plain: "先用中文" })).toEqual({ handled: true, ack: "收到" });
+    expect(JSON.parse(store.getApproval(q3.id)!.result).answers[0]).toEqual({ id: "answer", selected: [], custom: "先用中文" });
+  });
+
+  it("聊天回合在等的提问优先：随便一句都算它的（任务的提问只在引用、编号时才抢）", () => {
+    const c = new ApprovalCenter(store);
+    const tq = taskQuestion(c);
+    const chat = c.create({ kind: "question", ...base, tool: "", detail: "", payload: JSON.stringify([{ id: "q1", question: "继续吗？" }]) });
+    const ctx = { latest: () => true };
+    expect(c.handleReply(base.conversationId, "继续", "u1", ctx).handled).toBe(true);
+    expect(store.getApproval(chat.id)!.status).toBe("answered");
+    expect(store.getApproval(tq.id)!.status).toBe("pending");
+  });
+
+  it("任务的审批：y 编号总能批；光回 y 只在它是最后一条消息时；引用时要 y / n", () => {
+    const c = new ApprovalCenter(store);
+    const a = c.create({ kind: "approval", ...base, taskId: "t_1", runId: "r_1", ttlMs: 12 * 3600_000 });
+    let latest = false;
+    const ctx = { latest: () => latest, quotes: () => true };
+    expect(c.handleReply(base.conversationId, "ok", "u1", { latest: () => latest })).toEqual({ handled: false });
+    latest = true;
+    expect(c.handleReply(base.conversationId, "n", "u1", ctx)).toEqual({ handled: true, ack: `❌ 已拒绝 ${a.code}` });
+    const b = c.create({ kind: "approval", ...base, taskId: "t_1", runId: "r_1" });
+    expect(c.handleReply(base.conversationId, "看看再说", "u1", { ...ctx, quote: "需批准", plain: "看看再说" })).toEqual({ handled: true, ack: `回复 y ${b.code} 批准，n ${b.code} 拒绝` });
+    latest = false;
+    expect(c.handleReply(base.conversationId, `y ${b.code}`, "u1", ctx)).toEqual({ handled: true, ack: `✅ 已批准 ${b.code}（仅本次）` });
+  });
+
+  it("任务推给用户的提示样式", () => {
+    const c = new ApprovalCenter(store);
+    expect(taskPromptText(taskQuestion(c), "GPU 价格调研")).toBe("❓「GPU 价格调研」想问你：报告用中文还是英文？\n1. 中文\n2. 英文\n（回复编号，或引用这条消息回答）");
+    const a = c.create({ kind: "approval", ...base, detail: "rm -rf build/", taskId: "t_1" });
+    expect(taskPromptText(a, "清理旧构建")).toBe(`需批准（任务「清理旧构建」）：\`rm -rf build/\` — 回复 y ${a.code} / n ${a.code}`);
+    expect(isOptionReply([{ id: "a", question: "颜色", options: [{ label: "红" }, { label: "蓝" }], multiSelect: true }], "1, 2")).toBe(true);
+    expect(isOptionReply([{ id: "a", question: "颜色", options: [{ label: "红" }, { label: "蓝" }] }], "1, 2")).toBe(false);
+    expect(isOptionReply([{ id: "a", question: "名字" }], "1")).toBe(false);
   });
 });
 

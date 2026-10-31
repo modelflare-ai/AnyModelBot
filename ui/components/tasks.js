@@ -55,14 +55,16 @@ export function TaskDetail({ task, onChanged }) {
   }, [task.id, working, task.updatedAt]);
   const now = Date.now();
   const runs = d?.runs || [];
+  // 取到的最新状态（「需要你」里只给了 id）
+  const view = d?.task || task;
   const stop = async () => {
     setStopping(true);
     if (await stopTask(task)) onChanged?.();
     setStopping(false);
   };
   return html`<div class="task-detail">
-    ${task.latest && html`<div class="task-line"><span class="t-label">最新进展</span><span class="v selectable">${task.latest}</span></div>`}
-    <div class="task-line"><span class="t-label">文件夹</span><span class="v mono selectable">${task.folder}</span></div>
+    ${view.latest && html`<div class="task-line"><span class="t-label">最新进展</span><span class="v selectable">${view.latest}</span></div>`}
+    ${view.folder && html`<div class="task-line"><span class="t-label">文件夹</span><span class="v mono selectable">${view.folder}</span></div>`}
     ${runs.map(
       (r, i) => html`<${ActivityLine} key=${r.id + (r.state === "ended" ? ":e" : "")} label=${runLabel(r, i, now)} live=${r.state === "running" || r.state === "settling"} count=${r.steps}
         load=${() => api(`/tasks/${encodeURIComponent(task.id)}/runs/${encodeURIComponent(r.id)}/activity`).then((x) => x.steps)} />`,

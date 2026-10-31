@@ -3,9 +3,9 @@
 [README.md](../../README.md)（中文）和 [README_en.md](../../README_en.md)（英文）共用这里的素材。应用界面目前只有简体中文，所以截图和录屏没有英文版。
 
 - **脚本生成**：品牌、图表和机器人形象由 [`_src/make-assets.py`](./_src/make-assets.py) 生成，改了规格就重新运行它，不要手工修图。
-- **人工录制**：应用截图和功能录屏要在真实环境里录（录制环境与编码流程见下文）。录好后放到对应路径，跑 `npm run docs:check` 核对尺寸与体积。
+- **录制脚本**：应用截图和功能 GIF 由 [`_src/record/`](./_src/record/README.md) 录制：真实的 `ui/` 界面 + 演示数据的模拟后端 + 无头 Chromium，用法见文末。也可以换成实机录屏（录制环境与编码流程见下文），放到对应路径即可。
 
-素材全部到位之前，CI 用 `npm run docs:check -- --allow-missing`，缺的文件只报警告。全部提交后去掉 `--allow-missing`（见 `.github/workflows/ci.yml`）。
+改了素材之后跑 `npm run docs:check`（CI 也会跑）核对是否存在、尺寸与体积。
 
 ## 总表
 
@@ -16,18 +16,18 @@
 | 3 | `brand/wordmark-light.svg` | SVG（文字转曲线） | viewBox 520×96 | — | — | 12 KB | 脚本 |
 | 4 | `brand/wordmark-dark.svg` | SVG（文字转曲线） | viewBox 520×96 | — | — | 12 KB | 脚本 |
 | 5 | `brand/social-preview.png` | PNG | 1280×640 | — | — | 400 KB | 脚本 |
-| 6 | `hero/hero-demo.gif` | GIF | 960×656 | 20 s | 12 | 5 MB | 录制 G1 |
+| 6 | `hero/hero-demo.gif` | GIF | 960×656 | 20 s | 12 | 5 MB | 录制脚本 G1（`_src/record`） |
 | 7 | `modelflare/modelflare-logo.png` | PNG | 512×512（显示 120×120） | — | — | 40 KB | 原样取自 `https://modelflare.dev/logo.png` |
-| 8 | `download/install-windows.gif` | GIF | 960×540 | 12 s | 10 | 2.5 MB | 录制 G2 |
-| 9–18 | `screenshots/{chat,agent,models,memory,modelflare}-{light,dark}.webp` | 静态 WebP（质量 82） | 1600×1093 | — | — | 300 KB | 截图 |
+| 8 | `download/install-windows.gif` | GIF | 960×540 | 12 s | 10 | 2.5 MB | 录制脚本 G2（`_src/record`） |
+| 9–18 | `screenshots/{chat,agent,models,memory,modelflare}-{light,dark}.webp` | 静态 WebP（质量 82） | 1600×1093 | — | — | 300 KB | 录制脚本截图（`_src/record`） |
 | 19–20 | `screenshots/bots-{light,dark}.webp` | 静态 WebP（质量 82） | 1600×480 | — | — | 300 KB | 脚本 |
-| 21 | `features/agent-files.gif` | GIF | 960×656 | 15 s | 10 | 3 MB | 录制 G3 |
-| 22 | `features/computer-use.gif` | GIF | 960×540 | 18 s | 10 | 3 MB | 录制 G4 |
-| 23 | `features/media-generation.gif` | GIF | 960×656 | 14 s | 10 | 3 MB | 录制 G5 |
-| 24 | `features/first-run.gif` | GIF | 960×656 | 16 s | 10 | 3 MB | 录制 G6 |
-| 25 | `features/model-switch.gif` | GIF | 960×656 | 12 s | 10 | 3 MB | 录制 G7 |
-| 26 | `features/memory.gif` | GIF | 960×656 | 16 s | 10 | 3 MB | 录制 G8 |
-| 27 | `features/channels-wechat.gif` | GIF | 960×540 | 18 s | 10 | 3 MB | 录制 G9 |
+| 21 | `features/agent-files.gif` | GIF | 960×656（体积超限，按下文顺序压到 800×547、8 fps） | 15 s | 10 | 3 MB | 录制脚本 G3（`_src/record`） |
+| 22 | `features/computer-use.gif` | GIF | 960×540 | 18 s | 10 | 3 MB | 录制脚本 G4（`_src/record`） |
+| 23 | `features/media-generation.gif` | GIF | 960×656 | 14 s | 10 | 3 MB | 录制脚本 G5（`_src/record`） |
+| 24 | `features/first-run.gif` | GIF | 960×656 | 16 s | 10 | 3 MB | 录制脚本 G6（`_src/record`） |
+| 25 | `features/model-switch.gif` | GIF | 960×656 | 12 s | 10 | 3 MB | 录制脚本 G7（`_src/record`） |
+| 26 | `features/memory.gif` | GIF | 960×656（体积超限，按下文顺序压到 800×547、8 fps） | 16 s | 10 | 3 MB | 录制脚本 G8（`_src/record`） |
+| 27 | `features/channels-wechat.gif` | GIF | 960×540 | 18 s | 10 | 3 MB | 录制脚本 G9（`_src/record`） |
 | 28 | `features/characters-eyes.gif` | GIF | 960×300 | 6 s | 15 | 1.5 MB | 脚本 |
 | 29–30 | `diagrams/data-flow-{light,dark}.svg` | SVG（文字转曲线） | viewBox 1200×520 | — | — | 60 KB | 脚本 |
 | 31–32 | `diagrams/architecture-{light,dark}.svg` | SVG（文字转曲线） | viewBox 1200×520 | — | — | 60 KB | 脚本 |
@@ -161,3 +161,16 @@ cwebp -q 82 -resize 1600 1093 in.png -o chat-light.webp
 | 文件 | 作用 |
 |---|---|
 | `make-assets.py` | 生成 Eyes 标志（SVG + 动画 WebP）、字标、社交预览图、数据流与架构图、机器人横排图和眼睛跟随 GIF，并下载 Modelflare 标志。用法见文件开头注释 |
+
+### `_src/record/`：截图与 GIF 的录制工具
+
+上表来源写着「录制脚本」的 19 个素材由 [`_src/record/`](./_src/record/README.md) 生成：加载仓库里真实的 `ui/` 界面，接一个用演示数据实现 `/amb/api/*` 的模拟后端，无头 Chromium 驱动鼠标键盘并逐帧录制，再用 Pillow 按上面的规格编码。依赖：Node.js ≥ 22、preact 与 htm（`npm ci`）、playwright-core 1.64 及对应的 Chromium、Python 3 + Pillow ≥ 10、Noto Sans SC 字体。
+
+```bash
+node docs/assets/_src/record/record.mjs                # 录全部
+node docs/assets/_src/record/record.mjs model-switch   # 只重录名字里含这段文字的素材
+node docs/assets/_src/record/record.mjs --list         # 列出全部素材
+node docs/assets/_src/record/record.mjs --check        # 不开浏览器，核对尺寸、帧数、时长、体积和空白帧
+```
+
+环境变量、每个文件的作用、和卡片不一致的画面（按应用的真实行为录）、哪些窗口是风格化示意，见 [`_src/record/README.md`](./_src/record/README.md)。

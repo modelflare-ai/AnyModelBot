@@ -186,6 +186,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 - **Real file work.** Bots read and write files, run commands in a sandbox, and send the results back to the chat as files.
 - **Three permission presets per bot.** *Read-only*, *Workspace* (the default: write inside the bot's own folder, ask before anything outside) and *Full access* (no sandbox; recursive deletes still ask first).
 - **Approval cards, not surprises.** Out-of-bounds actions stop and wait for your answer.
+- **Told after a restart.** A message still in progress when the app quit or crashed is flagged in its conversation at the next start, so you can send it again; nothing is redone on its own.
 - **Slash commands** such as `/model` and `/reset` work in the app and in WeChat and Feishu chats.
 
 <p align="center">
@@ -195,7 +196,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 ## 🖥️ Operates your computer, and makes images and video
 
 - **Computer use** is powered by the bundled [Cua Driver](https://github.com/trycua/cua). By default, actions run automatically. Switch a bot to *ask before changing the screen* and every click and keystroke waits for you. Reading the screen never needs approval. On macOS, computer use is a Beta feature.
-- **Image and video generation** asks before every run, so you see the model and prompt first and can swap the model on the spot.
+- **Image and video generation** runs right away with the default model at a normal cost. It asks first when switching models, when the estimated cost is high or when the request is unclear, so you see the model and prompt and can swap the model on the spot. To be asked every time, turn it on in the bot's settings.
 
 <p align="center">
   <img src="docs/assets/features/computer-use.gif" alt="A bot opens Notepad, types a short note and saves it, while an approval card asks before each click and keystroke" width="100%">

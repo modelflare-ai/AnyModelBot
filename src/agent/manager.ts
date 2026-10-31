@@ -929,6 +929,8 @@ export class AgentManager {
       cancel: async (botId, sessionId) => void (await this.hosts.get(botId)?.cancelTask(sessionId)),
       quiet: (botId, sessionId) => this.hosts.get(botId)?.taskQuiet(sessionId) ?? Promise.resolve({ quiet: true }),
       runEnded: (botId) => void this.hosts.get(botId)?.restartIfStale().catch(() => undefined),
+      sessionBytes: (botId, taskId) => this.host(botId).taskSessionBytes(taskId),
+      removeSessions: (botId, taskId) => this.host(botId).removeTaskSessions(taskId),
     };
   }
 

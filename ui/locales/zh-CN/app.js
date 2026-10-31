@@ -9,6 +9,8 @@ export default {
   cmd: {
     needs: "需要你（{count}）",
     needsKeys: "needs attention 需要你 待办",
+    tasks: "任务和规则",
+    tasksKeys: "tasks rules background 任务 规则 后台",
     settings: "打开设置",
     settingsKeys: "settings preferences 设置 偏好",
     newBot: "新建机器人",

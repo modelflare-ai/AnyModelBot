@@ -23,8 +23,10 @@ import { pwshProbe, type PwshMode, type PwshStatus } from "../agent/pwsh.js";
 import { peerName, shortPeer, whoText } from "../core/access.js";
 import type { AccessEntry, RuleMode } from "../store/db.js";
 import { normalizeSchedule, type Schedule } from "../tasks/schedule.js";
+import { exportFileName } from "../tasks/export.js";
+import type { StageGroup } from "../tasks/stage.js";
 import { GUIDE_STEPS, deriveGuide, isGuideStep, mergeGuide, normalizeGuide, type GuideState } from "../guide.js";
-import { normalizeLang, requestLang, setLangPref, t, type LangPref, t as tr } from "../i18n/index.js";
+import { normalizeLang, requestLang, setLangPref, t, withLang, type LangPref, t as tr } from "../i18n/index.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -88,6 +90,18 @@ async function readJson(req: http.IncomingMessage): Promise<any> {
 function send(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(body));
+}
+
+/** 下载一份 Markdown（3f 的导出）：文件名用 RFC 5987 编码，中文标题照样 */
+function sendMarkdown(res: http.ServerResponse, title: string, text: string): void {
+  const name = exportFileName(title);
+  const ascii = name.replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "_");
+  res.writeHead(200, {
+    "content-type": "text/markdown; charset=utf-8",
+    "cache-control": "no-store",
+    "content-disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+  });
+  res.end(text);
 }
 
 function publicBot(b: NonNullable<ReturnType<App["store"]["getBot"]>>) {
@@ -469,6 +483,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           ? app.agent.approvals.answer(item.approvalId!, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
           : app.agent.approvals.answerText(item.approvalId!, String(b.text ?? ""), "web");
       } else if (item.kind === "delivery" && (action === "retry" || action === "dismiss")) ok = app.delivery.act(item.id, action);
+      // 清理任务文件夹（3f）：保留（再算 30 天）、知道了（到时照样清理）
+      else if (item.kind === "cleanup") ok = action === "keep" ? app.tasks.keepCleanup(item.botId) : app.tasks.dismissCleanup(item.botId);
       else if (item.kind === "rule" && action === "retry") ok = !app.tasks.resumeRule(item.ruleId!).error;
       // 加预算接着做：规则每月再给 $3，任务再给 $1
       else if (item.kind === "rule" && action === "continue") ok = !app.tasks.addRuleBudget(item.ruleId!).error;
@@ -479,16 +495,20 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       app.attention.kick();
       return send(res, 200, { ok: true, items: app.attention.list() });
     }
-    // —— 后台任务（3a：列表、详情、一个 run 的步骤、停止）——
+    // —— 后台任务（3a：列表、详情、一个 run 的步骤、停止；3f：分组、大小、改预算、保留、打开文件夹、删除、导出）——
     if (seg[0] === "tasks") {
       if (seg.length === 1 && m === "GET") {
         const recent = url.searchParams.get("recent");
+        // group=working|needs|ended（可以用逗号写几组）：进行中、等你、结束了（归档了的不列）
+        const groups = (url.searchParams.get("group") || "").split(",").map((g) => g.trim()).filter(Boolean);
+        if (groups.some((g) => !["working", "needs", "ended"].includes(g))) throw new HttpError(400, tr("web.badGroup"));
         return send(res, 200, {
           tasks: app.tasks.list({
             botId: url.searchParams.get("bot") || undefined,
             conversationId: url.searchParams.get("conversation") || undefined,
             since: recent ? Date.now() - Math.min(30, Math.max(0, Number(recent) || 1)) * 86400_000 : undefined,
             limit: Math.min(100, Number(url.searchParams.get("limit")) || 50),
+            group: groups as StageGroup[],
           }),
         });
       }
@@ -498,14 +518,44 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         const runs = app.store
           .listRuns({ taskId: task.id })
           .map((r) => ({ id: r.id, cause: r.cause, state: r.state, outcome: r.outcome, error: r.error, costUsd: r.costUsd, queuedAt: r.queuedAt, startedAt: r.startedAt, endedAt: r.endedAt, steps: app.tasks.activity(r.id).length }));
-        return send(res, 200, { task, runs });
+        // 来自（渠道、时间、原话）、文件夹和会话记录的大小、能不能在系统里打开文件夹（桌面版）
+        return send(res, 200, { task, runs, origin: app.tasks.origin(task.id), sizes: app.tasks.sizes(task.id), canOpen: !!app.desktop?.openPath });
       }
-      // 加预算（3e）：{addUsd}，默认 $1；停在预算上的任务接着做
+      // 删掉任务：在跑的先停下，文件夹、会话记录、运行记录一起删
+      if (seg.length === 2 && m === "DELETE") {
+        await app.tasks.deleteTask(task.id, "web");
+        return send(res, 200, { ok: true });
+      }
+      // 预算（3e、3f）：{addUsd} 加多少（默认 $1），或 {budgetUsd} 改成多少；停在预算上的任务接着做
       if (seg.length === 3 && seg[2] === "budget" && m === "POST") {
         const b = await readJson(req);
-        const r = await app.tasks.addBudget(task.id, b.addUsd === undefined ? undefined : Number(b.addUsd), "web");
+        const r =
+          b.budgetUsd !== undefined
+            ? await app.tasks.setBudget(task.id, Number(b.budgetUsd), "web")
+            : await app.tasks.addBudget(task.id, b.addUsd === undefined ? undefined : Number(b.addUsd), "web");
         if (r.error) throw new HttpError(400, r.error);
         return send(res, 200, { task: r.task });
+      }
+      // 保留文件夹：定了清理的不清理了，从现在起再算 30 天
+      if (seg.length === 3 && seg[2] === "keep" && m === "POST") {
+        const v = app.tasks.keepFolder(task.id);
+        if (!v) throw new HttpError(409, tr("web.couldntComplete"));
+        return send(res, 200, { task: v });
+      }
+      // 在系统的文件管理器里打开任务文件夹（桌面版）
+      if (seg.length === 3 && seg[2] === "open" && m === "POST") {
+        const dir = app.tasks.folderPath(task.id);
+        if (!app.desktop?.openPath) throw new HttpError(400, tr("web.desktopOnly"));
+        if (!dir) throw new HttpError(404, tr("web.taskNotFound"));
+        fs.mkdirSync(dir, { recursive: true });
+        app.desktop.openPath(dir);
+        return send(res, 200, { ok: true });
+      }
+      // 导出成 Markdown：?lang= 是界面的语言（下载链接带不了请求头）
+      if (seg.length === 3 && seg[2] === "export" && m === "GET") {
+        const r = withLang(normalizeLang(url.searchParams.get("lang")), () => app.tasks.exportTask(task.id));
+        if (!r) throw new HttpError(404, tr("web.taskNotFound"));
+        return sendMarkdown(res, r.title, r.text);
       }
       if (seg.length === 5 && seg[2] === "runs" && seg[4] === "activity" && m === "GET") {
         const run = app.store.getRun(decodeURIComponent(seg[3]));
@@ -539,6 +589,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           kind: b.kind === "remind" ? "remind" : "check",
           message: String(b.message ?? ""),
           schedule: scheduleOf(b.schedule, app.delivery.timeZone),
+          ...(b.runBudgetUsd !== undefined ? { runBudgetUsd: Number(b.runBudgetUsd) } : {}),
+          ...(b.monthBudgetUsd !== undefined ? { monthBudgetUsd: Number(b.monthBudgetUsd) } : {}),
         });
         if (!r.rule) throw new HttpError(400, r.error ?? t("rules.createFailed"));
         return send(res, 200, { rule: app.tasks.getRuleView(r.rule.id) });
@@ -576,6 +628,12 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       if (seg.length === 3 && seg[2] === "runs" && m === "GET") {
         const before = Number(url.searchParams.get("before")) || undefined;
         return send(res, 200, { runs: app.tasks.ruleLog(rule.id, { before, limit: Math.min(100, Number(url.searchParams.get("limit")) || 20) }) });
+      }
+      // 运行记录导出成 Markdown（3f）
+      if (seg.length === 3 && seg[2] === "export" && m === "GET") {
+        const r = withLang(normalizeLang(url.searchParams.get("lang")), () => app.tasks.exportRule(rule.id));
+        if (!r) throw new HttpError(404, t("rules.notFound"));
+        return sendMarkdown(res, r.title, r.text);
       }
       if (seg.length === 5 && seg[2] === "runs" && seg[4] === "activity" && m === "GET") {
         const run = app.store.getRun(decodeURIComponent(seg[3]));

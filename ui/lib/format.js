@@ -46,3 +46,19 @@ export function fmtTime(at) {
 export function fmtTimeOfDay(at) {
   return at ? new Date(at).toLocaleTimeString(locale(), { hour12: false }) : "";
 }
+
+/** 只有日期："11月4日"（英文：Nov 4） */
+export function fmtDay(at) {
+  return at ? dateFmt({ month: locale() === "en" ? "short" : "long", day: "numeric" }).format(new Date(at)) : "";
+}
+
+/** 文件大小："900 B" / "12 KB" / "2.4 MB" / "1.1 GB" */
+export function fmtSize(n) {
+  const v = Number(n) || 0;
+  if (v < 1024) return `${v} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let x = v / 1024;
+  let i = 0;
+  while (x >= 1024 && i < units.length - 1) (x /= 1024), i++;
+  return `${x >= 10 ? Math.round(x) : x.toFixed(1)} ${units[i]}`;
+}

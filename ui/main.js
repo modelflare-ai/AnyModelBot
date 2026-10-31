@@ -338,6 +338,8 @@ function App() {
     { label: t("app.cmd.newBot"), kbd: isMac ? "⌘N" : "Ctrl+N", keys: t("app.cmd.newBotKeys"), run: newBot },
     ...(needs.n > 0 ? [{ label: t("app.cmd.needs", { count: needs.n }), keys: t("app.cmd.needsKeys"), run: openNeeds }] : []),
     ...(route.view === "chat" ? [{ label: infoOpen ? t("app.cmd.closeInfo") : t("app.cmd.openInfo"), kbd: isMac ? "⌘⇧I" : "Ctrl+Shift+I", keys: t("app.cmd.infoKeys"), run: () => setInfoOpen((v) => !v) }] : []),
+    // 任务和规则在当前机器人的信息面板里（「任务」组）
+    ...(bot ? [{ label: t("app.cmd.tasks"), keys: t("app.cmd.tasksKeys"), run: () => (openChat(bot.id), setInfoOpen(true)) }] : []),
     ...(bot ? [{ label: t("app.cmd.botSettings", { name: bot.name }), keys: t("app.cmd.botSettingsKeys"), run: () => openBotSettings(bot.id) }] : []),
     { label: t("app.cmd.modelflare"), keys: t("app.cmd.modelflareKeys"), run: () => openSettings("modelflare") },
     { label: t("app.cmd.appearance"), keys: t("app.cmd.appearanceKeys"), run: () => openSettings("appearance") },

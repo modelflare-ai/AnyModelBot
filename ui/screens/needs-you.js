@@ -2,6 +2,7 @@
 // 没事时侧栏没有这一行，直接打开这一页只有一句「没有需要你处理的事」。状态是"点 + 文字"：黄 = 等你，红 = 失败 / 登录过期。
 // 预算（3e）：任务预算用完是一个提问（「已用约 $1.00，再给 $1 继续？」继续 / 停止）；规则本月预算用完可以继续；
 // 机器人的预算留给聊天、后台工作停着的，去机器人设置调整预算。
+// 清理（3f）：任务文件夹 30 天没动过、过几天删除的，一个机器人一行，可以保留或知道了（不推送，只在这里说一次）。
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, Button, Skeleton } from "../components/ui.js";
 import { TaskDetail } from "../components/tasks.js";
@@ -81,6 +82,8 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenB
       ${item.kind === "delivery" && item.actions.includes("retry") && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
       ${item.kind === "delivery" && item.actions.includes("dismiss") && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.dismiss")}</button>`}
       ${item.kind === "login" && html`<${Button} onClick=${() => onRelogin?.(item.botId)}>${t("needs.relogin")}<//>`}
+      ${item.kind === "cleanup" && html`<${Button} loading=${busy === "keep"} disabled=${!!busy} onClick=${() => act("keep")}>${t("needs.keep")}<//>
+        <button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.seen")}</button>`}
     </div>
     ${writing && html`<div class="need-reply">
       <input ref=${input} class="field" placeholder=${t("needs.answerPlaceholder")} value=${text} disabled=${busy === "text"}

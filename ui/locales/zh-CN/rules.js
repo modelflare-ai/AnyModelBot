@@ -52,4 +52,8 @@ export default {
   weixinNote: "微信只在你 24 小时内发过消息时才能主动发给你；否则会在你下次发消息时一起送到，并显示在桌面端。",
   create: "建好",
   gone: "规则已经删了",
+  export: "导出",
+  budget: "预算",
+  perRun: "每次",
+  perMonth: "每月",
 };

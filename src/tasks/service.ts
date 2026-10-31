@@ -24,6 +24,10 @@
  *   推给会话、在「需要你」里，回答「继续」加预算接着做，「停止」停掉）；规则每次运行 $0.10（这次以 budget 结束，算一次失败），
  *   每月 $3（暂停，「需要你」里一行，下个月自动恢复）。机器人有 Modelflare 预算 Key 时，剩下的不到 20% 就停后台工作，留给聊天。
  *   任务每次运行最多 4 小时（等人批准的时间不算），到了算失败。
+ *
+ * - 保留与清理（3f，决定 9，见 retention.ts）：30 天没动过的任务归档、运行记录只留 30 天；任务文件夹 30 天没动过就清理，
+ *   清理前在「需要你」里告诉用户一次（可以保留），连同 DSH 里的会话记录。界面里删任务也删它的文件夹。规则的运行记录、
+ *   任务的每次运行可以导出成 Markdown（export.ts）。
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -54,7 +58,7 @@ import {
   type Rates,
 } from "./cost.js";
 import { DEFAULT_MAX_BACKGROUND, pickRuns, priorityOf } from "./slots.js";
-import { taskStage, type Stage } from "./stage.js";
+import { taskStage, type Stage, type StageGroup } from "./stage.js";
 import { MAX_GRACE_MS, graceOf, localTime, nextRun, latestRun, parseSchedule, type Schedule } from "./schedule.js";
 import { Scheduler } from "./scheduler.js";
 import { matchesFilter, type RuleEvent } from "./rule-events.js";
@@ -81,7 +85,9 @@ import {
   type RuleRunView,
   type RuleView,
 } from "./rules.js";
-import { t as tr } from "../i18n/index.js";
+import { lang, t as tr } from "../i18n/index.js";
+import { KEEP_MS, SWEEP_MS, WARN_MS, dirBytes, hasFiles, taskFolder } from "./retention.js";
+import { ruleMarkdown, taskMarkdown, type ExportedTaskRun } from "./export.js";
 
 const log = logger("tasks");
 
@@ -124,6 +130,10 @@ export interface TaskHost {
   quiet(botId: string, sessionId: string): Promise<{ quiet: boolean; jobs?: string[] }>;
   /** 这个机器人的一个 run 结束了：代理进程完全空闲、开过的会话又多了，就换一个新的（host.ts restartIfStale） */
   runEnded?(botId: string): void;
+  /** 3f：任务的会话在 DSH 里的记录占多大（字节；没有就是 0） */
+  sessionBytes?(botId: string, taskId: string): number;
+  /** 3f：删掉任务的会话记录（SDK 没有删会话的接口，宿主直接删目录）；会话还开在当前代理进程里时不删、返回 false，下次清理再删 */
+  removeSessions?(botId: string, taskId: string): boolean;
 }
 
 /** DSH 的一条通知（SDK 的 session.event / session.status / subagent.*） */
@@ -184,6 +194,8 @@ export interface TaskView {
   /** 估算已花的、预算（美元） */
   spentUsd: number;
   budgetUsd: number;
+  /** 3f：文件夹定在什么时候清理（30 天没动过、告诉过用户）；0 = 没定 */
+  cleanupAt: number;
   /** 正在跑的那个 run：开始时间与步数 */
   live?: { runId: string; since: number; steps: number; current?: ActivityStep };
 }
@@ -259,6 +271,10 @@ export function slugOf(title: string): string {
 }
 
 const NOTES = "task-notes:";
+/** 还没删掉的会话记录（"<机器人>:<任务>"，会话开在代理进程里时删不了，下次清理再删） */
+const TRASH = "tasks:session-trash";
+/** 「需要你」里清理文件夹那一行点过「知道了」：到哪个清理时间为止不再显示（每个机器人一个） */
+const CLEANUP_SEEN = "tasks:cleanup-seen:";
 
 /** 预算用完时的回答：不要了 */
 const STOP_WORDS = /^(停止|停|不用了?|不要了?|算了|取消|stop|no|cancel)[。.!！]*$/i;
@@ -301,6 +317,10 @@ export class TaskService {
   private reserveSince = new Map<string, number>();
   /** 刚被宿主停下的会话：取消到达之前已经发出去的那次模型请求，花费照样记到这个 run 上（几分钟内） */
   private halted = new Map<string, { runId: string; taskId: string; botId: string; model: string; until: number }>();
+  /** 每小时看一次保留与清理（3f） */
+  private retainTimer: NodeJS.Timeout | undefined;
+  /** 任务文件夹、会话记录有多大（详情每几秒取一次，不用每次都数一遍） */
+  private sizeCache = new Map<string, { at: number; v: { folder: number; sessions: number } }>();
 
   /** 宿主的定时器：规则到点开 run（scheduler.ts） */
   readonly scheduler: Scheduler;
@@ -361,6 +381,11 @@ export class TaskService {
     clearInterval(this.capTimer);
     this.capTimer = setInterval(() => this.checkCaps(), this.o.capCheckMs ?? 60_000);
     this.capTimer.unref?.();
+    // 保留与清理：启动时看一次（应用关着的这些天也算），之后每小时一次
+    this.retain();
+    clearInterval(this.retainTimer);
+    this.retainTimer = setInterval(() => this.retain(), SWEEP_MS);
+    this.retainTimer.unref?.();
   }
 
   /** 应用退出：不再开始新的 run；跑着的留在库里（下次启动时恢复），步骤先存下 */
@@ -369,6 +394,8 @@ export class TaskService {
     this.scheduler.stop();
     clearInterval(this.capTimer);
     this.capTimer = undefined;
+    clearInterval(this.retainTimer);
+    this.retainTimer = undefined;
     this.unlisten?.();
     this.unlisten = undefined;
     for (const l of this.live.values()) {
@@ -487,6 +514,7 @@ export class TaskService {
     const task = this.store.getTask(taskId);
     if (!task) return { error: "task not found" };
     if (task.endReason === "stopped") return { error: tr("tasks.stoppedNoFollowup", { title: task.title }) };
+    if (task.endReason === "archived") return { error: tr("tasks.archivedNoFollowup", { title: task.title }) };
     // 任务在等用户回答：这句话就是回答（回答成为它的新输入，见 onApproval）
     const open = this.o.approvals?.pendingForTask(task.id).find((r) => r.kind === "question" && !r.blocking);
     if (open && this.o.approvals!.answerText(open.id, text.trim(), "followup")) return { how: "answered" };
@@ -499,6 +527,7 @@ export class TaskService {
     const task = this.store.getTask(taskId);
     if (!task) return { error: "task not found" };
     if (task.endReason === "stopped") return { error: tr("tasks.stoppedShort", { title: task.title }) };
+    if (task.endReason === "archived") return { error: tr("tasks.archivedNoFollowup", { title: task.title }) };
     const last = this.store.latestRun(task.id);
     const why = last?.report?.message || last?.error || "";
     const input = this.addInput(task.id, "followup", `[用户让你再试一次]${why ? `\n上次没做完：${clip(oneLine(why), 300)}` : ""}`, true);
@@ -1380,27 +1409,49 @@ export class TaskService {
   }
 
   /**
-   * 加预算（「需要你」里的继续、预算提问的回答、POST /tasks/:id/budget）：预算加上 addUsd（加完还不够已花的，就从已花的再加）；
+   * 加预算（「需要你」里的继续、预算提问的回答、POST /tasks/:id/budget {addUsd}）：预算加上 addUsd（加完还不够已花的，就从已花的再加）；
    * 停在预算上的任务接着做（人的唤醒：continue run，第一条是说明），还在等的那个预算提问作废。没停的只是把预算调高。
    */
   async addBudget(taskId: string, addUsd: number = TASK_BUDGET_STEP_USD, by = "web", text = ""): Promise<{ task?: TaskView; error?: string }> {
+    const add = Number(addUsd);
+    return this.changeBudget(taskId, Number.isFinite(add) && add > 0 && add <= 100, (t) => {
+      const raised = t.budgetUsd + add;
+      return raised > t.spentUsd ? raised : t.spentUsd + add;
+    }, by, text);
+  }
+
+  /**
+   * 改预算（3f：任务详情里改，POST /tasks/:id/budget {budgetUsd}）：预算就是这个数，调低也行（在跑的、花到了就停下问）；
+   * 比已花的多、又停在预算上的，接着做（同加预算）。
+   */
+  async setBudget(taskId: string, budgetUsd: number, by = "web"): Promise<{ task?: TaskView; error?: string }> {
+    const v = Number(budgetUsd);
+    return this.changeBudget(taskId, Number.isFinite(v) && v > 0 && v <= TASK_BUDGET_MAX_USD, () => v, by, "");
+  }
+
+  private async changeBudget(taskId: string, ok: boolean, next: (t: TaskRow) => number, by: string, text: string): Promise<{ task?: TaskView; error?: string }> {
     const task = this.store.getTask(taskId);
     if (!task) return { error: "task not found" };
     if (task.endReason === "stopped") return { error: tr("tasks.stoppedShort", { title: task.title }) };
-    const add = Number(addUsd);
-    if (!Number.isFinite(add) || add <= 0 || add > 100) return { error: tr("tasks.badBudget") };
-    const raised = task.budgetUsd + add;
-    const budget = Math.round(Math.min(TASK_BUDGET_MAX_USD, raised > task.spentUsd ? raised : task.spentUsd + add) * 100) / 100;
+    if (task.endReason === "archived") return { error: tr("tasks.archivedNoFollowup", { title: task.title }) };
+    if (!ok) return { error: tr("tasks.badBudget") };
+    const budget = Math.round(Math.min(TASK_BUDGET_MAX_USD, next(task)) * 100) / 100;
     this.store.updateTask(task.id, { budgetUsd: budget, updatedAt: this.now() });
-    log.info("background task budget raised", { task: task.id, budgetUsd: budget, by });
-    for (const r of this.o.approvals?.pendingForTask(task.id) ?? []) if (r.tool === BUDGET_TOOL) this.o.approvals!.cancel(r.id, by);
-    const last = this.store.latestRun(task.id);
-    if (last?.state === "ended" && last.outcome === "budget") {
-      const jobs = parseSteps(this.store.getRun(last.id)?.activity)
-        .filter((s) => s.kind === "job" && s.cut)
-        .map((s) => clip(oneLine(s.summary || s.title), 120));
-      const input = this.addInput(task.id, "followup", `${resumeNote("budget", jobs)}${text ? `\n\n[用户追加]\n${text.trim()}` : ""}`, true);
-      await this.wake(this.store.getTask(task.id)!, input, "continue");
+    log.info("background task budget changed", { task: task.id, budgetUsd: budget, by });
+    if (budget > task.spentUsd) {
+      for (const r of this.o.approvals?.pendingForTask(task.id) ?? []) if (r.tool === BUDGET_TOOL) this.o.approvals!.cancel(r.id, by);
+      const last = this.store.latestRun(task.id);
+      if (last?.state === "ended" && last.outcome === "budget") {
+        const jobs = parseSteps(this.store.getRun(last.id)?.activity)
+          .filter((s) => s.kind === "job" && s.cut)
+          .map((s) => clip(oneLine(s.summary || s.title), 120));
+        const input = this.addInput(task.id, "followup", `${resumeNote("budget", jobs)}${text ? `\n\n[用户追加]\n${text.trim()}` : ""}`, true);
+        await this.wake(this.store.getTask(task.id)!, input, "continue");
+      }
+    } else {
+      // 调到已花的以下：在跑的这就停下，问要不要加
+      const l = this.liveOf(task.id);
+      if (l) this.checkBudgets(l);
     }
     this.changed(task.id);
     return { task: this.get(task.id) };
@@ -1550,6 +1601,7 @@ export class TaskService {
         actions: ["open"],
       });
     }
+    out.push(...this.cleanupAttention());
     return out;
   }
 
@@ -1593,16 +1645,18 @@ export class TaskService {
       runs: this.store.listRuns({ taskId: task.id }).length,
       spentUsd: task.spentUsd,
       budgetUsd: task.budgetUsd,
+      cleanupAt: task.cleanupAt,
       ...(l && run ? { live: { runId: run.id, since: run.startedAt, steps: l.activity.steps.length, current: l.activity.steps.findLast((s) => s.status === "running") } } : {}),
     };
   }
 
-  /** 任务列表：进行中、等你的在前，再按新旧 */
-  list(o: { botId?: string; conversationId?: string; limit?: number; since?: number } = {}): TaskView[] {
+  /** 任务列表：进行中、等你的在前，再按新旧；group 只要这几组的（GET /tasks?group=，3f）。归档了的不列 */
+  list(o: { botId?: string; conversationId?: string; limit?: number; since?: number; group?: StageGroup[] } = {}): TaskView[] {
     const rank = { working: 0, needs: 1, ended: 2 } as const;
     return this.store
       .listTasks({ botId: o.botId, conversationId: o.conversationId, limit: 200 })
       .map((t) => this.view(t))
+      .filter((v) => !o.group?.length || o.group.includes(v.stage.group))
       .filter((v) => !o.since || v.stage.group !== "ended" || v.updatedAt >= o.since)
       .sort((a, b) => rank[a.stage.group] - rank[b.stage.group] || b.createdAt - a.createdAt)
       .slice(0, o.limit ?? 50);
@@ -1680,6 +1734,240 @@ export class TaskService {
     }
   }
 
+  // ---------- 保留与清理、删除、导出（3f） ----------
+
+  /**
+   * 保留与清理（启动时一次，之后每小时一次；决定 9）：每个没在跑的任务看它多久没动了（最近的输入、结果、改预算、保留）：
+   * - 不到 27 天：什么都不做（之前定了清理的取消：用户又用了它）；
+   * - 文件夹是空的：到 30 天归档（没什么会丢的，不打扰）；
+   * - 有文件、还没告诉过：定在 3 天后（且不早于第 30 天）清理，「需要你」里一行（cleanupAttention）；
+   * - 到了定的时间、也满 30 天了：删文件夹，归档（连同 DSH 里的会话记录）。
+   * 运行记录只留 30 天（本月的规则运行留着：本月花费从它们汇总）。之前删不掉的会话记录（还开在代理进程里）再删一次。
+   */
+  retain(now = this.now()): void {
+    if (!this.started || this.closing) return;
+    this.emptyTrash();
+    for (const task of this.store.listTasks({ limit: 500 })) {
+      if (this.dropped.has(task.botId)) continue;
+      try {
+        this.retainTask(task, now);
+      } catch (e) {
+        log.warn("retention check failed for a task", { task: task.id, message: (e as Error).message.slice(0, 200) });
+      }
+    }
+    const pruned = this.store.pruneRuns(Math.min(now - KEEP_MS, this.monthStart(now)));
+    if (pruned) log.info("old run logs pruned", { runs: pruned });
+  }
+
+  private retainTask(task: TaskRow, now: number): void {
+    const run = this.store.latestRun(task.id);
+    const last = Math.max(task.updatedAt, task.endedAt, run?.endedAt ?? 0, run?.queuedAt ?? 0);
+    const idle = now - last;
+    if ((run && run.state !== "ended") || this.liveOf(task.id) || idle < KEEP_MS - WARN_MS) {
+      if (task.cleanupAt) {
+        this.store.updateTask(task.id, { cleanupAt: 0 });
+        this.changed(task.id);
+      }
+      return;
+    }
+    const dir = taskFolder(this.o.host.workspace(task.botId), task.folder);
+    if (!dir || !hasFiles(dir)) {
+      if (idle >= KEEP_MS) this.archive(task, now);
+      return;
+    }
+    if (!task.cleanupAt) {
+      const at = Math.max(now + WARN_MS, last + KEEP_MS);
+      this.store.updateTask(task.id, { cleanupAt: at });
+      log.info("task folder unused for a while; telling the user before cleaning it up", { task: task.id, at: new Date(at).toISOString() });
+      this.changed(task.id);
+      return;
+    }
+    if (now < task.cleanupAt || idle < KEEP_MS) return;
+    this.removeFolder(task);
+    log.info("task folder cleaned up after 30 idle days", { task: task.id });
+    this.archive(task, now);
+  }
+
+  /** 归档：不再列出、不能再追加；等着的提问作废，输入、DSH 里的会话记录不要了（最近的那个 run 留着，运行记录过 30 天另删） */
+  private archive(task: TaskRow, now: number): void {
+    for (const a of this.o.approvals?.pendingForTask(task.id) ?? []) this.o.approvals!.cancel(a.id, "archived");
+    this.store.updateTask(task.id, { endedAt: task.endedAt || now, endReason: "archived", cleanupAt: 0 });
+    this.store.deleteTaskInputs(task.id);
+    this.trashSessions(task.botId, task.id);
+    this.sizeCache.delete(task.id);
+    log.info("background task archived", { task: task.id });
+    this.changed(task.id);
+  }
+
+  private removeFolder(task: TaskRow): void {
+    const dir = taskFolder(this.o.host.workspace(task.botId), task.folder);
+    if (!dir) return;
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      log.warn("removing a task folder failed", { task: task.id, message: (e as Error).message.slice(0, 200) });
+    }
+  }
+
+  /** 删掉任务在 DSH 里的会话记录；还开在代理进程里的记下来（库里），下次清理再删 */
+  private trashSessions(botId: string, taskId: string): void {
+    if (this.o.host.removeSessions?.(botId, taskId) !== false) return;
+    const list = this.trash();
+    if (!list.includes(`${botId}:${taskId}`)) this.store.setKV(TRASH, JSON.stringify([...list, `${botId}:${taskId}`].slice(-500)));
+  }
+
+  private trash(): string[] {
+    try {
+      const v = JSON.parse(this.store.getKV(TRASH) || "[]");
+      return Array.isArray(v) ? v.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private emptyTrash(): void {
+    const list = this.trash();
+    if (!list.length) return;
+    const left = list.filter((k) => {
+      const i = k.indexOf(":");
+      return this.o.host.removeSessions?.(k.slice(0, i), k.slice(i + 1)) === false;
+    });
+    if (left.length !== list.length) this.store.setKV(TRASH, JSON.stringify(left));
+  }
+
+  /** 保留这个任务的文件夹（任务详情里的「保留」）：从现在起再算 30 天 */
+  keepFolder(taskId: string): TaskView | undefined {
+    const task = this.store.getTask(taskId);
+    if (!task || task.endReason === "archived") return undefined;
+    this.store.updateTask(task.id, { cleanupAt: 0, updatedAt: this.now() });
+    log.info("task folder kept", { task: task.id });
+    this.changed(task.id);
+    return this.get(task.id);
+  }
+
+  /** 「需要你」里的保留：这个机器人定了清理的文件夹都保留 */
+  keepCleanup(botId: string): boolean {
+    const tasks = this.store.listTasks({ botId, limit: 500 }).filter((t) => t.cleanupAt > 0);
+    for (const t of tasks) this.keepFolder(t.id);
+    return tasks.length > 0;
+  }
+
+  /** 「需要你」里的知道了：这一行不再显示（到时照样清理）；之后又有文件夹要清理时再出现 */
+  dismissCleanup(botId: string): boolean {
+    const at = Math.max(0, ...this.store.listTasks({ botId, limit: 500 }).map((t) => t.cleanupAt));
+    if (!at) return false;
+    this.store.setKV(CLEANUP_SEEN + botId, String(at));
+    this.changed(botId);
+    return true;
+  }
+
+  /**
+   * 「需要你」里清理文件夹那一份：一个机器人一行，「2 个任务文件夹 11月4日 删除」，第二行是哪几个任务。不推送：
+   * 只在应用里（和一次系统通知）。可以保留（再算 30 天）或知道了。
+   */
+  private cleanupAttention(): AttentionItem[] {
+    const out: AttentionItem[] = [];
+    const byBot = new Map<string, TaskRow[]>();
+    for (const t of this.store.listTasks({ limit: 500 })) if (t.cleanupAt > 0) byBot.set(t.botId, [...(byBot.get(t.botId) ?? []), t]);
+    const l = lang();
+    for (const [botId, tasks] of byBot) {
+      const seen = Number(this.store.getKV(CLEANUP_SEEN + botId) || 0);
+      if (tasks.every((t) => t.cleanupAt <= seen)) continue;
+      const first = Math.min(...tasks.map((t) => t.cleanupAt));
+      const date = new Intl.DateTimeFormat(l === "en" ? "en-US" : "zh-CN", { month: l === "en" ? "short" : "long", day: "numeric", timeZone: this.timeZone }).format(first);
+      const names = tasks.slice(0, 3).map((t) => t.title);
+      const titles = new Intl.ListFormat(l === "en" ? "en" : "zh-CN", { type: "conjunction" }).format(names) + (tasks.length > 3 ? "…" : "");
+      out.push({
+        id: `cleanup:${botId}`,
+        kind: "cleanup",
+        botId,
+        botName: this.store.getBot(botId)?.name ?? botId,
+        subject: tr("tasks.cleanupSubject", { count: tasks.length, date }),
+        status: "",
+        line: tr("tasks.cleanupLine", { titles }),
+        since: first - WARN_MS,
+        severity: "warn",
+        actions: ["keep", "dismiss"],
+      });
+    }
+    return out;
+  }
+
+  /** 删掉任务（任务详情里的删除）：在跑的先停下，等着的提问、审批作废，没发出去的结果不发了，文件夹和 DSH 里的会话记录、运行记录一起删 */
+  async deleteTask(taskId: string, by: string): Promise<boolean> {
+    const task = this.store.getTask(taskId);
+    if (!task) return false;
+    if (this.liveOf(taskId) || this.queuedRun(taskId)) await this.stopTask(taskId, by);
+    for (const a of this.o.approvals?.pendingForTask(taskId) ?? []) this.o.approvals!.cancel(a.id, "deleted");
+    // 还排着、留着没发出去的结果不发了（「需要你」里那一行也跟着消失）
+    for (const r of this.store.listRuns({ taskId })) if (r.delivery && !r.delivery.endsWith(":dropped")) this.o.delivery?.withdraw(r.delivery, tr("tasks.withdrawHandled"));
+    this.removeFolder(task);
+    this.trashSessions(task.botId, task.id);
+    this.store.deleteTask(taskId);
+    this.sizeCache.delete(taskId);
+    log.info("background task deleted", { task: taskId, by });
+    this.changed(taskId);
+    return true;
+  }
+
+  /** 任务详情里的大小：文件夹、DSH 里的会话记录（字节；半分钟内不重数） */
+  sizes(taskId: string): { folder: number; sessions: number } | undefined {
+    const task = this.store.getTask(taskId);
+    if (!task) return undefined;
+    const now = this.now();
+    const hit = this.sizeCache.get(taskId);
+    if (hit && now - hit.at < 30_000) return hit.v;
+    const dir = taskFolder(this.o.host.workspace(task.botId), task.folder);
+    const v = { folder: dir ? dirBytes(dir) : 0, sessions: this.o.host.sessionBytes?.(task.botId, task.id) ?? 0 };
+    this.sizeCache.set(taskId, { at: now, v });
+    return v;
+  }
+
+  /** 任务的文件夹（绝对路径；不在工作区 tasks/ 下的不给） */
+  folderPath(taskId: string): string | undefined {
+    const task = this.store.getTask(taskId);
+    return task ? taskFolder(this.o.host.workspace(task.botId), task.folder) : undefined;
+  }
+
+  /** 任务从哪来：渠道、请求那条消息的时间和原话 */
+  origin(taskId: string): { channel: string; at: number; text: string } | undefined {
+    const task = this.store.getTask(taskId);
+    const m = task?.originMessageId ? this.store.getMessage(task.originMessageId) : undefined;
+    if (!task || !m) return undefined;
+    return { channel: this.store.getConversation(task.conversationId)?.channel ?? "", at: m.createdAt, text: clip(m.content.trim(), 500) };
+  }
+
+  /** 任务导出成 Markdown：状态、来自、文件夹、每次运行（结果、花费、处理过程） */
+  exportTask(taskId: string): { title: string; text: string } | undefined {
+    const task = this.store.getTask(taskId);
+    if (!task) return undefined;
+    const origin = this.origin(taskId);
+    const ch = origin?.channel;
+    const runs: ExportedTaskRun[] = this.store.listRuns({ taskId }).map((r) => ({
+      cause: r.cause,
+      outcome: r.state === "ended" ? r.outcome : "",
+      error: r.error,
+      message: r.report?.message ?? "",
+      summary: r.report?.summary ?? "",
+      question: r.report?.question?.question ?? "",
+      costUsd: r.costUsd,
+      queuedAt: r.queuedAt,
+      startedAt: r.startedAt,
+      endedAt: r.endedAt,
+      steps: this.activity(r.id),
+    }));
+    const channel = ch === "weixin" ? tr("tasks.chWeixin") : ch === "feishu" ? tr("tasks.chFeishu") : ch ? tr("tasks.chWeb") : "";
+    return { title: task.title, text: taskMarkdown(this.view(task), origin && { ...origin, channel }, runs, this.timeZone, this.now()) };
+  }
+
+  /** 规则的运行记录导出成 Markdown（留着的都导出：30 天） */
+  exportRule(ruleId: string): { title: string; text: string } | undefined {
+    const rule = this.store.getRule(ruleId);
+    if (!rule) return undefined;
+    const runs = this.ruleLog(ruleId, { limit: 500 }).map((r) => ({ ...r, stepList: r.steps ? this.activity(r.id) : [] }));
+    return { title: rule.title, text: ruleMarkdown(this.ruleView(rule), whenOf(rule, true), runs, this.timeZone, this.now()) };
+  }
+
   // ---------- 规则（3d） ----------
 
   private get timeZone(): string {
@@ -1723,7 +2011,19 @@ export class TaskService {
    * 新规则（聊天代理的 rule_create、界面）：检查从观察开始；固定提醒没什么要判断的，直接执行（决定 6），
    * 不受免打扰限制（时间是用户定的）。时间表或事件触发二选一。
    */
-  createRule(o: { botId: string; conversationId: string; title: string; instruction: string; kind?: RuleKind; message?: string; schedule?: Schedule; trigger?: RuleTrigger }): { rule?: RuleRow; error?: string } {
+  createRule(o: {
+    botId: string;
+    conversationId: string;
+    title: string;
+    instruction: string;
+    kind?: RuleKind;
+    message?: string;
+    schedule?: Schedule;
+    trigger?: RuleTrigger;
+    /** 3f：规则编辑器里填的每次、每月预算（不填用默认的 $0.10、$3） */
+    runBudgetUsd?: number;
+    monthBudgetUsd?: number;
+  }): { rule?: RuleRow; error?: string } {
     const conv = this.store.getConversation(o.conversationId);
     if (!conv || conv.botId !== o.botId || !this.store.getBot(o.botId)) return { error: "conversation not found" };
     const kind: RuleKind = o.kind === "remind" ? "remind" : "check";
@@ -1738,6 +2038,13 @@ export class TaskService {
     if (!trigger || (trigger.kind === "event" && !trigger.source.trim())) return { error: "schedule is required" };
     if (kind === "remind" && trigger.kind !== "schedule") return { error: "a reminder needs a schedule" };
     if (this.store.listRules({ botId: o.botId }).length >= MAX_RULES) return { error: `This bot already has ${MAX_RULES} rules; delete one first.` };
+    const budgets: { runBudgetUsd?: number; monthBudgetUsd?: number } = {};
+    for (const k of ["runBudgetUsd", "monthBudgetUsd"] as const) {
+      if (o[k] === undefined) continue;
+      const v = Number(o[k]);
+      if (!Number.isFinite(v) || v <= 0 || v > TASK_BUDGET_MAX_USD) return { error: tr("tasks.badBudget") };
+      budgets[k] = Math.round(v * 100) / 100;
+    }
     const now = this.now();
     const id = `rl_${hex(6)}`;
     const mode: RuleMode = kind === "remind" ? "act" : "observe";
@@ -1754,6 +2061,7 @@ export class TaskService {
       folder: `rules/${slugOf(title).replace(/^task$/, "rule")}-${id.slice(3, 9)}`,
       nextRunAt: this.nextFor({ trigger, mode, pausedReason: "" }, now),
       anytime: kind === "remind",
+      ...budgets,
       createdAt: now,
       updatedAt: now,
     });

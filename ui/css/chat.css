@@ -370,10 +370,18 @@ button.act-head:active { background: var(--pill-hover); }
 .task-pill .sep { color: var(--muted); }
 .task-pill .chev { flex: none; color: var(--muted); transition: transform var(--t-fast); }
 .task-detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); width: 100%; margin-top: var(--space-3); }
+/* 详情里一行一样：小标签 + 值 + 行尾的大小、文字按钮（改预算、打开、保留）；每次运行一行折叠的处理过程，行间不画线 */
 .task-line { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-sm); color: var(--fg-2); }
 .task-line .t-label { flex: none; min-width: 4em; }
-.task-line .v { min-width: 0; overflow-wrap: anywhere; }
+.task-line .v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .task-line .v.mono { font-family: var(--code); font-size: var(--fs-xs); }
+.task-line .n { flex: none; font-size: var(--fs-xs); color: var(--muted); }
+.task-line .text { flex: none; margin: calc(-1 * var(--space-1)) 0; }   /* 文字按钮的悬停底不把行撑高 */
+button.task-origin { text-align: left; font-size: inherit; color: inherit; border-radius: var(--r-sm); transition: color var(--t-fast); }
+button.task-origin:hover { color: var(--fg); }
+.task-budget-edit { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.task-budget-edit .field { width: 88px; --field-h: var(--ctl-sm); }
 .task-detail .activity, .task-detail .work-line { margin-bottom: 0; }
-.task-actions { display: flex; justify-content: flex-start; }
+.task-detail .work-line { border-bottom: 0; padding-bottom: 0; }
+.task-actions { display: flex; justify-content: flex-start; gap: var(--space-1); }
 }

@@ -25,6 +25,17 @@ export const zh = {
   budgetRange: "预算要在 0 到 100000 美元之间",
   groupNotOwned: "群不属于该机器人",
   emptyText: "内容为空",
+  alreadyHandled: "已经处理过了",
+  unsupportedAction: "不支持这个操作",
+  couldntComplete: "没能完成，可能已经处理过了",
+  taskNotFound: "任务不存在",
+  runNotFound: "没有这次运行",
+  taskAlreadyStopped: "任务已经停止了",
+  windowsOnly: "只在 Windows 上需要",
+  recordNotFound: "记录不存在",
+  requestAlreadyHandled: "这个请求已经处理过了",
+  noSuchChannel: "没有这个渠道",
+  weixinOwnerRescan: "微信主人要重新扫码才能更换",
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
@@ -51,4 +62,15 @@ export const en: Catalog<typeof zh> = {
   budgetRange: "The budget must be between $0 and $100,000",
   groupNotOwned: "This group doesn't belong to this bot",
   emptyText: "Message is empty",
+  alreadyHandled: "Already handled",
+  unsupportedAction: "This action isn't supported",
+  couldntComplete: "Couldn't complete it; it may already have been handled",
+  taskNotFound: "Task not found",
+  runNotFound: "Run not found",
+  taskAlreadyStopped: "The task has already stopped",
+  windowsOnly: "Only needed on Windows",
+  recordNotFound: "Record not found",
+  requestAlreadyHandled: "This request has already been handled",
+  noSuchChannel: "No such channel",
+  weixinOwnerRescan: "To change the WeChat owner, scan the QR code again",
 };

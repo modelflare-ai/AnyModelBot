@@ -17,6 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { logger } from "../log.js";
+import { t as tr } from "../i18n/index.js";
 
 const log = logger("pwsh.private");
 const W = path.win32;
@@ -162,13 +163,13 @@ export async function launchTest(exe: string, run: Runner, o: { timeoutMs: numbe
   const ms = Date.now() - t0;
   const m = /AMB-PWSH-TEST ver=(\S+) rw=(\S*) ext=(\S*)/.exec(r.stdout);
   const fail = (error: string): LaunchTest => ({ ok: false, at: Date.now(), ms, ...(m ? { version: m[1] } : {}), error, ...(r.timedOut ? { timedOut: true } : {}) });
-  if (r.timedOut) return fail(`${Math.round(o.timeoutMs / 1000)} 秒内没有跑完`);
-  if (r.error) return fail(`拉不起来：${r.error}`);
-  if (!m || r.code !== 0) return fail(`没有得到预期输出（退出码 ${r.code}）${r.stderr || r.stdout ? `：${clip(r.stderr || r.stdout)}` : ""}`);
-  if (m[2] !== "rw-ok") return fail("读写临时文件失败");
-  if (m[3] !== "ext-ok") return fail("拉起外部程序失败");
-  if (!(Number(m[1].split(".")[0]) >= 7)) return fail(`版本是 ${m[1]}，不是 PowerShell 7`);
-  if (o.expect && m[1] !== o.expect) return fail(`版本是 ${m[1]}，应为 ${o.expect}`);
+  if (r.timedOut) return fail(tr("pwsh.privTimeout", { s: Math.round(o.timeoutMs / 1000) }));
+  if (r.error) return fail(tr("pwsh.privCantStart", { error: r.error }));
+  if (!m || r.code !== 0) return fail(tr("pwsh.privUnexpected", { code: r.code, out: r.stderr || r.stdout ? tr("pwsh.privColon", { text: clip(r.stderr || r.stdout) }) : "" }));
+  if (m[2] !== "rw-ok") return fail(tr("pwsh.privRwFailed"));
+  if (m[3] !== "ext-ok") return fail(tr("pwsh.privExtFailed"));
+  if (!(Number(m[1].split(".")[0]) >= 7)) return fail(tr("pwsh.privNot7", { v: m[1] }));
+  if (o.expect && m[1] !== o.expect) return fail(tr("pwsh.privWrongVersion", { v: m[1], want: o.expect }));
   return { ok: true, at: Date.now(), ms, version: m[1] };
 }
 
@@ -181,20 +182,20 @@ export async function verifySignatures(files: string[], run: Runner, env: NodeJS
     timeoutMs: 180_000,
     env: { ...shellEnv(env), AMB_SIG_FILES: files.join("|") },
   });
-  if (r.timedOut) return { ok: false, error: "Windows PowerShell 3 分钟内没有给出签名结果" };
-  if (r.error || r.code !== 0) return { ok: false, error: `Windows PowerShell 核对签名失败：${clip(r.error || r.stderr || r.stdout || `退出码 ${r.code}`)}` };
+  if (r.timedOut) return { ok: false, error: tr("pwsh.privSigTimeout") };
+  if (r.error || r.code !== 0) return { ok: false, error: tr("pwsh.privSigFailed", { error: clip(r.error || r.stderr || r.stdout || tr("pwsh.privExitCode", { code: r.code })) }) };
   let list: Array<{ status?: string; subject?: string; issuer?: string }>;
   try {
     list = JSON.parse(r.stdout.replace(/^\uFEFF/, "").trim());
   } catch {
-    return { ok: false, error: `看不懂签名结果：${clip(r.stdout)}` };
+    return { ok: false, error: tr("pwsh.privSigUnreadable", { out: clip(r.stdout) }) };
   }
-  if (!Array.isArray(list) || list.length !== files.length) return { ok: false, error: "签名结果数目不对" };
+  if (!Array.isArray(list) || list.length !== files.length) return { ok: false, error: tr("pwsh.privSigCount") };
   const ms = /\bO=Microsoft Corporation\b/;
   for (const [i, s] of list.entries()) {
     const name = path.basename(files[i]);
-    if (s?.status !== "Valid") return { ok: false, error: `${name} 的签名无效（${s?.status || "无签名"}）` };
-    if (!ms.test(s.subject ?? "") || !ms.test(s.issuer ?? "")) return { ok: false, error: `${name} 不是 Microsoft 签名的（${clip(s.subject ?? "", 120)}）` };
+    if (s?.status !== "Valid") return { ok: false, error: tr("pwsh.privSigInvalid", { name, status: s?.status || tr("pwsh.privNoSig") }) };
+    if (!ms.test(s.subject ?? "") || !ms.test(s.issuer ?? "")) return { ok: false, error: tr("pwsh.privNotMs", { name, subject: clip(s.subject ?? "", 120) }) };
   }
   return { ok: true };
 }
@@ -211,7 +212,7 @@ export async function extractZip(zip: string, dest: string, run: Runner, env: No
     timeoutMs: 20 * 60_000,
     env: { ...shellEnv(env), AMB_ZIP: zip, AMB_DEST: dest },
   });
-  if (r2.code !== 0 || r2.error || r2.timedOut) throw new Error(`解压失败：${clip(r2.error || r2.stderr || r2.stdout || (r2.timedOut ? "超时" : `退出码 ${r2.code}`))}`);
+  if (r2.code !== 0 || r2.error || r2.timedOut) throw new Error(tr("pwsh.privUnzipFailed", { error: clip(r2.error || r2.stderr || r2.stdout || (r2.timedOut ? tr("pwsh.privTimedOut") : tr("pwsh.privExitCode", { code: r2.code }))) }));
 }
 
 // ---------- 系统版本与架构 ----------
@@ -223,7 +224,7 @@ export function osSupport(release: string, pin: PwshPin = PRIVATE_PWSH): { ok: b
   const major = Number(m[1]);
   const build = Number(m[3]);
   if (major > 10 || (major === 10 && build >= pin.minBuild)) return { ok: true, build };
-  return { ok: false, build, reason: `这台电脑的 Windows 版本较旧（${release}），PowerShell ${pin.version} 需要 Windows 10 1607 / Windows Server 2016 或更新的系统` };
+  return { ok: false, build, reason: tr("pwsh.privOldWindows", { release, version: pin.version }) };
 }
 
 /**
@@ -270,9 +271,9 @@ export async function download(o: {
   let stall: NodeJS.Timeout | undefined;
   const arm = () => {
     clearTimeout(stall);
-    stall = setTimeout(() => ac.abort(new Error(`${Math.round(stallMs / 1000)} 秒没有收到数据`)), stallMs);
+    stall = setTimeout(() => ac.abort(new Error(tr("pwsh.privStall", { s: Math.round(stallMs / 1000) }))), stallMs);
   };
-  const total = setTimeout(() => ac.abort(new Error("下载超时")), o.totalMs ?? 60 * 60_000);
+  const total = setTimeout(() => ac.abort(new Error(tr("pwsh.privDownloadTimeout"))), o.totalMs ?? 60 * 60_000);
   const hash = crypto.createHash("sha256");
   const fh = await fs.promises.open(o.dest, "w");
   let received = 0;
@@ -281,14 +282,14 @@ export async function download(o: {
     const res = await o.fetch(o.url, { signal: ac.signal, redirect: "follow" });
     if (!res.ok || !res.body) throw res.status >= 400 && res.status < 500 && res.status !== 429 ? new DownloadRefused(`HTTP ${res.status}`) : new Error(`HTTP ${res.status}`);
     const len = Number(res.headers.get("content-length")) || undefined;
-    if (o.size && len && len !== o.size) throw new DownloadRefused(`文件大小不对（${len} 字节，应为 ${o.size}）`);
+    if (o.size && len && len !== o.size) throw new DownloadRefused(tr("pwsh.privSizeWrong", { len, size: o.size }));
     const reader = res.body.getReader();
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       arm();
       received += value.byteLength;
-      if (o.size && received > o.size) throw new DownloadRefused(`文件比预期大（超过 ${o.size} 字节）`);
+      if (o.size && received > o.size) throw new DownloadRefused(tr("pwsh.privTooBig", { size: o.size }));
       hash.update(value);
       await fh.write(value);
       o.onProgress?.(received, o.size ?? len);
@@ -301,7 +302,7 @@ export async function download(o: {
     await fh.close();
   }
   const got = hash.digest("hex");
-  if (got !== o.sha256) throw new HashMismatch(`SHA256 不符（${got.slice(0, 12)}…，应为 ${o.sha256.slice(0, 12)}…）`);
+  if (got !== o.sha256) throw new HashMismatch(tr("pwsh.privHash", { got: got.slice(0, 12), want: o.sha256.slice(0, 12) }));
 }
 
 // ---------- 文件 ----------
@@ -446,7 +447,7 @@ export class PrivatePwsh {
     return pwshRoot(this.env);
   }
   get support(): { ok: boolean; build?: number; reason?: string } {
-    if ((this.d.platform ?? process.platform) !== "win32") return { ok: false, reason: "只在 Windows 上需要" };
+    if ((this.d.platform ?? process.platform) !== "win32") return { ok: false, reason: tr("pwsh.privWindowsOnly") };
     return osSupport(this.d.osRelease ?? os.release(), this.pin);
   }
   private get key(): string {
@@ -496,7 +497,7 @@ export class PrivatePwsh {
       version: this.pin.version,
       ...(this.arch ? { arch: this.arch } : {}),
       supported: ok,
-      ...(!sup.ok ? { reason: sup.reason } : !this.arch && this.prep ? { reason: "这台电脑的处理器架构没有对应的 PowerShell 7 安装包" } : {}),
+      ...(!sup.ok ? { reason: sup.reason } : !this.arch && this.prep ? { reason: tr("pwsh.privNoArch") } : {}),
       ...(this.dir ? { dir: this.dir } : {}),
       installed: this.cur.installed,
       ready: this.cur.ready,
@@ -619,7 +620,7 @@ export class PrivatePwsh {
     const fp = await fingerprint(dir);
     const rec = this.readState().installs?.[this.key];
     if (fp.missing) {
-      const bad = rec?.bad && rec.fp === fp.value ? rec.bad : { reason: `文件 ${fp.missing} 不见了（可能被杀毒软件删除或隔离）`, at: Date.now() };
+      const bad = rec?.bad && rec.fp === fp.value ? rec.bad : { reason: tr("pwsh.privFileMissing", { file: fp.missing }), at: Date.now() };
       this.saveRecord({ fp: fp.value, test: rec?.test, bad });
       log.warn("app-managed PowerShell is incomplete", { dir, missing: fp.missing });
       return this.set({ installed: true, ready: false, bad, test: rec?.test, fp: fp.value });
@@ -632,7 +633,7 @@ export class PrivatePwsh {
     if (rec?.fp !== fp.value) {
       const sig = await verifySignatures(SIGNED_FILES.map((f) => path.join(dir, f)), this.run, this.env);
       if (!sig.ok) {
-        const bad = { reason: `签名核对没通过：${sig.error}`, at: Date.now() };
+        const bad = { reason: tr("pwsh.privSigNotPassed", { error: sig.error }), at: Date.now() };
         this.saveRecord({ fp: fp.value, bad });
         log.warn("app-managed PowerShell failed the signature check", { dir, error: sig.error });
         return this.set({ installed: true, ready: false, bad, fp: fp.value });
@@ -641,7 +642,7 @@ export class PrivatePwsh {
     const test = await launchTest(path.join(dir, "pwsh.exe"), this.run, { timeoutMs: 60_000, env: this.env, expect: this.pin.version });
     log.info("app-managed PowerShell launch test", { dir, ok: test.ok, ms: test.ms, version: test.version, error: test.error });
     if (!test.ok) {
-      const bad = { reason: `试运行没通过：${test.error}`, at: Date.now() };
+      const bad = { reason: tr("pwsh.testFailed", { error: test.error }), at: Date.now() };
       this.saveRecord({ fp: fp.value, test, bad });
       return this.set({ installed: true, ready: false, bad, test, fp: fp.value });
     }
@@ -668,12 +669,12 @@ export class PrivatePwsh {
   autoBlocked(): string | undefined {
     if (this.env.AMB_PWSH_AUTO_INSTALL === "0") return "AMB_PWSH_AUTO_INSTALL=0";
     if (!this.support.ok) return this.support.reason;
-    if (!this.arch) return "不支持的处理器架构";
-    if (this.installing) return "正在安装";
-    if (this.cur.installed) return this.cur.bad ? `已装的副本用不了（${this.cur.bad.reason}），需要手动重新安装` : "已经装好";
+    if (!this.arch) return tr("pwsh.privArchUnsupported");
+    if (this.installing) return tr("pwsh.privInstalling");
+    if (this.cur.installed) return this.cur.bad ? tr("pwsh.privBadCopy", { reason: this.cur.bad.reason }) : tr("pwsh.privAlreadyInstalled");
     const a = this.readState().auto ?? { attempts: 0, lastAt: 0 };
-    if (a.attempts >= AUTO_BACKOFF.length) return `自动安装已经失败 ${a.attempts} 次`;
-    if (Date.now() - a.lastAt < AUTO_BACKOFF[a.attempts]) return "上次自动安装失败，稍后再试";
+    if (a.attempts >= AUTO_BACKOFF.length) return tr("pwsh.privAutoFailedN", { n: a.attempts });
+    if (Date.now() - a.lastAt < AUTO_BACKOFF[a.attempts]) return tr("pwsh.privAutoBackoff");
     return undefined;
   }
 
@@ -705,8 +706,8 @@ export class PrivatePwsh {
       this.setProgress({ state: "failed", error, finishedAt: Date.now() }, true);
       return false;
     };
-    if (!sup.ok) return fail(sup.reason ?? "这台电脑装不了");
-    if (!this.arch) return fail("这台电脑的处理器架构没有对应的 PowerShell 7 安装包");
+    if (!sup.ok) return fail(sup.reason ?? tr("pwsh.privCantInstall"));
+    if (!this.arch) return fail(tr("pwsh.privNoArch"));
     if (o.manual) this.updateState((s) => (s.auto = { attempts: 0, lastAt: 0 }));
     if (!o.reinstall && this.cur.ready) {
       this.setProgress({ state: "done", finishedAt: Date.now() }, true);
@@ -719,14 +720,14 @@ export class PrivatePwsh {
       try {
         locked = this.takeLock();
       } catch (e) {
-        return fail(`建不了安装目录 ${this.root}：${(e as Error).message}`);
+        return fail(tr("pwsh.privMkdir", { dir: this.root, error: (e as Error).message }));
       }
       if (locked) break;
       if (Date.now() > waitUntil) {
-        this.setProgress({ state: "failed", error: "另一个 AnyModelBot 一直在安装 PowerShell 7，稍后再试", finishedAt: Date.now() }, true);
+        this.setProgress({ state: "failed", error: tr("pwsh.privOtherInstalling"), finishedAt: Date.now() }, true);
         return false;
       }
-      this.setProgress({ state: "waiting", error: "另一个 AnyModelBot 正在安装 PowerShell 7，等它装完" }, true);
+      this.setProgress({ state: "waiting", error: tr("pwsh.privOtherWaiting") }, true);
       await sleep(this.d.lockPollMs ?? 5000);
       if (this.lockHeld()) continue;
       await this.evaluate(false);
@@ -769,8 +770,8 @@ export class PrivatePwsh {
           });
           break;
         } catch (e) {
-          if (e instanceof HashMismatch) throw new Error(`下载的文件校验失败，已丢弃：${e.message}`);
-          if (e instanceof DownloadRefused || attempt >= 3) throw new Error(`下载失败（${url}）：${(e as Error)?.message ?? e}`);
+          if (e instanceof HashMismatch) throw new Error(tr("pwsh.privDiscarded", { error: e.message }));
+          if (e instanceof DownloadRefused || attempt >= 3) throw new Error(tr("pwsh.privDownloadFailed", { url, error: String((e as Error)?.message ?? e) }));
           log.warn("PowerShell download failed; retrying", { attempt, err: String((e as Error)?.message ?? e) });
           this.setProgress({ received: 0 });
           await sleep(attempt * (this.d.retryDelayMs ?? 3000));
@@ -784,15 +785,15 @@ export class PrivatePwsh {
       // 3. 核对：版本号、关键文件、签名
       this.setProgress({ state: "verifying" }, true);
       const ver = depsJsonVersion(await fs.promises.readFile(path.join(stage, "pwsh.deps.json"), "utf8").catch(() => ""));
-      if (ver !== this.pin.version) throw new Error(`解压出来的版本是 ${ver ?? "未知"}，应为 ${this.pin.version}`);
+      if (ver !== this.pin.version) throw new Error(tr("pwsh.privExtractedVersion", { v: ver ?? tr("pwsh.privUnknown"), want: this.pin.version }));
       const fp = await fingerprint(stage);
-      if (fp.missing) throw new Error(`解压后缺少 ${fp.missing}（可能被杀毒软件拦下）`);
+      if (fp.missing) throw new Error(tr("pwsh.privMissingAfterExtract", { file: fp.missing }));
       const sig = await verifySignatures(SIGNED_FILES.map((f) => path.join(stage, f)), this.run, this.env);
-      if (!sig.ok) throw new Error(`签名核对没通过：${sig.error}`);
+      if (!sig.ok) throw new Error(tr("pwsh.privSigNotPassed", { error: sig.error }));
       // 4. 按 DSH 的方式试运行（第一次启动时杀毒软件要扫一遍，给足时间）
       this.setProgress({ state: "testing" }, true);
       const test = await launchTest(path.join(stage, "pwsh.exe"), this.run, { timeoutMs: 120_000, env: this.env, expect: this.pin.version });
-      if (!test.ok) throw new Error(`试运行没通过：${test.error}`);
+      if (!test.ok) throw new Error(tr("pwsh.testFailed", { error: test.error }));
       fs.writeFileSync(path.join(stage, MARKER), JSON.stringify({ version: this.pin.version, arch, sha256: this.pin.sha256[arch], installedAt: Date.now(), test }, null, 2));
       // 5. 换上：旧目录先挪开（里面的 pwsh 正在跑时挪不动，过一会儿再装），新目录整个改名到位
       let moved = false;
@@ -801,14 +802,14 @@ export class PrivatePwsh {
           await renameRetry(dir, trash);
           moved = true;
         } catch (e) {
-          throw new Error(`旧的副本正在使用，换不下来（${(e as NodeJS.ErrnoException).code ?? (e as Error).message}），请稍后再试`);
+          throw new Error(tr("pwsh.privInUse", { error: (e as NodeJS.ErrnoException).code ?? (e as Error).message }));
         }
       }
       try {
         await renameRetry(stage, dir);
       } catch (e) {
         if (moved) await fs.promises.rename(trash, dir).catch(() => undefined);
-        throw new Error(`放不到安装目录：${(e as Error).message}`);
+        throw new Error(tr("pwsh.privCantPlace", { error: (e as Error).message }));
       }
       this.saveRecord({ fp: fp.value, test });
       this.updateState((s) => (s.auto = { attempts: 0, lastAt: 0 }));

@@ -23,7 +23,7 @@ import { pwshProbe, type PwshMode, type PwshStatus } from "../agent/pwsh.js";
 import { peerName, shortPeer, whoText } from "../core/access.js";
 import type { AccessEntry } from "../store/db.js";
 import { GUIDE_STEPS, deriveGuide, isGuideStep, mergeGuide, normalizeGuide, type GuideState } from "../guide.js";
-import { normalizeLang, requestLang, setLangPref, t, type LangPref } from "../i18n/index.js";
+import { normalizeLang, requestLang, setLangPref, t, type LangPref, t as tr } from "../i18n/index.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -458,8 +458,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       const action = seg[2] ?? "";
       if (seg.length !== 3 || m !== "POST") throw new HttpError(404, "not found");
       const item = app.attention.list().find((x) => x.id === id);
-      if (!item) throw new HttpError(409, "已经处理过了");
-      if (!(item.actions as string[]).includes(action)) throw new HttpError(400, "不支持这个操作");
+      if (!item) throw new HttpError(409, tr("web.alreadyHandled"));
+      if (!(item.actions as string[]).includes(action)) throw new HttpError(400, tr("web.unsupportedAction"));
       const b = await readJson(req);
       let ok = false;
       if (action === "approve" || action === "deny") ok = app.agent.approvals.decide(item.approvalId!, action === "approve", "web");
@@ -470,7 +470,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       } else if (item.kind === "delivery" && (action === "retry" || action === "dismiss")) ok = app.delivery.act(item.id, action);
       else if (action === "retry") ok = !(await app.tasks.retry(item.taskId!)).error;
       else if (action === "stop") ok = await app.tasks.stopTask(item.taskId!, "web");
-      if (!ok) throw new HttpError(409, "没能完成，可能已经处理过了");
+      if (!ok) throw new HttpError(409, tr("web.couldntComplete"));
       app.attention.kick();
       return send(res, 200, { ok: true, items: app.attention.list() });
     }
@@ -488,19 +488,19 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         });
       }
       const task = seg[1] ? app.tasks.get(decodeURIComponent(seg[1])) : undefined;
-      if (!task) throw new HttpError(404, "任务不存在");
+      if (!task) throw new HttpError(404, tr("web.taskNotFound"));
       if (seg.length === 2 && m === "GET") {
         const runs = app.store.listRuns({ taskId: task.id }).map((r) => ({ id: r.id, cause: r.cause, state: r.state, outcome: r.outcome, error: r.error, queuedAt: r.queuedAt, startedAt: r.startedAt, endedAt: r.endedAt, steps: app.tasks.activity(r.id).length }));
         return send(res, 200, { task, runs });
       }
       if (seg.length === 5 && seg[2] === "runs" && seg[4] === "activity" && m === "GET") {
         const run = app.store.getRun(decodeURIComponent(seg[3]));
-        if (!run || run.taskId !== task.id) throw new HttpError(404, "没有这次运行");
+        if (!run || run.taskId !== task.id) throw new HttpError(404, tr("web.runNotFound"));
         return send(res, 200, { steps: app.tasks.activity(run.id) });
       }
       if (seg.length === 3 && seg[2] === "stop" && m === "POST") {
         const ok = await app.tasks.stopTask(task.id, "web");
-        if (!ok) throw new HttpError(409, "任务已经停止了");
+        if (!ok) throw new HttpError(409, tr("web.taskAlreadyStopped"));
         return send(res, 200, { task: app.tasks.get(task.id) });
       }
       throw new HttpError(404, "not found");
@@ -524,7 +524,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       }
       // 安装 / 重新安装应用内置的 PowerShell 7：后台进行，进度从 GET 读
       if (seg[1] === "install" && m === "POST") {
-        if (process.platform !== "win32" || !pwshProbe.applicable) throw new HttpError(400, "只在 Windows 上需要");
+        if (process.platform !== "win32" || !pwshProbe.applicable) throw new HttpError(400, tr("web.windowsOnly"));
         const b = await readJson(req);
         setMode("auto");
         await pwshProbe.check();
@@ -769,24 +769,24 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       }
       if (seg[2] === "access" && seg.length === 5 && m === "POST") {
         const entry = app.store.getAccessById(decodeURIComponent(seg[3]));
-        if (!entry || entry.botId !== id) throw new HttpError(404, "记录不存在");
+        if (!entry || entry.botId !== id) throw new HttpError(404, tr("web.recordNotFound"));
         if (seg[4] === "approve" || seg[4] === "deny") {
           const r = app.access.decide(entry.id, seg[4] === "approve", "web");
-          if (!r) throw new HttpError(409, "这个请求已经处理过了");
+          if (!r) throw new HttpError(409, tr("web.requestAlreadyHandled"));
           return send(res, 200, { entry: publicAccess(r) });
         }
       }
       // 更换主人：清掉"第一个发消息"的主人，下一个发单聊消息的人成为主人（扫码登录的微信要重新扫码）
       if (seg[2] === "access" && seg[3] === "owner" && seg.length === 5 && m === "DELETE") {
         const ch = seg[4];
-        if (ch !== "weixin" && ch !== "feishu") throw new HttpError(404, "没有这个渠道");
-        if (app.access.owner(id, ch)?.via === "login") throw new HttpError(409, "微信主人要重新扫码才能更换");
+        if (ch !== "weixin" && ch !== "feishu") throw new HttpError(404, tr("web.noSuchChannel"));
+        if (app.access.owner(id, ch)?.via === "login") throw new HttpError(409, tr("web.weixinOwnerRescan"));
         app.access.resetOwner(id, ch);
         return send(res, 200, { ok: true });
       }
       if (seg[2] === "access" && seg.length === 4 && m === "DELETE") {
         const entry = app.store.getAccessById(decodeURIComponent(seg[3]));
-        if (!entry || entry.botId !== id) throw new HttpError(404, "记录不存在");
+        if (!entry || entry.botId !== id) throw new HttpError(404, tr("web.recordNotFound"));
         app.access.remove(entry.id);
         return send(res, 200, { ok: true });
       }

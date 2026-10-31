@@ -42,6 +42,15 @@ export const zh = {
   cdn_failed: "CDN 下载失败",
   too_large: "文件过大（{size} MB，上限 {max} MB）",
   decrypt_failed: "解密失败（密钥不对？）",
+  awayPrefix: "你不在时：",
+  heldNoToken: "对方还没有给机器人发过消息，等他发消息后再发",
+  heldWindowClosed: "对方超过 24 小时没有发消息，等他下次发消息时再发",
+  heldQuota: "本轮可发送条数已用完（对方每发一条消息，24 小时内最多回复 10 条），等他下次发消息时再发",
+  heldReserved: "本轮剩下的条数留给后台任务的结果了，等他下次发消息时再发",
+  fileFallback: "文件",
+  laterNotRunning: "微信渠道没有运行",
+  laterExpired: "微信登录已过期，等重新扫码",
+  feishuNoPush: "飞书传输层不支持主动发消息",
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
@@ -81,4 +90,13 @@ export const en: Catalog<typeof zh> = {
   cdn_failed: "CDN download failed",
   too_large: "File too large ({size} MB, limit {max} MB)",
   decrypt_failed: "Decryption failed (wrong key?)",
+  awayPrefix: "While you were away: ",
+  heldNoToken: "They haven't messaged the bot yet; it'll be sent after they do",
+  heldWindowClosed: "They haven't messaged in over 24 hours; it'll be sent next time they do",
+  heldQuota: "This turn's message allowance is used up (up to 10 replies within 24 hours of each message they send); it'll be sent next time they message",
+  heldReserved: "The rest of this turn's allowance is reserved for background task results; it'll be sent next time they message",
+  fileFallback: "file",
+  laterNotRunning: "The WeChat channel isn't running",
+  laterExpired: "WeChat sign-in expired; waiting for a new QR scan",
+  feishuNoPush: "The Feishu transport can't send messages on its own",
 };

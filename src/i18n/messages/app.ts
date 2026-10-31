@@ -20,6 +20,7 @@ export const zh = {
   media_quoted_video: "引用的视频",
   media_voice: "[语音]",
   media_not_downloaded: "{label}（未能下载：{error}）",
+  weixinExpiredSubject: "微信登录已过期",
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
@@ -39,4 +40,5 @@ export const en: Catalog<typeof zh> = {
   media_quoted_video: "Quoted video",
   media_voice: "[Voice]",
   media_not_downloaded: "{label} (couldn't download: {error})",
+  weixinExpiredSubject: "WeChat sign-in expired",
 };

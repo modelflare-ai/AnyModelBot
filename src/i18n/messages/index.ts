@@ -17,5 +17,6 @@ import * as activity from "./activity.js";
 import * as tasks from "./tasks.js";
 import * as access from "./access.js";
 import * as delivery from "./delivery.js";
+import * as cli from "./cli.js";
 
-export const catalogs = { web, desktop, app, diag, modelflare, account, magpie, channel, runtime, agent, approvals, media, cu, pwsh, activity, tasks, access, delivery };
+export const catalogs = { web, desktop, app, diag, modelflare, account, magpie, channel, runtime, agent, approvals, media, cu, pwsh, activity, tasks, access, delivery, cli };

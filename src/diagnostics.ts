@@ -11,7 +11,7 @@ import { shapeRejection } from "./agent/api-fallback.js";
 import { logFilePath, logger, readLogTail, redactText, redactValue } from "./log.js";
 import { bareModel } from "./modelflare.js";
 import { pwshProbe, pwshReportLine } from "./agent/pwsh.js";
-import { t, type MessageKey } from "./i18n/index.js";
+import { t, type MessageKey, t as tr } from "./i18n/index.js";
 
 const log = logger("diagnostics");
 
@@ -424,7 +424,17 @@ export function diagnosticsReport(app: App, lines = 200): string {
   const ps = pwshReportLine(s.pwsh);
   if (ps) out.push(ps);
   const ob = s.outbox;
-  if (ob) out.push(`[出站队列] 等待发送 ${ob.pending} 条（重试中 ${ob.retrying}）${ob.lastError ? ` · 最近错误：${ob.lastError}` : ""}${ob.held ? ` · 等对方发消息后再发 ${ob.held} 条` : ""} · 最近 7 天没发出去 ${ob.gone7d} 条${ob.lastGone ? ` · 最近一次：${ob.lastGone}` : ""}`);
+  if (ob)
+    out.push(
+      tr("diag.outboxLine", {
+        pending: ob.pending,
+        retrying: ob.retrying,
+        lastError: ob.lastError ? tr("diag.outboxLastError", { error: ob.lastError }) : "",
+        held: ob.held ? tr("diag.outboxHeld", { n: ob.held }) : "",
+        gone: ob.gone7d,
+        lastGone: ob.lastGone ? tr("diag.outboxLastGone", { text: ob.lastGone }) : "",
+      }),
+    );
   const m = app.lastDiagnostics.model;
   if (m) {
     out.push("");

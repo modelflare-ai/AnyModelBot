@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { Store, type OutboxRow } from "../src/store/db.js";
 import { Gone, HOLD_TTL_MS, Held, Later, OUTBOX_TTL_MS, Outbox, REJECTIONS_BEFORE_GONE, stableId } from "../src/core/outbox.js";
-import { AWAY_PREFIX, combineHeld, deliverWeixin } from "../src/channels/weixin/channel.js";
+import { awayPrefix, combineHeld, deliverWeixin } from "../src/channels/weixin/channel.js";
 import { WeixinQuota } from "../src/channels/weixin/quota.js";
 import { deliverFeishu } from "../src/channels/feishu/card.js";
 import { FakeFeishu, until } from "./helpers.js";
@@ -114,7 +114,7 @@ describe("Outbox", () => {
     await ob.send(input("reply", "这次的回复"));
     await ob.idle();
     // 普通回复先按微信的规则过滤 Markdown（图片去掉），审批提示原样
-    expect(sent).toEqual([`${AWAY_PREFIX}\n**结果**：A 云最便宜\n\n需批准：\`rm -rf build/\``, "[file 报告.md]", `${AWAY_PREFIX}第四条`, "这次的回复"]);
+    expect(sent).toEqual([`${awayPrefix()}\n**结果**：A 云最便宜\n\n需批准：\`rm -rf build/\``, "[file 报告.md]", `${awayPrefix()}第四条`, "这次的回复"]);
     expect(["h1", "h2", "h3", "h4"].map((id) => store.getOutbox(id)!.status)).toEqual(["sent", "merged", "sent", "sent"]);
     expect(store.getOutbox("other")!.status).toBe("held");
     // 只发一次：再放一次、同一 id 再写一遍都不会重发
@@ -147,11 +147,11 @@ describe("Outbox", () => {
     expect(ob.release("b", "weixin", "u1", combineHeld)).toBe(1);
     await ob.idle();
     expect(store.getOutbox("ack")).toMatchObject({ status: "gone", error: expect.stringMatching(/等待太久/) });
-    expect(store.getOutbox("final")).toMatchObject({ status: "held", body: { text: `${AWAY_PREFIX}结果`, away: true } });
+    expect(store.getOutbox("final")).toMatchObject({ status: "held", body: { text: `${awayPrefix()}结果`, away: true } });
     open = true;
     ob.release("b", "weixin", "u1", combineHeld);
     await ob.idle();
-    expect(sent).toEqual([`${AWAY_PREFIX}结果`]);
+    expect(sent).toEqual([`${awayPrefix()}结果`]);
   });
 
   it("waits for the channel to register; expired messages are marked gone and the next one goes", async () => {

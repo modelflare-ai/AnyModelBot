@@ -55,26 +55,21 @@ AnyModelBot 是一个本地优先的 AI 智能体应用，支持 Windows、macOS
 
 ---
 
-<table>
-<tr>
-<td width="200" align="center" valign="middle">
-  <a href="https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme">
-    <img src="docs/assets/modelflare/modelflare-logo.png" width="120" height="120" alt="Modelflare 标志">
-  </a>
-</td>
-<td>
+<a href="https://modelflare.dev/sign-up?utm_source=anymodelbot&utm_campaign=amb_readme">
+  <img src="docs/assets/modelflare/modelflare-banner-zh.webp" width="100%" alt="Modelflare 横幅：满血、稳定不掺水，低成本享受全球 SOTA 模型；GPT 特惠分组 0.015 倍、Claude 特惠分组 0.03 倍；OpenAI 分组缓存命中率保障 65% · 75% · 85%，未达标补偿差额">
+</a>
 
-**[Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)** 是兼容 OpenAI 接口的 AI API 网关，已有 20 万+ 注册开发者。一个 API Key 就能调用来自 13 家供应商的 70+ 个文本、图片和视频模型，包括 GPT、Claude、Gemini、Grok、DeepSeek、Kimi、GLM 等。请求会在多个供应商之间路由，并按顺序自动回退；每一次请求都记录用量和费用。价格公开，按 token 计费。
+AnyModelBot 的模型全部来自 **[Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)**：满血、稳定不掺水，低成本享受全球 SOTA 模型。Modelflare 由美国公司 Havenbyte LLC 运营，已有 20 万+ 注册开发者。一个 API Key 就能调用 13 家供应商的 70+ 个文本、图片和视频模型，GPT、Claude、Gemini、Grok、DeepSeek、Kimi、GLM 都在里面，兼容 OpenAI、Anthropic、Gemini 等常用接口协议。请求会在多个供应商之间路由并自动回退，每一次请求都记录用量和费用，价格表公开，按 token 计费。
+
+**缓存补偿**是一大亮点：OpenAI 的价格优先、稳定、高级三个分组，分别保证每天 65%、75%、85% 的缓存命中率；符合条件的请求没达到目标，Modelflare 会补偿差额。
+
+**特惠活动**：单笔充值达到指定金额，就能解锁 0.015 倍价格倍率的 GPT 特惠分组和 0.03 倍的 Claude 特惠分组，适合个人开发、功能验证和轻量使用。这是限时活动，门槛和规则以 Modelflare 页面为准，通过[专属链接](https://modelflare.dev/sign-up?utm_source=anymodelbot&utm_campaign=amb_readme)注册即可参与。
 
 **[注册 Modelflare →](https://modelflare.dev/sign-up?utm_source=anymodelbot&utm_campaign=amb_readme)** ·
 [价格表](https://modelflare.dev/pricing?utm_source=anymodelbot&utm_campaign=amb_readme) ·
 [API 文档](https://docs.modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme) ·
 [信任中心](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme) ·
 [X](https://x.com/modelflare_dev)
-
-</td>
-</tr>
-</table>
 
 **AnyModelBot 怎么用 Modelflare**
 

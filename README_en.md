@@ -55,26 +55,21 @@ Your conversations, memory, files and API keys live on your device. Models come 
 
 ---
 
-<table>
-<tr>
-<td width="200" align="center" valign="middle">
-  <a href="https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme">
-    <img src="docs/assets/modelflare/modelflare-logo.png" width="120" height="120" alt="Modelflare logo">
-  </a>
-</td>
-<td>
+<a href="https://modelflare.dev/sign-up?utm_source=anymodelbot&utm_campaign=amb_readme">
+  <img src="docs/assets/modelflare/modelflare-banner-en.webp" width="100%" alt="Modelflare banner: a stable, lower-cost LLM, image and video AI gateway; GPT discount group at 0.015x and Claude discount group at 0.03x; cache hit-rate guarantees of 65% · 75% · 85% on OpenAI groups, with shortfalls credited">
+</a>
 
-**[Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)** is an OpenAI-compatible AI API gateway with 200,000+ registered developers. One API key opens 70+ text, image and video models from 13 providers, including GPT, Claude, Gemini, Grok, DeepSeek, Kimi and GLM. Requests are routed across providers with ordered fallback, and every request is recorded with its usage and cost. Prices are public and billed per token.
+Every model in AnyModelBot comes from **[Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)**: full-strength, stable models with nothing watered down, and global SOTA models at a lower cost. Modelflare is run by Havenbyte LLC, a US company, and has 200,000+ registered developers. One API key opens 70+ text, image and video models from 13 providers, including GPT, Claude, Gemini, Grok, DeepSeek, Kimi and GLM, over OpenAI, Anthropic, Gemini and other common API formats. Requests are routed across providers with automatic fallback, every request is recorded with its usage and cost, and the price list is public and billed per token.
+
+**Cache compensation** is a highlight: the price-first, stable and premium OpenAI groups guarantee daily cache hit rates of 65%, 75% and 85%. When eligible requests fall short, Modelflare credits the difference.
+
+**Special offers**: a single top-up of a set amount unlocks the GPT discount group at a 0.015x price multiplier and the Claude discount group at 0.03x, made for personal projects, feature testing and light use. These are limited-time offers, with thresholds and rules on Modelflare's site. Sign up through [this link](https://modelflare.dev/sign-up?utm_source=anymodelbot&utm_campaign=amb_readme) to join.
 
 **[Sign up for Modelflare →](https://modelflare.dev/sign-up?utm_source=anymodelbot&utm_campaign=amb_readme)** ·
 [Price list](https://modelflare.dev/pricing?utm_source=anymodelbot&utm_campaign=amb_readme) ·
 [API docs](https://docs.modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme) ·
 [Trust Center](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme) ·
 [X](https://x.com/modelflare_dev)
-
-</td>
-</tr>
-</table>
 
 **How AnyModelBot uses Modelflare**
 

@@ -180,7 +180,9 @@ function setupHost(script: (emit: (n: any) => void, s: { mgr: AgentManager }) =>
     setWorkingDirectory: async () => undefined,
   };
   const harness = { client: {}, start: async () => undefined, session: () => session, resumeSession: async () => session, close: async () => void closed.abort() };
-  Object.assign(host as any, { harness, model: "m", sig: (host as any).settingsSig(), state: "running" });
+  // 启动时的默认路线就是 m（Chat Completions）：不用指令通道也能跑
+  const route = { model: "m", provider: "magpie", api: "openai-completions", limits: { window: 128_000, maxTokens: 16_000 } };
+  Object.assign(host as any, { harness, model: "m", sig: (host as any).settingsSig(), state: "running", initRoute: route, childRoutes: new Map([["magpie|m", route]]) });
   return {
     mgr,
     notices,

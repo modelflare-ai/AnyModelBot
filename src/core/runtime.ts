@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { InboundEvent, ReplySession } from "./types.js";
+import type { ChannelId, InboundEvent, ReplySession } from "./types.js";
+import { KeyedQueue } from "./queue.js";
 import { eventText } from "./types.js";
 import { acceptsImages, type ModelClient, type ChatMessage } from "../llm/client.js";
 import { TurnStopped, type TurnImage } from "../agent/host.js";
@@ -14,7 +15,7 @@ import { segmentInput, type ChatPlace } from "../agent/prompts/index.js";
 import { clearInflight, markInflight, takeNotice } from "./recovery.js";
 import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
 import { isBotProviderModel } from "../modelflare.js";
-import type { ApprovalRow } from "../store/db.js";
+import type { ApprovalRow, Conversation } from "../store/db.js";
 import type { AccessControl } from "./access.js";
 
 const log = logger("runtime");
@@ -108,7 +109,7 @@ const HELP = [
   "/reset — 清空当前会话的上下文（代理模式下同时开启新的代理会话；长期记忆保留）",
   "/new — 开始新的一段对话：旧对话归档并生成交接便条，长期记忆保留",
   "/status — 查看当前模型、代理状态和正在处理的消息走到了哪一步",
-  "/stop — 中止正在处理的消息（代理模式下会重启代理进程）",
+  "/stop — 中止正在处理的消息（只停这个会话，机器人的其它会话照常进行）",
   "/help — 显示本帮助",
 ].join("\n");
 
@@ -119,10 +120,28 @@ interface Inflight {
   abort: AbortController;
   /** 被应用退出打断：不回复，标记留着，下次启动时告诉用户（recovery.ts） */
   interrupted?: boolean;
+  /** 让出渠道的串行队列：代理收下这条消息（或这条并进了进行中的回合）后，后来的消息不必再等它结束 */
+  release?: () => void;
+  /** 用户消息已经存进历史（交给代理时就存，保证插进来的消息排在它后面） */
+  userStored?: boolean;
 }
 
 /** 回合还没交给代理（或纯对话还没出字）就被停止时的回复 */
 export const stoppedText = (ms: number) => `已中止（处理了 ${fmtSecs(ms)}）。`;
+
+/** 新消息并进了正在进行的代理回合：先回这一句，回复在那一轮结束时一起给 */
+export const STEER_ACK = "收到，这条会并入正在进行的处理，稍后一起回复。";
+
+/**
+ * 不是回复某条消息、而是主动发到会话里（代理自己醒来的一轮：后台命令结束）：渠道给出这个会话的出站会话。
+ * 微信、飞书的回复会话经出站队列发（和普通回复同一条路：落库、按会话排队、重试、发送时才查微信的窗口和配额）。
+ * handle 是这个会话最近收到的那条消息的回复句柄（存在 KV 里，重启也在）；key 决定出站消息的 id（同一轮的回复只发一次）；
+ * done 在这一轮结束时调用。没有办法发时返回 undefined。
+ */
+export type Replier = (conv: Conversation, handle: Record<string, string> | undefined, key: string) => { out: ReplySession; done?: () => void } | undefined;
+
+/** 会话最近收到的那条消息的回复句柄（飞书回复要它） */
+const REPLY_TO = "reply-to:";
 
 /** 渠道无关的对话运行时：命令处理、上下文拼装、流式调用模型、持久化。 */
 export class BotRuntime {
@@ -131,7 +150,20 @@ export class BotRuntime {
   private inflight = new Map<string, Set<Inflight>>();
   /** 应用正在退出：正在处理的消息算被打断，不再回复也不改用纯对话 */
   private closing = false;
-  constructor(private opts: RuntimeOptions) {}
+  /** 会话 → 之前所有消息都处理完的时刻（同一会话的消息按到达顺序处理；并进进行中回合的不必等） */
+  private tails = new Map<string, Promise<void>>();
+  /** "<botId>:<渠道>" → 主动发消息的出站会话 */
+  private repliers = new Map<string, Replier>();
+  constructor(private opts: RuntimeOptions) {
+    // 代理自己醒来开了一轮（后台命令结束）：跟着它，把回复发到会话里
+    if (opts.agent) opts.agent.onWake = (botId, convId) => void this.wake(botId, convId).catch((e) => log.warn("wake-up turn failed", { message: (e as Error).message }));
+  }
+
+  /** 渠道登记怎么主动往它的会话里发消息（代理自己醒来的一轮用）；botId 为 "*" 时对所有机器人有效 */
+  registerReplier(botId: string, channel: ChannelId, fn: Replier | undefined): void {
+    if (fn) this.repliers.set(`${botId}:${channel}`, fn);
+    else this.repliers.delete(`${botId}:${channel}`);
+  }
 
   /** 应用退出前调用（App.stop）：之后失败的回合留下重启标记，由下次启动告诉用户 */
   shutdown(): void {
@@ -190,23 +222,22 @@ export class BotRuntime {
     const bot = store.getBot(ev.botId);
     if (!bot) throw new Error(`unknown bot ${ev.botId}`);
     const conv = store.ensureConversation(bot.id, ev.channel, ev.conversation.id, ev.sender.name || ev.sender.id, ev.conversation.kind === "group" ? "group" : "dm");
-    const t: Inflight = { botId: bot.id, since: Date.now(), abort: new AbortController() };
+    const t: Inflight = { botId: bot.id, since: Date.now(), abort: new AbortController(), release: KeyedQueue.releaser() };
     const link = () => t.abort.abort();
     if (opts.signal?.aborted) link();
     else opts.signal?.addEventListener("abort", link, { once: true });
-    const set = this.inflight.get(conv.id) ?? new Set<Inflight>();
-    this.inflight.set(conv.id, set);
-    set.add(t);
+    // 回复句柄存下来（代理自己醒来的一轮要回复到它；重启也在）
+    if (Object.keys(ev.replyHandle).length) store.setKV(REPLY_TO + conv.id, JSON.stringify(ev.replyHandle));
+    const done = this.enter(conv.id, t);
     // 重启标记：应用退出或崩溃时还没处理完的，下次启动告诉用户
     const text = eventText(ev);
     if (text) markInflight(store, conv.id, text);
     try {
-      await this.handleMessage(ev, out, bot, conv.id, conv.model, t);
+      await this.handleMessage(ev, out, bot, conv.id, t, done.prior);
     } finally {
       opts.signal?.removeEventListener("abort", link);
-      set.delete(t);
-      if (!set.size && this.inflight.get(conv.id) === set) this.inflight.delete(conv.id);
-      if (!set.size && !t.interrupted) {
+      done.leave();
+      if (!this.inflight.get(conv.id)?.size && !t.interrupted) {
         try {
           clearInflight(store, conv.id);
         } catch {
@@ -216,9 +247,32 @@ export class BotRuntime {
     }
   }
 
-  private async handleMessage(ev: InboundEvent, out: ReplySession, bot: NonNullable<ReturnType<Store["getBot"]>>, convId: string, convModel: string, t: Inflight): Promise<void> {
+  /**
+   * 登记一条正在处理的消息（或代理自己醒来的一轮）：/stop 能停它；排进会话的先后（prior 是它前面那些都处理完）。
+   * 渠道的串行队列在代理收下消息后就让位（Inflight.release），之后的先后由这里保证。
+   */
+  private enter(convId: string, t: Inflight): { prior: Promise<void> | undefined; leave: () => void } {
+    const set = this.inflight.get(convId) ?? new Set<Inflight>();
+    this.inflight.set(convId, set);
+    set.add(t);
+    const prior = this.tails.get(convId);
+    let finish!: () => void;
+    const mine = new Promise<void>((r) => (finish = r));
+    const tail = (prior ?? Promise.resolve()).then(() => mine);
+    this.tails.set(convId, tail);
+    return {
+      prior,
+      leave: () => {
+        finish();
+        if (this.tails.get(convId) === tail) this.tails.delete(convId);
+        set.delete(t);
+        if (!set.size && this.inflight.get(convId) === set) this.inflight.delete(convId);
+      },
+    };
+  }
+
+  private async handleMessage(ev: InboundEvent, out: ReplySession, bot: NonNullable<ReturnType<Store["getBot"]>>, convId: string, t: Inflight, prior: Promise<void> | undefined): Promise<void> {
     const { store } = this.opts;
-    const conv = { id: convId, model: convModel };
     const signal = t.abort.signal;
     const agent = this.opts.agent;
     // 代理模式：收到的图片/文件先进工作区，消息里写路径
@@ -227,14 +281,28 @@ export class BotRuntime {
     if (!text) return;
     const images = inboundImages(ev);
     // 上次重启时没处理完、当时又没能告诉用户的：先说一声
-    const notice = takeNotice(store, conv.id);
+    const notice = takeNotice(store, convId);
     if (notice) await out.apply({ type: "text", text: notice }).catch((e) => log.warn("restart notice failed", { message: (e as Error).message.slice(0, 200) }));
+
+    // 前面还有消息在处理：代理回合进行中就把这条并进去（模型下一步看到，回复一起给），否则排在它们后面。
+    // 命令（/model、/reset…）不并入，等前面的处理完
+    if (prior) {
+      if (agent?.available && !signal.aborted && !text.startsWith("/") && (await this.steer(agent, bot.id, convId, text, images, out, t))) {
+        await prior;
+        // 应用正在退出、它并进的那一轮没做完：重启标记留着（下次启动告诉用户）
+        if (this.closing) t.interrupted = true;
+        return;
+      }
+      await prior;
+    }
+    // 前面的消息可能换了模型（/model）
+    const conv = { id: convId, model: store.getConversation(convId)?.model ?? "" };
 
     // 排队时就被停止了：不再处理（命令也不执行），留一句"已中止"
     if (signal.aborted) {
       const msg = stoppedText(Date.now() - t.since);
       if (!text.startsWith("/")) {
-        store.addMessage(conv.id, "user", text);
+        if (!t.userStored) store.addMessage(conv.id, "user", text);
         store.addMessage(conv.id, "assistant", msg);
       }
       await out.apply({ type: "text", text: msg });
@@ -272,7 +340,8 @@ export class BotRuntime {
       if (handled === "starting") note = "（代理还在启动，这条消息先由模型直接回答；启动完成后会自动用回代理。）";
     }
 
-    store.addMessage(conv.id, "user", text);
+    if (!t.userStored) store.addMessage(conv.id, "user", text);
+    t.userStored = true;
     const history = store.contextWindow(conv.id, this.opts.contextMessages, this.opts.contextChars);
     const messages: ChatMessage[] = [];
     if (bot.systemPrompt.trim()) messages.push({ role: "system", content: bot.systemPrompt });
@@ -338,9 +407,9 @@ export class BotRuntime {
     if (!agent) return { handled: false };
     const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`);
     if (r.handled) return r;
-    // 前一条还在处理：说一声这条排在后面、怎么中止（每个回合只说一次），消息照常入队
+    // 前一条还在处理：能并入进行中的代理回合时由 handle 并入并回一句；不能时说一声这条排在后面、怎么中止（每个回合只说一次），消息照常入队
     const t = agent.turnsInProgress.get(convId);
-    if (t && !t.queuedNotice) {
+    if (t && !t.queuedNotice && !agent.canSteer(convId)) {
       t.queuedNotice = true;
       const last = t.activity.last;
       return { handled: false, ack: `上一条消息还在处理（已 ${fmtSecs(Date.now() - t.since)}${last ? `，现在：${clipLine(describeStep(last))}` : ""}），这条会排在它后面。发送 /stop 可以中止。` };
@@ -363,7 +432,7 @@ export class BotRuntime {
     // Windows：代理执行命令用的 PowerShell；没有 7 时建议安装
     const ps = a?.available ? pwshStatusLine(pwshProbe.snapshot()) : "";
     const turn = a?.turnsInProgress.get(convId);
-    const busy = turn ? [busyLine(turn.since, turn.lastProgress, turn.activity.steps)] : [];
+    const busy = turn ? [busyLine(turn.since, turn.lastProgress, turn.activity.steps, !!a?.canSteer(convId))] : [];
     const who = this.opts.access ? [this.opts.access.policyLine(botId)] : [];
     return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...who, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
   }
@@ -437,7 +506,8 @@ export class BotRuntime {
       clearInterval(startup);
       log.info("message stopped before the agent took it", { bot: botId, conversationId: convId });
       const msg = stoppedText(Date.now() - inflight.since);
-      store.addMessage(convId, "user", text);
+      if (!inflight.userStored) store.addMessage(convId, "user", text);
+      inflight.userStored = true;
       store.addMessage(convId, "assistant", msg);
       await out.apply({ type: "stream.finish", text: msg });
       return true;
@@ -475,6 +545,12 @@ export class BotRuntime {
           onProgress: () => {
             visible = true;
           },
+          // 代理收下了这条消息：先存用户消息（之后并进来的消息排在它后面），再让出渠道队列，后来的消息可以并入这一轮
+          onStart: () => {
+            if (!inflight.userStored) store.addMessage(convId, "user", text);
+            inflight.userStored = true;
+            inflight.release?.();
+          },
         },
       });
       const halt = () => agent.stopTurn(convId);
@@ -483,7 +559,8 @@ export class BotRuntime {
         clearInterval(startup);
         signal.removeEventListener("abort", halt);
       });
-      store.addMessage(convId, "user", text);
+      if (!inflight.userStored) store.addMessage(convId, "user", text);
+      inflight.userStored = true;
       const finalText = r.text.trim() || "（已完成，没有文字回复）";
       store.addMessage(convId, "assistant", finalText, [...steps.values()]);
       await out.apply({ type: "stream.finish", text: finalText });
@@ -508,7 +585,8 @@ export class BotRuntime {
         return false;
       }
       const msg = turnFailedText(err, [...steps.values()]);
-      store.addMessage(convId, "user", text);
+      if (!inflight.userStored) store.addMessage(convId, "user", text);
+      inflight.userStored = true;
       store.addMessage(convId, "assistant", msg, [...steps.values()]);
       await out.apply({ type: "stream.finish", text: msg });
       return true;
@@ -516,6 +594,107 @@ export class BotRuntime {
       clearInterval(startup);
       unbind();
       await out.apply({ type: "typing", on: false });
+    }
+  }
+
+  /**
+   * 把新消息并入这个会话正在进行的代理回合：成功就存下用户消息（排在上一条后面）、让出渠道队列、回一句收到。
+   * 回合没在跑、正在收尾或中止、指令通道不通时返回 false，消息照常排队。图片只交给能看图的模型（由宿主判断）。
+   */
+  private async steer(agent: AgentManager, botId: string, convId: string, text: string, images: TurnImage[], out: ReplySession, t: Inflight): Promise<boolean> {
+    if (!agent.canSteer(convId)) return false;
+    const ok = await agent.steer(botId, convId, { text, ...(images.length ? { images } : {}) }).catch((e: Error) => {
+      log.warn("steer failed", { message: e.message.slice(0, 200) });
+      return false;
+    });
+    if (!ok) return false;
+    log.info("message steered into the running turn", { bot: botId, conversationId: convId });
+    this.opts.store.addMessage(convId, "user", text);
+    t.userStored = true;
+    t.release?.();
+    await out.apply({ type: "text", text: STEER_ACK, ack: true });
+    return true;
+  }
+
+  /**
+   * 代理自己醒来的一轮（后台命令结束，DSH 唤醒了空闲的代理）：像普通回合一样登记（/status、/stop、看门狗、插话都认它），
+   * 经渠道主动发到会话里（网页对话进 live 登记；飞书回复最近一条消息；微信占一条回复配额），回复与步骤存进历史。
+   */
+  async wake(botId: string, convId: string): Promise<void> {
+    const { store } = this.opts;
+    const agent = this.opts.agent;
+    const conv = store.getConversation(convId);
+    const bot = store.getBot(botId);
+    // 那一轮已经有人跟着、或者随代理进程一起没了：不发任何东西
+    const wakeId = agent?.available ? agent.host(botId).wakeId(convId) : undefined;
+    if (this.closing || !agent || !conv || !bot || !wakeId) return;
+    let handle: Record<string, string> | undefined;
+    try {
+      handle = JSON.parse(store.getKV(REPLY_TO + convId) || "null") ?? undefined;
+    } catch {
+      handle = undefined;
+    }
+    const r = (this.repliers.get(`${botId}:${conv.channel}`) ?? this.repliers.get(`*:${conv.channel}`))?.(conv, handle, `wake:${wakeId}`);
+    if (!r) log.warn("no way to reply in this conversation; the wake-up reply is only kept in its history", { bot: botId, conversationId: convId, channel: conv.channel });
+    const out: ReplySession = r?.out ?? { apply: async () => undefined };
+    const t: Inflight = { botId, since: Date.now(), abort: new AbortController(), userStored: true };
+    const done = this.enter(convId, t);
+    // 重启标记：这一轮没做完应用就退出或崩溃了，下次启动告诉用户（说的是让命令跑起来的那条消息）
+    const asked = store.listMessages(convId, 20).filter((m) => m.role === "user").at(-1)?.content;
+    markInflight(store, convId, asked || "后台命令的结果");
+    const steps = new Map<string, ActivityStep>();
+    const unbind = agent.approvals.bindSink(convId, async (row) => void (await out.apply(interactiveOp(row))));
+    const halt = () => agent.stopTurn(convId);
+    t.abort.signal.addEventListener("abort", halt, { once: true });
+    try {
+      const model = conv.model || bot.defaultModel || this.opts.defaultModel();
+      const routed = model && this.opts.route ? this.opts.route(botId, model) : model;
+      await out.apply({ type: "typing", on: true });
+      await out.apply({ type: "stream.start" });
+      let res: Awaited<ReturnType<AgentManager["followTurn"]>>;
+      try {
+        res = await agent.followTurn(botId, {
+          conversationId: convId,
+          model: routed,
+          onStep: (step) => {
+            steps.set(step.id, step);
+            void out.apply({ type: "activity", step });
+          },
+        });
+      } catch (e) {
+        // 应用正在退出时代理进程被关掉：不回复，重启标记留着
+        if (this.closing) {
+          t.interrupted = true;
+          return;
+        }
+        const msg = turnFailedText(e as Error, [...steps.values()]);
+        store.addMessage(convId, "assistant", msg, [...steps.values()]);
+        await out.apply({ type: "stream.finish", text: msg });
+        return;
+      }
+      const finalText = res.text.trim() || "（后台任务已结束，没有文字回复）";
+      store.addMessage(convId, "assistant", finalText, [...steps.values()]);
+      await out.apply({ type: "stream.finish", text: finalText });
+      for (const f of res.files ?? []) {
+        try {
+          await out.apply({ type: "file", path: f, name: path.basename(f) });
+        } catch (e) {
+          log.warn("deliver file failed", { name: path.basename(f), message: (e as Error).message.slice(0, 200) });
+        }
+      }
+    } finally {
+      t.abort.signal.removeEventListener("abort", halt);
+      unbind();
+      await out.apply({ type: "typing", on: false }).catch(() => undefined);
+      done.leave();
+      if (!this.inflight.get(convId)?.size && !t.interrupted) {
+        try {
+          clearInflight(store, convId);
+        } catch {
+          /* 退出时数据库可能已经关了 */
+        }
+      }
+      r?.done?.();
     }
   }
 
@@ -616,8 +795,8 @@ export function interactiveOp(row: ApprovalRow) {
 
 const clipLine = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
-/** /status 里"上一条还在处理"那一行：处理了多久、现在在做什么、多久没动了 */
-export function busyLine(since: number, lastProgress: number, steps: ActivityStep[]): string {
+/** /status 里"上一条还在处理"那一行：处理了多久、现在在做什么、多久没动了；steer = 新消息会并入这一轮 */
+export function busyLine(since: number, lastProgress: number, steps: ActivityStep[], steer = false): string {
   const now = Date.now();
   const last = steps.at(-1);
   const parts = [`已 ${fmtSecs(now - since)}`];
@@ -625,7 +804,7 @@ export function busyLine(since: number, lastProgress: number, steps: ActivitySte
   if (!lastProgress) parts.push("还在等代理进程接手");
   else if (last) parts.push(`现在：${clipLine(describeStep(last))}`);
   if (lastProgress && now - lastProgress >= 60_000) parts.push(`${fmtSecs(now - lastProgress)}没有新进展`);
-  return `本会话上一条消息还在处理（${parts.join("，")}），新消息会排在它后面。发送 /stop 可以中止`;
+  return `本会话上一条消息还在处理（${parts.join("，")}），${steer ? "新消息会并入正在进行的处理" : "新消息会排在它后面"}。发送 /stop 可以中止`;
 }
 
 /** 代理回合失败时给用户的话：中止（/stop、没进展、超时）各说清原因和下一步，进程被重启的另说 */
@@ -633,9 +812,11 @@ export function turnFailedText(err: Error, steps: ActivityStep[]): string {
   const last = steps.filter((s) => s.kind !== "error").at(-1);
   const where = last ? `${last.cut || last.status === "running" ? "卡在" : "最后一步"}：${clipLine(describeStep(last))}。` : "";
   if (err instanceof TurnStopped) {
-    if (err.reason === "user") return `已中止（处理了 ${fmtSecs(err.ms)}）。代理进程已重启，可以继续发消息。`;
-    if (err.reason === "idle") return `⚠️ 代理 ${fmtSecs(err.ms)}没有任何进展，已自动中止并重启代理进程。${where}可以重新发送，或用 /model 换个模型试试。`;
-    return `⚠️ 这条消息处理超过了 ${fmtSecs(err.ms)}的上限，已中止并重启代理进程。${where}可以把任务拆小一点再发。`;
+    // 只中止了这个会话；宽限期内没停下才重启了代理进程（同一机器人的其它会话也被打断）
+    const restart = err.restarted ? "并重启代理进程" : "";
+    if (err.reason === "user") return `已中止（处理了 ${fmtSecs(err.ms)}）。${err.restarted ? "代理进程已重启，" : ""}可以继续发消息。`;
+    if (err.reason === "idle") return `⚠️ 代理 ${fmtSecs(err.ms)}没有任何进展，已自动中止${restart}。${where}可以重新发送，或用 /model 换个模型试试。`;
+    return `⚠️ 这条消息处理超过了 ${fmtSecs(err.ms)}的上限，已中止${restart}。${where}可以把任务拆小一点再发。`;
   }
   if (/runtime (closed|exited)/i.test(err.message)) return "⚠️ 代理进程重启了（可能是同一机器人的另一个会话中止了卡住的消息），这条消息没有处理完，请重新发送。";
   return `⚠️ 代理执行失败：${err.message.slice(0, 300)}`;

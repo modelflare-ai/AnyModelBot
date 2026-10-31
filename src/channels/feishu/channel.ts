@@ -1,4 +1,4 @@
-import type { ChannelCapabilities, ChannelStatus, InboundEvent, Part } from "../../core/types.js";
+import type { ChannelCapabilities, ChannelStatus, InboundEvent, Part, ReplySession } from "../../core/types.js";
 import { Dedup, KeyedQueue } from "../../core/queue.js";
 import type { BotRuntime } from "../../core/runtime.js";
 import type { FeishuMessageEvent, FeishuTransport } from "./transport.js";
@@ -133,6 +133,14 @@ export class FeishuChannel {
     });
     this.pending.add(p);
     void p.finally(() => this.pending.delete(p));
+  }
+
+  /**
+   * 主动发到一个飞书会话的回复（代理自己醒来的一轮：后台命令结束）：回复用户最近的那条消息（replyTo 存在会话的 KV 里，重启也在），
+   * 和普通回复一样经出站队列，id 由 key 推出。
+   */
+  followUp(chatId: string, replyTo: string, key: string): ReplySession {
+    return new FeishuReply(this.transport, replyTo, this.throttleMs, { outbox: this.outbox, botId: this.botId, chatId, key });
   }
 
   async idle(): Promise<void> {

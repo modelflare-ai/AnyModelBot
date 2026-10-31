@@ -21,12 +21,15 @@ export interface LiveSnapshot {
   files: string[];
   /** 已经按了停止，正在收尾 */
   stopping: boolean;
+  /** 这条并进了它前面那条正在进行的处理：没有自己的回复，回复在前面那条里 */
+  steered: boolean;
 }
 
 type Listener = (event: string, data: unknown) => void;
 
 /**
  * 网页控制台的一条消息，从收到到回复结束（排队、等代理启动、流式回复都算）。
+ * 代理自己醒来的一轮（后台命令结束）也登记成一条，userText 为空。
  * 运行时把 OutboundOp 写进来：这里记下到目前为止的状态，再原样转给订阅者——发消息的那个请求，
  * 以及切走再切回、刷新之后接上来的界面。
  */
@@ -38,6 +41,8 @@ export class LiveTurn implements ReplySession {
   readonly prompts: LivePrompt[] = [];
   readonly files: string[] = [];
   stopping = false;
+  /** 并进了正在进行的处理（见 LiveSnapshot.steered） */
+  steered = false;
   done = false;
   /** 停止按钮：交给 runtime.handle 的 signal（排队中的也能停） */
   readonly abort = new AbortController();
@@ -53,6 +58,7 @@ export class LiveTurn implements ReplySession {
 
   async apply(op: OutboundOp): Promise<void> {
     if (this.done) return;
+    if (op.type === "text" && op.ack) this.steered = true;
     if (op.type === "stream.update" || op.type === "stream.finish" || op.type === "text") this.text = op.text;
     else if (op.type === "activity") this.steps.set(op.step.id, op.step);
     else if (op.type === "file") this.files.push(op.name);
@@ -73,6 +79,7 @@ export class LiveTurn implements ReplySession {
       prompts: [...this.prompts],
       files: [...this.files],
       stopping: this.stopping,
+      steered: this.steered,
     };
   }
 

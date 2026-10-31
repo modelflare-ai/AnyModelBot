@@ -138,7 +138,8 @@ export class FeishuReply implements ReplySession {
       case "stream.finish":
         return this.finish(op.text);
       case "text":
-        return this.post("text", { text: op.text }, this.ids.of("text", op.text));
+        // ack（"收到，这条会并入…"）过一会儿就没意义了，发不出去不必一直等
+        return this.post("text", { text: op.text }, this.ids.of(op.ack ? "ack" : "text", op.text), op.ack ? 10 * 60_000 : undefined);
       case "file":
         await this.inflight;
         return this.post("file", { path: op.path, name: op.name }, this.ids.of("file", op.path));

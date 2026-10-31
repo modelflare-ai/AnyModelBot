@@ -6,7 +6,7 @@ import { Store } from "../src/store/db.js";
 import { ApprovalCenter, parseAnswer, promptText } from "../src/agent/approvals.js";
 import { WeixinReply } from "../src/channels/weixin/channel.js";
 import { WeixinQuota } from "../src/channels/weixin/quota.js";
-import { AgentHost, agentApi, modelLimits, type AgentApi } from "../src/agent/host.js";
+import { AgentHost, SHELL_LIMITS, agentApi, modelLimits, providerFor, providerProfiles, type AgentApi, type ModelRoute } from "../src/agent/host.js";
 import { AgentBridge, BOT_HEADER, type ProxyEvent, type Rejection } from "../src/agent/bridge.js";
 import { ApiFallbacks, shapeRejection } from "../src/agent/api-fallback.js";
 import { ActivityLog } from "../src/agent/activity.js";
@@ -275,13 +275,22 @@ describe("agent API per model", () => {
     expect(agentApi(claude, { AMB_AGENT_API: "" })).toBe("anthropic-messages");
   });
 
-  const patchFor = (model: string, api: AgentApi, reasoning?: boolean) => {
+  const route = (model: string, api: AgentApi, reasoning?: boolean): ModelRoute => ({ model, api, provider: providerFor(api, reasoning), reasoning, limits: modelLimits(model, 1_000_000) });
+  const patchOf = (routes: ModelRoute[], pwsh?: string) => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-patch-"));
     const host = new AgentHost({ botId: "b", dataDir, runtimeDir: "/rt", bridge: { url: "http://127.0.0.1:1" } as any, store: new Store(":memory:") });
     fs.mkdirSync(host.home, { recursive: true });
-    const text = fs.readFileSync((host as any).writePatch(model, [], undefined, modelLimits(model, 1_000_000), api, reasoning), "utf8");
+    const text = fs.readFileSync((host as any).writePatch(routes, [], pwsh), "utf8");
     fs.rmSync(dataDir, { recursive: true, force: true });
     return text;
+  };
+  /** 只有一个模型时：它所在 provider 的那一段 */
+  const patchFor = (model: string, api: AgentApi, reasoning?: boolean) => {
+    const text = patchOf([route(model, api, reasoning)]);
+    const name = providerFor(api, reasoning);
+    const start = text.indexOf(`      ${name}:\n`);
+    const next = text.slice(start + 1).search(/\n {6}\S|\n- /);
+    return text.slice(start, start + 1 + next + 1);
   };
 
   it("the patch names the API; Anthropic's base URL is the bridge root (the SDK adds /v1/messages)", () => {
@@ -295,6 +304,32 @@ describe("agent API per model", () => {
     expect(claude).toContain("            input: [text, image]\n");
     // Claude 不开思考（和以前一样用模型默认）
     expect(claude).not.toMatch(/reasoning|compat/);
+  });
+
+  it("one agent process serves every model: a provider per API (Responses split by reasoning), every model also under Chat for the fallback", () => {
+    const routes = [route("mfb-b/gpt-6.1-terra", "openai-responses", true), route("mfb-b/gpt-mini", "openai-responses", false), route("mfb-b/claude-sonnet-5", "anthropic-messages"), route("mfb-b/gemini-3.6-flash", "openai-completions")];
+    const p = providerProfiles(routes, "http://127.0.0.1:1", "b");
+    expect(Object.keys(p).sort()).toEqual(["magpie", "magpie-anthropic", "magpie-responses", "magpie-responses-plain"]);
+    expect(p.magpie.models.map((m) => m.id)).toEqual(routes.map((r) => r.model));
+    expect(p["magpie-responses"]).toMatchObject({ api: "openai-responses", reasoning: "medium", models: [{ id: "mfb-b/gpt-6.1-terra" }] });
+    expect(p["magpie-responses-plain"].reasoning).toBeUndefined();
+    expect(p["magpie-anthropic"]).toMatchObject({ api: "anthropic-messages", baseURL: "http://127.0.0.1:1", models: [{ id: "mfb-b/claude-sonnet-5" }] });
+    // 每个模型自己的上下文窗口和最大输出
+    const text = patchOf([{ ...routes[0], limits: { window: 1_050_000, maxTokens: 32_000 } }, { ...routes[3], limits: { window: 64_000, maxTokens: 16_000 } }]);
+    expect(text).toContain('          - id: "mfb-b/gemini-3.6-flash"\n            name: "gemini-3.6-flash"\n            contextWindow: 64000\n            maxTokens: 16000\n');
+    expect(text).toContain('          - id: "mfb-b/gpt-6.1-terra"\n            name: "gpt-6.1-terra"\n            contextWindow: 1050000\n            maxTokens: 32000\n');
+    // 指令通道插件
+    expect(text).toContain('    - id: amb-control\n      name: "/rt/plugins/amb-control.mjs"\n');
+  });
+
+  it("long commands move to a background job: shell and job-wait limits sized for a chat assistant; PowerShell keeps its path", () => {
+    const text = patchOf([route("m", "openai-completions")], "C:\\PS7\\pwsh.exe");
+    expect(text).toContain(`- id: bash-sandbox\n  config:\n    timeoutMs: ${SHELL_LIMITS.bashMs}\n    maxTimeoutMs: ${SHELL_LIMITS.bashMaxMs}\n`);
+    expect(text).toContain(`- id: pwsh-sandbox\n  config:\n    timeoutMs: ${SHELL_LIMITS.pwshMs}\n    maxTimeoutMs: ${SHELL_LIMITS.pwshMaxMs}\n    pwshPath: "C:\\\\PS7\\\\pwsh.exe"\n`);
+    expect(text).toContain(`- id: tool-jobs\n  config:\n    waitTimeoutMs: ${SHELL_LIMITS.waitMs}\n    maxWaitTimeoutMs: ${SHELL_LIMITS.waitMaxMs}\n`);
+    // 结束时唤醒代理（DSH 默认），宿主跟着那一轮
+    expect(text).not.toContain("completionDelivery");
+    expect(SHELL_LIMITS.bashMs).toBeGreaterThan(5_000);
   });
 
   it("Responses: reasoning models ask for medium effort (encrypted reasoning for replay); system role; explicit strict:false", () => {

@@ -21,6 +21,8 @@ export interface BridgeHandlers {
   steward?(body: any): Promise<unknown>;
   /** amb-media 插件：生图 / 生视频 */
   media?(body: any): Promise<unknown>;
+  /** amb-control 插件：长轮询取宿主的指令（signal = 连接断了）、回报结果 */
+  control?: { poll(body: any, signal: AbortSignal): Promise<unknown>; result(body: any): void };
   /** 服务端压缩：长会话的 /v1/responses 换上上游压缩过的历史（见 server-compaction.ts） */
   compaction?: ServerCompaction;
 }
@@ -46,6 +48,7 @@ export const BOT_HEADER = "x-amb-bot";
  * 仅回环的内部桥：DSH 子进程用每次启动随机生成的令牌访问。
  * - /v1/*：模型代理（Chat Completions、Responses、Anthropic Messages），把令牌换成真实网关密钥（子进程环境里没有任何真实密钥）
  * - /dsh/ask|wait|cancel：amb-bridge 插件的审批/提问长轮询
+ * - /dsh/control/poll|result：amb-control 插件取宿主的指令（中止、插话、换模型）并回报
  */
 export class AgentBridge {
   readonly token = crypto.randomBytes(24).toString("base64url");
@@ -263,6 +266,11 @@ export class AgentBridge {
     else if (url === "/dsh/memory" && this.h.memory) out = await this.h.memory(body);
     else if (url === "/dsh/steward" && this.h.steward) out = await this.h.steward(body);
     else if (url === "/dsh/media" && this.h.media) return this.longCall(res, this.h.media(body));
+    else if (url === "/dsh/control/poll" && this.h.control) {
+      const ac = new AbortController();
+      res.on("close", () => ac.abort());
+      out = await this.h.control.poll(body, ac.signal);
+    } else if (url === "/dsh/control/result" && this.h.control) out = (this.h.control.result(body), { ok: true });
     else return void res.writeHead(404).end();
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
   }

@@ -619,6 +619,9 @@ export class App {
     if (bot.feishuAppId && bot.feishuAppSecret && !ch.feishu) {
       const transport = this.opts.feishuTransport?.(bot) ?? new LarkTransport(bot.feishuAppId, bot.feishuAppSecret);
       ch.feishu = new FeishuChannel(bot.id, transport, this.runtime, this.queue, this.config.feishu.throttleMs, this.outbox);
+      // 代理自己醒来的一轮（后台命令结束）：经出站队列回复到这个会话最近收到的那条消息
+      const fs = ch.feishu;
+      this.runtime.registerReplier(bot.id, "feishu", (conv, handle, key) => (handle?.messageId ? { out: fs.followUp(conv.peerId, handle.messageId, key) } : undefined));
       ch.feishuError = undefined;
       ch.feishu.start().catch((e) => {
         ch.feishuError = (e as Error).message;
@@ -634,6 +637,9 @@ export class App {
         outbox: this.outbox,
       });
       ch.weixin.onExpired = () => this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);
+      const wx = ch.weixin;
+      // 代理自己醒来的一轮：经出站队列发给这个微信用户（发送时才查 24 小时窗口和配额）
+      this.runtime.registerReplier(bot.id, "weixin", (conv, _handle, key) => ({ out: wx.followUp(conv.peerId, key) }));
       ch.weixin.start();
     }
   }
@@ -642,6 +648,8 @@ export class App {
     const ch = this.channels.get(botId);
     if (!ch) return;
     ch.weixinLogin?.cancel();
+    this.runtime.registerReplier(botId, "feishu", undefined);
+    this.runtime.registerReplier(botId, "weixin", undefined);
     await ch.feishu?.stop().catch(() => {});
     await ch.weixin?.stop().catch(() => {});
     this.channels.delete(botId);

@@ -6,10 +6,11 @@ import module from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { App } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { RETRY_NOTE, locateDshRuntime } from "../src/agent/host.js";
+import { RETRY_NOTE, SHELL_LIMITS, locateDshRuntime } from "../src/agent/host.js";
 import { CHAT_RULES, MEMORY_GUIDE, botIdentity } from "../src/agent/prompts/index.js";
+import { STEER_ACK } from "../src/core/runtime.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
-import { listen } from "./helpers.js";
+import { listen, mockIlink } from "./helpers.js";
 
 /**
  * 真实 DSH 子进程 + 脚本化的模型（会发出工具调用），Chat Completions、Responses、Anthropic Messages 三种接口都能答。
@@ -177,12 +178,29 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): Step {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|SUBASK|SUBHELLO|PADDED|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|SUBASK|SUBHELLO|PADDED|STEERME|SLOWOK|BGJOB|TOKENS|^background job |\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
     // 卡住的模型：请求收下了，一直不回
     if (/HANG/.test(user)) return { hang: true };
+    // 插话：先跑一条几秒的命令；命令结束后看有没有并进来的用户消息（文字、图片）
+    if (/STEERME/.test(user)) {
+      const later = messages.slice(lastUser + 1).filter((m) => m.role === "user");
+      const img = later.find((m) => Array.isArray(m.content) && m.content.some((p: any) => p?.type === "image_url"));
+      if (img) return { text: `SAWIMG<<${img.content.filter((p: any) => p?.type === "image_url").map((p: any) => String(p.image_url?.url ?? "").split(",")[0]).join(" ")}|${/\[图片 inbox\/[^\]]+\.png\]/.test(textOf(img.content)) ? "path" : "nopath"}>>` };
+      const steered = later.find((m) => /STEERTEXT/.test(textOf(m.content)));
+      if (steered) return { text: `SAW<<${textOf(steered.content)}>>` };
+      if (!tools.length) return { tool: { name: "bash", args: { description: "run", command: "sleep 3 && echo first-done" } } };
+      return { text: "NOSTEER" };
+    }
+    // 后台命令结束，代理被唤醒：读它的输出，再跑一条一秒的命令（这一轮有时间看 /status），然后回复
+    if (/^background job /.test(user)) {
+      const id = /^background job (\S+)/.exec(user)?.[1];
+      if (tools.length === 0) return { tool: { name: "job_output", args: { job_id: id } } };
+      if (tools.length === 1) return { tool: { name: "bash", args: { description: "run", command: "sleep 1 && echo wake-step" } } };
+      return { text: `BGDONE<<${tools.map((t) => textOf(t.content)).join("|")}>>` };
+    }
     // 长回复：让会话历史很快长过系统提示和工具（服务端压缩用例）
     if (/PADDED/.test(user)) return { text: "PADDED-OK " + "z".repeat(12_000) };
     // 看图：回报模型收到的图片（data URL 的头）和文字里有没有工作区路径
@@ -206,6 +224,10 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
         ...(canStripTypes ? [{ name: "workflow", args: { script: "return { answer: 6 * 7 }", meta: { name: "calc", description: "multiply" } } }] : []),
       ]],
       [/COUNTER/, [{ name: "bash", args: { description: "run", command: "echo ran >> counter.txt && wc -l < counter.txt" } }]],
+      [/SLOWOK/, [{ name: "bash", args: { description: "run", command: "sleep 4 && echo slow-done" } }]],
+      // 跑得比转后台的阈值久：命令转到后台，这一轮先回复"还在跑"
+      [/BGJOB/, [{ name: "bash", args: { description: "run", command: "sleep 4 && echo bg-finished-42" } }]],
+      [/TOKENS/, [{ name: "bash", args: { description: "run", command: "echo token=${AMB_BRIDGE_TOKEN:-none} control=${AMB_CONTROL_TOKEN:-none} key=${AMB_MAGPIE_KEY:-none} url=${AMB_BRIDGE_URL:-none}" } }]],
       [/LOOPBACK/, [{ name: "bash", args: { description: "run", command: `python3 -c "import urllib.request as u\ntry:\n  print('API', u.urlopen('${base}/amb/api/status').status)\nexcept Exception as e:\n  print('API', getattr(e,'code',e))"` } }]],
       // 完全权限：写工作区外的目录、读宿主数据目录、显式要求 danger-full-access
       [/OUTWRITE/, [
@@ -225,6 +247,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     for (const [re, steps] of scripts) {
       if (!re.test(user)) continue;
       if (tools.length < steps.length) return { tool: steps[tools.length] };
+      if (/BGJOB/.test(user)) return { text: `STILL-RUNNING<<${tools.map((t) => textOf(t.content)).join("|")}>>` };
       return { text: `RESULT<<${tools.map((t) => textOf(t.content)).join("|")}>>` };
     }
     return { text: "好的" };
@@ -551,15 +574,19 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   const console_ = async () => (await (await fetch(`${base}/amb/api/bots/default/chat`)).json()) as { conversationId: string; messages: any[] };
   const api = async (p: string, init?: RequestInit) => (await fetch(`${base}/amb/api${p}`, init)).json();
 
-  it("a turn without progress is stopped by the watchdog: the agent restarts and the reply keeps its steps", async () => {
+  it("a turn without progress is stopped by the watchdog: only that conversation's turn is cancelled (no restart), the reply keeps its steps", async () => {
     const o = (app.agent as any).o;
     const prev = o.idleTimeoutMs;
     o.idleTimeoutMs = 3000;
     try {
+      expect((await chat("/reset")).reply).toMatch(/已清空/);
+      expect((await chat("hello before the hang")).reply).toBe("好的");
+      const pid = app.agent.host("default").pid;
       const t0 = Date.now();
       const r = await chat("HANG please");
-      expect(r.reply).toBe("⚠️ 代理 3 秒没有任何进展，已自动中止并重启代理进程。卡在：等待 mock-agent 回复。可以重新发送，或用 /model 换个模型试试。");
+      expect(r.reply).toBe("⚠️ 代理 3 秒没有任何进展，已自动中止。卡在：等待 mock-agent 回复。可以重新发送，或用 /model 换个模型试试。");
       expect(Date.now() - t0).toBeLessThan(30_000);
+      expect(app.agent.host("default").pid).toBe(pid);
     } finally {
       o.idleTimeoutMs = prev;
     }
@@ -581,9 +608,12 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       turn = (await api(`/conversations/${conv}/turn`)).turn;
     }
     expect(turn.steps.at(-1)).toMatchObject({ kind: "model", title: "mock-agent", status: "running" });
-    expect((await chat("/status")).reply).toMatch(/本会话上一条消息还在处理（已 \d+ 秒，1 步，现在：等待 mock-agent 回复），新消息会排在它后面。发送 \/stop 可以中止/);
+    expect((await chat("/status")).reply).toMatch(/本会话上一条消息还在处理（已 \d+ 秒，1 步，现在：等待 mock-agent 回复），新消息会并入正在进行的处理。发送 \/stop 可以中止/);
+    const pid = app.agent.host("default").pid;
     expect((await chat("/stop")).reply).toMatch(/^正在中止上一条消息（已处理 \d+ 秒）…$/);
-    expect((await pending).reply).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect((await pending).reply).toMatch(/^已中止（处理了 \d+ 秒）。可以继续发消息。$/);
+    // 只中止了这个会话的回合（agent.cancel），代理进程没有重启
+    expect(app.agent.host("default").pid).toBe(pid);
     expect((await api(`/conversations/${conv}/turn`)).turn).toBeNull();
     expect((await chat("/stop")).reply).toBe("当前没有正在处理的消息。");
     expect((await chat("/reset")).reply).toMatch(/已清空/);
@@ -648,7 +678,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(Date.now() - t0).toBeLessThan(15_000);
     expect(a.events.map(([e]) => e)).toContain("stopping");
     const final = a.texts().at(-1)!;
-    expect(final).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect(final).toMatch(/^已中止（处理了 \d+ 秒）。可以继续发消息。$/);
     expect(a.events.at(-1)![0]).toBe("done");
     const after = await api("/bots/default/chat");
     expect(after.live).toEqual([]);
@@ -696,7 +726,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect((await api(`/bots/default/chat`)).live[0].prompts.map((p: any) => p.requestId)).toEqual([id]);
     expect(await stopWeb()).toEqual({ stopped: true });
     await s.done;
-    expect(s.texts().at(-1)).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect(s.texts().at(-1)).toMatch(/^已中止（处理了 \d+ 秒）。可以继续发消息。$/);
     expect((await api(`/approvals/${id}`)).approval.status).toBe("cancelled");
     expect((await chat("/reset")).reply).toMatch(/已清空/);
     expect((await chat("hello once again")).reply).toBe("好的");
@@ -1093,4 +1123,298 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       await sc.settled();
     }
   }, 300_000);
+
+  // —— 实时控制：插话、按会话中止、同一进程里各会话各用各的模型、长命令转后台 ——
+  /** 一个微信会话发一条消息，不等它结束：返回 { done（回复文字）, conv } */
+  const startOn = (user: string, model: string, text: string, images: Buffer[] = []) => {
+    const conv = app.store.ensureConversation("default", "weixin", user, user, "dm");
+    app.access.allow("default", "weixin", user, "test");
+    app.store.setConversationModel(conv.id, model);
+    const ops: any[] = [];
+    const parts = [{ type: "text" as const, text }, ...images.map((data) => ({ type: "image" as const, data, mime: "image/png" }))];
+    const done = app.runtime
+      .handle({ id: `${user}-${rnd()}`, channel: "weixin", botId: "default", conversation: { kind: "dm", id: user }, sender: { id: user }, parts, replyHandle: {}, receivedAt: Date.now() }, { apply: async (op) => void ops.push(op) })
+      .then(() => ops.findLast((o) => o.type === "stream.finish" || o.type === "text")?.text as string);
+    return { done, conv: conv.id, ops };
+  };
+  const toolRunning = async (conv: string) => ((await api(`/conversations/${encodeURIComponent(conv)}/turn`)) as any).turn?.steps?.some((s: any) => s.kind === "tool" && s.status === "running");
+
+  it("a message sent while a turn runs is steered into it: one reply, history in order, the web live registry consistent, no restart", async () => {
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+    expect((await chat("hello before steering")).reply).toBe("好的");
+    const host = app.agent.host("default");
+    const pid = host.pid;
+    const conv = (await console_()).conversationId;
+    const first = chat("STEERME please");
+    await waitFor(() => toolRunning(conv));
+    const before = calls.length;
+    const second = chat("STEERTEXT extra-xyz");
+    // 网页的 live 登记里两条都在：第二条并进了第一条，没有自己的回复
+    let d: any;
+    await waitFor(async () => (d = await api("/bots/default/chat")).live?.length === 2 && d.live[1].steered);
+    expect(d.live.map((t: any) => [t.userText, t.steered])).toEqual([
+      ["STEERME please", false],
+      ["STEERTEXT extra-xyz", true],
+    ]);
+    expect((await first).reply).toBe("SAW<<STEERTEXT extra-xyz>>");
+    expect((await second).reply).toBe(STEER_ACK);
+    // 第二条没有单独开一轮：之后的模型请求都带着第一条（同一轮里的下一步）
+    expect(calls.slice(before).every((c) => JSON.stringify(c.body).includes("STEERME please"))).toBe(true);
+    const after = await console_();
+    expect(after.messages.slice(-3).map((m: any) => [m.role, m.content])).toEqual([
+      ["user", "STEERME please"],
+      ["user", "STEERTEXT extra-xyz"],
+      ["assistant", "SAW<<STEERTEXT extra-xyz>>"],
+    ]);
+    expect(after.messages.filter((m: any) => m.content === "STEERTEXT extra-xyz")).toHaveLength(1);
+    expect(((await api("/bots/default/chat")) as any).live).toEqual([]);
+    const a = await api(`/conversations/${encodeURIComponent(conv)}/messages/${after.messages.at(-1).id}/activity`);
+    expect(a.steps.some((s: any) => s.kind === "steer" && s.summary === "STEERTEXT extra-xyz")).toBe(true);
+    expect(host.pid).toBe(pid);
+  }, 120_000);
+
+  it("an image sent while a turn runs reaches the agent with the steered message", async () => {
+    if (!app.agent.host("default").imageInput) return; // Linux 上的 Electron：只给路径
+    const a = startOn("steer-img", "gpt-5-mock", "STEERME with a picture");
+    await waitFor(() => toolRunning(a.conv));
+    const b = startOn("steer-img", "gpt-5-mock", "LOOKSTEER", [png]);
+    expect(await a.done).toMatch(/^SAWIMG<<data:image\/(png|jpeg|webp);base64\|path>>$/);
+    expect(await b.done).toBe(STEER_ACK);
+    const hist = app.store.listMessages(a.conv).map((m) => [m.role, m.content.replace(/inbox\/\S+\.png/, "inbox/X.png")]);
+    expect(hist.slice(-3)).toEqual([
+      ["user", "STEERME with a picture"],
+      ["user", "LOOKSTEER\n[图片 inbox/X.png]"],
+      ["assistant", expect.stringMatching(/^SAWIMG<</)],
+    ]);
+  }, 120_000);
+
+  it("/stop cancels only that conversation's turn: another conversation of the same bot keeps running, no restart", async () => {
+    const host = app.agent.host("default");
+    const pid = host.pid;
+    const restarts = host.restarts;
+    const b = startOn("stop-b", "mock-agent", "SLOWOK b");
+    const a = startOn("stop-a", "mock-agent", "HANG stop-a");
+    await waitFor(() => toolRunning(b.conv));
+    await waitFor(async () => ((await api(`/conversations/${encodeURIComponent(a.conv)}/turn`)) as any).turn?.steps?.length > 0);
+    expect(app.runtime.stop(a.conv)).toBe(true);
+    expect(await a.done).toMatch(/^已中止（处理了 \d+ 秒）。可以继续发消息。$/);
+    expect(await b.done).toContain("slow-done");
+    expect(host.pid).toBe(pid);
+    expect(host.restarts).toBe(restarts);
+    expect(host.state).toBe("running");
+  }, 120_000);
+
+  it("each conversation runs on its own model in one agent process: a switch, even to a model the patch did not list, needs no restart", async () => {
+    catalog["gpt-6-mock"] = ["openai", "openai-response", "openai-response-compact"];
+    catalog["claude-switch-mock"] = ["anthropic", "openai"];
+    const host = app.agent.host("default");
+    expect(host.state).toBe("running");
+    const pid = host.pid;
+    expect((host.status() as any).models).not.toContain("claude-switch-mock");
+    const from = calls.length;
+    // 会话 X 在 gpt-6-mock（Responses）上跑一条几秒的命令；同时会话 Y 用一个新模型（Anthropic Messages）
+    const x = startOn("switch-x", "gpt-6-mock", "SLOWOK on responses");
+    await waitFor(() => toolRunning(x.conv));
+    const y = await turnOn("switch-y", "claude-switch-mock", "QUICKSORT on a new model");
+    expect(y.reply).toContain("[1, 2, 3, 5, 7, 9]");
+    expect(await x.done).toContain("slow-done");
+    expect(callsFor("claude-switch-mock", from).map((c) => c.api)).toEqual(callsFor("claude-switch-mock", from).map(() => "messages"));
+    expect(callsFor("claude-switch-mock", from).length).toBeGreaterThan(0);
+    expect(callsFor("gpt-6-mock", from).filter((c) => c.body.tools).every((c) => c.api === "responses")).toBe(true);
+    // 每个请求都是它所在会话的模型
+    for (const c of calls.slice(from).filter((c) => c.body.tools)) {
+      const body = JSON.stringify(c.body);
+      if (body.includes("SLOWOK on responses")) expect(c.model).toBe("gpt-6-mock");
+      if (body.includes("QUICKSORT on a new model")) expect(c.model).toBe("claude-switch-mock");
+    }
+    // 会话 Y 再换回 gpt-6-mock：同一个会话、同一个进程
+    const again = calls.length;
+    expect((await turnOn("switch-y", "gpt-6-mock", "QUICKSORT after switching back")).reply).toContain("[1, 2, 3, 5, 7, 9]");
+    expect(callsFor("gpt-6-mock", again).filter((c) => c.body.tools).every((c) => c.api === "responses")).toBe(true);
+    expect(callsFor("claude-switch-mock", again)).toEqual([]);
+    expect(host.pid).toBe(pid);
+    expect((host.status() as any).models).toEqual(expect.arrayContaining(["gpt-6-mock", "claude-switch-mock"]));
+  }, 180_000);
+
+  it("tool processes never see the bridge token or the control channel id (DSH scrubs *TOKEN*/*KEY* from their environment)", async () => {
+    const r = await chat("TOKENS check");
+    expect(r.reply).toContain("token=none control=none key=none");
+    expect(r.reply).not.toContain(app.agent.bridge.token);
+    expect(r.reply).not.toContain(app.agent.host("default").control.id);
+  }, 120_000);
+
+  it("a long command moves to the background; the turn replies at once; when it ends the agent wakes and the follow-up reaches the chat", async () => {
+    const host = app.agent.host("default");
+    const saved = { ...SHELL_LIMITS };
+    // 测试里把转后台的阈值调到 1.5 秒（真实是 30 秒），重启代理进程让补丁生效
+    Object.assign(SHELL_LIMITS, { bashMs: 1500, bashMaxMs: 3000 });
+    try {
+      await host.restart();
+      expect((await chat("/reset")).reply).toMatch(/已清空/);
+      const conv = (await console_()).conversationId;
+      const t0 = Date.now();
+      const r = await chat("BGJOB now");
+      expect(r.reply).toMatch(/^STILL-RUNNING<<\[still running after 1500ms; moved to background job bash-\S+\]/);
+      // 没有等命令跑完（它要 4 秒）：这一轮的回复里还没有它的输出
+      expect(r.reply).not.toContain("bg-finished-42");
+      expect(Date.now() - t0).toBeLessThan(30_000);
+      const first = await console_();
+      const steps1 = (await api(`/conversations/${encodeURIComponent(conv)}/messages/${first.messages.at(-1).id}/activity`)).steps;
+      expect(steps1.find((s: any) => s.kind === "job")).toMatchObject({ title: "后台命令", status: "ok", summary: expect.stringContaining("（回复时仍在后台运行）") });
+      // 命令结束：代理被唤醒，宿主像普通回合一样跟着这一轮：网页 live 里有一条（没有用户消息），/status 和信息面板都认它
+      let live: any;
+      await waitFor(async () => !!(live = ((await api("/bots/default/chat")) as any).live.find((t: any) => t.userText === "")), 30_000);
+      expect(live.steered).toBe(false);
+      await waitFor(async () => !!((await api(`/conversations/${encodeURIComponent(conv)}/turn`)) as any).turn);
+      expect((await chat("/status")).reply).toMatch(/本会话上一条消息还在处理/);
+      expect((await api("/agent")).busy).toEqual(["default"]);
+      // 回复存进历史、发到会话里
+      let d: any;
+      await waitFor(async () => /BGDONE/.test((d = await console_()).messages.at(-1)?.content ?? ""), 60_000);
+      const reply = d.messages.at(-1);
+      expect(reply.role).toBe("assistant");
+      expect(reply.content).toContain("bg-finished-42");
+      expect(reply.content).toContain("wake-step");
+      expect(d.messages.slice(-3).map((m: any) => m.role)).toEqual(["user", "assistant", "assistant"]);
+      const steps2 = (await api(`/conversations/${encodeURIComponent(conv)}/messages/${reply.id}/activity`)).steps;
+      expect(steps2.map((s: any) => s.kind)).toEqual(expect.arrayContaining(["job", "model", "tool"]));
+      await waitFor(async () => ((await api("/bots/default/chat")) as any).live.length === 0);
+      expect(((await api(`/conversations/${encodeURIComponent(conv)}/turn`)) as any).turn).toBeNull();
+    } finally {
+      Object.assign(SHELL_LIMITS, saved);
+      await host.restart();
+    }
+  }, 180_000);
+
+  it("a wake-up turn can be stopped like any other; nothing restarts", async () => {
+    const host = app.agent.host("default");
+    const saved = { ...SHELL_LIMITS };
+    Object.assign(SHELL_LIMITS, { bashMs: 1500, bashMaxMs: 3000 });
+    try {
+      await host.restart();
+      expect((await chat("/reset")).reply).toMatch(/已清空/);
+      const conv = (await console_()).conversationId;
+      expect((await chat("BGJOB again")).reply).toMatch(/^STILL-RUNNING/);
+      const pid = host.pid;
+      await waitFor(async () => !!((await api(`/conversations/${encodeURIComponent(conv)}/turn`)) as any).turn, 30_000);
+      expect((await chat("/stop")).reply).toMatch(/^正在中止上一条消息/);
+      let d: any;
+      await waitFor(async () => /^已中止/.test((d = await console_()).messages.at(-1)?.content ?? ""), 30_000);
+      expect(d.messages.at(-1).content).toMatch(/^已中止（处理了 \d+ 秒）。可以继续发消息。$/);
+      expect(host.pid).toBe(pid);
+      // 同一个会话、同一个代理进程照常接着用
+      expect((await chat("QUICKSORT after stopping the wake-up turn")).reply).toContain("[1, 2, 3, 5, 7, 9]");
+      expect(host.pid).toBe(pid);
+    } finally {
+      Object.assign(SHELL_LIMITS, saved);
+      await host.restart();
+    }
+  }, 180_000);
+
+  // —— 微信端到端（真实 DSH + mock iLink）：插话的"收到"、后台命令结束后的回复都经出站队列发到微信，各只发一次 ——
+  describe("on WeChat (mock iLink)", () => {
+    const OWNER = "owner@im.wechat";
+    const FRIEND = "friend@im.wechat";
+    let ilink: Awaited<ReturnType<typeof mockIlink>>;
+    const sentTo = (user: string, text: string) => ilink.state.sent.filter((s) => s.to === user && s.text.includes(text));
+    const outboxRows = (user: string) => app.store.listOutbox({ botId: "default", limit: 500 }).filter((r) => r.peerId === user).reverse();
+
+    beforeAll(async () => {
+      ilink = await mockIlink();
+      // 已经扫码登录：扫码的是 OWNER；渠道连到 mock iLink
+      app.store.saveWeixinAccount({ botId: "default", botToken: "tok", ilinkBotId: "bot@im.bot", baseUrl: ilink.url, ownerUserId: OWNER });
+      await app.restartBot("default");
+    });
+    afterAll(async () => {
+      await app.channels.get("default")?.weixin?.stop();
+      await ilink?.close();
+    });
+
+    it("a long command is backgrounded; when it ends the follow-up reply reaches WeChat exactly once, through the outbox", async () => {
+      const host = app.agent.host("default");
+      const saved = { ...SHELL_LIMITS };
+      Object.assign(SHELL_LIMITS, { bashMs: 1500, bashMaxMs: 3000 });
+      try {
+        await host.restart();
+        const conv = `default:weixin:${OWNER}`;
+        app.store.setConversationModel(conv, "");
+        ilink.push(OWNER, "BGJOB on wechat");
+        // 这一轮先回"还在跑"
+        await waitFor(() => sentTo(OWNER, "STILL-RUNNING").length === 1, 60_000);
+        expect(sentTo(OWNER, "bg-finished-42")).toHaveLength(0);
+        // 命令结束：代理醒来，回复作为一条新消息发到微信
+        await waitFor(() => sentTo(OWNER, "BGDONE").length === 1, 60_000);
+        const done = sentTo(OWNER, "BGDONE")[0];
+        expect(done.text).toContain("bg-finished-42");
+        expect(done.text).toContain("wake-step");
+        // 经出站队列：id 由 DSH 会话和回合号推出（wx:<机器人>:wake:<会话>:t<回合>:final），状态 sent
+        const rows = outboxRows(OWNER);
+        const wake = rows.filter((r) => /^wx:default:wake:[^:]+:t\d+:final$/.test(r.id));
+        expect(wake).toHaveLength(1);
+        expect(wake[0]).toMatchObject({ status: "sent", kind: "text", channel: "weixin" });
+        expect(wake[0].body.text).toContain("BGDONE");
+        expect(wake[0].id).toBe(`wx:default:wake:${app.store.getAgentSession(conv)}:t2:final`);
+        // 先是这一轮的回复，再是后台命令结束后的那条（按会话顺序）
+        expect(rows.map((r) => r.body.text?.split("<<")[0])).toEqual(["STILL-RUNNING", "BGDONE"]);
+        // 再等一会儿：没有重发，平台的 client_id 都不一样
+        await new Promise((r) => setTimeout(r, 2000));
+        await app.outbox.idle();
+        expect(sentTo(OWNER, "BGDONE")).toHaveLength(1);
+        expect(new Set(ilink.state.clientIds).size).toBe(ilink.state.clientIds.length);
+        // 历史：用户消息、这一轮的回复、后台命令结束后的回复；没有正在进行的回合，重启标记清掉了
+        const hist = app.store.listMessages(conv).map((m) => [m.role, m.content.split("<<")[0]]);
+        expect(hist.slice(-3)).toEqual([
+          ["user", "BGJOB on wechat"],
+          ["assistant", "STILL-RUNNING"],
+          ["assistant", "BGDONE"],
+        ]);
+        await waitFor(() => !app.agent.turnsInProgress.has(conv));
+        expect(app.store.getKV(`inflight:${conv}`)).toBeFalsy();
+      } finally {
+        Object.assign(SHELL_LIMITS, saved);
+        await host.restart();
+      }
+    }, 180_000);
+
+    it("a message sent while the turn runs is steered: the 收到 ack and the one reply go through the outbox, once each", async () => {
+      const conv = `default:weixin:${OWNER}`;
+      const before = ilink.state.sent.length;
+      ilink.push(OWNER, "STEERME on wechat");
+      await waitFor(() => toolRunning(conv), 60_000);
+      ilink.push(OWNER, "STEERTEXT from wechat");
+      await waitFor(() => sentTo(OWNER, "SAW<<STEERTEXT from wechat>>").length === 1, 60_000);
+      await app.outbox.idle();
+      const mine = ilink.state.sent.slice(before).filter((s) => s.to === OWNER).map((s) => s.text);
+      expect(mine).toEqual([STEER_ACK, "SAW<<STEERTEXT from wechat>>"]);
+      // ack 的出站记录：短有效期、只发一次
+      const ack = outboxRows(OWNER).filter((r) => r.body.text === STEER_ACK);
+      expect(ack).toHaveLength(1);
+      expect(ack[0].status).toBe("sent");
+      expect(ack[0].expiresAt - ack[0].createdAt).toBeLessThanOrEqual(10 * 60_000);
+      expect(app.store.listMessages(conv).slice(-3).map((m) => [m.role, m.content])).toEqual([
+        ["user", "STEERME on wechat"],
+        ["user", "STEERTEXT from wechat"],
+        ["assistant", "SAW<<STEERTEXT from wechat>>"],
+      ]);
+      await waitFor(() => !app.agent.turnsInProgress.has(conv));
+      expect(app.store.getKV(`inflight:${conv}`)).toBeFalsy();
+    }, 120_000);
+
+    it("a steer never bypasses the allowlist: removed while its turn runs, the next message is refused, not steered", async () => {
+      const entry = app.access.allow("default", "weixin", FRIEND, "test");
+      const conv = `default:weixin:${FRIEND}`;
+      ilink.push(FRIEND, "STEERME from a friend");
+      await waitFor(() => toolRunning(conv), 60_000);
+      // 主人在回合进行中把他移出允许名单
+      app.access.remove(entry.id);
+      ilink.push(FRIEND, "STEERTEXT should not get in");
+      await waitFor(() => sentTo(FRIEND, "NOSTEER").length === 1, 60_000);
+      await app.outbox.idle();
+      expect(sentTo(FRIEND, "SAW<<")).toHaveLength(0);
+      expect(sentTo(FRIEND, STEER_ACK)).toHaveLength(0);
+      expect(app.store.listMessages(conv).map((m) => m.content)).not.toContain("STEERTEXT should not get in");
+      // 模型从没见过这条
+      expect(calls.some((c) => JSON.stringify(c.body).includes("STEERTEXT should not get in"))).toBe(false);
+    }, 120_000);
+  });
 });

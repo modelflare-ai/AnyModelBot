@@ -39,12 +39,13 @@ function toItems(messages) {
   );
 }
 
-// 进行中的一条消息（服务端的 live 快照）：用户消息 + 到目前为止的回复；turn 标记这些项属于哪条进行中的消息
+// 进行中的一条消息（服务端的 live 快照）：用户消息 + 到目前为止的回复；turn 标记这些项属于哪条进行中的消息。
+// 代理自己醒来的一轮（后台命令结束）没有用户消息；并进前一条处理的消息没有自己的回复
 function liveItems(t, cards = []) {
   return [
-    { kind: "msg", id: "u" + t.id, role: "user", text: t.userText, at: t.startedAt, turn: t.id },
+    ...(t.userText ? [{ kind: "msg", id: "u" + t.id, role: "user", text: t.userText, at: t.startedAt, turn: t.id }] : []),
     ...cards.map((c) => ({ ...c, turn: t.id })),
-    { kind: "msg", id: "a" + t.id, role: "assistant", text: t.text, at: t.startedAt, live: true, startedAt: t.startedAt, activity: t.steps, turn: t.id },
+    ...(t.steered ? [] : [{ kind: "msg", id: "a" + t.id, role: "assistant", text: t.text, at: t.startedAt, live: true, startedAt: t.startedAt, activity: t.steps, turn: t.id }]),
     ...t.files.map((name, i) => ({ kind: "file", id: `f${t.id}-${i}`, name, turn: t.id })),
   ];
 }
@@ -188,7 +189,7 @@ function ErrorNotice({ text, onRetry, onFixKey }) {
     ${onRetry && html`<button type="button" class="btn" onClick=${onRetry}>重试</button>`}`}>${auth ? "Modelflare 密钥失效或已被撤销。" : text}<//>`;
 }
 
-export function ChatScreen({ bot, models, modelsError, reloadModels, defaultModel, infoOpen, onToggleInfo, onWorking, onOpenSettings, onOpenBotSettings, onBotUpdated, pending = 0 }) {
+export function ChatScreen({ bot, models, modelsError, reloadModels, defaultModel, infoOpen, onToggleInfo, onWorking, onOpenSettings, onOpenBotSettings, onBotUpdated, pending = 0, serverBusy = false }) {
   const [items, setItems] = useState(null);
   const [convModel, setConvModel] = useState("");
   const [text, setText] = useState("");
@@ -216,6 +217,8 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const lastUser = useRef("");
   const convId = useRef("");
   const attachRef = useRef(null);
+  // 处理中又发的消息（并进正在进行的回复）结束后重新读一次历史：存下的顺序是两条用户消息、一条回复
+  const reloadAfter = useRef(false);
 
   // ended：刚接着的那条消息结束了 { since, ms }，存下的回复照样显示"用时"（和一直停在这页时一样）
   const load = useCallback(async (ended) => {
@@ -257,6 +260,10 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     api(`/bots/${encodeURIComponent(bot.id)}/settings`).then((d) => mounted.current && setPerm(d.settings.permission)).catch(() => {});
   }, [bot.id]);
   useEffect(() => onWorking(bot.id, generating), [generating]);
+  // 服务端开始处理这个机器人的消息，而本页没在跟（代理自己醒来的一轮、别的窗口发的）：读一次，接上进行中的那条
+  useEffect(() => {
+    if (serverBusy && !following.current && mounted.current) load();
+  }, [serverBusy]);
   useEffect(() => () => onWorking(bot.id, false), []);
 
   // 只有用户本来就在底部附近时才跟随新内容；否则亮出"回到底部"
@@ -287,7 +294,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
    * 切走了（组件卸载、事件流被断开）返回 null。liveId 是回复那一项，turn 是这条消息的几项共用的标记。
    */
   const follow = async (liveId, turn, open) => {
-    const f = { ac: new AbortController(), local: false };
+    const f = { ac: new AbortController(), local: false, turn };
     following.current = f;
     setGenerating(true);
     let finalText = "";
@@ -337,6 +344,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     if (following.current) return;
     stick.current = true;
     const finalText = await follow("a" + t.id, t.id, (h, signal) => attachChat(bot.id, t.id, h, signal));
+    reloadAfter.current = false;
     if (finalText === null) return;
     if (isError(finalText)) {
       setCue({ kind: "error", at: Date.now() });
@@ -346,8 +354,37 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   };
   attachRef.current = attach;
 
+  /**
+   * 回复还在进行时又发一条（不是命令）：交给服务端并进正在进行的处理，模型下一步就看到它，回复在那一条里一起给。
+   * 用户消息先插在进行中的回复上面；服务端没能并入（那一轮刚好结束）时它按普通消息处理，结束后重新读历史。
+   */
+  const steer = async (t) => {
+    setText("");
+    requestAnimationFrame(() => autoGrow(ta.current, LINE_PX * 8 + 8));
+    lastUser.current = t;
+    stick.current = true;
+    const turn = following.current?.turn;
+    setItems((l) => {
+      const list = l || [];
+      const user = { kind: "msg", id: uid(), role: "user", text: t, at: Date.now(), enter: true, turn };
+      const i = list.findIndex((x) => x.live && x.turn === turn);
+      return i < 0 ? [...list, user] : [...list.slice(0, i), user, ...list.slice(i)];
+    });
+    reloadAfter.current = true;
+    try {
+      await streamChat(bot.id, t, {}, new AbortController().signal);
+    } catch (e) {
+      failed(e);
+    }
+    if (mounted.current && !following.current && reloadAfter.current) {
+      reloadAfter.current = false;
+      load();
+    }
+  };
+
   const send = async (raw) => {
     const t = (raw ?? text).trim();
+    if (t && (generating || following.current) && !t.startsWith("/") && raw === undefined) return steer(t);
     if (!t || generating || following.current) return;
     if (raw === undefined) {
       setText("");
@@ -361,6 +398,10 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     const finalText = await follow(liveId, liveId, (h, signal) => streamChat(bot.id, t, h, signal));
     if (finalText === null) return;
     if (isError(finalText)) setCue({ kind: "error", at: Date.now() });
+    if (reloadAfter.current) {
+      reloadAfter.current = false;
+      return load();
+    }
     setItems((l) => {
       const out = [];
       for (const item of l || []) {
@@ -580,6 +621,9 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
           onClick=${() => setMenu(menu === "model" ? null : "model")}>
           <span class="v">${effective ? shortModel(effective) : "选择模型"}</span><${Icon} name="chevDown" />
         </button>
+        ${generating && text.trim() && !text.trim().startsWith("/") && !stopping
+          ? html`<button type="button" class="send" aria-label="补充给正在进行的回复" title="补充给正在进行的回复（Enter）" onClick=${() => send()}><${Icon} name="up" size=${15} stroke=${2} /></button>`
+          : null}
         ${generating
           ? html`<button type="button" class="send stop" aria-label=${stopping ? "正在停止…" : "停止生成（Esc）"} title=${stopping ? "正在停止…" : "停止（Esc）"}
               disabled=${stopping} aria-busy=${stopping} onClick=${stop}>${stopping ? html`<${Spinner} />` : html`<${Icon} name="stop" size=${12} />`}</button>`

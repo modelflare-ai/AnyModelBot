@@ -185,7 +185,8 @@ export class WeixinReply implements ReplySession {
         return this.enqueue(() => this.post("text", { text: op.text }, role));
       }
       case "text":
-        return this.enqueue(() => this.post("text", { text: op.text }, this.ids.of("text", op.text)));
+        // ack（"收到，这条会并入…"）过一会儿就没意义了，发不出去不必一直等
+        return this.enqueue(() => this.post("text", { text: op.text }, this.ids.of(op.ack ? "ack" : "text", op.text), op.ack ? SHORT_TTL_MS : undefined));
       case "file":
         return this.enqueue(() => this.post("file", { path: op.path, name: op.name }, this.ids.of("file", op.path)));
       case "interactive": {
@@ -320,6 +321,15 @@ export class WeixinChannel {
   /** 主动提醒：发给扫码登录的那个微信用户 */
   async notifyOwner(text: string): Promise<boolean> {
     return this.notify(this.store.getWeixinAccount(this.botId)?.ownerUserId ?? "", text);
+  }
+
+  /**
+   * 主动发到一个微信会话的回复（代理自己醒来的一轮：后台命令结束）：和普通回复一样经出站队列，id 由 key 推出；
+   * 会话凭证、24 小时窗口和配额在发送时才查（deliverWeixin），发不出去在界面里看得到。
+   */
+  followUp(userId: string, key: string): ReplySession {
+    const token = this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? "";
+    return new WeixinReply(this.client!, userId, token, this.quota, { outbox: this.outbox, botId: this.botId, key });
   }
 
   async stop(): Promise<void> {

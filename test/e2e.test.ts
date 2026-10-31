@@ -50,6 +50,10 @@ afterAll(async () => {
 });
 
 describe("飞书 E2E", () => {
+  // 只有主人和允许名单里的人能用（准入见 access-outbox.e2e.test.ts）：这里的单聊都先放进允许名单
+  beforeAll(() => {
+    for (const chat of ["oc_chat1", "oc_m", "oc_other"]) app.access.allow("default", "feishu", chat, "test");
+  });
   it("单聊：快速 ack + 流式卡片 + 历史持久化", async () => {
     const ev = feishuEvent("你好");
     const t0 = Date.now();
@@ -109,6 +113,9 @@ describe("微信 E2E", () => {
     expect(fs.existsSync(path.join(dataDir, "weixin", "default-login-qr.png"))).toBe(true);
     const acct = app.store.getWeixinAccount("default")!;
     expect(acct.ilinkBotId).toBe("bot@im.bot");
+    expect(acct.ownerUserId).toBe("owner@im.wechat");
+    // 扫码的是 owner@im.wechat；下面这些人先放进允许名单（准入见 access-outbox.e2e.test.ts）
+    for (const u of ["alice@im.wechat", "bob@im.wechat", "carol@im.wechat", "dave@im.wechat"]) app.access.allow("default", "weixin", u, "test");
 
     ilink.push("alice@im.wechat", "**你好** 微信");
     await until(() => ilink.state.sent.length >= 1, 8000);

@@ -224,6 +224,7 @@ describe("网页对话：进行中的消息（纯对话）", () => {
 
   it("/stop：微信等渠道的纯对话也能停（以前只停代理回合）", async () => {
     const ev = (id: string, text: string): InboundEvent => ({ id, channel: "weixin", botId: "default", conversation: { kind: "dm", id: "wx-1" }, sender: { id: "wx-1" }, parts: [{ type: "text", text }], replyHandle: {}, receivedAt: Date.now() });
+    app.access.allow("default", "weixin", "wx-1", "test");
     const out: string[] = [];
     const before = calls.length;
     const p = app.runtime.handle(ev("w1", "HOLD 微信"), { apply: async (op: OutboundOp) => void (op.type === "stream.finish" && out.push(op.text)) });

@@ -1,8 +1,10 @@
+import crypto from "node:crypto";
 import type { ChannelCapabilities, ChannelStatus, InboundEvent, OutboundOp, Part, ReplySession } from "../../core/types.js";
 import { splitText } from "../../core/types.js";
 import { Dedup, KeyedQueue } from "../../core/queue.js";
 import type { BotRuntime } from "../../core/runtime.js";
-import type { Store } from "../../store/db.js";
+import type { OutboxBody, OutboxKind, OutboxRow, Store } from "../../store/db.js";
+import { Gone, Later, Outbox, ReplyIds, stableId } from "../../core/outbox.js";
 import { IlinkClient, MessageItemType, MessageType, WeixinApiError, hasDownloadableMedia, type InboundMedia, type MessageItem, type WeixinMessage } from "./api.js";
 import { StreamingMarkdownFilter } from "./markdown-filter.js";
 import { WeixinQuota } from "./quota.js";
@@ -70,16 +72,90 @@ function mediaItems(items: MessageItem[] | undefined): MessageItem[] {
   return (items ?? []).flatMap((it) => [it, ...(it.ref_msg?.message_item ? [it.ref_msg.message_item] : [])]).filter(hasDownloadableMedia);
 }
 
+const deliverLog = logger("weixin.send");
+/** 回复太长、本轮配额不够时，最后一条末尾的说明 */
+const OVER_QUOTA_NOTE = "\n\n…（回复过长，已达到本轮可发送条数上限，请回复任意消息继续）";
+/** 文件临时发不出去（网络、CDN 5xx）时先重试这么多次，再改发一句"发送失败" */
+const MEDIA_RETRIES = 2;
+/** ack、审批提示：过一会儿就没意义了，发不出去不必一直等 */
+export const SHORT_TTL_MS = 10 * 60_000;
+
+/** 网络断开、超时、5xx 这类过一会儿可能就好的错误（本地文件读不了、平台拒绝、CDN 4xx 不算） */
+function transient(e: unknown): boolean {
+  const x = e as { rejected?: boolean; fatal?: boolean; syscall?: string };
+  if (x?.rejected || x?.fatal) return false;
+  return !(x?.syscall && ["open", "read", "stat", "scandir"].includes(x.syscall));
+}
+
+/** 能不能给这个人发：要有会话凭证、24 小时窗口没过、还有配额；不能就放弃（Gone），返回凭证 */
+function reachable(quota: WeixinQuota, userId: string): string {
+  const peer = quota.peer(userId);
+  if (!peer?.contextToken) throw new Gone("对方还没有给机器人发过消息，微信不允许主动发送");
+  if (!quota.open(userId)) throw new Gone("对方超过 24 小时没有发消息，微信不再允许回复");
+  if (quota.remaining(userId) <= 0) throw new Gone("本轮可发送条数已用完（对方每发一条消息，24 小时内最多回复 10 条）");
+  return peer.contextToken;
+}
+
+/**
+ * 把一条出站记录发到微信：文本按 4000 字切分，配额不够时截断并在末尾说明；文件走 CDN，发不出去改发一句说明。
+ * 发送成功才扣配额（出站队列按会话一条一条发，先查后扣不会超发）；每段带确定的 client_id。
+ */
+export async function deliverWeixin(client: IlinkClient, quota: WeixinQuota, row: OutboxRow, progress: (n: number) => void, retry = true): Promise<void> {
+  const user = row.peerId;
+  const token = reachable(quota, user);
+  if (row.kind === "file") {
+    const name = row.body.name ?? "文件";
+    if (row.progress === 0) {
+      try {
+        // 上传失败不占配额
+        await client.sendMedia(user, row.body.path ?? "", token, stableId(row.id, 0));
+        quota.tryConsume(user);
+        return;
+      } catch (e) {
+        if (retry && transient(e) && row.attempts < MEDIA_RETRIES) throw e;
+        deliverLog.warn("weixin media send failed", { name, message: (e as Error).message.slice(0, 200) });
+      }
+      progress(1);
+    }
+    await client.sendText(user, `⚠️ 文件「${name}」发送失败，可在工作区中查看。`, token, stableId(row.id, 1));
+    quota.tryConsume(user);
+    return;
+  }
+  const text = row.body.text ?? "";
+  const chunks = splitText(row.body.raw ? text.trim() : filterMarkdown(text), WEIXIN_CAPS.maxTextLength);
+  let rest = chunks.slice(row.progress);
+  const budget = quota.remaining(user);
+  if (rest.length > budget) {
+    rest = rest.slice(0, budget);
+    rest[budget - 1] = rest[budget - 1].slice(0, WEIXIN_CAPS.maxTextLength - OVER_QUOTA_NOTE.length) + OVER_QUOTA_NOTE;
+  }
+  for (let i = 0; i < rest.length; i++) {
+    const n = row.progress + i;
+    await client.sendText(user, rest[i], token, stableId(row.id, n));
+    quota.tryConsume(user);
+    progress(n + 1);
+  }
+}
+
+/** 回复会话把消息交给出站队列需要的东西：key 由入站消息推出（同一条入站的第 n 条回复 id 固定） */
+export interface WeixinOutbox {
+  outbox: Outbox;
+  botId: string;
+  key: string;
+  ttlMs?: number;
+}
+
 /**
  * 微信回复会话：不流式；生成期间只显示“正在输入”（每 5 秒续期），结束时一次性发送最终回复（>4000 字切分），遵守配额。
  * 不发送工具调用进度；只有最终回复、审批/提问提示和交付文件会成为聊天消息，配额全部留给它们。
+ * 这些消息先写进出站队列（持久化、按会话排队、失败重试），没给队列时（单元测试）直接发。
  */
 export class WeixinReply implements ReplySession {
   private ticket: string | undefined;
   private typingTimer: NodeJS.Timeout | undefined;
   private typingOn = false;
   private chain: Promise<void> = Promise.resolve();
-  readonly sent: string[] = [];
+  private ids = new ReplyIds();
   private log = logger("weixin.reply");
 
   constructor(
@@ -87,6 +163,7 @@ export class WeixinReply implements ReplySession {
     private userId: string,
     private contextToken: string,
     private quota: WeixinQuota,
+    private out?: WeixinOutbox,
   ) {}
 
   private enqueue(fn: () => Promise<void>): Promise<void> {
@@ -103,38 +180,43 @@ export class WeixinReply implements ReplySession {
       case "stream.start":
       case "stream.update":
         return;
-      case "stream.finish":
+      case "stream.finish": {
+        const role = this.ids.final();
+        return this.enqueue(() => this.post("text", { text: op.text }, role));
+      }
       case "text":
-        return this.enqueue(() => this.send(op.text));
+        return this.enqueue(() => this.post("text", { text: op.text }, this.ids.of("text", op.text)));
       case "file":
-        return this.enqueue(async () => {
-          if (this.quota.remaining(this.userId) <= 0) {
-            this.log.warn("weixin quota exhausted, file dropped", { userId: this.userId });
-            return;
-          }
-          try {
-            // 上传失败不占配额；发送串行，先查后扣不会超发
-            await this.client.sendMedia(this.userId, op.path, this.contextToken);
-            this.quota.tryConsume(this.userId);
-            this.sent.push(`[文件] ${op.name}`);
-          } catch (e) {
-            this.log.warn("weixin media send failed", { name: op.name, message: (e as Error).message.slice(0, 200) });
-            if (this.quota.tryConsume(this.userId)) {
-              const t = `⚠️ 文件「${op.name}」发送失败，可在工作区中查看。`;
-              await this.client.sendText(this.userId, t, this.contextToken);
-              this.sent.push(t);
-            }
-          }
-        });
+        return this.enqueue(() => this.post("file", { path: op.path, name: op.name }, this.ids.of("file", op.path)));
       case "interactive": {
         const text = op.requestId
           ? op.prompt // 代理请求：提示里已含编号/回复方式
           : `${op.prompt}${op.options?.length ? "\n" + op.options.map((o, i) => `${i + 1}. ${o}`).join("\n") + "\n（回复编号选择）" : ""}`;
         return this.enqueue(async () => {
-          await this.send(text, { raw: !!op.requestId });
+          await this.post("text", { text, raw: !!op.requestId }, this.ids.of("prompt", op.requestId ?? text), SHORT_TTL_MS);
           if (this.typingOn) await this.typing(true);
         });
       }
+    }
+  }
+
+  /** 交给出站队列（先落库再发，等第一次发送结束）；没有队列就直接发 */
+  private async post(kind: OutboxKind, body: OutboxBody, role: string, ttlMs?: number): Promise<void> {
+    if (kind === "text" && this.typingTimer) {
+      clearInterval(this.typingTimer);
+      this.typingTimer = undefined;
+    }
+    if (this.out) {
+      const { outbox, botId, key } = this.out;
+      await outbox.send({ id: `wx:${botId}:${key}:${role}`, botId, channel: "weixin", peerId: this.userId, kind, body, ttlMs: ttlMs ?? this.out.ttlMs });
+      return;
+    }
+    const row = { id: crypto.randomUUID(), peerId: this.userId, kind, body, progress: 0, attempts: 0 } as OutboxRow;
+    try {
+      await deliverWeixin(this.client, this.quota, row, () => {}, false);
+    } catch (e) {
+      if (!(e instanceof Gone)) throw e;
+      this.log.warn("weixin reply dropped", { userId: this.userId, reason: e.message });
     }
   }
 
@@ -157,31 +239,6 @@ export class WeixinReply implements ReplySession {
       this.log.debug("typing failed", { message: (e as Error).message });
     }
   }
-
-  private async send(text: string, o: { raw?: boolean; maxChunks?: number } = {}): Promise<void> {
-    if (this.typingTimer) {
-      clearInterval(this.typingTimer);
-      this.typingTimer = undefined;
-    }
-    let chunks = splitText(o.raw ? text.trim() : filterMarkdown(text), WEIXIN_CAPS.maxTextLength);
-    if (o.maxChunks) chunks = chunks.slice(0, o.maxChunks);
-    const budget = this.quota.remaining(this.userId);
-    if (budget <= 0) {
-      this.log.warn("weixin quota exhausted, reply dropped", { userId: this.userId });
-      return;
-    }
-    let toSend = chunks;
-    if (chunks.length > budget) {
-      toSend = chunks.slice(0, budget);
-      const note = "\n\n…（回复过长，已达到本轮可发送条数上限，请回复任意消息继续）";
-      toSend[budget - 1] = toSend[budget - 1].slice(0, WEIXIN_CAPS.maxTextLength - note.length) + note;
-    }
-    for (const c of toSend) {
-      if (!this.quota.tryConsume(this.userId)) break;
-      await this.client.sendText(this.userId, c, this.contextToken);
-      this.sent.push(c);
-    }
-  }
 }
 
 /** 微信 iLink 渠道：getupdates 长轮询 → 每用户串行队列 → 运行时。 */
@@ -195,6 +252,9 @@ export class WeixinChannel {
   private log = logger("weixin");
   readonly quota: WeixinQuota;
   readonly pending = new Set<Promise<void>>();
+  /** 出站队列（App 共用一个；单独构造时自己建一个） */
+  readonly outbox: Outbox;
+  private unregister: (() => void) | undefined;
   /** -14 会话过期时的通知回调（UI/日志） */
   onExpired: ((botId: string) => void) | undefined;
 
@@ -203,9 +263,14 @@ export class WeixinChannel {
     private store: Store,
     private runtime: BotRuntime,
     private queue: KeyedQueue,
-    private opts: { fetchImpl?: typeof fetch; cdnBaseUrl?: string; pollTimeoutMs?: number; retryDelayMs?: number; backoffMs?: number } = {},
+    private opts: { fetchImpl?: typeof fetch; cdnBaseUrl?: string; pollTimeoutMs?: number; retryDelayMs?: number; backoffMs?: number; outbox?: Outbox } = {},
   ) {
     this.quota = new WeixinQuota(store, botId);
+    if (opts.outbox) this.outbox = opts.outbox;
+    else {
+      this.outbox = new Outbox(store);
+      this.outbox.start();
+    }
   }
 
   get running(): boolean {
@@ -222,25 +287,44 @@ export class WeixinChannel {
     this.client = new IlinkClient({ baseUrl: acct.baseUrl, token: acct.botToken, fetchImpl: this.opts.fetchImpl, cdnBaseUrl: this.opts.cdnBaseUrl });
     this.abort = new AbortController();
     this.loop = this.run(this.abort.signal).finally(() => (this.loop = undefined));
+    // 上线：出站队列里这个机器人的微信消息（含上次没发完的）由这里发
+    this.unregister = this.outbox.register(this.botId, "weixin", (row, progress) => this.deliver(row, progress));
+  }
+
+  private async deliver(row: OutboxRow, progress: (n: number) => void): Promise<void> {
+    if (!this.client) throw new Later("微信渠道没有运行");
+    if ((this.store.getWeixinAccount(this.botId)?.pausedUntil ?? 0) > Date.now()) throw new Later("微信登录已过期，等重新扫码");
+    try {
+      await deliverWeixin(this.client, this.quota, row, progress);
+    } catch (e) {
+      if (e instanceof WeixinApiError && e.sessionExpired) throw new Later("微信登录已过期，等重新扫码");
+      throw e;
+    }
   }
 
   /**
-   * 主动提醒：发给扫码登录的那个微信用户。需要他最近发过消息（有 context_token），
-   * 并占用同一份回复配额；没有可用配额时放弃，返回 false。
+   * 主动给某人发一条通知（使用请求、批准结果、余额提醒）：要他最近 24 小时内发过消息、还有配额，否则返回 false。
+   * 进出站队列（同一 id 只发一次），占用他的回复配额。
    */
+  tell(userId: string, text: string, id: string): boolean {
+    if (!this.client || !this.quota.open(userId) || this.quota.remaining(userId) <= 0) return false;
+    void this.outbox.send({ id, botId: this.botId, channel: "weixin", peerId: userId, kind: "notice", body: { text, raw: true } });
+    return true;
+  }
+
+  /** 主动发给某个微信用户（余额提醒、重启后的提醒）：同 tell；同样的内容一分钟内只发一次 */
+  async notify(userId: string, text: string): Promise<boolean> {
+    return !!userId && this.tell(userId, text, `notice:${this.botId}:weixin:${stableId(`${userId}:${text}`, Math.floor(Date.now() / 60_000), 16)}`);
+  }
+
+  /** 主动提醒：发给扫码登录的那个微信用户 */
   async notifyOwner(text: string): Promise<boolean> {
     return this.notify(this.store.getWeixinAccount(this.botId)?.ownerUserId ?? "", text);
   }
 
-  /** 主动发给某个微信用户（如重启后的提醒）：同样要有他最近的 context_token、占用同一份回复配额；发不出去返回 false */
-  async notify(userId: string, text: string): Promise<boolean> {
-    const peer = userId ? this.store.getWeixinPeer(this.botId, userId) : undefined;
-    if (!this.client || !peer?.contextToken || !this.quota.tryConsume(userId)) return false;
-    await this.client.sendText(userId, text, peer.contextToken);
-    return true;
-  }
-
   async stop(): Promise<void> {
+    this.unregister?.();
+    this.unregister = undefined;
     this.abort?.abort();
     await this.loop?.catch(() => {});
     this.loop = undefined;
@@ -315,7 +399,7 @@ export class WeixinChannel {
     // 没处理掉但带 ack 的（前一条还在处理）：先说一声，消息照常入队
     const intercepted = this.runtime.interceptReply(ev);
     if (intercepted.ack) {
-      const ack = new WeixinReply(this.client!, userId, peer.contextToken, this.quota);
+      const ack = new WeixinReply(this.client!, userId, peer.contextToken, this.quota, { outbox: this.outbox, botId: this.botId, key: `${id}:ack`, ttlMs: SHORT_TTL_MS });
       const p = ack.apply({ type: "text", text: intercepted.ack }).catch((e) => this.log.warn("ack failed", { message: (e as Error).message }));
       this.pending.add(p);
       void p.finally(() => this.pending.delete(p));
@@ -323,7 +407,7 @@ export class WeixinChannel {
     if (intercepted.handled) return;
     const media = mediaItems(m.item_list);
     const p = this.queue.run(`weixin:${this.botId}:${userId}`, async () => {
-      const reply = new WeixinReply(this.client!, userId, this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? peer.contextToken, this.quota);
+      const reply = new WeixinReply(this.client!, userId, this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? peer.contextToken, this.quota, { outbox: this.outbox, botId: this.botId, key: id });
       try {
         if (media.length) ev.parts = weixinParts(m.item_list, await this.download(media));
         await this.runtime.handle(ev, reply);
@@ -352,5 +436,6 @@ export class WeixinChannel {
 
   async idle(): Promise<void> {
     while (this.pending.size) await Promise.all([...this.pending]);
+    await this.outbox.idle();
   }
 }

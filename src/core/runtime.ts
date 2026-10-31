@@ -15,6 +15,7 @@ import { clearInflight, markInflight, takeNotice } from "./recovery.js";
 import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
 import { isBotProviderModel } from "../modelflare.js";
 import type { ApprovalRow } from "../store/db.js";
+import type { AccessControl } from "./access.js";
 
 const log = logger("runtime");
 
@@ -96,6 +97,8 @@ export interface RuntimeOptions {
    * 会话与界面里保存的仍是不带 provider 的 id。缺省原样发送。
    */
   route?: (botId: string, model: string) => string;
+  /** 谁能和机器人对话（主人 + 允许名单）；缺省不限制 */
+  access?: AccessControl;
 }
 
 const HELP = [
@@ -179,6 +182,11 @@ export class BotRuntime {
    */
   async handle(ev: InboundEvent, out: ReplySession, opts: { signal?: AbortSignal } = {}): Promise<void> {
     const { store } = this.opts;
+    // 兜底：不在允许名单里的人不建会话、不进模型（正常已在 interceptReply 拦下）
+    if (this.opts.access && !this.opts.access.allowed(ev)) {
+      log.warn("dropped a message from a sender who is not allowed", { bot: ev.botId, channel: ev.channel });
+      return;
+    }
     const bot = store.getBot(ev.botId);
     if (!bot) throw new Error(`unknown bot ${ev.botId}`);
     const conv = store.ensureConversation(bot.id, ev.channel, ev.conversation.id, ev.sender.name || ev.sender.id, ev.conversation.kind === "group" ? "group" : "dm");
@@ -307,6 +315,11 @@ export class BotRuntime {
    * handled=false 但带 ack：前一条还在处理，渠道先把 ack 发出去，消息照常入队。
    */
   interceptReply(ev: InboundEvent): { handled: boolean; ack?: string } {
+    // 准入：不在允许名单里的人只收到一句提示（限频），不进队列、不碰模型；主人可以用「同意 1234」处理使用请求
+    const gate = this.opts.access?.admit(ev);
+    if (gate && !gate.ok) return { handled: true, ack: gate.reply };
+    const paired = this.opts.access?.handleReply(ev);
+    if (paired?.handled) return paired;
     const text = eventText(ev);
     const convId = `${ev.botId}:${ev.channel}:${ev.conversation.id}`;
     // /status、/help 只读、不碰模型和代理进程：不进会话队列，不会排在一个卡住或正在启动代理的回合后面
@@ -351,7 +364,8 @@ export class BotRuntime {
     const ps = a?.available ? pwshStatusLine(pwshProbe.snapshot()) : "";
     const turn = a?.turnsInProgress.get(convId);
     const busy = turn ? [busyLine(turn.since, turn.lastProgress, turn.activity.steps)] : [];
-    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
+    const who = this.opts.access ? [this.opts.access.policyLine(botId)] : [];
+    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...who, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
   }
 
   /** 卡片按钮回调：批准/拒绝/选择选项。 */

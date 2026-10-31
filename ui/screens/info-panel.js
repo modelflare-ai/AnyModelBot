@@ -6,6 +6,7 @@ import { PromptCard } from "./chat.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, saved, toast } from "../lib/store.js";
 import { fmtAgo, fmtDur, fmtTime } from "../lib/format.js";
+import { CHANNEL_NAME } from "../lib/access.js";
 
 export function usePoll(fn, ms, deps = []) {
   const [data, setData] = useState(null);
@@ -19,8 +20,6 @@ export function usePoll(fn, ms, deps = []) {
   }, [load, ms]);
   return [data, err, load];
 }
-
-const CHANNEL_NAME = { web: "网页", feishu: "飞书", weixin: "微信" };
 
 function FeishuRow({ bot, st, reload }) {
   const [open, setOpen] = useState(false);
@@ -103,6 +102,79 @@ function WeixinRow({ bot, st, reload }) {
     </div>`}`;
 }
 
+/**
+ * 使用请求：不在允许名单里的人给机器人发了消息（他只收到一句"还没被允许"，没有调用模型）。
+ * 允许 / 拒绝；这个渠道还没有主人时，可以把他设为主人（多半就是你自己）。
+ */
+function AccessRequests({ botId, data, reload }) {
+  const [busy, setBusy] = useState("");
+  if (!data || !data.requests.length) return null;
+  const act = async (r, what) => {
+    setBusy(r.id + what);
+    try {
+      await api(`/bots/${botId}/access/${encodeURIComponent(r.id)}/${what}`, { method: "POST", body: {} });
+      toast(what === "approve" ? `已允许「${r.who}」` : what === "deny" ? `已拒绝「${r.who}」` : `已设为${CHANNEL_NAME[r.channel]}主人`);
+    } catch (e) {
+      failed(e);
+    }
+    setBusy("");
+    reload();
+  };
+  return html`<div class="list-head">使用请求<span class="badge count warn">${data.requests.length}</span></div>
+    <div class="stack">${data.requests.map((r) => {
+      const noOwner = !data.owners[r.channel];
+      return html`<div key=${r.id} class="stack approval" style="--gap: var(--space-1)">
+        <span class="hint">${CHANNEL_NAME[r.channel] || r.channel} · ${fmtAgo(r.createdAt)}${r.requests > 1 ? ` · 发了 ${r.requests} 条消息` : ""}</span>
+        <div class="card">
+          <div class="meta"><span>想使用这个机器人 · 配对码 <span class="num">${r.code}</span></span></div>
+          <div class="q">${r.who}</div>
+          ${r.text && html`<div class="q-detail selectable">「${r.text}」</div>`}
+          <div class="actions">
+            <${Button} variant="primary" loading=${busy === r.id + "approve"} disabled=${!!busy} onClick=${() => act(r, "approve")}>允许</${Button}>
+            <${Button} loading=${busy === r.id + "deny"} disabled=${!!busy} onClick=${() => act(r, "deny")}>拒绝</${Button}>
+            ${noOwner && html`<${Button} variant="ghost" loading=${busy === r.id + "owner"} disabled=${!!busy} onClick=${() => act(r, "owner")}>设为主人</${Button}>`}
+          </div>
+          <span class="hint">${noOwner
+            ? `${CHANNEL_NAME[r.channel]}还没有主人。如果这是你自己，点「设为主人」，以后的请求也会发给你。`
+            : `他只收到一句提示，没有调用模型。主人在聊天里回复「同意 ${r.code}」也可以。`}</span>
+        </div>
+      </div>`;
+    })}</div>`;
+}
+
+/** 没发出去的消息：出站队列还在重试的，和发不出去、已经放弃的（附原因，可以"知道了"） */
+function Undelivered({ botId }) {
+  const [d, , reload] = usePoll(() => api(`/bots/${botId}/outbox`), 8000, [botId]);
+  if (!d || (!d.failed.length && !d.waiting.length)) return null;
+  const dismiss = async (f) => {
+    try {
+      await api(`/bots/${botId}/outbox/${encodeURIComponent(f.id)}/dismiss`, { method: "POST", body: {} });
+      reload();
+    } catch (e) {
+      failed(e);
+    }
+  };
+  return html`<div class="list-head">没发出去的消息${d.failed.length > 0 && html`<span class="badge count warn">${d.failed.length}</span>`}</div>
+    <div class="list">
+      ${d.waiting.map((w) => html`<div key=${w.id} class="row compact">
+        <div class="who">
+          <div class="name">发给${w.to}</div>
+          <div class="sub">${w.preview || "（空）"}</div>
+          <div class="sub wrap">${w.attempts ? `第 ${w.attempts} 次没发出去，稍后自动重试` : "等渠道连上后发送"}${w.error ? `：${w.error}` : ""}</div>
+        </div>
+        <${Badge} s="retrying" />
+      </div>`)}
+      ${d.failed.map((f) => html`<div key=${f.id} class="row compact">
+        <div class="who">
+          <div class="name">发给${f.to} · ${fmtAgo(f.updatedAt)}</div>
+          <div class="sub">${f.preview || "（空）"}</div>
+          <div class="sub wrap">${f.error}</div>
+        </div>
+        <button type="button" class="text" onClick=${() => dismiss(f)}>知道了</button>
+      </div>`)}
+    </div>`;
+}
+
 function MemorySection({ botId }) {
   const [d, err, reload] = usePoll(() => api(`/bots/${botId}/memory`), 0, [botId]);
   const forget = async (sc, text, topic) => {
@@ -183,6 +255,7 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
   const [detail, , reloadDetail] = usePoll(() => api(`/bots/${bot.id}`), 5000, [bot.id]);
   const [appr, , reloadAppr] = usePoll(() => api(`/approvals?status=pending&bot=${encodeURIComponent(bot.id)}`), 4000, [bot.id]);
   const [convs] = usePoll(() => api(`/conversations?bot=${encodeURIComponent(bot.id)}`), 8000, [bot.id]);
+  const [access, , reloadAccess] = usePoll(() => api(`/bots/${encodeURIComponent(bot.id)}/access`), 4000, [bot.id]);
   const [viewing, setViewing] = useState(null);
   const pending = (appr && appr.approvals) || [];
   return html`<aside class="panel" aria-label="信息面板">
@@ -199,6 +272,8 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
           : html`<div class="row"><${Skeleton} w="50%" /></div><div class="row"><${Skeleton} w="40%" /></div>`}
       </div>
 
+      <${AccessRequests} botId=${bot.id} data=${access} reload=${reloadAccess} />
+
       <div class="list-head">待审批${pending.length > 0 && html`<span class="badge count warn">${pending.length}</span>`}</div>
       ${pending.length
         ? html`<div class="stack">${pending.map((a) => html`<div key=${a.id} class="stack approval" style="--gap: var(--space-1)">
@@ -207,6 +282,8 @@ export function InfoPanel({ bot, onClose, onOpenBotSettings, onOpenChat }) {
           </div>`)}
           <button type="button" class="text" style="justify-self:start" onClick=${reloadAppr}>刷新</button></div>`
         : html`<div class="list"><div class="row"><span class="hint">没有待处理的审批</span></div></div>`}
+
+      <${Undelivered} botId=${bot.id} />
 
       <${MemorySection} botId=${bot.id} />
 

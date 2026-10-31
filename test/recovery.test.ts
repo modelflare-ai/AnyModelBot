@@ -145,6 +145,8 @@ describe("App 启动时告诉用户", () => {
       env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: ilink.url, AMB_WEIXIN_CDN_BASE: ilink.cdnBase, AMB_AGENT: "off" },
     });
     app = new App(config, { feishuTransport: () => feishu, weixinPollTimeoutMs: 1000, printQrToTerminal: false, noWeb: true });
+    // 只有主人和允许名单里的人能用：bob 上次就在用（这里的库是直接造的，没有经过升级迁移）
+    app.access.allow("default", "weixin", "bob@im.wechat", "test");
     await app.start();
   });
 

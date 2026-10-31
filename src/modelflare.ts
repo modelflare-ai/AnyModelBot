@@ -23,8 +23,12 @@ export const MODELFLARE_WEB = "https://modelflare.dev";
 export const MODELFLARE_CLIENT_ID = "anymodel-bot";
 export const MODELFLARE_SCOPES = "openid profile offline_access account api_keys";
 
-/** 注册来源（Modelflare 后台按 utm_source 统计从本程序来的注册） */
-export const UTM = { utm_source: "anymodelbot", utm_medium: "app" } as const;
+/**
+ * 注册来源（Modelflare 后台按 utm_source 统计从本程序来的注册与充值）。
+ * 全项目统一：utm_source=anymodelbot&utm_campaign=amb_<位置>。应用内 amb_signup / amb_topup / amb_console …，
+ * README 与仓库文档 amb_readme，官网 amb_homepage。
+ */
+export const UTM = { utm_source: "anymodelbot" } as const;
 
 /** 开发/测试：AMB_MODELFLARE_ISSUER 把登录与账户接口指向本地 mock（界面无法设置） */
 export function modelflareIssuer(env: NodeJS.ProcessEnv = process.env): string {
@@ -39,9 +43,9 @@ export function webUrl(pathname: string, campaign?: string): string {
   return u.toString();
 }
 
-export const SIGNUP_URL = webUrl("/sign-up", "signup");
-export const TOPUP_URL = webUrl("/billing", "topup");
-export const CONSOLE_URL = webUrl("/dashboard/overview", "console");
+export const SIGNUP_URL = webUrl("/sign-up", "amb_signup");
+export const TOPUP_URL = webUrl("/billing", "amb_topup");
+export const CONSOLE_URL = webUrl("/dashboard/overview", "amb_console");
 
 /**
  * 调用归因：每个经 Modelflare 的请求都带 X-Modelflare-Skill（Modelflare 只记到用量日志，

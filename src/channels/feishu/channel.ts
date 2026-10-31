@@ -114,6 +114,7 @@ export class FeishuChannel {
       parts: feishuParts(ev),
       mentions: ev.mentions.map((m) => m.openId ?? m.key),
       replyHandle: { messageId: ev.messageId, chatId: ev.chatId },
+      ...(ev.rootId || ev.parentId ? { thread: { rootId: ev.rootId, parentId: ev.parentId } } : {}),
       receivedAt: Date.now(),
     };
     // 人在：排着的主动消息（免打扰、每天上限）不用再等，排在这次的回复前面

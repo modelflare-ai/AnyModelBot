@@ -142,6 +142,8 @@ export type OutboxPurpose = "" | "result" | "failure" | "rule" | "reminder" | "q
 /** 出站消息的内容：文本（最终回复、提示、通知）、文件、带按钮的卡片（飞书审批） */
 export interface OutboxBody {
   text?: string;
+  /** 单独发出去时接在 text 后面的一句（任务结果的「引用这条消息可以继续问。」）；合成摘要、「你不在时」时不带 */
+  hint?: string;
   /** 微信：原样发送，不过 Markdown 过滤（审批提示里的反引号要保留） */
   raw?: boolean;
   path?: string;

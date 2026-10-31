@@ -6,6 +6,8 @@ import { logger, redactText, registerSecret } from "../log.js";
 import { peekStream, type CompactionPlan, type ServerCompaction } from "./server-compaction.js";
 
 const log = logger("agent.bridge");
+/** 长调用的保活间隔：远小于 fetch 默认的 5 分钟数据间隔超时 */
+const KEEPALIVE_MS = 60_000;
 
 export interface BridgeHandlers {
   /** 模型上游（magpie 网关或外部端点），密钥只在本进程内使用 */
@@ -260,9 +262,27 @@ export class AgentBridge {
     else if (url === "/dsh/cancel") out = (await this.h.cancel(body), { ok: true });
     else if (url === "/dsh/memory" && this.h.memory) out = await this.h.memory(body);
     else if (url === "/dsh/steward" && this.h.steward) out = await this.h.steward(body);
-    else if (url === "/dsh/media" && this.h.media) out = await this.h.media(body);
+    else if (url === "/dsh/media" && this.h.media) return this.longCall(res, this.h.media(body));
     else return void res.writeHead(404).end();
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
+  }
+
+  /**
+   * 可能要十几分钟的调用（生视频）：先回响应头，每分钟写一个空格，做完再写 JSON（前导空白不影响解析）。
+   * 子进程里的 fetch 等响应头、等下一段数据都只等 5 分钟，超时工具就失败了，生成却还在继续、照样扣费。
+   */
+  private async longCall(res: http.ServerResponse, p: Promise<unknown>): Promise<void> {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.flushHeaders();
+    const keep = setInterval(() => {
+      if (!res.writableEnded && !res.destroyed) res.write(" ");
+    }, KEEPALIVE_MS);
+    res.on("close", () => clearInterval(keep));
+    try {
+      res.end(JSON.stringify(await p.catch((e: Error) => ({ error: e.message }))));
+    } finally {
+      clearInterval(keep);
+    }
   }
 }
 

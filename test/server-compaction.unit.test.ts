@@ -766,7 +766,7 @@ describe("服务端压缩：活动记录与模型资料", () => {
     expect(mgr.serverCompaction).toBeDefined();
     store.setAgentSession("c1", "b1", "sess-1");
     const activity = new ActivityLog();
-    mgr.turnsInProgress.set("c1", { botId: "b1", since: 0, lastProgress: 0, activity, abort: new AbortController() });
+    mgr.turnsInProgress.set("c1", { botId: "b1", since: 0, lastProgress: 0, activity, abort: new AbortController(), tools: new Set(), media: 0 });
     (mgr as any).onServerCompaction({ session: "sess-1", model: "mf/good", ok: true, before: 210_000, after: 31_000, at: 1000, ms: 4200 });
     (mgr as any).onServerCompaction({ session: "sess-1", model: "mf/good", ok: false, before: 210_000, at: 2000, ms: 10, error: "HTTP 404" });
     (mgr as any).onServerCompaction({ session: "other", model: "mf/good", ok: true, before: 1, after: 1, at: 3000, ms: 1 });

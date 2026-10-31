@@ -12,4 +12,6 @@ export default {
   view: "查看后台任务",
   chip: "后台任务",
   minutes: { other: "{count} 分钟" },
+  paused: "后台工作已暂停",
+  resume: "恢复",
 };

@@ -508,10 +508,47 @@ export class TaskService {
     return this.o.host.settings(botId).taskSlots;
   }
 
-  /** 有空名额就开始排队的 run（人的唤醒在前，见 slots.ts） */
+  // ---------- 暂停后台工作 ----------
+
+  /** 这个机器人的后台工作暂停了（机器人设置 › 主动消息、信息面板、聊天代理的 background_pause） */
+  paused(botId: string): boolean {
+    return !!this.store.getBot(botId)?.settings.paused;
+  }
+
+  /**
+   * 暂停、恢复后台工作：暂停时不开始新的 run（任务的排着等，规则到点记为跳过、之后不补），主动消息排着（core/delivery.ts）；
+   * 聊天照常，正在跑的那一轮照常做完。恢复时排着的 run 开始、排着的主动消息按平常的规则发（免打扰、每天上限照旧）。
+   */
+  setPaused(botId: string, paused: boolean, by: string): boolean {
+    const bot = this.store.getBot(botId);
+    if (!bot) return false;
+    if (bot.settings.paused === paused) return true;
+    this.store.updateBot(botId, { settings: { ...bot.settings, paused } });
+    log.info(paused ? "background work paused" : "background work resumed", { bot: botId, by });
+    if (!paused) {
+      this.o.delivery?.resume(botId);
+      this.pump();
+    }
+    this.scheduler.wake();
+    this.changed(botId);
+    return true;
+  }
+
+  /** 暂停时排着的 run：任务的等恢复；规则的这次记为跳过（暂停），之后不补。返回 true = 现在不开始 */
+  private heldByPause(run: RunRow): boolean {
+    if (!this.paused(run.botId)) return false;
+    if (run.ruleId) {
+      this.store.updateRun(run.id, { state: "ended", outcome: "skipped", error: RUN_ERROR.paused, endedAt: this.now() });
+      log.info("rule run skipped: background work is paused", { rule: run.ruleId, run: run.id });
+      this.changed(run.ruleId);
+    }
+    return true;
+  }
+
+  /** 有空名额就开始排队的 run（人的唤醒在前，见 slots.ts）；后台工作暂停了的机器人不开始新的 */
   pump(): void {
     if (!this.started || this.closing) return;
-    const queued = this.store.listRuns({ states: ["queued"] }).filter((r) => (r.taskId || (r.ruleId && !this.skipStale(r))) && !this.dropped.has(r.botId));
+    const queued = this.store.listRuns({ states: ["queued"] }).filter((r) => (r.taskId || (r.ruleId && !this.skipStale(r))) && !this.dropped.has(r.botId) && !this.heldByPause(r));
     if (!queued.length) return;
     // 等批准的 run 让出名额（DSH 那次调用照样等着，批了就接着做）
     const blocked = new Set((this.o.approvals?.pendingAll() ?? []).filter((a) => a.taskId && a.blocking && a.kind === "approval").map((a) => a.taskId));
@@ -920,6 +957,8 @@ export class TaskService {
       case "start": {
         const r = this.create({ botId, conversationId: conv.id, title: String(a.title ?? ""), brief: String(a.brief ?? ""), budgetUsd: Number(a.budget_usd) || undefined, anytime: a.anytime === true });
         if (!r.task) return { error: r.error };
+        if (this.paused(botId))
+          return { text: `Queued background task ${r.task.id} 「${r.task.title}」, but background work is paused, so it starts only when the user resumes it. Tell the user so in one sentence. Do not do the task yourself.` };
         return {
           text: `Started background task ${r.task.id} 「${r.task.title}」 in folder ${r.task.folder}. In your reply, tell the user in one sentence what now runs in the background and that they will hear back when it is done; they can keep chatting. Do not do the task yourself.`,
         };
@@ -935,9 +974,11 @@ export class TaskService {
       case "list": {
         const list = this.list({ conversationId: conv.id, limit: 10 });
         const rules = this.listRules({ conversationId: conv.id });
-        if (!list.length && !rules.length) return { text: "This conversation has no background tasks or rules." };
+        const paused = this.paused(botId) ? ["Background work is paused: no task or rule runs, pushed messages wait."] : [];
+        if (!list.length && !rules.length) return { text: [...paused, "This conversation has no background tasks or rules."].join("\n") };
         return {
           text: [
+            ...paused,
             ...list.map((t) => `${t.id} 「${t.title}」 ${t.stage.label}${t.latest ? ` — ${t.latest}` : ""}`),
             ...rules.map((r) => `rule ${r.id} 「${r.title}」 ${r.when} · ${r.state.label}${r.last ? ` — ${r.last.line}` : ""}`),
           ].join("\n"),
@@ -947,6 +988,14 @@ export class TaskService {
         return this.ruleCreateTool(conv, a);
       case "rule_update":
         return this.ruleUpdateTool(conv, a);
+      case "pause": {
+        const paused = a.paused === true;
+        if (typeof a.paused !== "boolean") return { error: "paused must be true or false" };
+        const was = this.paused(botId);
+        this.setPaused(botId, paused, `chat:${conv.id}`);
+        if (paused) return { text: `${was ? "Background work was already paused" : "Paused this bot's background work"}: no task or rule runs, pushed messages wait; chat still works. Tell the user in one short sentence.` };
+        return { text: `${was ? "Resumed background work: waiting tasks start and held messages go out" : "Background work was not paused; nothing changed"}. Tell the user in one short sentence.` };
+      }
       default:
         return { error: "unknown task tool" };
     }
@@ -1207,12 +1256,14 @@ export class TaskService {
   listText(conversationId: string): string {
     const list = this.list({ conversationId, limit: 10, since: this.now() - 7 * 86400_000 });
     const rules = this.activeRules(conversationId);
-    if (!list.length && !rules.length) return tr("tasks.none");
+    const conv = this.store.getConversation(conversationId);
+    const paused = conv && this.paused(conv.botId) ? [tr("tasks.pausedLine")] : [];
+    if (!list.length && !rules.length) return [tr("tasks.none"), ...paused].join("\n");
     const lines = list.map((x, i) => `${i + 1}. ${x.title} · ${x.stage.label}${x.latest ? tr("tasks.latestSuffix", { text: clip(x.latest, 40) }) : ""}`);
     // 规则接着编号（/stop 编号 关掉它），和任务同一种写法：标题 · 状态：时间表
     const ruleLines = rules.map((r, i) => `${list.length + i + 1}. ${r.title} · ${r.state.label}${tr("tasks.latestSuffix", { text: r.when })}`);
     const working = list.findIndex((x) => x.stage.group === "working");
-    return [...(list.length ? [tr("tasks.listHead"), ...lines] : []), ...(rules.length ? [tr("rules.listHead"), ...ruleLines] : []), ...(working >= 0 || rules.length ? [tr("tasks.stopHint")] : [])].join("\n");
+    return [...(list.length ? [tr("tasks.listHead"), ...lines] : []), ...(rules.length ? [tr("rules.listHead"), ...ruleLines] : []), ...(working >= 0 || rules.length ? [tr("tasks.stopHint")] : []), ...paused].join("\n");
   }
 
   /** /tasks 里列出的规则：开着的（关了的、跑完了的一次性规则不列） */
@@ -1402,6 +1453,7 @@ export class TaskService {
     const rule = this.store.getRule(id);
     if (!rule) return { error: "rule not found" };
     if (rule.mode === "off") return { error: tr("rules.isOff") };
+    if (this.paused(rule.botId)) return { error: tr("rules.isPaused") };
     if (this.ruleBusy(id)) return { error: tr("rules.isRunning") };
     this.fireRule(rule, "manual", this.now());
     this.pump();
@@ -1445,6 +1497,11 @@ export class TaskService {
         continue;
       }
       if (last > due) this.skipRun(rule, due, RUN_ERROR.appOff);
+      // 后台工作暂停了：这次记为跳过，恢复后不补
+      if (this.paused(rule.botId)) {
+        this.skipRun(rule, last, RUN_ERROR.paused);
+        continue;
+      }
       this.fireRule(rule, "schedule", last);
     }
     this.pump();
@@ -1461,6 +1518,10 @@ export class TaskService {
     for (const rule of this.store.listRules()) {
       if (rule.trigger.kind !== "event" || rule.trigger.source !== source || rule.mode === "off" || rule.pausedReason || this.dropped.has(rule.botId)) continue;
       if (!matchesFilter(rule.trigger.filter, event)) continue;
+      if (this.paused(rule.botId)) {
+        this.skipRun(rule, now, RUN_ERROR.paused);
+        continue;
+      }
       if (this.fireRule(rule, "event", now, { source, event })) out.push(rule.id);
     }
     if (out.length) {

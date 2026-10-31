@@ -225,6 +225,10 @@ describe("Web 界面 / API", () => {
     expect(c.json.bot.settings.avatar).toBe("red");
     expect((await api(`/bots/${id}/settings`, { method: "PUT", body: { avatar: "purple" } })).json.settings.avatar).toBe("purple");
     expect((await api(`/bots/${id}/settings`, { method: "PUT", body: { avatar: "pink" } })).json.settings.avatar).toBe("");
+    // 暂停后台工作：经任务服务改，机器人详情里带着（信息面板据此显示那一行）
+    expect((await api(`/bots/${id}/settings`, { method: "PUT", body: { paused: true } })).json.settings).toMatchObject({ paused: true, avatar: "" });
+    expect((await api(`/bots/${id}`)).json.bot.settings.paused).toBe(true);
+    expect((await api(`/bots/${id}/settings`, { method: "PUT", body: { paused: false } })).json.settings.paused).toBe(false);
     expect((await api("/bots/default")).json.bot.settings.avatar).toBe("blue");
     const f = await api(`/bots/${id}/feishu`, { method: "PUT", body: { appId: "cli_x", appSecret: "very-secret-value" } });
     expect(f.status).toBe(200);

@@ -6,6 +6,7 @@ import { BotAvatar, AvatarPicker, AppMark, BOT_CHARS, CHAR_KEYS, MAIN_CHAR } fro
 import { TEMPLATES } from "../screens/new-bot.js";
 import { NeedItem, NeedsRow } from "../screens/needs-you.js";
 import { RuleRow, RuleDetail } from "../components/rules.js";
+import { PausedLine } from "../components/tasks.js";
 import { Markdown } from "../components/markdown.js";
 import { useStore, toast, saved, failed, confirmSheet } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
@@ -615,6 +616,11 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <${Demo} title="行" note="RuleRow：观察中（提示改为执行）/ 执行中 / 暂停 / 提醒">
           ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
             <div class="list">${RULES.map((r) => html`<${RuleRow} rule=${r} open=${false} onToggle=${() => {}} />`)}</div>
+          </div>`}
+        <//>
+        <${Demo} title="暂停" note="PausedLine：后台工作暂停时信息面板最上面这一行，没暂停时不画">
+          ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
+            <${PausedLine} onResume=${async () => {}} />
           </div>`}
         <//>
         <${Demo} title="详情与运行记录" note="RuleDetail：原话、模式、立即运行、运行记录（本会发送 / 保持安静 / 失败 / 跳过）">

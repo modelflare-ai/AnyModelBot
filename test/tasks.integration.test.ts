@@ -53,6 +53,8 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
       if (r) return done ? { text: `ACK-${r[1]}：好，后台开始调研，好了告诉你，你可以继续聊别的。` } : { tool: { name: "task_start", args: { title: `调研 ${r[1]}`, brief: `research ${r[1]} and write notes.md` } } };
       const p = /PING (\w+)/.exec(user);
       if (p) return { text: `PONG-${p[1]}` };
+      const pause = /PAUSEBG (on|off)/.exec(user);
+      if (pause) return done ? { text: `PAUSED-${pause[1]}` } : { tool: { name: "background_pause", args: { paused: pause[1] === "on" } } };
       const l = /LISTTOOLS/.exec(user);
       if (l) return { text: `CHATTOOLS<<${tools.join(",")}>>` };
       return { text: "好的" };
@@ -195,6 +197,26 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     expect(d.runs[0].steps).toBeGreaterThan(2);
     expect(d.task.stage).toMatchObject({ key: "ready", label: "已完成" });
     expect(host.restarts).toBe(0);
+  }, 180_000);
+
+  it("pause switch: the chat agent pauses background work; a new task waits (chat still answers), /tasks says so; resuming starts it and its result arrives once", async () => {
+    ilink.push(OWNER, "PAUSEBG on");
+    await waitFor(() => sentTo("PAUSED-on").length === 1);
+    expect(app.store.getBot("default")!.settings.paused).toBe(true);
+    const t = await research("PAUSEQ");
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(stage("PAUSEQ")).toBe("working/queued");
+    expect(calls.some((c) => c.task && c.users.some((u) => u.includes("RESEARCH PAUSEQ")))).toBe(false);
+    ilink.push(OWNER, "/tasks");
+    await waitFor(() => sentTo("后台任务：").some((s) => s.text.includes("调研 PAUSEQ · 排队中")));
+    expect(sentTo("后台任务：").at(-1)!.text).toMatch(/\n后台工作已暂停，跟我说一声就恢复。$/);
+    ilink.push(OWNER, "PAUSEBG off");
+    await waitFor(() => sentTo("PAUSED-off").length === 1);
+    await waitFor(() => sentTo("RESULT-PAUSEQ").length === 1);
+    await waitFor(() => stage("PAUSEQ") === "ready");
+    await app.outbox.idle();
+    expect(sentTo("RESULT-PAUSEQ")).toHaveLength(1);
+    expect((await api(`/tasks/${t.id}`)).runs.map((r: any) => [r.cause, r.outcome])).toEqual([["launch", "done"]]);
   }, 180_000);
 
   it("follow-ups reach the task directly: quoting its pushed result on WeChat resumes the same task without a chat turn", async () => {
@@ -346,8 +368,9 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     await research("HANGS1");
     await waitFor(() => hanging("HANGS1"));
     // /tasks 列出编号；/stop 1 停掉它（插队，不进会话队列）
+    const listed = sentTo("后台任务：").length;
     ilink.push(OWNER, "/tasks");
-    await waitFor(() => sentTo("后台任务：").length >= 1);
+    await waitFor(() => sentTo("后台任务：").length > listed);
     expect(sentTo("后台任务：").at(-1)!.text).toMatch(/^后台任务：\n1\. 调研 HANGS1 · 进行中/);
     ilink.push(OWNER, "/stop 1");
     await waitFor(() => sentTo("已停止后台任务「调研 HANGS1」").length === 1);

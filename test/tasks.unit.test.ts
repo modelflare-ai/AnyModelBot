@@ -810,6 +810,36 @@ describe("TaskService（假宿主）", () => {
     expect(svc.conversationOf(t.sessionId)).toBe(CONV);
   });
 
+  it("暂停后台工作（聊天代理的 background_pause）：新任务排着不开始，task_start 说清楚；正在跑的照常做完，结果排着不发；/tasks、task_list 说一句；恢复后任务开始、结果放出来", async () => {
+    store.setAgentSession(CONV, "b", "session-chat");
+    const tool = (op: string, args: Record<string, unknown> = {}) => svc.chatTool({ botId: "b", sessionId: "session-chat", op, args });
+    const a = start("A");
+    await flush();
+    expect((await tool("pause", {})).error).toMatch(/paused must be true or false/);
+    expect((await tool("pause", { paused: true })).text).toMatch(/^Paused this bot's background work: no task or rule runs, pushed messages wait; chat still works\./);
+    expect(store.getBot("b")!.settings.paused).toBe(true);
+    const r = await tool("start", { title: "B", brief: "调研 B" });
+    expect(r.text).toMatch(/^Queued background task t_[0-9a-f]{12} 「B」, but background work is paused, so it starts only when the user resumes it\./);
+    await flush();
+    const b = store.listTasks({ conversationId: CONV }).find((t) => t.title === "B")!;
+    expect(host.prompts.some((p) => p.sessionId === b.sessionId)).toBe(false);
+    expect(svc.get(b.id)!.stage.key).toBe("working/queued");
+    // 正在跑的 A 照常做完；结果写进会话（界面里看得到），推送排着
+    await turn(a.sessionId, () => void report(a.sessionId, "done", "A 好了"));
+    const row = store.getOutbox(store.listRuns({ taskId: a.id })[0].delivery)!;
+    expect([row.status, row.reason]).toEqual(["scheduled", "paused"]);
+    expect(store.listMessages(CONV).at(-1)!.content).toBe("A 好了");
+    expect(svc.listText(CONV)).toBe("后台任务：\n1. B · 排队中\n2. A · 已完成：A 好了\n发 /stop 编号 可停止。\n后台工作已暂停，跟我说一声就恢复。");
+    expect((await tool("list")).text!.split("\n")[0]).toBe("Background work is paused: no task or rule runs, pushed messages wait.");
+    // 恢复：排着的任务开始，结果马上重新排（按平常的规则）
+    expect((await tool("pause", { paused: false })).text).toMatch(/^Resumed background work: waiting tasks start and held messages go out\./);
+    await flush();
+    expect(host.prompts.some((p) => p.sessionId === b.sessionId)).toBe(true);
+    expect(store.getOutbox(row.id)!.due).toBeLessThanOrEqual(Date.now());
+    expect(svc.listText(CONV)).not.toMatch(/暂停/);
+    expect((await tool("pause", { paused: false })).text).toMatch(/^Background work was not paused; nothing changed\./);
+  });
+
   it("飞书：结果回复在请求那条消息下（出站队列）；网页：只写进会话历史，不进出站队列", async () => {
     const fs1 = store.ensureConversation("b", "feishu", "oc_1", "主人");
     store.addMessage(fs1.id, "user", "后台调研一下 GPU 价格");

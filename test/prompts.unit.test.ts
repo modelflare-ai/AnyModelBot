@@ -135,6 +135,7 @@ async function parts(): Promise<Record<string, string>> {
     "tool task_report": runtime ? JSON.stringify((await loadPlugins()).task.tools.find((t) => t.name === "task_report") ?? "") : "",
     "tool rule_create": tool("rule_create"),
     "tool rule_update": tool("rule_update"),
+    "tool background_pause": tool("background_pause"),
     "rule observe": ruleRules("observe"),
     "rule act": ruleRules("act"),
     "rule brief": ruleBrief({ title: "看 X 价格", when: "每天 08:00", instruction: "每天早上 8 点看看 X 的价格，低于 200 告诉我", mode: "observe", recent: [{ at: "11月1日 08:00", line: "没有告诉用户。X 现在 ¥259" }], memory: "" }),
@@ -192,6 +193,7 @@ const RULES: [rule: string, part: string, says: string[], gone?: string[]][] = [
   // —— 规则（3d）：检查从观察开始，只在值得说时说一句；观察只看不动；执行最多可写工作区 ——
   ["rule_create：用户原话原样；检查从观察开始只记录；提醒到点发那句；确认一句", "tool rule_create", ["verbatim", "starts in observe mode", "only recording what it would say", "kind remind", "Confirm in one sentence", "every 30m", "weekly mon,thu"]],
   ["rule_update：用户要求时改模式（执行才发）、原话、时间表或删掉", "tool rule_update", ["when the user asks", "mode act (results are sent)", "observe (only records)", "off", "delete"]],
+  ["background_pause：用户要求时暂停或恢复全部后台工作；暂停时任务、规则不跑，主动消息等着，聊天照常", "tool background_pause", ["Pause or resume", "when the user asks", "no task or rule runs", "pushed messages wait", "chat still works", '"paused"']],
   ["规则段（观察）：优先于聊天规则；只看不动，本来要做的写进 would；值得说才说一句，只记下来；不报告就算失败", "rule observe",
     ["优先于上面的聊天规则", "只看、只查，不改任何东西", "would", "task_report", "值得告诉用户", "不值得说就 done 不带 message", "这次只记下来", "不超过 300 字", "就算失败"], ["needs_you", ".task/journal.md"]],
   ["规则段（执行）：只做规则里写的事，外部动作前后记日志；那一句会发给用户", "rule act", ["只做规则里写的事", ".task/journal.md", "会发给用户", "不值得说就 done 不带 message"], ["would"]],
@@ -221,7 +223,7 @@ describe.skipIf(!runtime)("提示词约定", () => {
   it("任务会话：只去掉注册了的聊天专用工具，规则段在机器人段之后（优先），有 task_report；子代理拿不到任务工具", async () => {
     const { task } = await loadPlugins();
     // 只有 present 和聊天的任务、规则工具是"注册了的"：ask_user_question 在这个假环境里没有，不能交给 restrict（它会抛错）
-    expect(task.deny).toEqual([["present", "task_start", "task_message", "task_list", "rule_create", "rule_update"]]);
+    expect(task.deny).toEqual([["present", "task_start", "task_message", "task_list", "rule_create", "rule_update", "background_pause"]]);
     expect(task.sections).toHaveLength(1);
     expect(task.sections[0]).toMatchObject({ name: TASK_SECTION, order: TASK_SECTION_ORDER, interpolate: false });
     expect(TASK_SECTION_ORDER).toBeGreaterThan(BOT_SECTION_ORDER);
@@ -234,7 +236,7 @@ describe.skipIf(!runtime)("提示词约定", () => {
     expect(o.calls).toBe(1);
     // 只交注册了的：present、ask_user_question、聊天的任务和规则工具、生图、记忆的 remember / forget（recall 留着）
     expect(o.rule.deny).toHaveLength(1);
-    expect(new Set(o.rule.deny[0])).toEqual(new Set(["present", "ask_user_question", "task_start", "task_message", "task_list", "rule_create", "rule_update", "generate_image", "generate_video", "media_models", "media_docs", "remember", "forget"]));
+    expect(new Set(o.rule.deny[0])).toEqual(new Set(["present", "ask_user_question", "task_start", "task_message", "task_list", "rule_create", "rule_update", "background_pause", "generate_image", "generate_video", "media_models", "media_docs", "remember", "forget"]));
     expect(o.rule.sections).toHaveLength(1);
     expect(o.rule.sections[0]).toMatchObject({ name: TASK_SECTION, order: TASK_SECTION_ORDER, interpolate: false });
     expect(o.rule.sections[0].text()).toBe(ruleRules("observe"));
@@ -269,6 +271,7 @@ describe.skipIf(!runtime)("提示词约定", () => {
    * 我们交给模型的部分：人设 + 机器人段（典型人设、开着记忆）+ 我们的工具定义（记忆、生图、后台任务、规则）。
    * 3a 基线 8,514（提示词 907 + 工具 7,607，其中 task_start、task_message、task_list 1,370）；3b、3c 之后 8,751（工具 7,844）。
    * 3d 加上 rule_create（819）、rule_update（467）和 task_list 多一句「and rules」后 10,049（工具 9,142）。上限高约 5%。
+   * 暂停开关 background_pause（280）之后 10,329（工具 9,422），还在上限之内，上限不变。
    * 缩短了就调低；要调高，在提交说明里写清原因。
    */
   const BUDGET = 10_550;

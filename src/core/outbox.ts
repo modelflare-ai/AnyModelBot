@@ -80,6 +80,8 @@ export interface HeldGroup {
 /** 排着的消息到时间了（同一会话的一批）：返回 later 就再排到那时，否则返回怎么合成 */
 export interface OutboxPlanner {
   promote(rows: OutboxRow[], now: number): { later: number; reason: string } | HeldGroup[];
+  /** 这条现在不能发、对方发消息时也不放（机器人的后台工作暂停了）：返回原因，排着等 */
+  waits?(row: OutboxRow): string | undefined;
 }
 
 /** 渠道的发送函数：成功返回；Later / Gone / 其他错误（临时失败，会重试）。progress 记下长文本已发出的分段数 */
@@ -258,7 +260,8 @@ export class Outbox {
     const waiting = this.store.waitingOutbox(conv);
     if (!waiting.length) return 0;
     const now = this.now();
-    const live = waiting.filter((r) => r.expiresAt > now || (this.gone(r, tr("delivery.goneTooLong")), false));
+    const live = waiting.filter((r) => (r.expiresAt > now || (this.gone(r, tr("delivery.goneTooLong")), false)) && !this.planner?.waits?.(r));
+    if (!live.length) return 0;
     this.apply(combine ? combine(live) : live.map((r): HeldGroup => ({ rows: [r] })), now, "inbound");
     if (live.length) log.info(`releasing ${live.length} waiting message(s)`, { bot: botId, channel });
     this.kick();
@@ -335,6 +338,14 @@ export class Outbox {
       if (heads.has(row.conversationId)) continue;
       heads.add(row.conversationId);
       if (this.inflight.has(row.conversationId)) continue;
+      // 主动消息现在不能发（机器人的后台工作暂停了）：改成排着，不挡这个会话后面的回复
+      const wait = row.purpose ? this.planner?.waits?.(row) : undefined;
+      if (wait) {
+        this.store.updateOutbox(row.id, { status: "scheduled", due: now + MAX_SLEEP_MS, reason: wait }, now);
+        this.changed(row.id);
+        this.kick();
+        continue;
+      }
       if (row.expiresAt <= now) {
         this.gone(row, row.error ? tr("delivery.goneKeptFailing", { error: row.error }) : tr("delivery.goneTooLong"));
         this.kick();

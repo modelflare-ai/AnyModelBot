@@ -81,17 +81,18 @@ function seenList() {
     return [];
   }
 }
-const seen = (key) => seenList().includes(key);
+const ackedNow = new Set();
 export function ackPwsh(key) {
+  ackedNow.add(key);
   try {
     localStorage.setItem(SEEN, JSON.stringify([...seenList(), key].slice(-20)));
   } catch {
-    /* 存不了就只在这次隐藏 */
+    /* 存不了就只在这次运行里隐藏 */
   }
   const s = pwshState.get();
-  if (s) pwshState.set({ ...s, acked: [...(s.acked || []), key] });
+  if (s) pwshState.set({ ...s });
 }
-const acked = (s, key) => seen(key) || (s.acked || []).includes(key);
+const acked = (key) => ackedNow.has(key) || seenList().includes(key);
 
 export function usePwsh() {
   const s = useStore(pwshState);
@@ -119,8 +120,8 @@ export function pwshHint(s) {
   const inst = p?.install;
   if (pwshInstalling(s)) return "installing";
   if (!s.missing) {
-    if (s.fallback && !acked(s, `fb:${s.fallback.at}`)) return "fallback";
-    if (s.source === "private" && inst?.state === "done" && inst.finishedAt && !acked(s, `ok:${inst.finishedAt}`)) return "installed";
+    if (s.fallback && !acked(`fb:${s.fallback.at}`)) return "fallback";
+    if (s.source === "private" && inst?.state === "done" && inst.finishedAt && !acked(`ok:${inst.finishedAt}`)) return "installed";
     return null;
   }
   if (s.dismissed) return null;

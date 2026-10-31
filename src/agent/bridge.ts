@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import type { AddressInfo } from "node:net";
 import { logger, redactText, registerSecret } from "../log.js";
+import { peekStream, type CompactionPlan, type ServerCompaction } from "./server-compaction.js";
 
 const log = logger("agent.bridge");
 /** 长调用的保活间隔：远小于 fetch 默认的 5 分钟数据间隔超时 */
@@ -20,6 +21,8 @@ export interface BridgeHandlers {
   steward?(body: any): Promise<unknown>;
   /** amb-media 插件：生图 / 生视频 */
   media?(body: any): Promise<unknown>;
+  /** 服务端压缩：长会话的 /v1/responses 换上上游压缩过的历史（见 server-compaction.ts） */
+  compaction?: ServerCompaction;
 }
 
 /** 模型代理的一次请求（故障排查的"测试代理"用它判断模型调用这一步） */
@@ -154,9 +157,25 @@ export class AgentBridge {
     res.on("close", () => ac.abort());
     // 上游迟迟不回响应头时每分钟记一条：代理"一直转圈"多半是这里卡住（代理自己要等 5 分钟才判超时并重试）
     const slow = setInterval(() => log.warn("model request still waiting for upstream response", { path: p, waitedMs: Date.now() - t0 }), 60_000);
+    // 最后发出去的是不是 DSH 的原请求体：改写过（换上压缩历史）的请求被拒先由 checkRewritten 用原请求重发，
+    // 不报给代理接口回退（onRejection）；只有原请求被拒才可能让这个模型改走 Chat
+    let unmodified = true;
+    const send = (b: Buffer | undefined) => {
+      unmodified = b === body;
+      return fetch(target, { method: req.method, headers, body: b ? new Uint8Array(b) : undefined, signal: ac.signal });
+    };
+    let plan: CompactionPlan | undefined;
+    if (body && req.method === "POST" && this.h.compaction) {
+      try {
+        plan = this.h.compaction.prepare(p, req.headers, body);
+      } catch (e) {
+        log.warn("server compaction skipped", { message: (e as Error).message });
+      }
+    }
     let r: Response;
     try {
-      r = await fetch(target, { method: req.method, headers, body: body ? new Uint8Array(body) : undefined, signal: ac.signal });
+      r = await send(plan?.body ?? body);
+      if (plan?.rewritten) r = await this.checkRewritten(plan, r, () => send(body), p);
     } catch (e) {
       const error = (e as Error).message;
       this.emitProxy({ phase: "error", id, path: p, ms: Date.now() - t0, error });
@@ -175,13 +194,14 @@ export class AgentBridge {
       const bot = typeof req.headers[BOT_HEADER] === "string" ? (req.headers[BOT_HEADER] as string) : undefined;
       log.warn("model request rejected by upstream", { path: p, status: r.status, ms: Date.now() - t0, bot, body: error });
       this.emitProxy({ phase: "response", id, path: p, status: r.status, ms: Date.now() - t0, error });
-      for (const fn of this.rejectionListeners) {
-        try {
-          fn({ bot, path: p, status: r.status, error });
-        } catch {
-          /* ignore */
+      if (unmodified)
+        for (const fn of this.rejectionListeners) {
+          try {
+            fn({ bot, path: p, status: r.status, error });
+          } catch {
+            /* ignore */
+          }
         }
-      }
       res.writeHead(r.status, out);
       return void res.end(text);
     }
@@ -191,7 +211,10 @@ export class AgentBridge {
     if (!r.body) return void res.end();
     const stream = Readable.fromWeb(r.body as any);
     let bytes = 0;
-    stream.on("data", (c: Buffer) => (bytes += c.length));
+    stream.on("data", (c: Buffer) => {
+      bytes += c.length;
+      plan?.observe(c);
+    });
     stream.on("end", () => log.info("model request done", { path: p, status: r.status, headersMs, totalMs: Date.now() - t0, bytes }));
     stream.on("error", (e) => {
       // 子进程读完 [DONE] 就断开时上游流会被中止（res close → abort），这不是错误
@@ -200,6 +223,33 @@ export class AgentBridge {
       res.destroy();
     });
     stream.pipe(res);
+  }
+
+  /**
+   * 改写过（换上压缩历史）的请求：被拒（4xx/5xx，Key 与限流问题除外）或流一开头就报错时，用原请求重发一次，
+   * 回合照常进行；server-compaction 据此记下这个模型不支持。这次被拒不算代理接口被拒（不触发改走 Chat），
+   * 原请求重发后再被拒才算。
+   */
+  private async checkRewritten(plan: CompactionPlan, r: Response, original: () => Promise<Response>, p: string): Promise<Response> {
+    if (r.status >= 400 && r.status !== 401 && r.status !== 429) {
+      const text = await r.text().catch(() => "");
+      log.warn("compacted model request rejected, resending the original", { path: p, status: r.status, body: redactText(text.slice(0, 500)) });
+      const again = await original();
+      plan.rejected(r.status, text, again.status < 400);
+      return again;
+    }
+    if (r.status < 300 && r.body && /event-stream/i.test(r.headers.get("content-type") ?? "")) {
+      const peek = await peekStream(r.body as ReadableStream<Uint8Array>);
+      if (peek.error !== undefined) {
+        log.warn("compacted model request failed at stream start, resending the original", { path: p, error: redactText(peek.error) });
+        const again = await original();
+        plan.rejected(0, peek.error, again.status < 400);
+        return again;
+      }
+      r = new Response(peek.stream, { status: r.status, statusText: r.statusText, headers: r.headers });
+    }
+    if (r.status < 400) plan.accepted();
+    return r;
   }
 
   private async dsh(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {

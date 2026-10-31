@@ -471,6 +471,33 @@ export class MagpieSupervisor {
     if (p?.responses !== want.responses || p?.anthropic !== want.anthropic) await this.saveProvider(id, want);
   }
 
+  /**
+   * 服务端压缩的前提：provider 开启 nativeCompaction 后，网关对带 compaction 项的请求只直传（不转成 Chat 协议），
+   * 上游拒绝时原样回报错；关着时网关会悄悄删掉压缩项再重试，之前的上下文就丢了。对不带压缩项的请求没有影响。
+   */
+  nativeCompaction(id: string): boolean {
+    return this.readProviderRaw(id)?.nativeCompaction === true;
+  }
+
+  private nativeSaving = new Map<string, Promise<void>>();
+  private nativeFailedAt = new Map<string, number>();
+  /** 打开 nativeCompaction；保存失败后 10 分钟内不再试（失败时抛错一次） */
+  async ensureNativeCompaction(id: string): Promise<void> {
+    if (this.nativeCompaction(id) || Date.now() - (this.nativeFailedAt.get(id) ?? 0) < 10 * 60_000) return;
+    let p = this.nativeSaving.get(id);
+    if (!p) {
+      p = this.saveProvider(id, { nativeCompaction: true })
+        .then(() => void this.nativeFailedAt.delete(id))
+        .catch((e) => {
+          this.nativeFailedAt.set(id, Date.now());
+          throw e;
+        })
+        .finally(() => this.nativeSaving.delete(id));
+      this.nativeSaving.set(id, p);
+    }
+    await p;
+  }
+
   /** 断开 Modelflare：删除共用连接和所有机器人自己的 provider */
   async disconnectModelflare(): Promise<void> {
     for (const id of [this.modelflareId(), ...this.botProviderIds()]) if (id) await this.deleteProvider(id);

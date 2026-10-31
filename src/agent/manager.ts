@@ -3,7 +3,8 @@ import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
-import { AgentHost, TurnStopped, callDetail, type ModelApiInfo, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { AgentHost, TurnStopped, callDetail, modelLimits, type ModelApiInfo, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { ServerCompaction, type CompactEndpoint, type CompactionEvent } from "./server-compaction.js";
 import { ActivityLog, type ActivityStep } from "./activity.js";
 import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
@@ -47,6 +48,14 @@ export interface AgentManagerOptions {
   contextWindow?: (model: string) => Promise<number | undefined>;
   /** 模型支持的接口与是否推理（Modelflare 模型资料），DSH 按它选对话接口 */
   apiInfo?: (model: string) => Promise<ModelApiInfo | undefined>;
+  /**
+   * 服务端压缩（见 server-compaction.ts）：listed = 价格目录是否列出该模型的压缩端点（只是提示，用前还要探测）；
+   * endpoint = 该模型（网关里的名字）直连的压缩端点。缺省则不做。
+   */
+  serverCompaction?: {
+    listed(model: string): Promise<boolean | undefined>;
+    endpoint(model: string): CompactEndpoint | undefined;
+  };
 }
 
 /** 一个进行中的回合（/status、/stop、排队提示、信息面板和故障排查用） */
@@ -112,8 +121,22 @@ export class AgentManager {
   /** 最近一次管家/整理结果（状态页展示） */
   readonly stewardLog: Array<{ at: number; conversationId: string; action: string; detail: string }> = [];
 
+  /** 服务端压缩（经 bridge 改写长会话的 Responses 请求）；没有注入时为空 */
+  readonly serverCompaction: ServerCompaction | undefined;
+
   constructor(private o: AgentManagerOptions) {
     this.approvals = new ApprovalCenter(o.store, { ttlMs: o.approvalTtlMs });
+    const sc = o.serverCompaction;
+    this.serverCompaction = sc
+      ? new ServerCompaction({
+          dir: path.join(o.dataDir, "dsh", "server-compaction"),
+          upstream: o.upstream,
+          endpoint: (model) => sc.endpoint(model),
+          listed: (model) => sc.listed(model),
+          limits: async (model) => modelLimits(model, await o.contextWindow?.(model).catch(() => undefined)),
+          onEvent: (e) => this.onServerCompaction(e),
+        })
+      : undefined;
     this.bridge = new AgentBridge({
       upstream: o.upstream,
       ask: (b) => this.ask(b),
@@ -122,6 +145,7 @@ export class AgentManager {
       memory: (b) => this.memoryOp(b),
       steward: (b) => this.stewardCall(b),
       media: (b) => this.mediaOp(b),
+      compaction: this.serverCompaction,
     });
     this.memory = new MemoryStore(path.join(o.dataDir, "memory"));
     this.apiFallbacks = new ApiFallbacks(path.join(o.dataDir, "dsh", "api-fallback.json"));
@@ -326,6 +350,14 @@ export class AgentManager {
     this.stewardLog.push({ at: Date.now(), conversationId, action, detail: detail.slice(0, 300) });
     if (this.stewardLog.length > 50) this.stewardLog.shift();
     log.info("steward", { conversationId, action, detail: detail.slice(0, 200) });
+  }
+
+  /** 服务端压缩做完：记进管家日志；会话正在进行回合时在活动记录里加一步（失败只记日志，请求照常发） */
+  private onServerCompaction(e: CompactionEvent): void {
+    const conv = e.session ? this.o.store.conversationForSession(e.session) : undefined;
+    if (!conv) return;
+    this.note(conv, e.ok ? "server-compact" : "server-compact-failed", `${e.model} ≈${e.before}${e.after !== undefined ? `→${e.after}` : ""} tokens${e.error ? `: ${e.error}` : ""}`);
+    if (e.ok) this.turnsInProgress.get(conv)?.activity.apply("server-compaction", e, e.at);
   }
 
   private utilityModel(botId: string, model: string): string {
@@ -682,11 +714,14 @@ export class AgentManager {
     hosts: Record<string, Record<string, unknown>>;
     apiFallbacks: Array<ApiFallback & { model: string }>;
     turns: Array<{ conversationId: string; botId: string; forMs: number; idleMs?: number; lastStep?: ActivityStep }>;
+    serverCompaction?: { enabled: boolean; models: Record<string, { ok: boolean; at: number; reason: string }> };
   } {
     return {
       enabled: this.o.enabled,
       available: this.available,
       runtimeDir: this.o.runtimeDir,
+      // 服务端压缩：各模型的探测结论（支持 / 不支持及原因）
+      ...(this.serverCompaction ? { serverCompaction: { enabled: this.serverCompaction.enabled, models: this.serverCompaction.status() } } : {}),
       hosts: Object.fromEntries([...this.hosts].map(([id, h]) => [id, h.diagnostics()])),
       apiFallbacks: this.apiFallbacks.list(),
       turns: [...this.turnsInProgress].map(([conversationId, t]) => ({

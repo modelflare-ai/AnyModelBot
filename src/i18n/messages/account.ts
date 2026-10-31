@@ -13,6 +13,8 @@ export const zh = {
   sign_in_first: "请先登录 Modelflare 账户",
   low_balance: "Modelflare 余额只剩 ${balance}，低于提醒线 ${threshold}。充值：{url}",
   budget_needs_login: "给机器人设预算需要先登录 Modelflare 账户",
+  key_reissued: "本机用的 Modelflare API Key 已被删除，已自动重新签发一把",
+  bot_key_reissued: "机器人「{name}」的预算 Key 已被删除，已按 ${limit} 的预算重新签发（用量从零算起）",
   // oauth.ts
   host_unreachable: "连不上 {host}（{reason}）",
   discovery_failed: "读取登录配置失败（HTTP {status}）",
@@ -45,6 +47,8 @@ export const en: Catalog<typeof zh> = {
   sign_in_first: "Sign in to your Modelflare account first",
   low_balance: "Your Modelflare balance is down to ${balance}, below your ${threshold} alert threshold. Top up: {url}",
   budget_needs_login: "Sign in to your Modelflare account to set a bot budget",
+  key_reissued: "This computer's Modelflare API key was deleted, so a new one was issued automatically",
+  bot_key_reissued: "The budget key for bot \"{name}\" was deleted, so a new one was issued with the ${limit} budget (spending starts from zero)",
   host_unreachable: "Can't reach {host} ({reason})",
   discovery_failed: "Couldn't read the sign-in configuration (HTTP {status})",
   discovery_bad_endpoint: "Invalid {key} in the sign-in configuration",

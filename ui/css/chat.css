@@ -91,21 +91,25 @@ button.head-bot:active { background: var(--pill-press); }
 .activity { display: grid; grid-template-columns: minmax(0, 1fr); }
 .activity.open > .work-line { border-bottom-color: transparent; margin-bottom: var(--space-2); }
 .msg-row.assistant .activity + .notice { margin-top: var(--space-1); }
-.act-list { list-style: none; margin: 0 0 var(--space-3); padding: var(--space-1) 0; background: var(--well); border-radius: var(--r-well); font-size: var(--fs-sm); }
+/* 一块 --well 里不画行间分隔线：步骤是内缩的行，悬停才浮出底色（与菜单项同一写法：列表离边 --space-1，项再缩 --space-2）；
+   展开的步骤连同它的参数和输出共用一层底色，读起来是一块 */
+.act-list { --act-r: calc(var(--r-well) - var(--space-1)); list-style: none; margin: 0 0 var(--space-3); padding: var(--space-1); background: var(--well); border-radius: var(--r-well); font-size: var(--fs-sm); display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
 .act-list.empty { padding: var(--space-2-5) var(--space-3); }
-.act-step + .act-step { border-top: 1px solid var(--line-2); }
+.act-step { min-width: 0; border-radius: var(--act-r); }
+.act-step.open { background: var(--pill); }
 .act-head {
   display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--ctl-md);
-  padding: var(--space-1) var(--space-3); color: var(--fg-2); text-align: left;
+  padding: var(--space-1) var(--space-2); color: var(--fg-2); text-align: left; border-radius: var(--act-r);
 }
 button.act-head { --focus-offset: -2px; transition: background var(--t-fast); }
 button.act-head:hover { background: var(--pill); }
+.act-step.open > button.act-head:hover { background: transparent; }
 button.act-head:active { background: var(--pill-hover); }
 .act-head .k { flex: none; color: var(--muted); }
 .act-head .t { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: var(--fw-medium); }
 .act-head .s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--code); font-size: var(--fs-xs); color: var(--muted); }
 .act-head .d { flex: none; font-size: var(--fs-xs); color: var(--muted); }
-.act-body { display: grid; gap: var(--space-1); padding: 0 var(--space-3) var(--space-2-5); }
+.act-body { display: grid; gap: var(--space-1); padding: 0 var(--space-2) var(--space-2-5); }
 .act-body .t-label { margin-top: var(--space-1); }
 .act-body pre {
   margin: 0; max-height: 240px; overflow: auto; font: var(--fs-xs)/var(--lh-relaxed) var(--code);

@@ -15,5 +15,7 @@ import * as cu from "./cu.js";
 import * as pwsh from "./pwsh.js";
 import * as activity from "./activity.js";
 import * as tasks from "./tasks.js";
+import * as access from "./access.js";
+import * as delivery from "./delivery.js";
 
-export const catalogs = { web, desktop, app, diag, modelflare, account, magpie, channel, runtime, agent, approvals, media, cu, pwsh, activity, tasks };
+export const catalogs = { web, desktop, app, diag, modelflare, account, magpie, channel, runtime, agent, approvals, media, cu, pwsh, activity, tasks, access, delivery };

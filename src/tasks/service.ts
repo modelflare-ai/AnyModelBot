@@ -32,6 +32,7 @@ import type { AttentionItem } from "./attention.js";
 import { logger } from "../log.js";
 import { DEFAULT_MAX_BACKGROUND, pickRuns, priorityOf } from "./slots.js";
 import { taskStage, type Stage } from "./stage.js";
+import { t as tr } from "../i18n/index.js";
 
 const log = logger("tasks");
 
@@ -213,7 +214,7 @@ export class TaskService {
     this.started = true;
     this.closing = false;
     this.unlisten ??= this.o.approvals?.listen((e) => this.onApproval(e));
-    this.recover(undefined, "应用重启");
+    this.recover(undefined, tr("tasks.recoverAppRestart"));
     for (const r of this.store.listRuns({ states: ["ended"] })) {
       if (!r.taskId) continue;
       if (!r.delivery && (r.outcome === "done" || r.outcome === "failed")) {
@@ -254,7 +255,7 @@ export class TaskService {
     if (this.closing || !this.started || this.dropped.has(botId)) return;
     if (!this.store.listRuns({ botId, states: ["running", "settling"] }).length) return;
     log.warn("agent process exited with background tasks running; recovering them", { bot: botId });
-    this.recover(botId, "代理进程退出");
+    this.recover(botId, tr("tasks.recoverAgentExit"));
     this.pump();
   }
 
@@ -343,7 +344,7 @@ export class TaskService {
   async message(taskId: string, text: string): Promise<{ how?: "steered" | "sent" | "queued" | "resumed" | "answered"; error?: string }> {
     const task = this.store.getTask(taskId);
     if (!task) return { error: "task not found" };
-    if (task.endReason === "stopped") return { error: `「${task.title}」已停止，不能再追加；需要的话开个新任务。` };
+    if (task.endReason === "stopped") return { error: tr("tasks.stoppedNoFollowup", { title: task.title }) };
     // 任务在等用户回答：这句话就是回答（回答成为它的新输入，见 onApproval）
     const open = this.o.approvals?.pendingForTask(task.id).find((r) => r.kind === "question" && !r.blocking);
     if (open && this.o.approvals!.answerText(open.id, text.trim(), "followup")) return { how: "answered" };
@@ -355,7 +356,7 @@ export class TaskService {
   async retry(taskId: string): Promise<{ how?: "steered" | "sent" | "queued" | "resumed"; error?: string }> {
     const task = this.store.getTask(taskId);
     if (!task) return { error: "task not found" };
-    if (task.endReason === "stopped") return { error: `「${task.title}」已停止` };
+    if (task.endReason === "stopped") return { error: tr("tasks.stoppedShort", { title: task.title }) };
     const last = this.store.latestRun(task.id);
     const why = last?.report?.message || last?.error || "";
     const input = this.addInput(task.id, "followup", `[用户让你再试一次]${why ? `\n上次没做完：${clip(oneLine(why), 300)}` : ""}`, true);
@@ -402,7 +403,7 @@ export class TaskService {
     for (const a of this.o.approvals?.pendingForTask(taskId) ?? []) this.o.approvals!.cancel(a.id, "stopped");
     const l = this.liveOf(taskId);
     if (l) {
-      l.activity.end("已停止");
+      l.activity.end(tr("tasks.endStopped"));
       this.end(l, "stopped");
       await this.o.host.stop(l.botId, l.sessionId).catch((e) => log.warn("stopping the task session failed", { task: taskId, message: (e as Error).message.slice(0, 200) }));
     }
@@ -539,7 +540,7 @@ export class TaskService {
         l.timer.unref?.();
         return;
       }
-      this.end(l, "failed", undefined, this.o.host.available ? "代理没能启动" : "代理不可用");
+      this.end(l, "failed", undefined, this.o.host.available ? tr("tasks.agentDidntStart") : tr("tasks.agentUnavailable"));
       return;
     } finally {
       l.starting = false;
@@ -675,7 +676,7 @@ export class TaskService {
       return;
     }
     if (l.turnError) log.warn("task failed after retries", { task: l.taskId, message: l.turnError.slice(0, 300) });
-    this.end(l, "failed", undefined, l.turnError ? "模型一直出错" : "没有给出结果");
+    this.end(l, "failed", undefined, l.turnError ? tr("tasks.modelKeptFailing") : tr("tasks.noResult"));
   }
 
   /** 结束 run：存下步骤、结果；done / failed 发回会话；空出名额 */
@@ -719,7 +720,7 @@ export class TaskService {
       return;
     }
     const msg = oneLine(report?.message ?? "");
-    const text = outcome === "done" ? clip(msg, MESSAGE_MAX) || `「${task.title}」做好了。` : `⚠️「${task.title}」没做完：${clip(msg || error || "没有给出结果", MESSAGE_MAX)}`;
+    const text = outcome === "done" ? clip(msg, MESSAGE_MAX) || tr("tasks.done", { title: task.title }) : tr("tasks.notDone", { title: task.title, why: clip(msg || error || tr("tasks.noResult"), MESSAGE_MAX) });
     const files = outcome === "done" ? this.files(task, report?.files ?? []) : [];
     if ((conv.channel === "weixin" || conv.channel === "feishu") && this.o.delivery) this.post(conv, task, id, purpose, text, files);
     this.store.addMessage(conv.id, "assistant", files.length && conv.channel === "web" ? `${text}\n\n${files.map((f) => `- ${path.relative(this.o.host.workspace(task.botId), f)}`).join("\n")}` : text);
@@ -875,7 +876,7 @@ export class TaskService {
     if (!task) return;
     if (e.type === "decided" && row.kind === "question" && !row.blocking && row.status === "answered" && task.endReason !== "stopped") this.answered(task, row);
     // 有了决定（在桌面上回答了、批了，任务停了）：推给用户还没发出去的那条（排到早上、等微信窗口）不用再发了
-    if (e.type === "decided") this.o.delivery?.withdraw(askId(row), `已${row.status === "answered" ? "回答" : "处理"}`);
+    if (e.type === "decided") this.o.delivery?.withdraw(askId(row), tr(row.status === "answered" ? "tasks.withdrawAnswered" : "tasks.withdrawHandled"));
     this.changed(task.id);
     // 等批准时让出的名额：有了决定，排队的可能要等它了
     if (e.type === "decided" && row.blocking) this.pump();
@@ -913,7 +914,7 @@ export class TaskService {
     else {
       const replyTo = task.originRef || replyHandle(this.store, conv.id).messageId || "";
       const buttons = promptButtons(row);
-      const title = row.kind === "approval" ? `需批准（任务「${task.title}」）` : `「${task.title}」想问你`;
+      const title = row.kind === "approval" ? tr("tasks.approvalTitle", { title: task.title }) : tr("tasks.questionTitle", { title: task.title });
       const body = row.kind === "approval" ? (row.detail ? "`" + row.detail.slice(0, 300) + "`" : row.tool) : (questionsOf(row)[0]?.question ?? row.detail);
       if (replyTo && buttons) delivery.push({ ...base, replyTo, card: actionCardSpec(title, body, buttons) });
       else delivery.push({ ...base, replyTo, kind: replyTo ? "text" : "notice" });
@@ -932,7 +933,7 @@ export class TaskService {
       quotes: (row, quote) => !!row.taskId && quotes(this.store.getOutbox(askId(row))?.body.text ?? "", quote, questionsOf(row)[0]?.question ?? row.detail),
       answered: (row) => {
         const t = this.store.getTask(row.taskId);
-        return t ? `收到，「${t.title}」继续。` : undefined;
+        return t ? tr("tasks.continuing", { title: t.title }) : undefined;
       },
     };
   }
@@ -949,7 +950,7 @@ export class TaskService {
       const bot = this.store.getBot(t.botId);
       const conv = this.store.getConversation(t.conversationId);
       const r = run?.report ?? t.report;
-      const line = st.key === "failed" ? r?.message || run?.error || "没有给出结果" : r?.message || r?.summary.split("\n")[0] || "";
+      const line = st.key === "failed" ? r?.message || run?.error || tr("tasks.noResult") : r?.message || r?.summary.split("\n")[0] || "";
       out.push({
         id: `task:${t.id}`,
         kind: "failed",
@@ -1037,20 +1038,20 @@ export class TaskService {
   /** /tasks：这个会话的任务，带编号（/stop 编号 用同一个顺序） */
   listText(conversationId: string): string {
     const list = this.list({ conversationId, limit: 10, since: this.now() - 7 * 86400_000 });
-    if (!list.length) return "没有后台任务。";
-    const lines = list.map((t, i) => `${i + 1}. ${t.title} · ${t.stage.label}${t.latest ? `：${clip(t.latest, 40)}` : ""}`);
+    if (!list.length) return tr("tasks.none");
+    const lines = list.map((x, i) => `${i + 1}. ${x.title} · ${x.stage.label}${x.latest ? tr("tasks.latestSuffix", { text: clip(x.latest, 40) }) : ""}`);
     const working = list.findIndex((t) => t.stage.group === "working");
-    return ["后台任务：", ...lines, ...(working >= 0 ? ["发 /stop 编号 可停止。"] : [])].join("\n");
+    return [tr("tasks.listHead"), ...lines, ...(working >= 0 ? [tr("tasks.stopHint")] : [])].join("\n");
   }
 
   /** /stop 编号：立即记为停止（停会话在后台进行），返回给用户的话 */
   stopByIndex(conversationId: string, n: number, by: string): string {
     const list = this.list({ conversationId, limit: 10, since: this.now() - 7 * 86400_000 });
     const t = list[n - 1];
-    if (!t) return `没有第 ${n} 个后台任务，发 /tasks 查看。`;
-    if (t.stage.group !== "working") return `「${t.title}」${t.stage.label}。`;
+    if (!t) return tr("tasks.noSuchIndex", { n });
+    if (t.stage.group !== "working") return tr("tasks.alreadyStage", { title: t.title, stage: t.stage.label });
     void this.stopTask(t.id, by);
-    return `已停止后台任务「${t.title}」。`;
+    return tr("tasks.stoppedTask", { title: t.title });
   }
 
   /** 这个会话有没有正在进行的任务（/stop 不带编号时提示） */

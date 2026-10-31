@@ -7,6 +7,7 @@
  * 发下一条消息时先说。
  */
 import type { Store } from "../store/db.js";
+import { t as tr } from "../i18n/index.js";
 
 const INFLIGHT = "inflight:";
 const NOTICE = "notice:";
@@ -27,7 +28,7 @@ export function previewOf(text: string): string {
 
 /** 告诉用户的话 */
 export function interruptedText(preview: string): string {
-  return `上次的消息${preview ? `「${preview}」` : ""}因为应用重启没有处理完，请重新发送。`;
+  return tr("delivery.recovered", { preview: preview ? tr("delivery.quoted", { text: preview }) : "" });
 }
 
 /** 开始处理一条消息（同一会话已有标记时保留最早那条） */

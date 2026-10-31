@@ -86,6 +86,7 @@ export function apply(ctx) {
       parameters: {
         title: { type: 'string', required: true, description: 'Short title in the user\'s language.' },
         brief: { type: 'string', required: true, description: 'What to do and what result to give, at most 1,500 characters. The user\'s words and the recent chat are added automatically.' },
+        anytime: { type: 'boolean', description: 'true only when the user asked to be told the moment it is done, even at night. Otherwise a result that is ready during their quiet hours waits until morning.' },
       },
       output: TEXT_OUT,
       execute: tool('start'),

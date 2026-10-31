@@ -8,6 +8,7 @@ import { BotRuntime } from "./core/runtime.js";
 import { KeyedQueue } from "./core/queue.js";
 import { deferNotice, interruptedText, takeInterrupted, type Interrupted } from "./core/recovery.js";
 import { Outbox } from "./core/outbox.js";
+import { Delivery, type DeliveryOptions } from "./core/delivery.js";
 import { AccessControl } from "./core/access.js";
 import type { ChannelStatus } from "./core/types.js";
 import { MagpieSupervisor } from "./magpie/supervisor.js";
@@ -43,7 +44,7 @@ import { MediaService, pickDefault } from "./agent/media.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
 import { TaskService } from "./tasks/service.js";
-import { Attention, approvalItems, type AttentionItem } from "./tasks/attention.js";
+import { Attention, approvalItems, deliveryItem, type AttentionItem } from "./tasks/attention.js";
 
 const log = logger("app");
 
@@ -98,6 +99,10 @@ export interface AppOptions {
   printQrToTerminal?: boolean;
   /** 写 <dataDir>/logs/app.log（默认 true） */
   fileLog?: boolean;
+  /** 测试注入：主人的时区（免打扰、续期提醒；默认本机的） */
+  timeZone?: string;
+  /** 测试注入：主动消息的每天上限、合并间隔（core/delivery.ts） */
+  deliveryLimits?: Pick<DeliveryOptions, "dailyCap" | "coalesceMs">;
 }
 
 interface BotChannels {
@@ -117,6 +122,11 @@ export class App {
   readonly channels = new Map<string, BotChannels>();
   /** 持久化的出站队列：最终回复、文件、重要通知先落库再发，重启后接着发 */
   readonly outbox: Outbox;
+  /**
+   * 主动消息的送达规则：免打扰、合并与摘要、每天上限、微信配额预留和续期提醒；没送到的进「需要你」（attentionItems）。
+   * 3b / 3d 经它登记占配额的东西和之后要发的东西
+   */
+  readonly delivery: Delivery;
   /** 谁能和机器人对话：主人 + 允许名单 + 使用请求 */
   readonly access: AccessControl;
   /** 后台任务：自己的会话和文件夹，结果经出站队列回到请求它的会话 */
@@ -155,6 +165,7 @@ export class App {
     });
     this.store = new Store(path.join(config.dataDir, "anymodel.db"));
     this.outbox = new Outbox(this.store);
+    this.delivery = new Delivery({ store: this.store, outbox: this.outbox, timeZone: opts.timeZone, ...opts.deliveryLimits });
     this.access = new AccessControl(this.store, { notify: (to, text, id) => this.reach(to, text, id) });
     if (config.magpie.mode === "managed") {
       this.magpie = new MagpieSupervisor({ dataDir: config.dataDir, binPath: config.magpie.binPath || undefined });
@@ -217,7 +228,7 @@ export class App {
     this.tasks = new TaskService({
       store: this.store,
       host: this.agent.taskHost(),
-      outbox: this.outbox,
+      delivery: this.delivery,
       approvals: this.agent.approvals,
       onChange: () => this.attention.kick(),
       defaultModel: () => this.config.llm.defaultModel,
@@ -225,11 +236,14 @@ export class App {
       maxBackground: config.agent.maxBackground,
     });
     this.agent.tasks = this.tasks;
-    // "需要你"的三份：在等的提问和审批、任务（失败、没送到）、渠道（微信登录过期）
+    // "需要你"的四份：在等的提问和审批、任务（失败、预算）、没送到的结果（出站队列）、渠道（微信登录过期）
     this.attention.addSource(() => approvalItems(this.store, this.agent.approvals.pendingAll()));
     this.attention.addSource(() => this.tasks.attention());
+    this.attention.addSource(() => this.delivery.attentionItems().map((d) => deliveryItem(d, this.store.getBot(d.botId)?.name ?? d.botId)));
     this.attention.addSource(() => this.loginAttention());
     this.agent.approvals.listen(() => this.attention.kick());
+    // 出站队列的变化（结果留着等微信、发出去了、放弃了）：任务的"未送达"随之出现、消失
+    this.delivery.onChange(() => this.attention.kick());
     this.runtime = new BotRuntime({
       agent: this.agent,
       store: this.store,
@@ -474,6 +488,7 @@ export class App {
     const interrupted = takeInterrupted(this.store);
     // 出站队列先开：渠道上线时登记发送函数，上次没发完的消息接着发
     this.outbox.start();
+    this.delivery.start();
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
     if (interrupted.length) void this.tellInterrupted(interrupted);
     // 后台任务：上次没跑完的记为中断、带着恢复说明接着做（渠道已经上线，结果能发出去）
@@ -544,6 +559,7 @@ export class App {
     this.account?.cancelLogin();
     await this.web?.close();
     // 不再开始新的发送，等正在发的结束；没发完的留在库里，下次启动接着发
+    this.delivery.stop();
     await this.outbox.stop();
     for (const id of [...this.channels.keys()]) await this.stopBot(id);
     await this.agent.stop();
@@ -655,6 +671,7 @@ export class App {
     if (bot.feishuAppId && bot.feishuAppSecret && !ch.feishu) {
       const transport = this.opts.feishuTransport?.(bot) ?? new LarkTransport(bot.feishuAppId, bot.feishuAppSecret);
       ch.feishu = new FeishuChannel(bot.id, transport, this.runtime, this.queue, this.config.feishu.throttleMs, this.outbox);
+      ch.feishu.delivery = this.delivery;
       // 代理自己醒来的一轮（后台命令结束）：经出站队列回复到这个会话最近收到的那条消息
       const fs = ch.feishu;
       this.runtime.registerReplier(bot.id, "feishu", (conv, handle, key) => (handle?.messageId ? { out: fs.followUp(conv.peerId, handle.messageId, key) } : undefined));
@@ -671,6 +688,7 @@ export class App {
         cdnBaseUrl: this.config.weixin.cdnBaseUrl,
         pollTimeoutMs: this.opts.weixinPollTimeoutMs,
         outbox: this.outbox,
+        delivery: this.delivery,
       });
       ch.weixin.onExpired = () => {
         this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);

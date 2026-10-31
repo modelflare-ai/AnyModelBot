@@ -239,10 +239,10 @@ export async function testAgent(app: App, opts: { botId?: string; model?: string
   const memory = app.agent.settings(botId).memory.enabled;
   const expectedTools = ["present", "ask_user_question", ...(memory ? ["remember"] : [])];
 
-  // 同一机器人正在处理的回合：同一会话里后来的消息（包括用户看到"一直思考中"的那条）都排在它后面
+  // 同一机器人正在处理的回合：同一会话里后来的消息（包括用户看到"一直思考中"的那条）并入它（代理还没接手时排在它后面）
   const turns = app.agent.diagnostics().turns.filter((t) => t.botId === botId);
   if (!turns.length) mark("queue", "ok", "没有正在处理的回合", 0);
-  else mark("queue", "warn", `${turns.length} 轮对话正在处理（最长已 ${Math.round(Math.max(...turns.map((t) => t.forMs)) / 1000)} 秒）；同一会话的新消息会排在它后面。卡住时用下面的"重启代理进程"`, 0);
+  else mark("queue", "warn", `${turns.length} 轮对话正在处理（最长已 ${Math.round(Math.max(...turns.map((t) => t.forMs)) / 1000)} 秒）；同一会话的新消息会并入正在进行的回合（代理还没接手时排在后面）。卡住时用 /stop，或下面的"重启代理进程"`, 0);
 
   begun.spawn = Date.now();
   if (host.state === "starting") {

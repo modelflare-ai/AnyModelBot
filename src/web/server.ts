@@ -180,6 +180,13 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     const last = app.store.getConversation(convId) ? (app.store.listMessages(convId, 1).at(-1)?.id ?? 0) : 0;
     return live.start(convId, botId, text, last);
   }
+  // 代理自己醒来的一轮（后台命令结束）：像一条进行中的消息那样登记（没有用户消息），界面接上就能看到；结束时移出登记
+  app.runtime.registerReplier("*", "web", (conv) => {
+    if (conv.id !== consoleConvId(conv.botId)) return undefined;
+    const t = startLive(conv.botId, "");
+    return { out: t, done: () => live.end(t, "done", { conversationId: conv.id }) };
+  });
+
   /** 排进会话队列交给运行时；结束时先移出登记，再通知发消息的请求和所有接上的界面。不抛错 */
   async function runLive(t: LiveTurn, ev: InboundEvent, out: ReplySession = t): Promise<void> {
     let err: Error | undefined;

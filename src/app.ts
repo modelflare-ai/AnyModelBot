@@ -10,6 +10,7 @@ import { deferNotice, interruptedText, takeInterrupted, type Interrupted } from 
 import type { ChannelStatus } from "./core/types.js";
 import { MagpieSupervisor } from "./magpie/supervisor.js";
 import { FeishuChannel } from "./channels/feishu/channel.js";
+import { FeishuReply } from "./channels/feishu/card.js";
 import { LarkTransport, type FeishuTransport } from "./channels/feishu/transport.js";
 import { WeixinChannel } from "./channels/weixin/channel.js";
 import { WeixinLogin } from "./channels/weixin/login.js";
@@ -589,6 +590,9 @@ export class App {
     if (bot.feishuAppId && bot.feishuAppSecret && !ch.feishu) {
       const transport = this.opts.feishuTransport?.(bot) ?? new LarkTransport(bot.feishuAppId, bot.feishuAppSecret);
       ch.feishu = new FeishuChannel(bot.id, transport, this.runtime, this.queue, this.config.feishu.throttleMs);
+      // 代理自己醒来的一轮（后台命令结束）：回复到这个会话最近收到的那条消息
+      const throttleMs = this.config.feishu.throttleMs;
+      this.runtime.registerReplier(bot.id, "feishu", (_conv, last) => (last?.replyHandle?.messageId ? { out: new FeishuReply(transport, last.replyHandle.messageId, throttleMs) } : undefined));
       ch.feishuError = undefined;
       ch.feishu.start().catch((e) => {
         ch.feishuError = (e as Error).message;
@@ -603,6 +607,11 @@ export class App {
         pollTimeoutMs: this.opts.weixinPollTimeoutMs,
       });
       ch.weixin.onExpired = () => this.notice("warn", `机器人「${bot.name}」微信登录已过期，请在信息面板的「渠道」里重新扫码`);
+      const wx = ch.weixin;
+      this.runtime.registerReplier(bot.id, "weixin", (conv) => {
+        const out = wx.replyTo(conv.peerId);
+        return out ? { out } : undefined;
+      });
       ch.weixin.start();
     }
   }
@@ -611,6 +620,8 @@ export class App {
     const ch = this.channels.get(botId);
     if (!ch) return;
     ch.weixinLogin?.cancel();
+    this.runtime.registerReplier(botId, "feishu", undefined);
+    this.runtime.registerReplier(botId, "weixin", undefined);
     await ch.feishu?.stop().catch(() => {});
     await ch.weixin?.stop().catch(() => {});
     this.channels.delete(botId);

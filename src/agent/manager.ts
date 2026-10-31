@@ -1,11 +1,12 @@
+import crypto from "node:crypto";
 import { resolveComputerUse } from "./computer-use.js";
 import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
-import { AgentHost, TurnStopped, callDetail, modelLimits, type ModelApiInfo, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { AgentHost, TurnStopped, callDetail, modelLimits, type ModelApiInfo, type TurnImage, type TurnInput, type TurnObserver, type TurnResult, type TurnUsage } from "./host.js";
 import { ServerCompaction, type CompactEndpoint, type CompactionEvent } from "./server-compaction.js";
-import { ActivityLog, type ActivityStep } from "./activity.js";
+import { ActivityLog, promotedJob, type ActivityStep } from "./activity.js";
 import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
@@ -70,6 +71,8 @@ export interface TurnProgress {
   queuedNotice?: boolean;
   /** 正在运行的工具调用（含子代理的）：工具运行期间 DSH 不发事件，看门狗不把它当成卡住 */
   tools: Set<string>;
+  /** 转到后台、回合在等它结果的长命令：等的时候同样不算卡住 */
+  jobs: Set<string>;
   /** 进行中的生图 / 生视频任务 */
   media: number;
 }
@@ -103,6 +106,16 @@ function trackTools(tools: Set<string>, session: string, type: string, data: any
   if (type === "tool/call") tools.add(`${session}:${data?.callId}`);
   else if (type === "tool/result") tools.delete(`${session}:${data?.message?.toolCallId}`);
   else if (type === "step/start" || type === "turn/end") for (const k of tools) if (k.startsWith(`${session}:`)) tools.delete(k);
+}
+
+/**
+ * 记下转到后台、回合在等它结果的命令（工具结果里"moved to background job"），结束（job/settled）时移除。
+ * 模型自己放到后台的（run_in_background，比如开着的服务）回合不等，不算。
+ */
+function trackJobs(jobs: Set<string>, type: string, data: any): void {
+  const id = type === "tool/result" ? promotedJob(data) : undefined;
+  if (id) jobs.add(id);
+  else if (type === "job/settled") jobs.delete(String(data?.jobId));
 }
 
 function deferred<T>() {
@@ -163,6 +176,11 @@ export class AgentManager {
       memory: (b) => this.memoryOp(b),
       steward: (b) => this.stewardCall(b),
       media: (b) => this.mediaOp(b),
+      // amb-control 插件按机器人取指令；不认识的机器人（已删除、已停止）让它别再来
+      control: {
+        poll: (b, signal) => this.hosts.get(String(b?.botId ?? ""))?.control.poll(b, signal) ?? Promise.resolve({ stop: true }),
+        result: (b) => this.hosts.get(String(b?.botId ?? ""))?.control.result(b),
+      },
       compaction: this.serverCompaction,
     });
     this.memory = new MemoryStore(path.join(o.dataDir, "memory"));
@@ -200,8 +218,9 @@ export class AgentManager {
         contextWindow: this.o.contextWindow,
         apiInfo: this.o.apiInfo,
         apiFallbacks: this.apiFallbacks,
+        onWake: (conv) => this.onWake?.(botId, conv),
       });
-      // 代理进程退出（/stop、看门狗、换模型或设置、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它
+      // 代理进程退出（中止宽限期内没停下、设置变化、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它
       h.on((e) => {
         if (e.type === "exit") this.endCompaction((c) => c.botId === botId);
       });
@@ -260,15 +279,30 @@ export class AgentManager {
 
   /** onStep：活动记录里每新增或更新一步就回调一次（网页对话实时显示、回合结束后存进消息） */
   async runTurn(botId: string, input: TurnInput & { onStep?: (step: ActivityStep) => void }) {
+    return this.track(botId, input, (i) => this.runTurnInner(botId, i));
+  }
+
+  /**
+   * 代理自己醒来的一轮（后台命令结束，DSH 唤醒空闲的代理）：和普通回合一样登记（/status、中止、看门狗、插话），
+   * 跟踪到结束，返回回复。onWake 由运行时设置，收到后调这个。
+   */
+  async followTurn(botId: string, input: { conversationId: string; model: string; observer?: TurnObserver; onStep?: (step: ActivityStep) => void }) {
+    return this.track(botId, { ...input, text: "" }, (i) => this.followInner(botId, i));
+  }
+
+  /** 代理自己醒来开了一轮：(botId, conversationId) */
+  onWake: ((botId: string, conversationId: string) => void) | undefined;
+
+  private async track(botId: string, input: TurnInput & { onStep?: (step: ActivityStep) => void }, run: (input: TurnInput) => Promise<TurnResult>): Promise<TurnResult> {
     const conv = input.conversationId;
-    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model), abort: new AbortController(), tools: new Set(), media: 0 };
+    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model), abort: new AbortController(), tools: new Set(), jobs: new Set(), media: 0 };
     this.turnsInProgress.set(conv, t);
     // 看门狗：代理已经在处理，却长时间没有进展（模型不回、只在重试），又不是在等用户批准或回答、
-    // 也没有工具或生成任务在跑（生视频、长命令、子代理里的工具）→ 中止
+    // 也没有工具、命令或生成任务在跑（生视频、转到后台的长命令、子代理里的工具）→ 中止
     const idleMs = this.o.idleTimeoutMs ?? 10 * 60_000;
     const watchdog = setInterval(() => {
       if (!t.lastProgress || t.abort.signal.aborted) return;
-      if (this.approvals.pending(conv).length || t.tools.size || t.media) t.lastProgress = Date.now();
+      if (this.approvals.pending(conv).length || t.tools.size || t.jobs.size || t.media) t.lastProgress = Date.now();
       else if (Date.now() - t.lastProgress > idleMs) {
         log.warn("agent turn idle, stopping", { bot: botId, conversationId: conv, idleMs, lastStep: t.activity.last });
         this.halt(conv, t, new TurnStopped("idle", idleMs));
@@ -282,26 +316,54 @@ export class AgentManager {
       },
       onEvent: (type, data, time) => {
         if (type === "subagent/event") {
-          // 子代理在干活：它的工具调用同样记下；它在重试模型请求不算进展
+          // 子代理在干活：它的工具调用、命令同样记下；它在重试模型请求不算进展
           const ev = data?.event ?? {};
           trackTools(t.tools, String(data?.sessionId ?? ""), String(ev.type), ev.data);
+          trackJobs(t.jobs, String(ev.type), ev.data);
           if (ev.type !== "llm/retry" && ev.type !== "llm/retry-started") t.lastProgress = Date.now();
         } else {
           trackTools(t.tools, "", type, data);
+          trackJobs(t.jobs, type, data);
           if (t.activity.apply(type, data, time)) t.lastProgress = Date.now();
         }
         input.observer?.onEvent?.(type, data, time);
       },
     };
     try {
-      return await this.runTurnInner(botId, { ...input, observer, signal: t.abort.signal });
+      const r = await run({ ...input, observer, signal: t.abort.signal });
+      t.activity.finish();
+      return r;
     } catch (e) {
-      if (e instanceof TurnStopped && e.reason === "timeout") t.activity.end("超过单回合上限");
+      if (e instanceof TurnStopped && e.reason === "timeout") {
+        t.activity.end("超过单回合上限");
+        for (const r of this.approvals.pending(conv)) this.approvals.cancel(r.id, "stopped");
+      }
       throw e;
     } finally {
       clearInterval(watchdog);
-      this.turnsInProgress.delete(conv);
+      if (this.turnsInProgress.get(conv) === t) this.turnsInProgress.delete(conv);
     }
+  }
+
+  /**
+   * 新消息能不能并入这个会话正在进行的回合：代理已经收下了上一条、回合没在中止或收尾、指令通道在线。
+   * 不能的时候消息照常排队，等这一轮结束再处理。
+   */
+  canSteer(conversationId: string): boolean {
+    const t = this.turnsInProgress.get(conversationId);
+    return !!t && !!t.lastProgress && !t.abort.signal.aborted && !!this.hosts.get(t.botId)?.canSteer(conversationId);
+  }
+
+  /** 把新消息并入进行中的回合（模型在下一步看到它）；并不进去返回 false */
+  async steer(botId: string, conversationId: string, msg: { text: string; images?: TurnImage[] }): Promise<boolean> {
+    const t = this.turnsInProgress.get(conversationId);
+    if (!t || t.botId !== botId || !this.canSteer(conversationId)) return false;
+    const ok = await this.hosts.get(botId)!.steer(conversationId, { id: `amb-steer:${crypto.randomUUID()}`, ...msg });
+    if (ok && this.turnsInProgress.get(conversationId) === t) {
+      t.activity.apply("steer", { text: msg.text }, Date.now());
+      t.lastProgress = Date.now();
+    }
+    return ok;
   }
 
   /** /stop、信息面板的"中止"：返回有没有正在处理的回合 */
@@ -315,8 +377,28 @@ export class AgentManager {
   private halt(conv: string, t: TurnProgress, why: TurnStopped): void {
     t.activity.end(why.reason === "user" ? "用户中止" : why.reason === "idle" ? "长时间没有进展，自动中止" : "超过单回合上限");
     t.abort.abort(why);
-    // 这一轮还在等的批准 / 回答随之作废（代理进程会被重启，没人再等它们）
+    // 这一轮还在等的批准 / 回答随之作废（回合被中止，没人再等它们）
     for (const r of this.approvals.pending(conv)) this.approvals.cancel(r.id, "stopped");
+  }
+
+  /** 跟踪代理自己醒来的一轮：不用等管家闸门（代理已经在跑），结束后同样交给管家判定 */
+  private async followInner(botId: string, input: TurnInput): Promise<TurnResult> {
+    const conv = input.conversationId;
+    const set = this.activeConvs.get(botId) ?? new Set<string>();
+    this.activeConvs.set(botId, set);
+    set.add(conv);
+    this.decisions.get(conv)?.resolve(false);
+    const d = deferred<boolean>();
+    this.decisions.set(conv, d);
+    let r: TurnResult | undefined;
+    try {
+      r = await this.host(botId).followTurn(input);
+      return r;
+    } finally {
+      set.delete(conv);
+      if (r) this.afterTurn(botId, conv, r.sessionId, input.model, r.usage, d);
+      else d.resolve(false);
+    }
   }
 
   private async runTurnInner(botId: string, input: TurnInput) {

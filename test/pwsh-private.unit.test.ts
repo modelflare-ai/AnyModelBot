@@ -563,6 +563,7 @@ describe("代理进程：PowerShell 换了就在空闲时重启；pwsh 工具结
     };
     host.ensure = async () => ({});
     host.sessionFor = async () => session;
+    host.useRoute = async () => true;
     const r = await host.runTurn({ conversationId: "c", text: "hi", model: "m" });
     expect(r.text).toBe("done");
     expect(seen).toHaveBeenCalledTimes(1);

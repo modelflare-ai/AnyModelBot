@@ -7,7 +7,7 @@ import { summarizeCall } from "./host.js";
 export interface ActivityStep {
   /** 同一步的更新沿用同一个 id（工具调用 id、m<回合>.<步>…） */
   id: string;
-  kind: "model" | "tool" | "retry" | "subagent" | "compact" | "error";
+  kind: "model" | "tool" | "retry" | "subagent" | "compact" | "error" | "job" | "steer";
   /** 模型名、工具名… */
   title: string;
   /** 一行摘要：命令、路径、回复开头、失败原因 */
@@ -36,6 +36,19 @@ function textOf(content: unknown): string {
     .map((b: any) => (b?.type === "text" ? String(b.text ?? "") : b?.type === "image" ? "[图片]" : ""))
     .filter(Boolean)
     .join("\n");
+}
+
+/** 工具结果说命令转到了后台（前台等太久，DSH 把它改成后台任务）：返回任务 id */
+export function promotedJob(data: any): string | undefined {
+  const text = textOf(data?.message?.content);
+  return /\[still running after \d+ms; moved to background job (\S+?)\]/.exec(text)?.[1];
+}
+
+/** 后台任务结束的通知（tool-jobs 在会话里插的用户消息）：任务 id 与摘要 */
+function jobNotice(data: any): { id: string; summary: string } | undefined {
+  if (data?.source?.kind !== "tool-jobs") return undefined;
+  const id = /^background job (\S+)/.exec(textOf(data.content))?.[1];
+  return id ? { id, summary: String(data.source.summary ?? "") } : undefined;
 }
 
 function prettyArgs(args: string): string {
@@ -122,8 +135,31 @@ export class ActivityLog {
         const prev = this.find(String(msg.toolCallId ?? ""));
         if (!prev) return true;
         this.put({ ...prev, status: msg.isError ? "error" : "ok", ms: Math.max(0, time - prev.at), output: clip(textOf(msg.content), MAX_OUTPUT) || undefined });
+        // 命令跑得太久，转到了后台：单独记一步，结束时（job/settled 或结束通知）更新
+        const job = promotedJob(data);
+        if (job) this.put({ id: `j:${job}`, kind: "job", title: "后台命令", summary: prev.summary, input: prev.input, status: "running", at: time });
         return true;
       }
+      case "job/settled": {
+        const prev = this.find(`j:${data.jobId}`);
+        if (!prev || prev.status !== "running") return true;
+        const ok = data.status === "completed" && !/exit code: [1-9]/.test(String(data.detail ?? ""));
+        this.put({ ...prev, status: ok ? "ok" : "error", ms: Math.max(0, (Number(data.finishedAt) || time) - prev.at), output: data.detail ? String(data.detail) : prev.output });
+        return true;
+      }
+      case "user/message": {
+        // 后台命令结束，DSH 把结果交给代理（回合进行中并进下一步，空闲时唤醒代理开一轮）
+        const n = jobNotice(data);
+        if (!n) return true;
+        const prev = this.find(`j:${n.id}`);
+        if (prev?.status === "running") this.put({ ...prev, status: "ok", ms: Math.max(0, time - prev.at) });
+        else if (!prev) this.put({ id: `j:${n.id}`, kind: "job", title: "后台命令结束", summary: oneLine(n.summary) || undefined, status: "ok", at: time });
+        return true;
+      }
+      case "steer":
+        // 宿主发的：用户在回合进行中又发了一条，并进了这一轮
+        this.put({ id: `u${time}`, kind: "steer", title: "追加消息", summary: oneLine(String(data.text ?? "")), status: "ok", at: time });
+        return true;
       case "llm/retry": {
         const f = data.failure ?? {};
         const why = String(f.message ?? f.code ?? "请求失败");
@@ -190,6 +226,11 @@ export class ActivityLog {
     }
   }
 
+  /** 回合正常结束：还在后台跑的命令不算失败，注明回复时它仍在运行（结束后代理会被唤醒，另发一条回复） */
+  finish(time = Date.now()): void {
+    for (const s of this.steps) if (s.kind === "job" && s.status === "running") this.put({ ...s, status: "ok", summary: [s.summary, "（回复时仍在后台运行）"].filter(Boolean).join(" "), ms: Math.max(0, time - s.at) });
+  }
+
   /** 外部原因结束（/stop、看门狗、超时）：还在进行的步骤标成失败，再记一条说明 */
   end(why: string, time = Date.now()): void {
     for (const s of this.steps) if (s.status === "running") this.put({ ...s, status: "error", cut: true, ms: Math.max(0, time - s.at) });
@@ -227,6 +268,10 @@ export function describeStep(s: ActivityStep): string {
       return doing ? "子代理在工作" : `子代理结束${s.summary ? `：${s.summary}` : ""}`;
     case "compact":
       return doing ? "正在压缩上下文" : "压缩了上下文";
+    case "job":
+      return doing ? `后台命令在运行${s.summary ? `：${s.summary}` : ""}` : `${s.title}${s.summary ? `：${s.summary}` : ""}`;
+    case "steer":
+      return `收到追加消息${s.summary ? `：${s.summary}` : ""}`;
     case "error":
       return what;
   }

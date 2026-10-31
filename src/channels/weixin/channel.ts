@@ -240,6 +240,12 @@ export class WeixinChannel {
     return true;
   }
 
+  /** 主动发到一个微信会话（代理自己醒来的一轮）：用这个用户最近的 context_token，占同一份回复配额；登录不在时没有 */
+  replyTo(userId: string): ReplySession | undefined {
+    const token = this.store.getWeixinPeer(this.botId, userId)?.contextToken;
+    return this.client && token ? new WeixinReply(this.client, userId, token, this.quota) : undefined;
+  }
+
   async stop(): Promise<void> {
     this.abort?.abort();
     await this.loop?.catch(() => {});

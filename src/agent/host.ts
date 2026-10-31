@@ -6,6 +6,7 @@ import { lineLogger, logger } from "../log.js";
 import type { Store } from "../store/db.js";
 import { BOT_HEADER, type AgentBridge, type Rejection } from "./bridge.js";
 import { ApiFallbacks, shapeRejection, type ApiFallback } from "./api-fallback.js";
+import { ControlChannel } from "./control.js";
 import os from "node:os";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { adaptSkill, mcpPatchLines, resolveComputerUse, type CuResolved } from "./computer-use.js";
@@ -140,12 +141,14 @@ export interface TurnObserver {
 
 /**
  * 回合被中止：用户 /stop、长时间没有进展（idle）、超过单回合上限（timeout）。
- * SDK 没有中断单个回合的接口，只能关掉子进程；ms 是触发时的时长（idle、timeout 为阈值）。
+ * 经指令通道只中止这个会话的回合（agent.cancel）；宽限期内没停下才重启子进程（restarted）。
+ * ms 是触发时的时长（idle、timeout 为阈值）。
  */
 export class TurnStopped extends Error {
   constructor(
     readonly reason: "user" | "idle" | "timeout",
     readonly ms: number,
+    readonly restarted = false,
   ) {
     super(`agent turn stopped (${reason})`);
   }
@@ -189,6 +192,8 @@ export interface AgentHostOptions {
   apiInfo?: (model: string) => Promise<ModelApiInfo | undefined>;
   /** 被上游拒绝过的模型 → 改走 Chat Completions（所有机器人共用，存在数据目录）；不给时只在本进程内记 */
   apiFallbacks?: ApiFallbacks;
+  /** 代理自己醒来开了一轮（后台命令结束）：调用方用 followTurn 跟踪它，把回复发到会话里 */
+  onWake?: (conversationId: string, sessionId: string) => void;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
@@ -271,26 +276,133 @@ export function agentApi(endpoints: string[] | undefined, env: NodeJS.ProcessEnv
 }
 
 /**
- * 补丁里随接口变化的几行（provider 一级、模型一级）。
- * - Anthropic SDK 自己拼 /v1/messages，baseURL 是 bridge 根地址；另两个是 …/v1。
+ * 一个模型在 DSH 里怎么走：哪个 provider（按接口分）、接口、上下文窗口与最大输出、是否推理。
+ * 同一个代理进程里每个会话用自己的模型（amb-control 插件按会话选 provider/model），不用为换模型重启。
+ */
+export interface ModelRoute {
+  model: string;
+  provider: string;
+  api: AgentApi;
+  /** 这个模型在选中的接口上被拒过、改走 Chat 的回退记录 */
+  fallback?: ApiFallback;
+  limits: { window: number; maxTokens: number };
+  reasoning?: boolean;
+}
+
+/**
+ * 补丁里的 provider：每种接口一个（Anthropic 的 baseURL 是 bridge 根地址，另两个是 …/v1）。Responses 再按推理分两个：
+ * provider 一级的推理强度（medium）遇到不推理的模型会被 pi-ai 拒绝。
+ */
+export function providerFor(api: AgentApi, reasoning?: boolean): string {
+  if (api === "openai-responses") return reasoning === false ? "magpie-responses-plain" : "magpie-responses";
+  if (api === "anthropic-messages") return "magpie-anthropic";
+  return "magpie";
+}
+
+/** llm-pi-ai 的一个 provider（补丁和运行时更新共用这份结构） */
+export interface ProviderProfile {
+  displayName: string;
+  api: AgentApi;
+  baseURL: string;
+  reasoning?: string;
+  apiKeyEnv: string;
+  headers: Record<string, string>;
+  models: Array<{
+    id: string;
+    name: string;
+    contextWindow: number;
+    maxTokens: number;
+    input?: string[];
+    reasoningEfforts?: Record<string, string>;
+    compat?: Record<string, boolean>;
+  }>;
+}
+
+/**
+ * 所有路线的 provider 配置。每个模型都同时列在 Chat Completions（magpie）下：被上游拒过的模型改走 Chat 时不用再注册。
  * - Responses：store:false 下推理条目要带 encrypted_content 才能回放，而 DSH 只在指定了推理强度时才要它，
  *   所以推理模型（或不知道是不是）声明 low/medium/high、默认 medium；明确不推理的不发推理参数。
  *   系统提示用 system 角色（网关转给非 OpenAI 模型时不一定认 developer）；工具显式 strict:false。
  * - Anthropic、Chat 不声明推理（和以前一样，用模型默认）。
  */
-export function apiPatchLines(api: AgentApi, bridgeUrl: string, reasoning?: boolean): { provider: string[]; model: string[] } {
-  const provider = [`        api: ${api}`, `        baseURL: ${yamlStr(api === "anthropic-messages" ? bridgeUrl : bridgeUrl + "/v1")}`];
-  if (api !== "openai-responses") return { provider, model: [] };
-  const think = reasoning !== false;
-  return {
-    provider: [...provider, ...(think ? ["        reasoning: medium"] : [])],
-    model: [
-      ...(think ? ["            reasoningEfforts:", "              low: low", "              medium: medium", "              high: high"] : []),
-      "            compat:",
-      "              supportsDeveloperRole: false",
-      "              supportsStrictMode: true",
-    ],
+export function providerProfiles(routes: ModelRoute[], bridgeUrl: string, botId: string): Record<string, ProviderProfile> {
+  const out: Record<string, ProviderProfile> = {};
+  const add = (provider: string, api: AgentApi, r: ModelRoute, reasoning?: boolean) => {
+    const p = (out[provider] ??= {
+      displayName: "anymodel",
+      api,
+      baseURL: api === "anthropic-messages" ? bridgeUrl : bridgeUrl + "/v1",
+      ...(api === "openai-responses" && reasoning !== false ? { reasoning: "medium" } : {}),
+      apiKeyEnv: "AMB_MAGPIE_KEY",
+      // 标明是哪个机器人发的：bridge 据此把上游错误归到这个代理进程（不转给上游）
+      headers: { [BOT_HEADER]: botId },
+      models: [],
+    });
+    if (p.models.some((m) => m.id === r.model)) return;
+    p.models.push({
+      id: r.model,
+      name: r.model.split("/").pop() || r.model,
+      contextWindow: r.limits.window,
+      maxTokens: r.limits.maxTokens,
+      // 默认只收文字；能看图的模型声明图片输入，用户发来的图片才会作为图片交给它
+      ...(acceptsImages(r.model) ? { input: ["text", "image"] } : {}),
+      ...(api === "openai-responses"
+        ? {
+            ...(reasoning !== false ? { reasoningEfforts: { low: "low", medium: "medium", high: "high" } } : {}),
+            compat: { supportsDeveloperRole: false, supportsStrictMode: true },
+          }
+        : {}),
+    });
   };
+  for (const r of routes) {
+    if (r.api !== "openai-completions") add(r.provider, r.api, r, r.reasoning);
+    add("magpie", "openai-completions", r);
+  }
+  return out;
+}
+
+/** provider 配置写成补丁里的 YAML 行（字符串都按 JSON 写，是合法的 YAML 标量） */
+export function providerPatchLines(profiles: Record<string, ProviderProfile>): string[] {
+  const lines = ["- id: llm-pi-ai", "  config:", "    providers:"];
+  for (const [name, p] of Object.entries(profiles)) {
+    lines.push(`      ${name}:`, `        displayName: ${p.displayName}`, `        api: ${p.api}`, `        baseURL: ${yamlStr(p.baseURL)}`);
+    if (p.reasoning) lines.push(`        reasoning: ${p.reasoning}`);
+    lines.push(`        apiKeyEnv: ${p.apiKeyEnv}`, "        headers:", ...Object.entries(p.headers).map(([k, v]) => `          ${k}: ${yamlStr(v)}`), "        models:");
+    for (const m of p.models) {
+      lines.push(`          - id: ${yamlStr(m.id)}`, `            name: ${yamlStr(m.name)}`, `            contextWindow: ${m.contextWindow}`, `            maxTokens: ${m.maxTokens}`);
+      if (m.input) lines.push(`            input: [${m.input.join(", ")}]`);
+      if (m.reasoningEfforts) lines.push("            reasoningEfforts:", ...Object.entries(m.reasoningEfforts).map(([k, v]) => `              ${k}: ${v}`));
+      if (m.compat) lines.push("            compat:", ...Object.entries(m.compat).map(([k, v]) => `              ${k}: ${v}`));
+    }
+  }
+  return lines;
+}
+
+/**
+ * 长命令转后台：前台命令等这么久还没完就转成后台任务（不杀掉），代理收到任务 id，结束时在会话里收到结果。
+ * 模型可以要求更长的前台等待，但不超过上限；job_output 的等待同样有上限。这样一步最多卡一两分钟，
+ * 插进来的消息、/stop 都能及时生效。Windows 上 PowerShell 5.1 一条命令就要二三十秒，放宽一些。
+ */
+export const SHELL_LIMITS = { bashMs: 30_000, bashMaxMs: 60_000, pwshMs: 60_000, pwshMaxMs: 120_000, waitMs: 30_000, waitMaxMs: 60_000 };
+
+/** 命令与后台任务的补丁行（pwsh-sandbox 一行里还要带上检测到的 PowerShell：补丁按行整体替换 config） */
+export function shellPatchLines(pwshPath: string | undefined, l = SHELL_LIMITS): string[] {
+  return [
+    "- id: bash-sandbox",
+    "  config:",
+    `    timeoutMs: ${l.bashMs}`,
+    `    maxTimeoutMs: ${l.bashMaxMs}`,
+    "- id: pwsh-sandbox",
+    "  config:",
+    `    timeoutMs: ${l.pwshMs}`,
+    `    maxTimeoutMs: ${l.pwshMaxMs}`,
+    ...pwshPatchLines(pwshPath).slice(2),
+    // 后台任务结束时 DSH 默认唤醒空闲的代理开一轮（completionDelivery: wakeup），宿主跟着这一轮把回复发给用户（见 wake）
+    "- id: tool-jobs",
+    "  config:",
+    `    waitTimeoutMs: ${l.waitMs}`,
+    `    maxWaitTimeoutMs: ${l.waitMaxMs}`,
+  ];
 }
 
 /** 随消息交给模型的图片（DSH SDK 的内联图片块：base64 + 格式，进会话前存入 DSH 的附件库） */
@@ -306,7 +418,7 @@ export interface TurnInput {
   observer?: TurnObserver;
   /** 只在模型能看图时传（acceptsImages），否则模型只拿到文字里的工作区路径 */
   images?: TurnImage[];
-  /** 中止这个回合（reason 为 TurnStopped）：会关掉子进程，同一机器人其它进行中的回合也会失败 */
+  /** 中止这个回合（reason 为 TurnStopped）：只中止这个会话的回合；宽限期内没停下才重启子进程 */
   signal?: AbortSignal;
 }
 
@@ -358,6 +470,78 @@ export function callDetail(name: string, argsJson: string): string {
   return s === "{}" ? "" : s.slice(0, 300);
 }
 
+/** 一个进行中的回合（插话、中止用） */
+interface HostTurn {
+  sessionId: string;
+  /** 这一轮的模型（插话带的图片只给能看图的模型） */
+  model: string;
+  /** 代理收下了这条消息（收到第一条会话事件）：此后插话、中止才落得到这一轮上 */
+  accepted: Promise<void>;
+  /** run 已经结束（代理空闲了），正在收尾 */
+  finishing: boolean;
+  stopping: boolean;
+  /** 跟踪的是代理自己醒来的一轮（不是宿主发的消息） */
+  wake?: boolean;
+  /** 宿主发起的这一轮已经空闲过一次：之后再忙起来就是代理自己醒了 */
+  idleSeen?: boolean;
+}
+
+/** 一轮的结果 */
+export interface TurnResult {
+  text: string;
+  sessionId: string;
+  files: string[];
+  usage: TurnUsage;
+}
+
+/** 代理自己醒来的一轮：先缓存通知，有人跟踪时交给它；代理空闲时结束 */
+class Wake {
+  buffer: SdkNotification[] = [];
+  listener: ((n: SdkNotification) => void) | undefined;
+  ended = false;
+  /** 已经有人在跟踪 */
+  taken = false;
+  readonly done: Promise<void>;
+  private settle!: (err?: Error) => void;
+  constructor(
+    readonly conversationId: string,
+    readonly sessionId: string,
+  ) {
+    this.done = new Promise<void>((resolve, reject) => (this.settle = (err) => (err ? reject(err) : resolve())));
+    this.done.catch(() => undefined);
+  }
+  push(n: SdkNotification): void {
+    if (this.listener) this.listener(n);
+    else if (this.buffer.length < 5000) this.buffer.push(n);
+  }
+  attach(fn: (n: SdkNotification) => void): void {
+    this.listener = fn;
+    for (const n of this.buffer.splice(0)) fn(n);
+  }
+  end(err?: Error): void {
+    if (this.ended) return;
+    this.ended = true;
+    this.settle(err);
+  }
+}
+
+/** 中止信号的原因（manager 用 TurnStopped 中止；别的原因按用户中止算） */
+function stopReason(sig: AbortSignal): TurnStopped {
+  return sig.reason instanceof TurnStopped ? sig.reason : new TurnStopped("user", 0);
+}
+
+/** 一条 assistant/message 是不是完整的回答（不带工具调用、没被打断）：是就返回它的文字 */
+export function answerText(data: any): string {
+  if (data?.interrupted) return "";
+  const content: any[] = Array.isArray(data?.message?.content) ? data.message.content : [];
+  if (content.some((b) => b?.type === "tool-call")) return "";
+  return content
+    .filter((b) => b?.type === "text")
+    .map((b) => String(b.text ?? ""))
+    .join("")
+    .trim();
+}
+
 /**
  * 每个 bot 一个 DSH 子进程（懒启动）：DSH_HOME = <data>/dsh/<botId>，工作区 = <data>/workspaces/<botId>，
  * workspace-write 沙箱；模型请求经本地 bridge 代理到 magpie（子进程拿不到真实密钥）。
@@ -367,14 +551,29 @@ export class AgentHost {
   state: HostState = "stopped";
   lastError = "";
   restarts = 0;
+  /** 最近一轮用的模型（子进程启动时是启动用的模型） */
   model = "";
-  /** 当前子进程跟模型说话用的接口 */
+  /** 最近一轮跟模型说话用的接口 */
   api: AgentApi | "" = "";
-  /** 当前子进程因为回退才走 Chat Completions：回退记录（状态里显示原因） */
+  /** 最近一轮因为回退才走 Chat Completions：回退记录（状态里显示原因） */
   fallback: ApiFallback | undefined;
   private ownFallbacks: ApiFallbacks | undefined;
-  /** 当前子进程补丁里写的上下文窗口与最大输出 */
-  private limits: { window: number; maxTokens: number } | undefined;
+  /** 宿主 → 子进程的指令通道（amb-control 插件） */
+  readonly control = new ControlChannel();
+  /** 模型 → 路线（当前子进程内有效，换进程时重新查模型资料） */
+  private routes = new Map<string, Promise<ModelRoute>>();
+  /** 用过的模型：重新拉起子进程时都写进补丁 */
+  private known = new Set<string>();
+  /** 当前子进程已经能用的 provider/model（补丁里的，加上运行中补上的） */
+  private childRoutes = new Map<string, ModelRoute>();
+  /** 当前子进程启动时的默认路线（会话没选模型时用它） */
+  private initRoute: ModelRoute | undefined;
+  /** 会话 → 进行中的回合（插话、中止用） */
+  private turns = new Map<string, HostTurn>();
+  /** DSH session → 代理自己醒来的一轮 */
+  private wakes = new Map<string, Wake>();
+  /** 正在把消息交给代理的会话（还没登记成回合） */
+  private claimed = new Set<string>();
   private harness: SdkHarness | undefined;
   private starting: Promise<SdkHarness> | undefined;
   private opened = new Set<string>();
@@ -454,36 +653,22 @@ export class AgentHost {
     });
   }
 
-  private writePatch(model: string, apps: CuaApp[] = [], pwshPath?: string, lim = modelLimits(model), api: AgentApi = "openai-completions", reasoning?: boolean): string {
-    this.limits = lim;
-    const wire = apiPatchLines(api, this.o.bridge.url, reasoning);
+  /**
+   * routes：这个代理进程要能用的所有模型（每个接口一个 provider，见 providerProfiles）；第一条是启动时的默认路线。
+   * 之后会话换到没列出的模型时由 amb-control 插件在运行中补上（不重启）。
+   */
+  private writePatch(routes: ModelRoute[] | string, apps: CuaApp[] = [], pwshPath?: string): string {
+    const list = typeof routes === "string" ? [this.fallbackRoute(routes)] : routes;
     const plugin = path.join(this.o.runtimeDir, "plugins", "amb-bridge.mjs");
     const memory = path.join(this.o.runtimeDir, "plugins", "amb-memory.mjs");
     this.writeMediaSkill();
     const cuOn = !!this.computerUseActive();
     const text = [
       "# 由 anymodel bot 每次启动生成；请勿手改。",
-      "- id: llm-pi-ai",
-      "  config:",
-      "    providers:",
-      "      magpie:",
-      "        displayName: anymodel",
-      // 接口按模型选（agentApi）：Responses / Anthropic Messages / Chat Completions
-      ...wire.provider,
-      "        apiKeyEnv: AMB_MAGPIE_KEY",
-      // 标明是哪个机器人发的：bridge 据此把上游错误归到这个代理进程（不转给上游）
-      "        headers:",
-      `          ${BOT_HEADER}: ${yamlStr(this.o.botId)}`,
-      "        models:",
-      `          - id: ${yamlStr(model)}`,
-      `            name: ${yamlStr(model.split("/").pop() || model)}`,
-      `            contextWindow: ${lim.window}`,
-      `            maxTokens: ${lim.maxTokens}`,
-      // 默认只收文字；能看图的模型声明图片输入，用户发来的图片才会作为图片交给它
-      ...(acceptsImages(model) ? ["            input: [text, image]"] : []),
-      ...wire.model,
-      // Windows：命令用检测到的 PowerShell 7（DSH 自己只看 Program Files\PowerShell\7 和 PATH，找不到就退回 5.1）
-      ...pwshPatchLines(pwshPath),
+      // 接口按模型选（agentApi）：Responses / Anthropic Messages / Chat Completions，各一个 provider
+      ...providerPatchLines(providerProfiles(list, this.o.bridge.url, this.o.botId)),
+      // 长命令转后台；Windows：命令用检测到的 PowerShell 7（DSH 自己只看 Program Files\PowerShell\7 和 PATH，找不到就退回 5.1）
+      ...shellPatchLines(pwshPath),
       // 人设：个人助手（替换 DSH 的 coding agent 人设），不要 "powered by DeepSeek Harness" 那句身份
       "- id: system-prompt",
       "  config:",
@@ -510,6 +695,9 @@ export class AgentHost {
       "      name: '@deepseek-ai/dsh-tool-ask-user'",
       "    - id: amb-present",
       "      name: '@deepseek-ai/dsh-tool-present'",
+      // 宿主 → 代理进程的指令通道：按会话中止、插话、按会话选模型；长命令转后台后等它的结果
+      "    - id: amb-control",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-control.mjs"))}`,
       ...this.computerUseLines(apps),
       ...this.fullAccessLines(),
       "",
@@ -687,6 +875,7 @@ exec "$REAL" "$@"
       AMB_BRIDGE_TOKEN: this.o.bridge.token,
       AMB_BOT_ID: this.o.botId,
       AMB_PROMPT_FILE: this.promptFile,
+      AMB_CONTROL_TOKEN: this.control.id,
     };
     // 时区：本进程设了 TZ 才传下去；没设就不设，子进程用系统时区（各平台都是，Windows 上 TZ 也只认 POSIX 写法）
     if (process.env.TZ) env.TZ = process.env.TZ;
@@ -769,20 +958,16 @@ exec "$REAL" "$@"
     }
   }
 
+  /**
+   * 确保子进程在跑（懒启动）。换模型不再重启：每个会话按自己的模型走（见 useRoute）；
+   * 只有设置或 PowerShell 变了、而且没有回合在跑时才重启。
+   */
   async ensure(model: string): Promise<SdkHarness> {
     if (this.stopped) throw new Error("agent host stopped");
     this.syncPrompt();
     // 连续启动失败后不再每条消息都重试一遍（每次都要等满初始化超时）：直到手动重启或冷却结束
     if (!this.harness && !this.starting && this.state === "error" && Date.now() < this.retryAfter) {
       throw new Error(`代理进程启动失败，${Math.ceil((this.retryAfter - Date.now()) / 60_000)} 分钟后再试（或在 设置 → 故障排查 里重启代理进程）：${this.lastError}`);
-    }
-    if (this.harness && this.model !== model && this.active === 0) {
-      log.info("model changed, restarting dsh", { bot: this.o.botId, model });
-      await this.closeHarness();
-    }
-    if (this.harness && this.api && this.api !== "openai-completions" && this.fallbacks.get(this.model) && this.active === 0) {
-      log.info("model was rejected on its API before, restarting dsh on Chat Completions", { bot: this.o.botId, model: this.model, api: this.api });
-      await this.closeHarness();
     }
     if (this.harness && this.sig !== this.settingsSig() && this.active === 0) {
       log.info("bot settings or PowerShell changed, restarting dsh", { bot: this.o.botId });
@@ -791,6 +976,34 @@ exec "$REAL" "$@"
     if (this.harness) return this.harness;
     this.starting ??= this.spawn(model).finally(() => (this.starting = undefined));
     return this.starting;
+  }
+
+  /** 没有模型资料时的路线（Chat Completions、内置兜底的窗口） */
+  private fallbackRoute(model: string): ModelRoute {
+    return { model, provider: "magpie", api: "openai-completions", limits: modelLimits(model) };
+  }
+
+  /**
+   * 模型的路线：按 Modelflare 模型资料选接口（agentApi）、定上下文窗口；在该接口上被拒过（24 小时内）就走 Chat。
+   * 模型资料在一个子进程的生命期内只查一次（和以前一样：接口在拉起进程时选定）。
+   */
+  async routeFor(model: string): Promise<ModelRoute> {
+    let p = this.routes.get(model);
+    if (!p) {
+      const ask = <T>(q: Promise<T | undefined> | undefined) => withTimeoutOr(q ?? Promise.resolve(undefined), 3000, undefined).catch(() => undefined);
+      p = Promise.all([ask(this.o.contextWindow?.(model)), ask(this.o.apiInfo?.(model))]).then(([known, info]) => {
+        const api = agentApi(info?.endpoints);
+        return { model, provider: providerFor(api, info?.reasoning), api, limits: modelLimits(model, known), reasoning: info?.reasoning };
+      });
+      this.routes.set(model, p);
+    }
+    const r = await p;
+    const fb = r.api !== "openai-completions" ? this.fallbacks.get(model) : undefined;
+    return fb ? { ...r, provider: "magpie", api: "openai-completions", fallback: fb } : r;
+  }
+
+  private routeKey(r: { provider: string; model: string }): string {
+    return `${r.provider}|${r.model}`;
   }
 
   /**
@@ -854,19 +1067,19 @@ exec "$REAL" "$@"
       const cu = this.computerUseActive();
       const apps = cu && cu.backend === "cua" ? await discoverAppsCached() : [];
       const pwshPath = await pwshProbe.dshPath();
-      const ask = <T>(p: Promise<T | undefined> | undefined) => withTimeoutOr(p ?? Promise.resolve(undefined), 3000, undefined).catch(() => undefined);
-      const [known, info] = await Promise.all([ask(this.o.contextWindow?.(model)), ask(this.o.apiInfo?.(model))]);
-      const chosen = agentApi(info?.endpoints);
-      // 这个模型在该接口上被拒过（24 小时内）：直接走 Chat Completions
-      const fb = chosen !== "openai-completions" ? this.fallbacks.get(model) : undefined;
-      const api: AgentApi = fb ? "openai-completions" : chosen;
-      this.fallback = fb;
-      const patch = this.writePatch(model, apps, pwshPath, modelLimits(model, known), api, info?.reasoning);
+      // 模型资料在新进程里重新查；用过的模型都写进补丁（会话各用各的模型），启动用的模型排第一
+      this.routes.clear();
+      this.known.add(model);
+      const first = await this.routeFor(model);
+      const routes = [first, ...(await Promise.all([...this.known].filter((m) => m !== model).map((m) => this.routeFor(m))))];
+      const api = first.api;
+      const patch = this.writePatch(routes, apps, pwshPath);
       this.syncPrompt(true);
       this.pwshPath = pwshPath;
       this.sig = this.settingsSig(pwshPath);
       const timeoutMs = this.initTimeoutMs();
-      this.stage("patch written", t0, { api, computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
+      this.control.reset();
+      this.stage("patch written", t0, { api, models: routes.length, computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
       h = new sdk.DeepSeekHarness({
         profile: "sdk",
         patches: [patch],
@@ -874,7 +1087,7 @@ exec "$REAL" "$@"
         env: this.env(),
         cwd: this.workspace,
         processCwd: this.workspace,
-        provider: "magpie",
+        provider: first.provider,
         model,
         initializeTimeoutMs: timeoutMs,
         shutdownTimeoutMs: 3000,
@@ -905,25 +1118,42 @@ exec "$REAL" "$@"
       const child = h.client?.child;
       if (child?.pid) fs.writeFileSync(this.pidFile, String(child.pid));
       const harness = h;
+      // 所有通知先同步经过 tap（filter 回调按到达顺序调用；返回 false 不排队）：认出代理自己醒来的一轮
+      h.client?.subscribe?.((n: SdkNotification) => {
+        if (this.harness === harness) {
+          try {
+            this.tap(n);
+          } catch (e) {
+            log.warn("notification tap failed", { message: (e as Error).message });
+          }
+        }
+        return false;
+      });
       child?.once?.("exit", (code: number | null, sig: string | null) => {
         if (this.harness !== harness) return;
         this.harness = undefined;
         this.opened.clear();
+        this.control.close();
+        this.endWakes();
         if (this.stopped) return;
         this.onFailure(new Error(`dsh exited (code=${code} signal=${sig})`));
       });
       this.harness = h;
+      this.childRoutes = new Map(routes.flatMap((r) => [[this.routeKey(r), r] as const, [this.routeKey({ provider: "magpie", model: r.model }), r] as const]));
+      this.initRoute = first;
       this.model = model;
       this.api = api;
+      this.fallback = first.fallback;
       this.state = "running";
       this.initStage = "";
       this.lastError = "";
       this.initFailures = 0;
       this.startedAt = Date.now();
-      log.info("dsh started", { bot: this.o.botId, pid: child?.pid, model, api, ms: Date.now() - t0, initMs });
+      log.info("dsh started", { bot: this.o.botId, pid: child?.pid, model, api, models: routes.length, ms: Date.now() - t0, initMs });
       return h;
     } catch (e) {
       clearInterval(watchdog);
+      this.control.close("代理进程启动失败");
       this.emit({ type: "failed", message: (e as Error).message });
       this.initFailures++;
       this.onFailure(e as Error);
@@ -958,10 +1188,18 @@ exec "$REAL" "$@"
     log.warn("dsh failure, will restart on demand", { bot: this.o.botId, delayMs: delay, message: this.lastError });
   }
 
+  /** 子进程没了：醒着的那几轮随之失败 */
+  private endWakes(): void {
+    for (const w of this.wakes.values()) w.end(new Error("代理进程已退出"));
+    this.wakes.clear();
+  }
+
   private async closeHarness(): Promise<void> {
     const h = this.harness;
     this.harness = undefined;
     this.opened.clear();
+    this.control.close("代理进程已重启");
+    this.endWakes();
     if (!h) return;
     try {
       await h.close();
@@ -1011,22 +1249,22 @@ exec "$REAL" "$@"
 
   /**
    * 跑一个回合。Responses / Anthropic Messages 上的请求被上游拒绝（请求形状不被接受，不是限流、余额、故障）时：
-   * 记下这个模型改走 Chat Completions；这一轮还没调用过工具的话，把代理进程换到 Chat 上重做一遍（只重做一次）。
+   * 记下这个模型改走 Chat Completions；这一轮还没调用过工具的话，把这个会话换到 Chat 上重做一遍（只重做一次，不重启进程）。
    */
-  async runTurn(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
+  async runTurn(input: TurnInput): Promise<TurnResult> {
     try {
       return await this.runOnce(input);
     } catch (e) {
       if (!(e instanceof ApiRejected) || !e.retryable || input.signal?.aborted) throw e;
       log.warn("agent turn rejected on its API; retrying it once over Chat Completions", { bot: this.o.botId, model: input.model, api: e.api, reason: e.reason });
       input.observer?.onEvent?.("api/fallback", { from: e.api, to: "openai-completions", reason: e.reason }, Date.now());
-      // ensure() 看到回退记录，空闲时把子进程换到 Chat 上。用户这条消息（连同图片）在被拒之前已经存进会话，
+      // routeFor() 看到回退记录，这个会话改选 Chat 的路线。用户这条消息（连同图片）在被拒之前已经存进会话，
       // 不再发一遍，只请模型处理它
       return await this.runOnce({ ...input, text: RETRY_NOTE, images: undefined });
     }
   }
 
-  private async runOnce(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
+  private async runOnce(input: TurnInput): Promise<TurnResult> {
     this.entering++;
     try {
       return await this.runEntered(input);
@@ -1037,100 +1275,340 @@ exec "$REAL" "$@"
     }
   }
 
-  private async runEntered(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
-    const h = await this.ensure(input.model);
-    const s = await this.sessionFor(h, input.conversationId);
-    // 在等进程 / 会话时就被中止了：消息还没交出去，不用重启子进程
-    if (input.signal?.aborted) throw input.signal.reason instanceof TurnStopped ? input.signal.reason : new TurnStopped("user", 0);
+  /**
+   * 让这个会话用这条路线：子进程还不认识这个模型就经插件补进 provider 配置，再按会话选定。
+   * 插件不通、补不进去时返回 false（只有启动时的默认路线不用选）。
+   */
+  private async useRoute(sessionId: string, route: ModelRoute): Promise<boolean> {
+    const key = this.routeKey(route);
+    const isInit = !!this.initRoute && this.routeKey(this.initRoute) === key;
+    // 插件刚起来可能还没来取指令：要靠它时等一会儿；启动时的默认路线不靠它也能用
+    const ready = this.control.connected || (!(isInit && this.childRoutes.has(key)) && (await this.control.ready(5000)));
+    if (!this.childRoutes.has(key)) {
+      if (!ready) return false;
+      const list = [...new Set(this.childRoutes.values()), route];
+      try {
+        await this.control.send("providers", { providers: providerProfiles(list, this.o.bridge.url, this.o.botId) }, 20_000);
+        this.childRoutes.set(key, route);
+        this.childRoutes.set(this.routeKey({ provider: "magpie", model: route.model }), route);
+        log.info("model added to the running dsh", { bot: this.o.botId, model: route.model, provider: route.provider });
+      } catch (e) {
+        log.warn("could not add a model to the running dsh", { bot: this.o.botId, model: route.model, message: (e as Error).message.slice(0, 300) });
+        return false;
+      }
+    }
+    if (ready) {
+      try {
+        await this.control.send("select", { sessionId, provider: route.provider, model: route.model }, 10_000);
+        return true;
+      } catch (e) {
+        log.warn("model selection failed", { bot: this.o.botId, model: route.model, message: (e as Error).message.slice(0, 200) });
+      }
+    }
+    return isInit;
+  }
+
+  private async runEntered(input: TurnInput): Promise<TurnResult> {
+    const conv = input.conversationId;
+    // 这个会话正在交给代理：期间代理自己醒来（后台命令结束）不另开一轮跟踪，这一轮的 run 会收下它的事件
+    this.claimed.add(conv);
+    try {
+      return await this.runClaimed(input);
+    } finally {
+      this.claimed.delete(conv);
+    }
+  }
+
+  private async runClaimed(input: TurnInput): Promise<TurnResult> {
+    const route = await this.routeFor(input.model);
+    let s = await this.sessionFor(await this.ensure(input.model), input.conversationId);
+    // 在等进程 / 会话时就被中止了：消息还没交出去，不用动子进程
+    if (input.signal?.aborted) throw stopReason(input.signal);
+    if (!(await this.useRoute(s.id, route))) {
+      // 指令通道不通、或补不进这个模型：没有别的回合在跑时，带上这个模型重启子进程；忙的时候不能让这个会话悄悄用错模型
+      if (this.active > 0) throw new Error(`暂时无法切换到模型 ${input.model}（代理进程正忙，没能在运行中加上这个模型），请稍后再试`);
+      log.warn("restarting dsh to use a model it could not add at runtime", { bot: this.o.botId, model: input.model });
+      this.known.add(input.model);
+      await this.closeHarness();
+      this.state = "stopped";
+      s = await this.sessionFor(await this.ensure(input.model), input.conversationId);
+      if (!(await this.useRoute(s.id, route))) throw new Error(`代理进程无法使用模型 ${input.model}`);
+    }
+    // 代理自己醒着的一轮（后台命令结束）还没完：等它完了再发这条（它的回复由跟踪它的那一轮发出）
+    const woke = this.wakes.get(s.id);
+    if (woke && !woke.ended) await withTimeoutOr(woke.done.catch(() => undefined), this.o.turnTimeoutMs ?? 30 * 60_000, undefined);
+    if (input.signal?.aborted) throw stopReason(input.signal);
     this.active++;
-    let timer: NodeJS.Timeout | undefined;
-    let turnError: string | undefined;
-    const presented: string[] = [];
-    const lim = input.model === this.model && this.limits ? this.limits : modelLimits(input.model);
-    const usage: TurnUsage = { tokens: 0, window: lim.window, maxTokens: lim.maxTokens };
+    this.known.add(input.model);
+    this.model = input.model;
+    this.api = route.api;
+    this.fallback = route.fallback;
+    let accept!: () => void;
+    const turn: HostTurn = { sessionId: s.id, model: input.model, accepted: new Promise<void>((r) => (accept = r)), finishing: false, stopping: false };
+    this.turns.set(input.conversationId, turn);
+    this.claimed.delete(input.conversationId);
     const images = this.imageInput ? (input.images ?? []) : [];
-    let unlisten = () => {};
-    // 这一轮：用的接口、调用过几次工具、上游拒绝过本机器人的哪些模型请求
-    const api = this.api || "openai-completions";
-    let toolCalls = 0;
+    // 这一轮：用的接口、上游拒绝过本机器人的哪些模型请求
+    const api = route.api;
+    const tr = this.tracker(s.id, route, input.observer, accept);
     const rejections: Rejection[] = [];
     const offRejection =
       this.o.bridge.onRejection?.((r) => {
         if (r.bot === this.o.botId && /\/v1\/(responses|messages)$/.test(r.path)) rejections.push(r);
       }) ?? (() => {});
     try {
-      const timeoutMs = this.o.turnTimeoutMs ?? 30 * 60_000;
       const prompt = images.length ? [{ type: "text", text: input.text }, ...images.map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType }))] : input.text;
       input.observer?.onStart?.();
-      const run = s.run(prompt, {
-        onNotification: (n) => {
-          if (process.env.AMB_DSH_TRACE) fs.appendFileSync(process.env.AMB_DSH_TRACE, JSON.stringify(n).slice(0, 2000) + "\n");
-          if (n.method === "subagent.started" || n.method === "subagent.finished") return input.observer?.onEvent?.(n.method.replace(".", "/"), n.params, Date.now());
-          if (n.method !== "session.event") return;
-          // 子代理会话的事件（SDK 只送来本会话和它的子代理的通知）：不进本回合的用量和步骤，只说明子代理还在干活
-          if (n.params?.sessionId !== s.id) return input.observer?.onEvent?.("subagent/event", { sessionId: n.params?.sessionId, event: n.params?.event }, Number(n.params?.event?.time) || Date.now());
-          const ev = n.params.event;
-          const data = ev?.data ?? {};
-          if (ev?.type === "tool/call") {
-            toolCalls++;
-            this.calls.set(String(data.callId), { name: String(data.name), args: String(data.arguments ?? ""), at: Date.now() });
-            if (this.calls.size > 500) this.calls.delete(this.calls.keys().next().value!);
-            if (data.name === "present") presented.push(...presentPaths(String(data.arguments ?? "")));
-            input.observer?.onProgress?.(`🔧 ${summarizeCall(String(data.name), String(data.arguments ?? "")).split(this.workspace + "/").join("")}`);
-          }
-          if (ev?.type === "tool/result") {
-            // Windows：PowerShell 本身拉不起来（被杀毒软件删了、被策略拦了…）时退回下一个，不让代理一直用一个起不来的 shell（其他平台上探测器不管）
-            const msg = data?.message ?? {};
-            const call = this.calls.get(String(msg.toolCallId ?? ""));
-            if (call && /^(pwsh|powershell)$/i.test(call.name)) pwshProbe.observeToolResult(this.pwshPath, contentText(msg.content));
-          }
-          if (ev?.type === "request/context" && Number(data?.contextWindow) > 0) usage.window = Number(data.contextWindow);
-          if (ev?.type === "assistant/message" && data?.usage) {
-            const u = data.usage;
-            const t = Number(u.totalTokens) || (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0);
-            if (t > 0) usage.tokens = t;
-          }
-          if (ev?.type === "turn/end" && data?.reason?.kind === "error") turnError = String(data.reason.error?.message ?? "unknown error");
-          input.observer?.onEvent?.(String(ev?.type), data, Number(ev?.time) || Date.now());
-        },
-      });
-      // 中止后子进程被关掉，run 随后以"runtime closed"失败，已经没人等它
-      run.catch(() => undefined);
-      const stopped = new Promise<never>((_, rej) => {
-        timer = setTimeout(() => rej(new TurnStopped("timeout", timeoutMs)), timeoutMs);
-        const sig = input.signal;
-        if (!sig) return;
-        const onAbort = () => rej(sig.reason instanceof TurnStopped ? sig.reason : new TurnStopped("user", 0));
-        if (sig.aborted) return onAbort();
-        sig.addEventListener("abort", onAbort, { once: true });
-        unlisten = () => sig.removeEventListener("abort", onAbort);
-      });
-      const r = await Promise.race([run, stopped]);
+      const run = s.run(prompt, { onNotification: tr.onNotification });
+      const r = await this.awaitTurn(turn, run, input.signal);
       this.failures = 0;
+      const { turnError, toolCalls, presented, answers, usage } = tr.st;
       const rejected = turnError !== undefined && api !== "openai-completions" ? shapeRejection(rejections, turnError) : undefined;
       if (rejected) this.rememberFallback(input.model, api, rejected);
       if (!r.finalResponse && turnError) {
         // 已经调用过工具（命令可能已经执行）就不重做，照常报错；下一轮起走 Chat
-        if (rejected) throw new ApiRejected(turnError, api, rejected, toolCalls === 0 && presented.length === 0 && this.active === 1);
+        if (rejected) throw new ApiRejected(turnError, api, rejected, toolCalls === 0 && presented.length === 0);
         throw new Error(turnError);
       }
-      return { text: r.finalResponse, sessionId: s.id, files: deliverables(this.workspace, presented), usage };
+      return { text: answers.length > 1 ? answers.join("\n\n") : r.finalResponse, sessionId: s.id, files: deliverables(this.workspace, presented), usage };
     } catch (e) {
       if (e instanceof TurnStopped) {
-        log.warn("agent turn stopped, restarting dsh", { bot: this.o.botId, reason: e.reason, ms: e.ms, otherTurns: this.active - 1 });
-        await this.closeHarness();
-        this.state = "stopped";
+        log.warn("agent turn stopped", { bot: this.o.botId, reason: e.reason, ms: e.ms, restarted: e.restarted, otherTurns: this.active - 1 });
       } else if (images.length && this.state !== "running") {
         this.imageInput = false;
         log.warn("dsh died on a turn with images; sending images by path only until the app restarts", { bot: this.o.botId, message: (e as Error).message.slice(0, 200) });
       }
       throw e;
     } finally {
-      clearTimeout(timer);
-      unlisten();
+      turn.finishing = true;
       offRejection();
+      if (this.turns.get(input.conversationId) === turn) this.turns.delete(input.conversationId);
       this.active--;
     }
+  }
+
+  /**
+   * 一轮的事件处理：工具调用（审批提示用）、交付文件、用量、模型的完整回答、出错原因，再转给观察者（活动记录、看门狗）。
+   * accept：第一条本会话事件到达时调用（代理收下了消息）。
+   */
+  private tracker(sessionId: string, route: ModelRoute, observer: TurnObserver | undefined, accept?: () => void) {
+    const st = {
+      toolCalls: 0,
+      presented: [] as string[],
+      /** 这一轮里模型的每个完整回答（不带工具调用的回复）：插进来的消息让回合多答了一次时，几次回答都交给用户 */
+      answers: [] as string[],
+      usage: { tokens: 0, window: route.limits.window, maxTokens: route.limits.maxTokens } as TurnUsage,
+      turnError: undefined as string | undefined,
+    };
+    const onNotification = (n: SdkNotification) => {
+      if (process.env.AMB_DSH_TRACE) fs.appendFileSync(process.env.AMB_DSH_TRACE, JSON.stringify(n).slice(0, 2000) + "\n");
+      if (n.method === "subagent.started" || n.method === "subagent.finished") return observer?.onEvent?.(n.method.replace(".", "/"), n.params, Date.now());
+      if (n.method !== "session.event") return;
+      // 子代理会话的事件（只送来本会话和它的子代理的通知）：不进本回合的用量和步骤，只说明子代理还在干活
+      if (n.params?.sessionId !== sessionId) return observer?.onEvent?.("subagent/event", { sessionId: n.params?.sessionId, event: n.params?.event }, Number(n.params?.event?.time) || Date.now());
+      // 第一条通知就是代理收下这条消息的回执：此后才能插话、中止
+      accept?.();
+      const ev = n.params.event;
+      const data = ev?.data ?? {};
+      if (ev?.type === "tool/call") {
+        st.toolCalls++;
+        this.calls.set(String(data.callId), { name: String(data.name), args: String(data.arguments ?? ""), at: Date.now() });
+        if (this.calls.size > 500) this.calls.delete(this.calls.keys().next().value!);
+        if (data.name === "present") st.presented.push(...presentPaths(String(data.arguments ?? "")));
+        observer?.onProgress?.(`🔧 ${summarizeCall(String(data.name), String(data.arguments ?? "")).split(this.workspace + "/").join("")}`);
+      }
+      if (ev?.type === "tool/result") {
+        // Windows：PowerShell 本身拉不起来（被杀毒软件删了、被策略拦了…）时退回下一个，不让代理一直用一个起不来的 shell（其他平台上探测器不管）
+        const msg = data?.message ?? {};
+        const call = this.calls.get(String(msg.toolCallId ?? ""));
+        if (call && /^(pwsh|powershell)$/i.test(call.name)) pwshProbe.observeToolResult(this.pwshPath, contentText(msg.content));
+      }
+      if (ev?.type === "request/context" && Number(data?.contextWindow) > 0) st.usage.window = Number(data.contextWindow);
+      if (ev?.type === "assistant/message") {
+        if (data?.usage) {
+          const u = data.usage;
+          const t = Number(u.totalTokens) || (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0);
+          if (t > 0) st.usage.tokens = t;
+        }
+        const answer = answerText(data);
+        if (answer) st.answers.push(answer);
+      }
+      if (ev?.type === "turn/end" && data?.reason?.kind === "error") st.turnError = String(data.reason.error?.message ?? "unknown error");
+      observer?.onEvent?.(String(ev?.type), data, Number(ev?.time) || Date.now());
+    };
+    return { st, onNotification };
+  }
+
+  /**
+   * 等一轮结束；中止（/stop、看门狗、单回合上限）时只中止这个会话（agent.cancel），宽限期内没停下才重启子进程。
+   * 中止了就抛 TurnStopped（restarted 说明有没有重启）。
+   */
+  private async awaitTurn<T>(turn: HostTurn, run: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+    // 宽限期内没停下、子进程被关掉时，run 随后以"runtime closed"失败，已经没人等它
+    run.catch(() => undefined);
+    const timeoutMs = this.o.turnTimeoutMs ?? 30 * 60_000;
+    let stopping: Promise<TurnStopped> | undefined;
+    let wake!: () => void;
+    const stopRequested = new Promise<void>((r) => (wake = r));
+    const stop = (why: TurnStopped) => {
+      if (stopping) return;
+      turn.stopping = true;
+      stopping = this.stopSession(turn, why, run);
+      wake();
+    };
+    const timer = setTimeout(() => stop(new TurnStopped("timeout", timeoutMs)), timeoutMs);
+    const onAbort = () => stop(stopReason(signal!));
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      const first = await Promise.race([run.then((r) => ({ r }), (e: unknown) => ({ e })), stopRequested.then(() => undefined)]);
+      turn.finishing = true;
+      if (stopping) throw await stopping;
+      if (!first) throw new Error("agent turn ended without a result");
+      if ("e" in first) throw first.e;
+      return first.r;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  }
+
+  /**
+   * 所有通知都先经过这里（同步，按到达顺序）：认出代理自己醒来的一轮（后台命令结束时 DSH 唤醒空闲的代理），
+   * 把这一轮的事件交给跟踪它的人。宿主发起的一轮在它第一次空闲之前不算。
+   */
+  private tap(n: SdkNotification): void {
+    for (const w of this.wakes.values()) if (!w.ended && this.relates(n, w.sessionId)) w.push(n);
+    if (n.method !== "session.status") return;
+    const sid = String(n.params?.sessionId ?? "");
+    const own = [...this.turns.values()].find((t) => t.sessionId === sid && !t.wake);
+    if (n.params?.status === "idle") {
+      if (own) own.idleSeen = true;
+      this.wakes.get(sid)?.end();
+      return;
+    }
+    if (n.params?.status !== "running" || (own && !own.idleSeen)) return;
+    const prev = this.wakes.get(sid);
+    if (prev && !prev.ended) return;
+    const conv = this.o.store.conversationForSession(sid);
+    // 只跟踪会话自己的 DSH session（不是子代理、不是归档了的旧段）
+    if (!conv || this.o.store.getAgentSession(conv) !== sid || this.claimed.has(conv)) return;
+    const w = new Wake(conv, sid);
+    this.wakes.set(sid, w);
+    log.info("agent woke up on its own (a background job ended); following that turn", { bot: this.o.botId, conversationId: conv });
+    // 没人接（没有渠道能回复）：结束一分钟后丢掉
+    void w.done.then(
+      () => setTimeout(() => !w.taken && this.wakes.get(sid) === w && this.wakes.delete(sid), 60_000).unref?.(),
+      () => undefined,
+    );
+    try {
+      this.o.onWake?.(conv, sid);
+    } catch (e) {
+      log.warn("wake handler failed", { message: (e as Error).message });
+    }
+  }
+
+  /** 通知属于这个会话或它的子代理 */
+  private relates(n: SdkNotification, root: string): boolean {
+    const c = this.harness?.client;
+    const under = (id: string) => id === root || (typeof c?.isDescendantOf === "function" && !!c.isDescendantOf(id, root));
+    if (n.method === "subagent.started" || n.method === "subagent.finished") return under(String(n.params?.parentSessionId ?? "")) || n.params?.childSessionId === root;
+    return under(String(n.params?.sessionId ?? ""));
+  }
+
+  /** 这个会话的代理自己醒着（后台命令结束后被唤醒） */
+  woke(conversationId: string): boolean {
+    return [...this.wakes.values()].some((w) => w.conversationId === conversationId && !w.taken);
+  }
+
+  /**
+   * 跟踪代理自己醒来的一轮（见 tap）：和普通回合一样记步骤、算用量、收交付文件，能插话、能中止，
+   * 结束时返回模型的回复，由运行时发到会话里。
+   */
+  async followTurn(input: { conversationId: string; model: string; observer?: TurnObserver; signal?: AbortSignal }): Promise<TurnResult> {
+    const w = [...this.wakes.values()].find((x) => x.conversationId === input.conversationId && !x.taken);
+    if (!w) throw new Error("no wake-up turn to follow");
+    w.taken = true;
+    const route = await this.routeFor(input.model);
+    this.active++;
+    const turn: HostTurn = { sessionId: w.sessionId, model: input.model, accepted: Promise.resolve(), finishing: false, stopping: false, wake: true };
+    this.turns.set(input.conversationId, turn);
+    const tr = this.tracker(w.sessionId, route, input.observer);
+    try {
+      input.observer?.onStart?.();
+      w.attach(tr.onNotification);
+      await this.awaitTurn(turn, w.done, input.signal);
+      const { turnError, answers, presented, usage } = tr.st;
+      if (!answers.length && turnError) throw new Error(turnError);
+      return { text: answers.join("\n\n"), sessionId: w.sessionId, files: deliverables(this.workspace, presented), usage };
+    } catch (e) {
+      if (e instanceof TurnStopped) log.warn("agent wake-up turn stopped", { bot: this.o.botId, reason: e.reason, restarted: e.restarted });
+      throw e;
+    } finally {
+      turn.finishing = true;
+      if (this.wakes.get(w.sessionId) === w) this.wakes.delete(w.sessionId);
+      if (this.turns.get(input.conversationId) === turn) this.turns.delete(input.conversationId);
+      this.active--;
+    }
+  }
+
+  /**
+   * 中止一个会话的回合：等代理收下这条消息（否则 cancel 落空），经指令通道 agent.cancel（连同它的子代理和这一轮起的命令），
+   * 等回合停下。宽限期（AMB_STOP_GRACE_MS，默认 10 秒）内没停下、或指令通道不通，才关掉整个子进程
+   * （同一机器人其它会话的回合也会失败）。
+   */
+  private async stopSession(turn: HostTurn, why: TurnStopped, run: Promise<unknown>): Promise<TurnStopped> {
+    const graceMs = Number(process.env.AMB_STOP_GRACE_MS) > 0 ? Number(process.env.AMB_STOP_GRACE_MS) : 10_000;
+    const deadline = Date.now() + graceMs;
+    const left = () => Math.max(0, deadline - Date.now());
+    const settled = run.then(
+      () => true,
+      () => true,
+    );
+    let ok = false;
+    try {
+      const accepted = await withTimeoutOr(Promise.race([turn.accepted.then(() => true), settled]), left(), false);
+      if (await withTimeoutOr(settled, 0, false)) ok = true;
+      else if (accepted && this.control.connected) {
+        await this.control.send("cancel", { sessionId: turn.sessionId }, Math.max(1000, left()));
+        ok = await withTimeoutOr(settled, left(), false);
+      }
+    } catch (e) {
+      log.warn("cancelling the session's turn failed", { bot: this.o.botId, message: (e as Error).message.slice(0, 200) });
+    }
+    if (ok) return new TurnStopped(why.reason, why.ms, false);
+    log.warn("agent turn did not stop in time; restarting dsh", { bot: this.o.botId, reason: why.reason, graceMs, otherTurns: this.active - 1 });
+    await this.closeHarness();
+    this.state = "stopped";
+    return new TurnStopped(why.reason, why.ms, true);
+  }
+
+  /** 这个会话有回合在跑、还没在收尾或中止、指令通道在线：新消息可以并进这一轮 */
+  canSteer(conversationId: string): boolean {
+    const t = this.turns.get(conversationId);
+    return !!t && !t.finishing && !t.stopping && this.control.connected;
+  }
+
+  /**
+   * 把一条新消息并入这个会话正在进行的回合（agent.steer：模型在下一步看到它）。代理已经空闲或正在收尾时插件拒绝，
+   * 返回 false，调用方照常排队。同一个 id 重发是幂等的（结果没收到时再问一次）。
+   */
+  async steer(conversationId: string, msg: { id: string; text: string; images?: TurnImage[] }): Promise<boolean> {
+    const t = this.turns.get(conversationId);
+    if (!t || !this.canSteer(conversationId)) return false;
+    await withTimeoutOr(t.accepted, 5000, undefined);
+    if (this.turns.get(conversationId) !== t || t.finishing || t.stopping) return false;
+    const images = this.imageInput && acceptsImages(t.model) ? (msg.images ?? []) : [];
+    for (let i = 0; i < 2 && this.control.connected; i++) {
+      try {
+        const r = await this.control.send<{ accepted?: boolean; reason?: string }>("steer", { sessionId: t.sessionId, id: msg.id, text: msg.text, images }, 15_000);
+        if (!r.accepted) log.info("steer refused; the message waits for the next turn", { bot: this.o.botId, reason: r.reason });
+        return !!r.accepted;
+      } catch (e) {
+        log.warn("steer failed", { bot: this.o.botId, attempt: i + 1, message: (e as Error).message.slice(0, 200) });
+      }
+    }
+    return false;
   }
 
   private rememberFallback(model: string, api: AgentApi, reason: string): void {
@@ -1146,7 +1624,8 @@ exec "$REAL" "$@"
 
   status(): Record<string, unknown> {
     const api = this.api ? (this.fallback ? `${this.api} (fallback: ${this.fallback.reason})` : this.api) : undefined;
-    return { state: this.state, pid: this.pid, model: this.model, api, restarts: this.restarts, lastError: this.lastError, workspace: this.workspace, activeTurns: this.active };
+    const models = [...new Set([...this.childRoutes.values()].map((r) => r.model))];
+    return { state: this.state, pid: this.pid, model: this.model, api, models, control: this.control.connected, restarts: this.restarts, lastError: this.lastError, workspace: this.workspace, activeTurns: this.active };
   }
 
   /** 故障排查用的完整状态（含 stderr 尾部与最近一次退出） */

@@ -5,7 +5,7 @@ import { useEffect, useState } from "preact/hooks";
 import { html, Icon } from "./ui.js";
 import { fmtDur } from "../lib/format.js";
 
-const KIND_ICON = { model: "spark", tool: "code", retry: "refresh", subagent: "chat", compact: "database", error: "alert" };
+const KIND_ICON = { model: "spark", tool: "code", retry: "refresh", subagent: "chat", compact: "database", error: "alert", job: "clock", steer: "chat" };
 const DOT = { ok: "ok", error: "err", running: "warn" };
 
 /** 步骤用时：不到 1 秒显示一位小数 */
@@ -20,6 +20,7 @@ export function currentStep(steps) {
   if (s.kind === "tool") return `运行 ${s.title}`;
   if (s.kind === "subagent") return "子代理在工作";
   if (s.kind === "compact") return "压缩上下文";
+  if (s.kind === "job") return "后台命令在运行";
   return s.title;
 }
 

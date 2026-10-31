@@ -326,7 +326,7 @@ describe("运行时的停止（代理路径）", () => {
     ac.abort();
     await p;
     expect(seen.stopTurn).toBe(1);
-    expect(texts().at(-1)).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect(texts().at(-1)).toMatch(/^已中止（处理了 \d+ 秒）。可以继续发消息。$/);
   });
 
   it("排队时就停了：不处理、命令也不执行，消息记成已中止", async () => {

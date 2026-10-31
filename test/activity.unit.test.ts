@@ -120,10 +120,14 @@ describe("what the user is told", () => {
 
   it("stopped / idle / timeout / restarted / other failures", () => {
     const steps = [step({ kind: "model", title: "grok-4.7", status: "error", cut: true }), step({ kind: "error", title: "已中止", status: "error" })];
-    expect(turnFailedText(new TurnStopped("user", 95_000), steps)).toBe("已中止（处理了 1 分 35 秒）。代理进程已重启，可以继续发消息。");
-    expect(turnFailedText(new TurnStopped("idle", 600_000), steps)).toBe("⚠️ 代理 10 分钟没有任何进展，已自动中止并重启代理进程。卡在：等待 grok-4.7 回复。可以重新发送，或用 /model 换个模型试试。");
-    expect(turnFailedText(new TurnStopped("timeout", 1_800_000), [step({ summary: "npm test", status: "ok" })])).toBe("⚠️ 这条消息处理超过了 30 分钟的上限，已中止并重启代理进程。最后一步：bash：npm test（完成）。可以把任务拆小一点再发。");
-    expect(turnFailedText(new TurnStopped("timeout", 1_800_000), [])).toBe("⚠️ 这条消息处理超过了 30 分钟的上限，已中止并重启代理进程。可以把任务拆小一点再发。");
+    // 只中止了这个会话（agent.cancel）
+    expect(turnFailedText(new TurnStopped("user", 95_000), steps)).toBe("已中止（处理了 1 分 35 秒）。可以继续发消息。");
+    expect(turnFailedText(new TurnStopped("idle", 600_000), steps)).toBe("⚠️ 代理 10 分钟没有任何进展，已自动中止。卡在：等待 grok-4.7 回复。可以重新发送，或用 /model 换个模型试试。");
+    expect(turnFailedText(new TurnStopped("timeout", 1_800_000), [step({ summary: "npm test", status: "ok" })])).toBe("⚠️ 这条消息处理超过了 30 分钟的上限，已中止。最后一步：bash：npm test（完成）。可以把任务拆小一点再发。");
+    // 宽限期内没停下，退回重启子进程
+    expect(turnFailedText(new TurnStopped("user", 95_000, true), steps)).toBe("已中止（处理了 1 分 35 秒）。代理进程已重启，可以继续发消息。");
+    expect(turnFailedText(new TurnStopped("idle", 600_000, true), steps)).toBe("⚠️ 代理 10 分钟没有任何进展，已自动中止并重启代理进程。卡在：等待 grok-4.7 回复。可以重新发送，或用 /model 换个模型试试。");
+    expect(turnFailedText(new TurnStopped("timeout", 1_800_000, true), [])).toBe("⚠️ 这条消息处理超过了 30 分钟的上限，已中止并重启代理进程。可以把任务拆小一点再发。");
     expect(turnFailedText(new Error("DeepSeek Harness runtime closed"), [])).toMatch(/^⚠️ 代理进程重启了/);
     expect(turnFailedText(new Error("boom"), [])).toBe("⚠️ 代理执行失败：boom");
   });

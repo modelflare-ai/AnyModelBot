@@ -187,9 +187,12 @@ export function shellStartFailure(text: string, exe: string): string | undefined
   for (const line of text.split(/\r?\n/)) {
     const l = norm(line);
     if (!l.includes(want)) continue;
+    // DSH 把整段沙箱错误写在一行里（几百个字），返回从 runner / spawn 的那句开始的部分
+    const from = (i: number) => line.slice(Math.max(0, i)).trim().slice(0, 300);
     const acl = /windows-acl-run:.*createprocess\w*\s+failed\s+\(win32\s+(\d+)\)/.exec(l);
-    if (acl && EXE_WIN32_CODES.has(Number(acl[1]))) return line.trim().slice(0, 300);
-    if (/failed before reporting an outcome/.test(l) || /\bspawn\s.*\b(enoent|eacces|eperm|unknown|einval)\b/.test(l)) return line.trim().slice(0, 300);
+    if (acl && EXE_WIN32_CODES.has(Number(acl[1]))) return from(acl.index);
+    const spawn = /failed before reporting an outcome|\bspawn\s.*\b(enoent|eacces|eperm|unknown|einval)\b/.exec(l);
+    if (spawn) return from(spawn.index);
   }
   return undefined;
 }
@@ -611,7 +614,7 @@ export function pwshStatusLine(st: PwshStatus): string {
   const fb = st.fallback ? `；之前用的 ${st.fallback.from} 起不来（${st.fallback.reason.slice(0, 120)}），已自动换掉` : "";
   if (!st.missing) return `PowerShell：${st.version ?? "7"}（${st.source === "private" ? "应用内置，" : ""}代理用它执行命令）${fb}`;
   const p = st.private;
-  if (p && isInstalling(p.install)) return `PowerShell：正在为代理安装 PowerShell 7…（${installProgressText(p.install)}）。装好之前命令照常用 Windows PowerShell 5.1`;
+  if (p && isInstalling(p.install)) return `PowerShell：正在为代理安装 PowerShell 7…${installProgressText(p.install)}。装好之前命令照常用 Windows PowerShell 5.1`;
   if (p?.bad && st.mode !== "system") return `PowerShell：应用内置的 PowerShell 7 用不了（${p.bad.reason.slice(0, 160)}），${SLOW}。在 设置 → 故障排查 里可以一键重新安装`;
   if (p?.install.state === "failed" && st.mode !== "system") return `PowerShell：为代理安装 PowerShell 7 没有成功（${p.install.error ?? "未知原因"}），${SLOW}。在 设置 → 故障排查 里可以重试，或者自己安装：${PWSH_WINGET}`;
   if (p && !p.supported && p.reason) return `PowerShell：${p.reason}，${SLOW}`;

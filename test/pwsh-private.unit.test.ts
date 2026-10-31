@@ -429,9 +429,9 @@ describe("探测器：优先级、自动安装、自动退回", () => {
     probe.observeToolResult(exe, "Get-Foo: The term 'Get-Foo' is not recognized as a name of a cmdlet\n[exit code: 1]");
     probe.observeToolResult(exe, `windows-acl-run: CreateProcessAsUserW failed (Win32 2): command: C:\\other\\pwsh.exe, cwd: C:\\ws`);
     expect(probe.cachedDshPath).toBe(exe);
-    // 沙箱 runner 拉不起它
-    const text = `sandbox mode "workspace-write" is requested but no sandbox backend is usable on this host; refusing to run the command unconfined. Runner failure: windows-acl-run: CreateProcessAsUserW failed (Win32 2): command: ${exe}, cwd: C:\\data\\workspaces\\default`;
-    expect(shellStartFailure(text, exe)).toContain("CreateProcessAsUserW failed (Win32 2)");
+    // 沙箱 runner 拉不起它（Windows CI 上的原文：整段在一行里，几百个字）
+    const text = `Error: sandbox mode "workspace-write" is requested but no sandbox backend is usable on this host; refusing to run the command unconfined. Install bubblewrap or run a Landlock-enforcing kernel (Linux), ensure sandbox-exec is usable (macOS), or ensure the ACL restricted-token runner can start (Windows) — otherwise switch the consumer to danger-full-access. Runner failure: windows-acl-run: CreateProcessAsUserW failed (Win32 2): command: ${exe}, cwd: D:\\a\\_temp\\e2e-private-pwsh\\data\\workspaces\\default`;
+    expect(shellStartFailure(text, exe)).toMatch(/^windows-acl-run: CreateProcessAsUserW failed \(Win32 2\): command: /);
     probe.observeToolResult(exe, text);
     const st = probe.snapshot();
     expect(st).toMatchObject({ missing: true, using: PS5, private: { ready: false, bad: { reason: "代理拉不起它：找不到 pwsh.exe（可能被杀毒软件删除或隔离）（Win32 2）" } }, fallback: { from: exe, to: PS5 } });

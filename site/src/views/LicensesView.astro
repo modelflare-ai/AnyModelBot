@@ -1,0 +1,20 @@
+---
+import Base from "../layouts/Base.astro";
+import { dict, type Lang } from "../i18n";
+import notices from "../data/third-party.md?raw";
+import "../styles/pages.css";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const l = t.licenses;
+---
+<Base lang={lang} path="/licenses" title={l.title} description={l.description}>
+  <article class="container page">
+    <header class="page__head"><h1>{l.h1}</h1><p class="lead">{l.lead}</p></header>
+    <pre class="licenses-md">{notices}</pre>
+    <section class="prose">
+      <h2>{l.site}</h2>
+      <ul class="ticks" role="list">{l.siteItems.map((x) => <li>{x}</li>)}</ul>
+    </section>
+  </article>
+</Base>

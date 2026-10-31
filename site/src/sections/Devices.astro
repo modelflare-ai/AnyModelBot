@@ -1,0 +1,182 @@
+---
+// 在哪都找得到它（§6.6）：章节头 → 一幅产品合成图 → 一行四栏的入口 → 一个按需打开的"接入指南"。样式见 sections.css 的"6 在哪都找得到它"。
+// 首页这一节只讲一件事："同一个机器人、同一份记忆，在哪都能找到它"——不在页面上摆命令、令牌、步骤和二维码：
+//   合成图：浏览器（左后）、桌面 App（正中、最大）、手机里的聊天软件（右前）三块磨砂玻璃屏幕错落叠放，显示同一段和天天的对话，
+//           回答下面挂着同一条"记忆"标签（三处一模一样，用画面说"一份记忆"）。屏幕照真实界面画：浏览器有标签页和地址栏，
+//           App 有侧栏（搜索、机器人列表）、浮起的主面板和玻璃输入框，手机有状态栏、聊天软件的顶栏和输入栏。整幅是示意，对读屏隐藏。
+//   入口行：一条磨砂玻璃底座，桌面 / Docker / 浏览器 / 聊天软件四栏，每栏一句话 + 一个链接，栏与栏之间一根细线。
+//           桌面链到下载页；其余三栏打开"接入指南"并切到对应的那一页（scripts/sections.ts 的 hub：[data-hub-open]）。
+//   接入指南：一个对话框，顶上一排标签（Docker、浏览器、各聊天渠道——按语言不同，见 data/channels.ts），
+//           下面是这一项的命令或步骤（扫码类渠道附示意二维码；标着 soon 的渠道只有一句说明，标签上带"即将支持"的小标记）。
+//           无 JS 时对话框直接展开在页面里，所有内容按顺序排着。
+import BotFace from "../components/BotFace.astro";
+import EyesMark from "../components/EyesMark.astro";
+import Icon from "../components/Icon.astro";
+import SectionHead from "../components/SectionHead.astro";
+import { CHANNELS, type ChannelIcon } from "../data/channels";
+import { dict, fmt, href, type Lang } from "../i18n";
+import { releases } from "../lib/site";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const d = t.devices;
+const it = d.items;
+const th = d.thread;
+const blue = t.bots.chars.blue;
+const chats = CHANNELS[lang];
+// 入口行的小字只列已经能用的渠道；标着 soon 的（还没上线）只在接入指南里出现
+const chatNames = chats.filter((c) => !c.soon).map((c) => c.title).join(" · ");
+// 合成图里手机上的聊天软件：第一个已经能用的渠道
+const liveChat = chats.find((c) => !c.soon) ?? chats[0];
+// 合成图里 App 窗口的数据：侧栏三行（时间是示意）、搜索与输入框的占位（借用 Hero 舞台的文案）、输入框里的模型
+const st = t.hero.stage;
+const rows = [{ k: "blue", when: "17:02" }, { k: "orange", when: "16:40" }, { k: "green", when: "09:15" }] as const;
+const MODEL = "claude-sonnet-5-5";
+// 接入指南的标签：Docker、浏览器、各聊天渠道
+type Guide = { id: string; kind: "docker" | "browser" | "chat"; icon: "server" | "browser" | ChannelIcon; title: string; soon?: string };
+const guides: Guide[] = [
+  { id: "docker", kind: "docker", icon: "server", title: it.docker.title },
+  { id: "browser", kind: "browser", icon: "browser", title: it.browser.title },
+  ...chats.map((c): Guide => ({ id: c.id, kind: "chat", icon: c.icon, title: c.title, soon: c.soon })),
+];
+const ways = [
+  { icon: "devices", title: it.desktop.title, sub: it.desktop.sub, body: it.desktop.body },
+  { icon: "server", title: it.docker.title, sub: it.docker.sub, body: it.docker.body, open: "docker" },
+  { icon: "browser", title: it.browser.title, sub: it.browser.format, body: it.browser.body, open: "browser" },
+  { icon: "chat", title: d.groupChat, sub: chatNames, body: d.chatBody, open: chats[0]?.id },
+] as const;
+// 示意二维码（不可扫描）：三个定位角 + 伪随机点
+const finder = (x: number, y: number, ox: number, oy: number) => {
+  const dx = x - ox, dy = y - oy;
+  if (dx < 0 || dy < 0 || dx > 6 || dy > 6) return null;
+  return dx === 0 || dy === 0 || dx === 6 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4);
+};
+const qr: [number, number][] = [];
+for (let y = 0; y < 29; y++) for (let x = 0; x < 29; x++) {
+  const f = finder(x, y, 0, 0) ?? finder(x, y, 22, 0) ?? finder(x, y, 0, 22);
+  const nearFinder = (x <= 7 && y <= 7) || (x >= 21 && y <= 7) || (x <= 7 && y >= 21);
+  if (f === true || (!nearFinder && f == null && (x * 7 + y * 13 + x * y) % 5 === 0)) qr.push([x, y]);
+}
+---
+<section class="section" id="devices" aria-labelledby="devices-h2">
+  <div class="container">
+    <SectionHead n={6} label={t.kicker.devices} id="devices-h2" title={d.h2} dim={d.h2dim} lead={d.lead} />
+
+    <div class="reach" id="download">
+      <!-- 合成图：三块磨砂玻璃屏幕，同一段对话、同一条记忆；背后一层静止的柔光，玻璃才磨得出砂 -->
+      <div class="reach__stage" aria-hidden="true" data-inview>
+        <div class="reach__lights"></div>
+
+        <!-- 浏览器（左后）：本机网页控制台 -->
+        <div class="rs rs--browser">
+          <div class="rs__tabs"><span class="rs__dots"><i></i><i></i><i></i></span><span class="rs__tab"><EyesMark size={12} mode="static" />AnyModelBot<Icon name="close" size={9} /></span></div>
+          <div class="rs__bar">
+            <span class="rs__nav"><Icon name="arrow" size={11} class="flip" /><Icon name="arrow" size={11} /></span>
+            <span class="rs__url"><Icon name="lock" size={10} /><span>127.0.0.1<span class="rs__port">:3600</span></span></span>
+          </div>
+          <div class="rs__page">
+            <span class="rs__rail">{(["blue", "orange", "green"] as const).map((k, i) => <span class:list={["rs__dot", { "is-on": i === 0 }]}><BotFace char={k} size={20} /></span>)}</span>
+            <div class="rs__thread">
+              <p class="rs__msg rs__msg--me">{th.user}</p>
+              <div class="rs__reply"><BotFace char="blue" size={22} /><p class="rs__msg">{th.bot}</p></div>
+              <p class="rs__memo"><Icon name="layers" size={11} />{th.memoLabel} · {th.memo}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 桌面 App（正中、最大）：照 App 的界面——毛玻璃侧栏 + 浮起的主面板 + 玻璃输入框 -->
+        <div class="rs rs--app">
+          <div class="rs__app">
+            <div class="rs__side">
+              <div class="rs__side-top"><span class="rs__dots"><i></i><i></i><i></i></span><span class="rs__ib"><Icon name="plus" size={13} /></span></div>
+              <div class="rs__search"><Icon name="search" size={11} />{st.search}</div>
+              {rows.map((r, i) => (
+                <span class:list={["rs__row", { "is-on": i === 0 }]}>
+                  <BotFace char={r.k} size={28} />
+                  <span class="rs__row-body"><span class="rs__row-line"><b>{t.bots.chars[r.k].name}</b><small>{r.when}</small></span><span class="rs__snip">{t.bots.chars[r.k].job}</span></span>
+                </span>
+              ))}
+            </div>
+            <div class="rs__main">
+              <div class="rs__head"><BotFace char="blue" size={22} /><b>{blue.name}</b><span class="rs__grow"></span><span class="rs__ib"><Icon name="layers" size={13} /></span></div>
+              <div class="rs__thread">
+                <p class="rs__msg rs__msg--me">{th.user}</p>
+                <div class="rs__reply"><BotFace char="blue" size={26} /><p class="rs__msg">{th.bot}</p></div>
+                <p class="rs__memo"><Icon name="layers" size={11} />{th.memoLabel} · {th.memo}</p>
+              </div>
+              <div class="rs__composer">
+                <span class="rs__ph">{fmt(st.input, { name: blue.name })}</span>
+                <span class="rs__tools"><span class="rs__ib rs__ib--ring"><Icon name="plus" size={11} /></span><span class="rs__chip mono">{MODEL}<Icon name="chevron" size={9} /></span><span class="rs__send"><Icon name="arrow" size={11} /></span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 手机（右前）：聊天软件里的同一段对话 -->
+        <div class="rs rs--phone">
+          <div class="rs__status"><b>9:41</b><span class="rs__sig"><i></i><i></i><i></i><i></i></span><span class="rs__bat"><i></i></span></div>
+          <div class="rs__phone-head"><Icon name="chevron" size={14} class="rs__back" /><BotFace char="blue" size={26} /><span><b>{blue.name}</b><small>{liveChat?.title}</small></span></div>
+          <div class="rs__thread">
+            <span class="rs__day">{t.bots.phoneDay}</span>
+            <p class="rs__msg rs__msg--me">{th.user}</p>
+            <div class="rs__reply"><p class="rs__msg">{th.bot}</p></div>
+            <p class="rs__memo"><Icon name="layers" size={11} />{th.memoLabel} · {th.memo}</p>
+          </div>
+          <div class="rs__input"><span class="rs__ib rs__ib--ring"><Icon name="plus" size={11} /></span><span class="rs__field">{t.bots.phoneInput}</span></div>
+          <i class="rs__home"></i>
+        </div>
+      </div>
+
+      <!-- 入口行：一条磨砂玻璃底座，四栏、细线分隔，每栏一句话 + 一个链接 -->
+      <ul class="reach__ways" role="list">
+        {ways.map((w) => (
+          <li class="reach__way">
+            <span class="reach__ico"><Icon name={w.icon} size={20} /></span>
+            <h3 class="reach__title">{w.title}<small>{w.sub}</small></h3>
+            <p class="reach__body">{w.body}</p>
+            {"open" in w && w.open
+              ? <button type="button" class="reach__link" data-open-dialog="reach-guide" data-hub-open={w.open}>{d.howTo}<Icon name="arrow" size={14} /></button>
+              : <a class="reach__link" href={href(lang, "/download")}>{it.desktop.more.replace(/\s*→$/, "")}<Icon name="arrow" size={14} /></a>}
+          </li>
+        ))}
+      </ul>
+    </div>
+    <p class="small muted devices__note">{d.note}</p>
+
+    <!-- 接入指南：顶上一排标签，下面是这一项的命令或步骤 -->
+    <dialog class="sheet reach-guide" id="reach-guide" aria-labelledby="reach-guide-h" data-hub>
+      <div class="sheet__head"><h3 class="h3" id="reach-guide-h">{d.guideTitle}</h3><button class="icon-btn" type="button" data-close-dialog aria-label={t.ui.close}><Icon name="close" /></button></div>
+      <div class="sheet__body">
+        <div class="reach-guide__tabs" role="tablist" aria-orientation="horizontal" aria-label={d.pick}>
+          {guides.map((g, i) => (
+            <button type="button" role="tab" class="reach-guide__tab" id={`ht-${g.id}`} aria-controls={`hp-${g.id}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1} data-hub-tab={g.id} data-kind={g.kind}>
+              <Icon name={g.icon} size={16} />{g.title}{g.soon && <span class="badge badge--neutral reach-guide__soon">{g.soon}</span>}
+            </button>
+          ))}
+        </div>
+        <section class="hub__panel is-on" role="tabpanel" id="hp-docker" aria-labelledby="ht-docker" tabindex="0" data-hub-panel="docker">
+          <p class="reach-guide__lead">{it.docker.body}</p>
+          <div class="code"><code>{releases.platforms.docker.command}</code>
+            <button type="button" class="copy-btn" data-copy-code data-track="docker_cmd_copy" data-track-command="docker-run"><Icon name="copy" />{t.ui.copy}</button></div>
+          <a class="small hub__more" href={`${href(lang, "/download")}#docker`}>{it.desktop.more}</a>
+        </section>
+        <section class="hub__panel" role="tabpanel" id="hp-browser" aria-labelledby="ht-browser" tabindex="0" data-hub-panel="browser">
+          <p class="reach-guide__lead">{it.browser.body}</p>
+          <ol class="hub__steps">{d.browserGuide.steps.map((s) => <li>{s}</li>)}</ol>
+        </section>
+        {chats.map((c) => (
+          <section class="hub__panel" role="tabpanel" id={`hp-${c.id}`} aria-labelledby={`ht-${c.id}`} tabindex="0" data-hub-panel={c.id}>
+            <p class="reach-guide__lead"><b>{c.format}</b>{c.body}</p>
+            {c.guide.steps.length > 0 && <ol class="hub__steps">{c.guide.steps.map((s) => <li>{s}</li>)}</ol>}
+            {c.guide.limit && <p class="small muted">{c.guide.limit}</p>}
+            {c.guide.qr && (
+              <figure class="qr-sample"><svg viewBox="0 0 29 29" width="96" height="96" aria-hidden="true">
+                {qr.map(([x, y]) => <rect x={x} y={y} width="1" height="1" />)}
+              </svg><figcaption class="small muted">{c.guide.qr}</figcaption></figure>
+            )}
+          </section>
+        ))}
+      </div>
+    </dialog>
+  </div>
+</section>

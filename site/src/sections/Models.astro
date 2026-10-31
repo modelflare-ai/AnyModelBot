@@ -1,0 +1,113 @@
+---
+// 任意模型 + 价格概览（§6.4、§6.5）。整节是"开放式"：不装舞台卡，章节头居中（前后几节都装在卡里，这一节故意敞开）。
+// 居中章节头 → "换脑"示意（直接站在页面底色上）→ 一行安静的模型名跑马灯 → 三张独立的价格卡（整节的视觉重心）。
+// 换脑示意左右两半：
+//   左：晶晶坐在中间，外圈一环模型、内圈一环厂商，两环反向慢慢转（悬停时停）。当前在用的模型在外环上亮起；
+//       点外环上的模型，右边的对话就换成它来答（scripts/sections.ts 的 orbit，借用右边列表里的选项）。整块是示意，对读屏隐藏。
+//   右：模型选择器演示（预录，不实时调用）——三个场景标签、可搜索的模型列表、逐字打出的回答、这一模型的价格。
+// 外环模型、内环厂商、跑马灯、选择器的胶囊和分组标题前面都带厂商标志（官方彩色版，本来就是单色的几家跟着文字颜色走；
+// components/VendorLogo.astro，图标表 VendorSprite color 在这一节放一次）。这一节只放有标志的厂商（不放快手，用户 2026-10-31 要求），
+// 完整的模型和价格在 /pricing。跑马灯离开视口就停。价格：三张独立的卡片（components/PriceCards.astro compact），
+// 只有主操作"获取 Key"用品牌色；完整价格表与计算器在 /pricing。
+import BotFace from "../components/BotFace.astro";
+import Icon from "../components/Icon.astro";
+import SectionHead from "../components/SectionHead.astro";
+import ModelsHeadArt from "../components/ModelsHeadArt.astro";
+import PriceCards from "../components/PriceCards.astro";
+import VendorLogo from "../components/VendorLogo.astro";
+import VendorSprite from "../components/VendorSprite.astro";
+import { vendorLogo } from "../lib/vendors";
+import { dict, fmt, buildVars, type Lang } from "../i18n";
+import { pricing, rowOf, MF } from "../lib/site";
+import { fmtPrice } from "../lib/pricing";
+import { demoModels } from "../data/pricing.config";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const p = t.pricing;
+const v = buildVars(lang);
+// 只用有标志的厂商（价格快照里只有"快手"没有标志）：图标砖、内环、跑马灯、选择器都从这里取
+const vendors = pricing.vendors.filter((vd) => vendorLogo(vd));
+const rows = pricing.rows.filter((r) => vendorLogo(r.vendor));
+const models = rows.map((r) => r.model);
+const byVendor = [...new Set(rows.map((r) => r.vendor))].map((vd) => ({ vendor: vd, rows: rows.filter((r) => r.vendor === vd) }));
+const prices = Object.fromEntries(rows.map((r) => [r.model, [fmtPrice(r.input), fmtPrice(r.output)]]));
+const vendorOf: Record<string, string> = Object.fromEntries(rows.map((r) => [r.model, r.vendor]));
+// 选择器胶囊里的标志随模型换（scripts/sections.ts 的 setModel 读这张表）：模型 → 图标表的键
+const logos = Object.fromEntries(rows.map((r) => [r.model, vendorLogo(r.vendor) ?? ""]));
+const scen = ["copy", "code", "research"] as const;
+const first = rowOf(demoModels.copy)!;
+const demoData = { prices, logos, scenarios: Object.fromEntries(scen.map((s) => [s, { model: demoModels[s], q: t.models.question[s], a: t.models.answer[s] }])), priceLine: t.models.priceLine };
+// 外环：演示里会用到的模型 + 主推模型（都得在价格表里，点了才能切过去）；内环：前 8 家厂商
+const ring = [...new Set([...Object.values(demoModels), ...pricing.config.featuredModels])].filter((m) => rowOf(m)).slice(0, 9);
+const inner = vendors.slice(0, 8);
+---
+<section class="section" id="models" aria-labelledby="models-h2">
+  <VendorSprite vendors={vendors} color />
+  <div class="container">
+    {/* 章节头两侧的厂商图标砖 + 标题下的"1 个 Key → 所有模型"胶囊：把两句标题各落成一样实物，标题区不再空着 */}
+    <SectionHead n={4} label={t.kicker.models} id="models-h2" title={t.models.h2} dim={t.models.h2dim} lead={t.models.lead} host="purple" center>
+      <ModelsHeadArt lang={lang} />
+    </SectionHead>
+
+    <div class="switchboard fx-rise" data-fx>
+      <div class="orbit" aria-hidden="true" data-orbit>
+        <span class="orbit__track orbit__track--out"></span>
+        <span class="orbit__track orbit__track--in"></span>
+        <div class="orbit__ring orbit__ring--out" style={`--n:${ring.length}`}>
+          {ring.map((m, i) => <span class="orbit__slot" style={`--i:${i}`}><span class="orbit__chip mono" data-orbit-model={m}><VendorLogo vendor={vendorOf[m]} />{m}</span></span>)}
+        </div>
+        <div class="orbit__ring orbit__ring--in" style={`--n:${inner.length}`}>
+          {inner.map((vd, i) => <span class="orbit__slot" style={`--i:${i}`}><span class="orbit__chip orbit__chip--vendor"><VendorLogo vendor={vd} size={13} />{vd}</span></span>)}
+        </div>
+        <div class="orbit__core"><BotFace char="purple" size={96} lively /></div>
+      </div>
+
+      <div class="model-demo" data-model-demo>
+        <script type="application/json" data-model-demo-data set:html={JSON.stringify(demoData)} />
+        <div class="seg" role="tablist" aria-label={t.models.pickerTitle}>
+          {scen.map((s, i) => <button type="button" role="tab" class="chip" aria-selected={i === 0 ? "true" : "false"} data-scenario={s}>{t.models.scenarios[s]}</button>)}
+        </div>
+        <div class="model-demo__chat">
+          <div class="model-demo__top">
+            <button type="button" class="model-pill model-pill--btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="model-list" data-model-pill>
+              <svg class="vlogo" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false" data-model-logo style={logos[first.model] ? undefined : "display:none"}><use href={`#vl-${logos[first.model]}`} /></svg>
+              <span data-model-name>{first.model}</span><Icon name="chevron" />
+            </button>
+            <div class="model-list" id="model-list" hidden data-model-list>
+              <label class="model-list__search"><Icon name="search" size={16} /><input type="search" placeholder={t.models.pickerSearch} aria-label={t.models.pickerSearch} data-model-search /></label>
+              <ul role="listbox" aria-label={t.models.pickerTitle} tabindex="-1" data-model-options>
+                {byVendor.map((g) => (
+                  <>
+                    <li role="presentation" class="model-list__group"><VendorLogo vendor={g.vendor} size={13} />{g.vendor}</li>
+                    {g.rows.map((r) => <li role="option" id={`mo-${r.model}`} aria-selected={r.model === first.model ? "true" : "false"} data-model={r.model}>{r.model}</li>)}
+                  </>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <p class="msg msg--user" data-q>{t.models.question.copy}</p>
+          <div class="msg msg--bot"><BotFace char="purple" size={36} /><p data-a aria-live="polite">{t.models.answer.copy}</p></div>
+        </div>
+        <p class="small model-demo__price tnum" data-price-line>{fmt(t.models.priceLine, { model: first.model, input: fmtPrice(first.input), output: fmtPrice(first.output) })}</p>
+        <p class="small muted">{t.models.example}</p>
+      </div>
+    </div>
+
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee__row">
+        <div class="marquee__track">{[...models, ...models].map((x) => <span class="marquee__item mono"><VendorLogo vendor={vendorOf[x]} size={15} />{x}</span>)}</div>
+      </div>
+    </div>
+    <p class="sr-only">{t.models.marqueeLabel}：{vendors.join("、")}；{models.join("、")}</p>
+
+    <div class="models__pricing">
+      <div class="models__price-head">
+        <h3 class="subhead"><span>{p.h2mark}</span><span class="h2__dim">{p.h2rest}</span></h3>
+        <p class="small muted">{pricing.stale ? fmt(p.stale, v) : fmt(p.source, v)}</p>
+      </div>
+      <PriceCards lang={lang} compact />
+      <p class="models__cta"><a class="btn btn--primary" href={MF.home} target="_blank" rel="noopener" data-track="mf_key_click" data-track-location="models">{t.models.cta}</a></p>
+    </div>
+  </div>
+</section>

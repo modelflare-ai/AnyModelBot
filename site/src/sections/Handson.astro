@@ -1,0 +1,111 @@
+---
+// 能动手、会记住（§6.7、§6.8）：章节头 → 一段"边滚边讲"的两章故事（参考 bevel.health 的分章叙事，版式和第 2 节的舞台卡同一套）。
+// 桌面（≥1024 且屏幕够高、有 JS）：左边两章文字依次滚过，右边一张吸顶的舞台卡跟着换场——
+//   第 1 章 动手：飞飞骑在光标上干活，要你批准时冒"!"，舞台底光是飞飞的橙；
+//   第 2 章 记忆：芽芽一行行往 MEMORY.md 里记，有人想塞密码就眼睛一叉、划掉，底光换成芽芽的绿。
+//   当前那章文字亮着、另一章淡下去；舞台卡顶上的两个小标签能点，点了滚到那一章（scripts/sections.ts 的 story）。
+// 窄屏 / 无 JS：舞台卡拆开（display: contents），每章文字下面紧跟它自己的场景卡，从上往下读。
+// 两个场景都是循环示意（时间线见 scripts/tour.ts 的 mountLoop），对读屏另有一句文字版。
+import BotFace from "../components/BotFace.astro";
+import EyesMark from "../components/EyesMark.astro";
+import Icon from "../components/Icon.astro";
+import SectionHead from "../components/SectionHead.astro";
+import { dict, type Lang } from "../i18n";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const h = t.handson;
+const w = t.window;
+const m = t.memory;
+const handsonIcons = ["shield", "lock", "pointer"] as const;
+const memoryIcons = ["doc", "shield", "layers"] as const;
+// 两章下面"还有这些"的六格：生图生视频、三档权限、斜杠命令、用量与预算、两条线路、微信收发图片和文件
+const moreIcons = ["play", "shield", "terminal", "card", "globe", "chat"] as const;
+const more = t.features.more;
+const lineAt = (i: number) => String(500 + i * 650);
+const secretAt = 500 + m.lines.length * 650 + 300;
+const chapters = [
+  { label: h.badge, tint: "var(--bot-orange-glow)" },
+  { label: m.tag, tint: "var(--bot-green-glow)" },
+];
+---
+<section class="section" id="features" aria-labelledby="features-h2">
+  <div class="container">
+    <SectionHead n={3} label={t.kicker.features} id="features-h2" title={t.features.h2} dim={t.features.h2dim} lead={t.features.lead} host="orange" />
+    <div class="story" data-story>
+      <article class="story__ch" data-ch="0" aria-labelledby="handson-h2" style="--tint:var(--bot-orange-glow)">
+        <p class="story__no"><span class="story__n mono">01</span><span class="badge badge--neutral">{h.badge}</span><span class="badge badge--warn">{h.status}</span></p>
+        <h3 class="subhead" id="handson-h2">{h.h2}</h3>
+        <p class="story__lead">{h.lead}</p>
+        <ul class="story__points" role="list">
+          {h.points.map((p, i) => <li><span class="story__ico"><Icon name={handsonIcons[i]} /></span><p><b>{p.title}</b><span>{p.body}</span></p></li>)}
+        </ul>
+        <p class="story__note">{h.caveat}</p>
+      </article>
+
+      <article class="story__ch" data-ch="1" aria-labelledby="memory-h2" style="--tint:var(--bot-green-glow)">
+        <p class="story__no"><span class="story__n mono">02</span><span class="badge badge--neutral">{m.tag}</span></p>
+        <h3 class="subhead" id="memory-h2">{m.h2}</h3>
+        <p class="story__lead">{m.layersLine}</p>
+        <ul class="story__points" role="list">
+          {m.points.map((p, i) => <li><span class="story__ico"><Icon name={memoryIcons[i]} /></span><p><b>{p.title}</b><span>{p.body}</span></p></li>)}
+        </ul>
+      </article>
+
+      <div class="story__stage stage" data-story-stage style="--stage-glow:var(--bot-orange-glow)">
+        <div class="story__tabs" aria-hidden="true">
+          {chapters.map((c, i) => <button type="button" tabindex="-1" class:list={["story__tab", { "is-on": i === 0 }]} data-goto-ch={i} style={`--tint:${c.tint}`}><i></i>{c.label}</button>)}
+        </div>
+
+        <div class="story__scene is-on" data-scene="0" style="--tint:var(--bot-orange-glow)">
+          <div class="desk" aria-hidden="true" data-loop="13000">
+            <div class="desk__win">
+              <div class="window__bar"><i></i><i></i><i></i></div>
+              <div class="desk__files">{Array.from({ length: 12 }, (_, i) => <span class={`desk__file f${i % 4}`}></span>)}</div>
+              <span class="desk__cursor tour__cursor" data-moves="[[0,18,60],[1200,58,30],[3600,38,52],[7600,68,66],[11000,18,60]]">
+                <Icon name="pointer" size={22} />
+                <BotFace char="orange" size={40} state="working" class="desk__rider"
+                  data-states='[[0,"working"],[5600,"waiting"],[8000,"working"],[9000,"idle"]]' data-shots='[[9000,"done"]]' />
+              </span>
+            </div>
+            <div class="desk__log">
+              {h.demoSteps.map((s, i) => <span class="desk__step on-rise" data-at={String(1400 + i * 1300)}><span class="tick">✓</span>{s}</span>)}
+              <div class="approval desk__approval on-rise" data-at="5600"><b>{w.approvalTitle}</b><span>{h.approvalBody}</span>
+                <div class="row"><span class="btn btn--primary tour__press" data-at="8000">{w.allow}</span><span class="btn btn--secondary">{w.deny}</span></div></div>
+              <span class="file-chip desk__out on-rise" data-at="9000"><Icon name="doc" />{h.file}</span>
+            </div>
+          </div>
+          <p class="sr-only">{h.demoSteps.join("，")}，{w.approvalTitle}：{h.approvalBody}，{w.allow}，{h.file}</p>
+        </div>
+
+        <div class="story__scene" data-scene="1" style="--tint:var(--bot-green-glow)">
+          <figure class="memfile" data-loop="12000">
+            <BotFace char="green" size={64} lively class="memfile__bot"
+              data-states={JSON.stringify([[0, "working"], [secretAt - 200, "idle"]])}
+              data-shots={JSON.stringify([[secretAt + 700, "error"], [secretAt + 3600, "done"]])}
+              data-say-at={String(secretAt + 900)} data-say={m.nope} />
+            <figcaption class="memfile__bar"><span class="memfile__name"><i></i><i></i><i></i><span class="mono">MEMORY.md</span></span><span class="badge badge--neutral">{m.sample}</span></figcaption>
+            <pre><code>{m.lines.map((l, i) => <span class:list={["mem-line on-rise", { "mem-line--h": l.startsWith("#") }]} data-at={lineAt(i)}>{l}</span>)}<span class="mem-line mem-line--secret on-rise" data-at={String(secretAt)}><span>{m.secret}</span><i class="mem-strike" data-at={String(secretAt + 1100)}></i></span></code></pre>
+            <p class="memfile__refused small on-rise" data-at={String(secretAt + 1600)}>{m.refused}</p>
+          </figure>
+        </div>
+
+        <EyesMark size={320} variant="ring" mode="static" class="story__mark" />
+      </div>
+    </div>
+
+    <!-- 还有这些：上面两章没讲到的能力，版式沿用"认识它们"下面那排好处（home.css 的 crew-perks），三列两行 -->
+    <div class="caps" aria-labelledby="caps-h3">
+      <h3 class="subhead" id="caps-h3">{more.h3}</h3>
+      <ul class="crew-perks" role="list">
+        {more.items.map((p, i) => (
+          <li class="reveal" style={`--reveal-delay:${(i % 3) * 80}ms`}>
+            <span class="crew-perks__ico"><Icon name={moreIcons[i]} /></span>
+            <b>{p.title}</b>
+            <span>{p.body}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</section>

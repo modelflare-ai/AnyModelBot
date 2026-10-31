@@ -1,0 +1,81 @@
+---
+// 数据去向图（§6.3）：节点是可展开的按钮（HTML，键盘可达）；连线是装饰性 SVG，进入视口时点亮。
+// 整张图放在芽芽颜色底光的舞台卡里。
+// "你的设备"是一块有边界的区域：一圈静止的淡绿边框，里面五样东西各带一个图标；
+// 出去的只有"这一次请求"——一颗小光点沿虚线走出边界（这是图里唯一会动的东西，因为它表示数据的流向）。强调色只用芽芽的绿（--tint），不用品牌黄绿。
+import Icon from "../components/Icon.astro";
+import SectionHead from "../components/SectionHead.astro";
+import { dict, href, type Lang } from "../i18n";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const n = t.flow.nodes;
+const local = ["chats", "memory", "workspace", "key", "console"] as const;
+const icons = { chats: "chat", memory: "layers", workspace: "doc", key: "lock", console: "browser" } as const;
+const retention = t.flow.retentionUrl;
+---
+<section class="section" id="data" aria-labelledby="flow-h2">
+  <div class="container">
+    <SectionHead n={5} label={t.kicker.data} id="flow-h2" title={t.flow.h2} dim={t.flow.h2dim} lead={t.flow.lead} host="green" />
+    <div class="flow-stage stage fx-rise" data-fx style="--stage-glow:var(--bot-green-glow);--tint:var(--bot-green-glow)">
+      <div class="flow" data-flow data-inview>
+        <div class="flow__col flow__col--local">
+          <div class="flow__title"><span class="flow__where"><Icon name="lock" size={16} />{t.flow.local}</span><span class="badge badge--neutral flow__badge"><i></i>{t.flow.localBadge}</span></div>
+          <ul role="list" class="flow__nodes">
+            {local.map((k) => (
+              <li>
+                <button class="flow-node" type="button" aria-expanded="false" aria-controls={`fn-${k}`} data-node={k} data-title={n[k].label}><Icon name={icons[k]} size={16} class="flow-node__ico" /><span class="flow-node__label">{n[k].label}</span><span class="flow-node__plus" aria-hidden="true">+</span></button>
+                <p class="flow-node__body small" id={`fn-${k}`} hidden>{n[k].body}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div class="flow__wire" aria-hidden="true">
+          <span class="flow__wire-label">{t.flow.onlyRequest}</span>
+          <div class="flow__line">
+            <svg viewBox="0 0 120 40" preserveAspectRatio="none"><path class="flow__path" d="M0 20 H112" /><path class="flow__arrow" d="M104 12 L114 20 L104 28" /></svg>
+            <i class="flow__packet"></i>
+          </div>
+        </div>
+        <div class="flow__col">
+          <div class="flow__title"><span>{t.flow.out}</span></div>
+          <ul role="list" class="flow__nodes">
+            <li>
+              <button class="flow-node flow-node--big" type="button" aria-expanded="false" aria-controls="fn-gateway" data-node="gateway" data-title={n.gateway.label}><span>{n.gateway.label}<small>{n.gateway.sub}</small></span><span class="flow-node__plus" aria-hidden="true">+</span></button>
+              <p class="flow-node__body small" id="fn-gateway" hidden>{n.gateway.body} <a href={retention} target="_blank" rel="noopener">{t.flow.retentionLink}</a></p>
+            </li>
+          </ul>
+          <div class="flow__title flow__title--sub"><span>{t.flow.channels}</span></div>
+          <ul role="list" class="flow__nodes">
+            <li>
+              <button class="flow-node flow-node--big" type="button" aria-expanded="false" aria-controls="fn-channels" data-node="channels" data-title={n.channels.label}><span>{n.channels.label}<small>{n.channels.sub}</small></span><span class="flow-node__plus" aria-hidden="true">+</span></button>
+              <p class="flow-node__body small" id="fn-channels" hidden>{n.channels.body}</p>
+            </li>
+          </ul>
+        </div>
+        <div class="flow__wire flow__wire--2" aria-hidden="true">
+          <div class="flow__line">
+            <svg viewBox="0 0 120 40" preserveAspectRatio="none"><path class="flow__path" d="M0 20 H112" /><path class="flow__arrow" d="M104 12 L114 20 L104 28" /></svg>
+            <i class="flow__packet"></i>
+          </div>
+        </div>
+        <div class="flow__col flow__col--vendor">
+          <div class="flow__title"><span>{t.flow.vendors}</span></div>
+          <ul role="list" class="flow__nodes">
+            <li>
+              <button class="flow-node flow-node--big" type="button" aria-expanded="false" aria-controls="fn-vendors" data-node="vendors" data-title={n.vendors.label}>{n.vendors.label}<span class="flow-node__plus" aria-hidden="true">+</span></button>
+              <p class="flow-node__body small" id="fn-vendors" hidden>{n.vendors.body}</p>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <dialog class="sheet" id="flow-sheet" aria-labelledby="flow-sheet-h">
+      <div class="sheet__head"><h3 class="h3" id="flow-sheet-h" data-flow-sheet-title></h3><button class="icon-btn" type="button" data-close-dialog aria-label={t.ui.close}><Icon name="close" /></button></div>
+      <div class="sheet__body" data-flow-sheet-body></div>
+    </dialog>
+
+    <p class="center"><a class="btn btn--secondary" href={href(lang, "/security")} data-track="security_page_click" data-track-location="flow">{t.flow.security}</a></p>
+  </div>
+</section>

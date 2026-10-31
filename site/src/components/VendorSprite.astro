@@ -1,0 +1,14 @@
+---
+// 厂商标志的图标表：每家一个 <symbol id="vl-键">，整页只放一次，VendorLogo 用 <use> 引用（跑马灯有几十个标签，不重复内联路径）。
+// 不用 display:none——有的浏览器会因此不画 <use> 出来的内容，改成 0×0 绝对定位。
+// color：有官方彩色版的厂商用彩色版（id 不变，还是 vl-键，VendorLogo 和选择器的脚本不用改）；没有彩色版的照用单色、跟着文字颜色走。
+import { vendorLogo, VENDOR_LOGOS, VENDOR_LOGOS_COLOR } from "../lib/vendors";
+interface Props { vendors?: string[]; color?: boolean }
+const { vendors, color = false } = Astro.props;
+const keys = vendors ? [...new Set(vendors.map(vendorLogo).filter((k): k is string => !!k))] : Object.keys(VENDOR_LOGOS);
+---
+<svg class="vlogo-sprite" width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>{keys.map((k) => (color && VENDOR_LOGOS_COLOR[k]
+    ? <symbol id={`vl-${k}`} viewBox="0 0 24 24" set:html={VENDOR_LOGOS_COLOR[k]} />
+    : <symbol id={`vl-${k}`} viewBox="0 0 24 24" fill-rule="evenodd" set:html={VENDOR_LOGOS[k]} />))}</defs>
+</svg>

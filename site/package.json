@@ -1,0 +1,39 @@
+{
+  "name": "anymodelbot-site",
+  "private": true,
+  "type": "module",
+  "description": "AnyModelBot 官网落地页（Astro 静态站）",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "sync": "tsx scripts/sync-from-app.ts",
+    "fetch:pricing": "tsx scripts/fetch-pricing.ts",
+    "check": "tsx scripts/check-i18n.ts && tsx scripts/banned.ts && tsx scripts/check-images.ts",
+    "test": "vitest run",
+    "build": "tsx scripts/sync-from-app.ts && tsx scripts/fetch-pricing.ts --lenient && tsx scripts/check-images.ts && astro build && tsx scripts/banned.ts --dist && tsx scripts/check-links.ts && tsx scripts/check-placeholders.ts",
+    "build:draft": "tsx scripts/sync-from-app.ts && tsx scripts/check-images.ts && astro build && tsx scripts/banned.ts --dist && tsx scripts/check-links.ts && tsx scripts/check-placeholders.ts --warn",
+    "preview": "astro preview",
+    "og": "python3 scripts/make-og.py",
+    "bots:avif": "tsx scripts/make-bot-avif.ts",
+    "releases": "tsx scripts/releases-from-github.ts",
+    "releases:dir": "tsx scripts/releases-from-dir.ts"
+  },
+  "dependencies": {
+    "@astrojs/preact": "4.1.3",
+    "astro": "5.18.2",
+    "preact": "10.27.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.12",
+    "@types/node": "22.18.12",
+    "geist": "1.5.1",
+    "playwright-core": "1.64.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

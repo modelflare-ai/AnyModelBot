@@ -1,0 +1,209 @@
+@layer tokens, base, components, app, utilities;
+/* 官网 token（§4）。深色为默认；浅色用 html[data-theme="light"]。
+   品牌色与 App 同值（ui/design/tokens/primitives.css）：黄绿 #d7ff00 只做填充，浅色下文字与链接用橄榄 #5f711c。
+   浅色下主操作是墨色，黄绿只做墨色上的光（--signal-*）或柔黄绿 --lime-soft / 淡底 --accent-wash；组件只认语义 token（--primary、--tag-*、--hl-bg…）。
+   任何元素加 data-theme 都能让子树换一套（价格卡里主按钮上的标记靠 [data-on="accent"] 覆盖）。 */
+@layer tokens {
+  :root {
+    color-scheme: dark;
+    /* —— 尺度 —— */
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;
+    --space-12: 48px; --space-16: 64px; --space-24: 96px; --space-32: 128px;
+    /* 版式节奏：章节上下留白 → 标题到内容 → 同一节里两大块之间 → 两栏之间 → 大卡片内边距 */
+    --section-y: clamp(72px, 8vw, 112px);   /* 一节的上下留白；两节之间是它的两倍（最宽 224） */
+    --stack-head: clamp(40px, 4.4vw, 64px);
+    --stack-block: clamp(56px, 7vw, 96px);
+    --grid-gap: clamp(24px, 4vw, 48px);
+    --card-pad: clamp(24px, 3.2vw, 44px);
+    --container: 1200px;
+    --gutter: clamp(20px, 5vw, 48px);
+    --r-btn: 999px; --r-card: 20px; --r-feature: 24px; --r-banner: 32px; --r-shot: 16px;
+    /* 小一档的圆角：弹出层（菜单、下拉、Toast）14 → 里面的行 10（外层 = 内层 + 4 的内边距）；输入框、代码块、提示条 12 */
+    --r-pop: 14px; --r-item: 10px; --r-field: 12px;
+    --z-nav: 50; --nav-h: 64px; --z-float: 60; --z-toast: 70;
+
+    /* —— 字体（规范见 README"排版规范"） ——
+       只有两种：无衬线给标题、正文和标签；等宽只给模型 ID、命令、路径、文件名和数字。
+       等宽栈末尾带中文黑体：混进等宽元素的中文不会落到系统的等宽默认字体（Windows 上是新宋体）。 */
+    --font-sans: "Geist", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", monospace;
+    /* 标题四级：display（只给 Hero）→ h2 章节 → title 块标题 → h3 卡片，相邻两级约 1.5–1.6 倍。
+       中文字面比拉丁字母满，标题小一档（-zh，约 ×0.86–0.9）；h3 及以下中英同值。 */
+    --fs-display: clamp(44px, 6vw, 84px);
+    --fs-display-zh: clamp(40px, 5.2vw, 72px);
+    --fs-h2: clamp(32px, 4.2vw, 56px);
+    --fs-h2-zh: clamp(26px, 3.5vw, 48px);
+    --fs-title: clamp(26px, 2.6vw, 36px);
+    --fs-title-zh: clamp(24px, 2.3vw, 32px);
+    --fs-h3: 22px;
+    /* 大数字：价格卡、计算器结果（等宽、表格数字） */
+    --fs-figure: clamp(36px, 3.4vw, 44px);
+    /* 正文：lead（Hero / 章节说明、FAQ 问题）→ body-lg（功能卡说明、要点标题）→ body → body-sm（要点说明、名字）→ sm（界面文字）→ xs（注释） */
+    --fs-lead: clamp(17px, 1.35vw, 19px);
+    --fs-body-lg: 17px;
+    --fs-body: 16px;
+    --fs-body-sm: 15px;
+    --fs-sm: 14px;
+    --fs-xs: 12.5px;
+    --fs-eyebrow: 12px;
+    --fs-eyebrow-zh: 13px;
+    --fs-code: 14px;
+
+    /* —— 动效 —— */
+    --dur-fast: 140ms; --dur-base: 240ms; --dur-slow: 600ms;
+    --ease-out: cubic-bezier(.2, .8, .2, 1);
+    --ease-inout: cubic-bezier(.65, 0, .35, 1);
+    --rise: 16px;
+
+    /* —— 毛玻璃（和 App 的材质同一套，ui/design/tokens/semantic.css）：半透明底 + 背景模糊并提饱和 + 磨砂颗粒 + 顶边一线高光 + 细边。
+       颜色在下面两个主题里；组件写 background: var(--grain), var(--glass); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-ring) …
+       只给浮在内容上的东西用（导航、菜单、对话框、抽屉、Toast、胶囊、舞台上的卡片），铺满整节的大面不用。
+       浅色的层级从下往上：浅灰页面 + 一层静止的白光（base.css）→ 舞台卡（半透明白 + 颗粒，透出底下的白光；不做背景模糊，
+       背后只有很柔的光，模糊不出东西）→ 舞台上的卡片、浮层（--glass + 模糊）→ 浅灰凹槽 --bg-sunken（输入框、气泡、节点）。
+       浅色的底只用中性白 / 灰，不铺角色色和黄绿；投影一律中性冷灰、轻而散。 —— */
+    --glass-blur: blur(20px) saturate(170%);
+    --glass-blur-lg: blur(36px) saturate(180%);
+
+    /* —— 品牌色（两个主题同值） —— */
+    --lime: #d7ff00; --lime-hover: #e6ff4d; --lime-press: #c7ef00; --lime-200: #e9ff66;
+    /* 柔黄绿 oklch(.935 .11 119)：色相同品牌黄绿、彩度只有一半，白底上不发荧光（浅色的荧光笔、选区、手机里的用户气泡） */
+    --lime-soft: #e1f59f;
+    --ink: #161a00; --olive: #5f711c; --olive-700: #465612;
+
+    /* —— 机器人角色（插画色，不作 UI 强调色；取自 App primitives） —— */
+    --bot-blue-eye: #6dd4fb; --bot-blue-glow: #2a9dff;
+    --bot-yellow-eye: #fcfcdc; --bot-yellow-glow: #ffc21a;
+    --bot-green-eye: #b5fbd6; --bot-green-glow: #2ee88a;
+    --bot-red-eye: #fc9379; --bot-red-glow: #ff3b2a;
+    --bot-purple-eye: #fdc1fb; --bot-purple-glow: #c24dff;
+    --bot-orange-eye: #fdd77c; --bot-orange-glow: #ff8c1a;
+    --bot-blush: #ff7aa8; --bot-glint: rgba(255, 255, 255, .8);
+    --bot-dizzy: #c0a6ff;
+
+    /* —— Eyes 标记的动效参数（§4.5） —— */
+    --mark-amp-x: 11; --mark-amp-y: 5;
+    --mark-head-x: 2; --mark-head-y: 1; --mark-head-tilt: 4deg;
+    --mark-idle-period: 7.2s; --mark-blink-period: 5.6s; --mark-follow-dur: 140ms;
+  }
+
+  /* —— 深色（默认） —— */
+  :root, [data-theme="dark"] {
+    --bg: #060706;
+    --bg-raised: #0b0b10;
+    --bg-sunken: #101110;
+    --bg-feature: #0b0b10;
+    --text: #fafaf7;
+    --text-2: #a1a1aa;
+    --accent: var(--lime);
+    --accent-ink: var(--ink);
+    --accent-fg: var(--lime);
+    --accent-fg-strong: var(--lime-200);
+    --accent-wash: rgba(215, 255, 0, .14);
+    --glow-brand: color-mix(in srgb, var(--lime) 9%, transparent);   /* 背景里的品牌光（公告条）；浅色减到 6% */
+    --glow-k: 1;   /* 机器人色（舞台底光、选中态、示意图里的色块）的浓度系数：写成 calc(N% * var(--glow-k))，浅色 .55 */
+    --line: rgba(255, 255, 255, .10);
+    --line-strong: rgba(255, 255, 255, .18);
+    --hover: rgba(255, 255, 255, .05);
+    --ok: #6fd99b; --warn: #f2b544; --danger: #f28b82;
+    --warn-wash: rgba(242, 181, 68, .12);
+    --card-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+    /* 导航：停在顶上时透明，滚动后铺 nav-bg（半透明 + 毛玻璃）；pill 是链接下滑动的底色 */
+    --nav-bg: rgba(6, 7, 6, .78);
+    --nav-pill: rgba(255, 255, 255, .075);
+    --mark-plate: var(--lime); --mark-eye: var(--ink); --mark-ring: transparent;
+    --ring-plate: var(--bg-sunken); --ring-stroke: var(--lime); --ring-eye: var(--lime);
+    --avatar-aura: 52%; --avatar-shadow: rgba(0, 0, 0, .5);
+    --chip-on-bg: rgba(215, 255, 0, .14);
+    --code-bg: #0e0f0e;
+    --glass: rgba(18, 19, 18, .58);          /* 浮在内容上的小件：胶囊、标签、舞台上的卡片 */
+    --glass-strong: rgba(22, 23, 22, .8);    /* 菜单、下拉、对话框、抽屉、Toast */
+    --glass-edge: rgba(255, 255, 255, .09);
+    --glass-hi: rgba(255, 255, 255, .07);
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.05'/%3E%3C/svg%3E");
+
+    /* —— 品牌色怎么落到界面上（两个主题各一套，规则见 README"配色"） —— */
+    /* 主操作：主按钮、分裂按钮右段、跳转链接。深色是黄绿底墨字 */
+    --primary: var(--lime); --primary-hover: var(--lime-hover); --primary-press: var(--lime-press); --on-primary: var(--ink);
+    --primary-divider: rgba(22, 26, 0, .25);                                  /* 分裂按钮两段之间的细线 */
+    --primary-mark-plate: var(--ink); --primary-mark-eye: var(--lime);        /* 主操作色面上的 Eyes 标记 */
+    /* 信号：小块实心的品牌记号（公告条的标签、手机 mock 的发送键） */
+    --signal-bg: var(--lime); --signal-fg: var(--ink);
+    /* 品牌标签："默认""本地"这类会成排出现的徽标 */
+    --tag-bg: var(--lime); --tag-fg: var(--ink); --tag-edge: transparent;
+    /* 荧光笔、文字选区、手机 mock 里"我"的气泡 */
+    --hl-bg: var(--lime);
+    --bubble-me: var(--lime); --on-bubble-me: var(--ink);
+
+    /* —— 浮层：菜单、下拉列表、气泡、Toast 的落影；对话框更重一档；遮罩 —— */
+    --shadow-c: rgba(0, 0, 0, .5);
+    --shadow-c-strong: rgba(0, 0, 0, .6);
+    --scrim: rgba(0, 0, 0, .55);
+    --on-danger: #3b0d0a;   /* 危险色底上的字：深色的危险色是浅红，白字只有 2.4:1 */
+  }
+
+  /* —— 浅色 —— */
+  [data-theme="light"] {
+    color-scheme: light;
+    /* 只用中性的白和灰分层（冷一点点，不偏黄、不偏绿）：页面浅灰 → 舞台卡半透明白 → 卡片白玻璃 → 凹槽回到浅灰 */
+    --bg: #f4f5f7;
+    --bg-raised: #ffffff;
+    --bg-sunken: #f1f2f5;
+    --bg-feature: #fbfbfc;
+    --text: #161a00;
+    --text-2: #52525b;
+    --accent: var(--lime);
+    --accent-ink: var(--ink);
+    --accent-fg: var(--olive);
+    --accent-fg-strong: var(--olive-700);
+    --accent-wash: #eff7d7;   /* oklch(.962 .042 118)：只给小块的标签、选中态，不铺成片 */
+    --glow-brand: rgba(255, 255, 255, .9);   /* 浅色下背景里不放黄绿光，只留一点白光 */
+    --glow-k: .55;
+    --line: rgba(17, 24, 39, .09);
+    --line-strong: rgba(17, 24, 39, .16);
+    --hover: rgba(17, 24, 39, .04);
+    --ok: #189a58; --warn: #b45309; --danger: #d64545;
+    --warn-wash: #fbf0df;
+    --card-shadow: 0 1px 2px rgba(17, 24, 39, .04), 0 16px 40px -24px rgba(17, 24, 39, .12);
+    --nav-bg: rgba(255, 255, 255, .72);
+    --nav-pill: rgba(17, 24, 39, .05);
+    --mark-plate: var(--ink); --mark-eye: var(--lime); --mark-ring: transparent;
+    /* 浅色下 ring 变体 = solid */
+    --ring-plate: var(--ink); --ring-stroke: transparent; --ring-eye: var(--lime);
+    --avatar-aura: 18%; --avatar-shadow: rgba(17, 24, 39, .12);   /* 浅底上角色光收一档，影子用中性冷灰 */
+    --chip-on-bg: var(--accent-wash);
+    --code-bg: #f3f4f6;
+    --glass: rgba(255, 255, 255, .62);
+    --glass-strong: rgba(255, 255, 255, .82);
+    --glass-edge: rgba(17, 24, 39, .07);
+    --glass-hi: rgba(255, 255, 255, .95);
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.035'/%3E%3C/svg%3E");
+
+    /* —— 品牌色怎么落到界面上：浅色下墨色负责操作，黄绿只做"墨色上的光"或一层很淡的底 ——
+       #d7ff00 在白底上只有 1.15:1、彩度又极高，大面积铺开会发荧光；所以浅色里不再出现成块的纯黄绿 */
+    /* 主操作：墨底白字（和 App 浅色主题的主按钮一致） */
+    --primary: var(--ink);
+    --primary-hover: color-mix(in oklch, var(--ink) 86%, white);
+    --primary-press: color-mix(in oklch, var(--ink) 76%, white);
+    --on-primary: #ffffff;
+    --primary-divider: rgba(255, 255, 255, .16);
+    --primary-mark-plate: var(--lime); --primary-mark-eye: var(--ink);       /* 墨色按钮上的标记亮成一小块黄绿 */
+    /* 信号：墨底 + 黄绿的光（和 Eyes 标记、App 的发送键同一种写法） */
+    --signal-bg: var(--ink); --signal-fg: var(--lime);
+    /* 品牌标签：淡底 + 深橄榄字 + 一圈细边（7.3:1），一表格成排出现也不刺眼 */
+    --tag-bg: var(--accent-wash); --tag-fg: var(--olive-700); --tag-edge: color-mix(in srgb, var(--olive) 28%, transparent);
+    /* 荧光笔、选区、"我"的气泡：柔黄绿 */
+    --hl-bg: var(--lime-soft);
+    --bubble-me: var(--lime-soft); --on-bubble-me: var(--ink);
+
+    /* —— 浮层：浅色下投影是很轻的中性冷灰 rgba(17, 24, 39)，散而淡（黑色 .5 在浅底上是一团脏灰，带墨绿又发脏） —— */
+    --shadow-c: rgba(17, 24, 39, .1);
+    --shadow-c-strong: rgba(17, 24, 39, .14);
+    --scrim: rgba(17, 24, 39, .2);
+    --on-danger: #ffffff;
+  }
+
+  /* 由上面的玻璃颜色推导：每个主题作用域都重算，局部 data-theme 的子树才拿得到自己的值 */
+  :root, [data-theme] {
+    --glass-ring: inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-edge);
+  }
+}

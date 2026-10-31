@@ -1,0 +1,12 @@
+---
+import Base from "../layouts/Base.astro";
+import Pricing from "../sections/Pricing.astro";
+import { dict, type Lang } from "../i18n";
+import "../styles/pricing.css";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+---
+<Base lang={lang} path="/pricing" title={t.pricing.pageTitle} description={t.pricing.pageDescription}>
+  <Pricing lang={lang} />
+</Base>

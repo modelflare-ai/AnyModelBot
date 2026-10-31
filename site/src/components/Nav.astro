@@ -1,0 +1,112 @@
+---
+import EyesMark from "./EyesMark.astro";
+import Icon from "./Icon.astro";
+import DownloadButton from "./DownloadButton.astro";
+import { dict, href, altLang, switchHref, type Lang } from "../i18n";
+import { GITHUB_URL } from "../lib/site";
+import { docsUrl } from "../lib/docs";
+interface Props { lang: Lang; path: string }
+const { lang, path } = Astro.props;
+const t = dict(lang);
+const home = href(lang, "/");
+// 通栏导航（样式见 components.css）：左 logo、中间链接、右侧工具，左右边缘和正文容器对齐。
+// 链接前四项是首页的章节（顺序同首页），价格是独立页；下载由右侧按钮负责。
+// 右侧是三个同尺寸的图标按钮（GitHub、语言、外观；悬停出提示）和一颗下载按钮，平台菜单留给首页和下载页。
+// 语言和外观都是下拉菜单，当前项打勾：语言用各自的本名，不随页面语言翻译
+const anchor = (id: string) => (path === "/" ? `#${id}` : `${home}#${id}`);
+const links = [
+  { href: anchor("bots"), label: t.nav.bots },
+  { href: anchor("features"), label: t.nav.features },
+  { href: anchor("models"), label: t.nav.models },
+  { href: anchor("data"), label: t.nav.data },
+  { href: href(lang, "/pricing"), label: t.nav.pricing, current: path === "/pricing" },
+];
+const other = altLang(lang);
+const langHref = switchHref(lang, path);
+const langHreflang = other === "en" ? "en" : "zh-CN";
+const LANGS = [
+  { code: "zh", name: "简体中文", tag: "zh-CN" },
+  { code: "en", name: "English", tag: "en" },
+] as const;
+const themes = [
+  { pref: "light", icon: "sun", label: t.nav.themeLight },
+  { pref: "dark", icon: "moon", label: t.nav.themeDark },
+  { pref: "system", icon: "monitor", label: t.nav.themeSystem },
+] as const;
+---
+<header class="nav" data-nav>
+  <div class="container nav__bar">
+    <a class="logo" href={home} aria-label={t.nav.home}>
+      <EyesMark size={24} />
+      <span class="logo__word" aria-hidden="true">AnyModelBot</span>
+    </a>
+    <nav class="nav__links" aria-label={t.nav.main} data-nav-links>
+      <span class="nav__pill" aria-hidden="true"></span>
+      {links.map((l) => <a class="nav__link" href={l.href} aria-current={l.current ? "page" : undefined}>{l.label}</a>)}
+      <a class="nav__link" href={docsUrl(lang)} target="_blank" rel="noopener">{t.nav.docs}<Icon name="external" size={13} class="nav__ext" /></a>
+    </nav>
+    <div class="nav__tools">
+      <div class="nav__utils hide-md">
+        <a class="nav__util nav__util--icon" href={GITHUB_URL} target="_blank" rel="noopener" aria-label={t.nav.github} data-tip={t.nav.github} data-track="github_click" data-track-location="nav"><Icon name="github" size={16} /></a>
+        <div class="nav__menu">
+          <button class="nav__util nav__util--icon" type="button" aria-haspopup="menu" aria-expanded="false" aria-label={t.nav.langLabel} data-tip={t.nav.langLabel} data-menu-toggle><Icon name="globe" size={16} /></button>
+          <div class="menu" role="menu" aria-label={t.nav.langLabel} hidden>
+            {LANGS.map((l) => l.code === lang
+              ? <button type="button" role="menuitemradio" aria-checked="true" lang={l.tag}><span class="menu__label">{l.name}</span><Icon name="check" size={16} class="menu__check" /></button>
+              : <a role="menuitemradio" aria-checked="false" href={langHref} hreflang={l.tag} lang={l.tag} data-lang-switch><span class="menu__label">{l.name}</span><Icon name="check" size={16} class="menu__check" /></a>)}
+          </div>
+        </div>
+        <div class="nav__menu">
+          <button class="nav__util nav__util--icon theme-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-label={t.nav.theme} data-tip={t.nav.theme} data-menu-toggle>
+            <Icon name="sun" size={16} class="theme-ico theme-ico-light" /><Icon name="moon" size={16} class="theme-ico theme-ico-dark" />
+          </button>
+          <div class="menu" role="menu" aria-label={t.nav.theme} hidden>
+            {themes.map((m) => (
+              <button type="button" role="menuitemradio" aria-checked="false" data-theme-set={m.pref}>
+                <Icon name={m.icon} size={16} class="menu__ico" /><span class="menu__label">{m.label}</span><Icon name="check" size={16} class="menu__check" />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <DownloadButton lang={lang} placement="nav" size="sm" short plain />
+      <button class="nav__util nav__util--icon nav__burger" type="button" aria-label={t.nav.menu} data-open-dialog="nav-drawer"><Icon name="menu" size={18} /></button>
+    </div>
+  </div>
+</header>
+<dialog class="drawer" id="nav-drawer" aria-label={t.nav.menu}>
+  <div class="container drawer__head">
+    <a class="logo" href={home} aria-label={t.nav.home}><EyesMark size={24} /><span class="logo__word" aria-hidden="true">AnyModelBot</span></a>
+    <button class="nav__util nav__util--icon" type="button" aria-label={t.nav.close} data-close-dialog><Icon name="close" size={18} /></button>
+  </div>
+  <nav class="container drawer__links" aria-label={t.nav.menu}>
+    {links.map((l, i) => (
+      <a href={l.href} aria-current={l.current ? "page" : undefined} style={`--i:${i}`} data-close-dialog>
+        <span class="drawer__num">{String(i + 1).padStart(2, "0")}</span>
+        <span class="drawer__label">{l.label}</span>
+        <Icon name="arrow" size={18} class="drawer__go" />
+      </a>
+    ))}
+    <a href={docsUrl(lang)} target="_blank" rel="noopener" style={`--i:${links.length}`}>
+      <span class="drawer__num">{String(links.length + 1).padStart(2, "0")}</span>
+      <span class="drawer__label">{t.nav.docs}</span>
+      <Icon name="external" size={18} class="drawer__go" />
+    </a>
+  </nav>
+  <div class="container drawer__foot">
+    <div class="drawer__prefs">
+      <a class="lang-seg" href={langHref} hreflang={langHreflang} aria-label={t.nav.langLabel} data-lang-switch>
+        <span data-cur={lang === "zh" ? "" : undefined}>中</span><span data-cur={lang === "en" ? "" : undefined}>EN</span>
+      </a>
+      <div class="drawer__theme" role="group" aria-label={t.nav.theme}>
+        <button type="button" class="chip" data-theme-set="light">{t.nav.themeLight}</button>
+        <button type="button" class="chip" data-theme-set="dark">{t.nav.themeDark}</button>
+        <button type="button" class="chip" data-theme-set="system">{t.nav.themeSystem}</button>
+      </div>
+    </div>
+    <div class="drawer__actions">
+      <a class="btn btn--secondary" href={GITHUB_URL} target="_blank" rel="noopener" data-track="github_click" data-track-location="drawer"><Icon name="github" />{t.nav.github}</a>
+      <a class="btn btn--primary" href={href(lang, "/download")} data-dl-generic>{t.download.generic}</a>
+    </div>
+  </div>
+</dialog>

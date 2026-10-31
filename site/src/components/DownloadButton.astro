@@ -1,0 +1,48 @@
+---
+// 分裂下载按钮（§12）：主段按系统识别（client.ts），右段打开平台菜单。无 JS 时主段链接到 /download。
+// 同一行要并排放的按钮（如 Hero 的"看演示"）用 slot="after" 传进来。版本、大小与 SHA-256 在 /download 页。
+// plain：只有一颗带下载图标的按钮（导航用），没有标记和平台菜单；同样按系统换成安装包直链。
+import EyesMark from "./EyesMark.astro";
+import Icon from "./Icon.astro";
+import { dict, href, type Lang } from "../i18n";
+import { releases, PLATFORMS } from "../lib/site";
+interface Props { lang: Lang; placement: string; size?: "md" | "sm"; short?: boolean; plain?: boolean; id?: string }
+const { lang, placement, size = "md", short = false, plain = false, id } = Astro.props;
+const t = dict(lang);
+const menuId = `dl-menu-${placement}`;
+---
+{plain ? (
+  <div class="dl dl--plain" data-dl data-placement={placement} data-short={short ? "1" : undefined}>
+    <a class:list={["btn btn--primary", { "btn--sm": size === "sm" }]} id={id} href={href(lang, "/download")} data-dl-main>
+      <Icon name="download" size={16} />
+      <span class="btn-label" data-dl-label>{t.download.generic}</span>
+    </a>
+  </div>
+) : (
+<div class:list={["dl", { "dl--sm": size === "sm" }]} data-dl data-placement={placement} data-short={short ? "1" : undefined}>
+  <div class="dl__row">
+    <div class:list={["split", { "split--sm": size === "sm" }]}>
+      <a class:list={["btn btn--primary", { "btn--sm": size === "sm" }]} id={id} href={href(lang, "/download")} data-dl-main data-on="accent">
+        <EyesMark size={18} mode="follow" on="accent" />
+        <span class="btn-label" data-dl-label>{t.download.generic}</span>
+      </a>
+      <button class="split__more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls={menuId} aria-label={t.download.more} data-menu-toggle>
+        <Icon name="chevron" />
+      </button>
+      <div class="menu" role="menu" id={menuId} hidden>
+        {PLATFORMS.map((p) => (
+          <a role="menuitem" href={releases.platforms[p].url} data-dl-platform={p} download>
+            <span>{t.download.items[p]}</span>
+          </a>
+        ))}
+        <hr />
+        <button type="button" role="menuitem" data-copy-text={releases.platforms.docker.command} data-track="docker_cmd_copy" data-track-command="docker-run">
+          <span>{t.download.items.docker}</span><Icon name="copy" size={16} />
+        </button>
+        <a role="menuitem" href={href(lang, "/changelog")}><span>{t.download.items.changelog}</span></a>
+      </div>
+    </div>
+    <slot name="after" />
+  </div>
+</div>
+)}

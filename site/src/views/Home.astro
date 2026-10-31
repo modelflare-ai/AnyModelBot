@@ -1,0 +1,32 @@
+---
+// 首页八块，按"它是谁 → 能做什么 → 用什么模型、花多少 → 数据去哪 → 在哪用 → 疑问 → 下载"排列。
+// 细节交给附属页：完整价格与计算器在 /pricing，安全长版在 /security，安装包与校验在 /download。
+import Base from "../layouts/Base.astro";
+import Hero from "../sections/Hero.astro";
+import Bots from "../sections/Bots.astro";
+import Handson from "../sections/Handson.astro";
+import Models from "../sections/Models.astro";
+import Flow from "../sections/Flow.astro";
+import Devices from "../sections/Devices.astro";
+import Faq from "../sections/Faq.astro";
+import Final from "../sections/Final.astro";
+import DemoTour from "../components/DemoTour.astro";
+import { dict, type Lang } from "../i18n";
+import { homeJsonLd } from "../lib/seo";
+import "../styles/home.css";
+import "../styles/sections.css";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+---
+<Base lang={lang} path="/" jsonLd={homeJsonLd(lang)}>
+  <Hero lang={lang} />
+  <Bots lang={lang} />
+  <Handson lang={lang} />
+  <Models lang={lang} />
+  <Flow lang={lang} />
+  <Devices lang={lang} />
+  <Faq lang={lang} />
+  <Final lang={lang} />
+  <DemoTour lang={lang} />
+  <script type="application/json" id="amb-quips" set:html={JSON.stringify(dict(lang).quips)} />
+</Base>

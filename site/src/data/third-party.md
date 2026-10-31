@@ -118,6 +118,43 @@ DSH 的传递依赖以未修改形式随附，各自许可证保存在包目录�
 
 `dsh-runtime/plugins/amb-bridge.mjs`（审批 / 读取围栏插件）为本项目原创代码（MIT）。
 
+聊天规则（`src/agent/prompts/system.ts`）、每次模型请求现读的系统提示词段（`dsh-runtime/plugins/amb-prompt.mjs`）、
+提示词约定测试与字符数上限（`test/prompts.unit.test.ts`）的思路参考了 DeepSeek 的 dsh-superagent
+（MIT，Copyright (c) 2026 DeepSeek Harness Team）：它的注意力原则、按请求重算的 system-prompt 段与 prompt 测试。
+文字和代码为本项目重写，未复制其代码。
+
+## dsh-superagent（持久化出站队列的设计 — MIT）
+
+来源：https://github.com/deepseek-ai/dsh-superagent-prototype （DeepSeek Harness Team 的研究原型）
+
+`src/core/outbox.ts`（持久化出站队列）的设计改编自它的 `src/app/outbox.ts` 与 `src/app/effects.ts`：
+消息先写回执再发送、同一 id 只发一次、同一会话按顺序发且前一条失败会挡住后面的、`Later`（暂时不能发，不计失败）、
+指数退避重试、关机时把没发完的留到下次启动。代码按本项目的 sqlite 存储与渠道重新编写，未直接复制。
+
+```
+MIT License
+
+Copyright (c) 2026 DeepSeek Harness Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## DS Bot（长期记忆、上下文管家、机器人设置 — Apache-2.0）
 
 来源：https://github.com/Fei2411/DS-Bot

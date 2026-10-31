@@ -14,6 +14,7 @@
 <p align="center"><b>Your own AI bot, on your own computer. Any model, pay per use.</b></p>
 
 <p align="center">
+  <a href="https://anymodel.bot/">Website</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">Download</a> |
   <a href="./README.md">简体中文</a> |
   English |

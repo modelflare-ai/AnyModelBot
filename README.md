@@ -14,6 +14,7 @@
 <p align="center"><b>跑在你自己电脑上的 AI 机器人。任意模型，按量付费。</b></p>
 
 <p align="center">
+  <a href="https://anymodel.bot/">官网</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">下载</a> |
   简体中文 |
   <a href="./README_en.md">English</a> |

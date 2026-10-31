@@ -35,7 +35,7 @@ Security fixes go into the latest release. Please check that the problem still e
 
 In scope: the AnyModelBot app in this repository (desktop app, command line, Docker image built from this repository) and its local console.
 
-Out of scope here: Modelflare's own services (report those through the [Modelflare Trust Center](https://modelflare.dev/trust)), WeChat and Feishu platforms, and upstream projects such as magpie, DeepSeek Harness and Cua — please report those to their maintainers. If you are unsure, email us and we will route it.
+Out of scope here: Modelflare's own services (report those through the [Modelflare Trust Center](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme)), WeChat and Feishu platforms, and upstream projects such as magpie, DeepSeek Harness and Cua — please report those to their maintainers. If you are unsure, email us and we will route it.
 
 ## 简体中文
 
@@ -70,4 +70,4 @@ Out of scope here: Modelflare's own services (report those through the [Modelfla
 
 范围内：本仓库的 AnyModelBot 应用（桌面版、命令行、用本仓库构建的 Docker 镜像）及其本地控制台。
 
-不在这里处理：Modelflare 自身的服务（请通过 [Modelflare 信任中心](https://modelflare.dev/trust)报告）、微信与飞书平台，以及 magpie、DeepSeek Harness、Cua 等上游项目——请报告给它们的维护者。拿不准的话，发邮件给我们，我们帮你转。
+不在这里处理：Modelflare 自身的服务（请通过 [Modelflare 信任中心](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme)报告）、微信与飞书平台，以及 magpie、DeepSeek Harness、Cua 等上游项目——请报告给它们的维护者。拿不准的话，发邮件给我们，我们帮你转。

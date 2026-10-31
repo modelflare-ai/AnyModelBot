@@ -17,8 +17,8 @@
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">下载</a> |
   简体中文 |
   <a href="./README_en.md">English</a> |
-  <a href="https://modelflare.dev">Modelflare</a> |
-  <a href="https://modelflare.dev/pricing">价格</a> |
+  <a href="https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme">Modelflare</a> |
+  <a href="https://modelflare.dev/pricing?utm_source=anymodelbot&utm_campaign=amb_readme">价格</a> |
   <a href="./docs/development.md">开发文档</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/issues">问题反馈</a>
 </p>
@@ -46,7 +46,7 @@
 
 AnyModelBot 是一个本地优先的 AI 智能体应用，支持 Windows、macOS 和 Linux。一个机器人就是一个人设，带着自己的默认模型、工作区和记忆。你可以在应用里和它聊天，也可以在微信、飞书里找它。它能读写文件、执行命令、操作你的桌面，一旦要越出自己的工作区，就会先问你。
 
-对话、记忆、文件和 API Key 都留在你的设备上。模型来自 [Modelflare](https://modelflare.dev)：一个账户，任意模型，按 token 计费。AnyModelBot 本身没有订阅。
+对话、记忆、文件和 API Key 都留在你的设备上。模型来自 [Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)：一个账户，任意模型，按 token 计费。AnyModelBot 本身没有订阅。
 
 📥 [下载](#-下载) · 🌠 [截图](#-截图) · 🌟 [核心功能](#-核心功能) · 🔐 [工作原理与隐私](#-工作原理与隐私)
 
@@ -57,18 +57,18 @@ AnyModelBot 是一个本地优先的 AI 智能体应用，支持 Windows、macOS
 <table>
 <tr>
 <td width="200" align="center" valign="middle">
-  <a href="https://modelflare.dev/?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot">
+  <a href="https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme">
     <img src="docs/assets/modelflare/modelflare-logo.png" width="120" height="120" alt="Modelflare 标志">
   </a>
 </td>
 <td>
 
-**[Modelflare](https://modelflare.dev/?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot)** 是兼容 OpenAI 接口的 AI API 网关，已有 20 万+ 注册开发者。一个 API Key 就能调用来自 13 家供应商的 70+ 个文本、图片和视频模型，包括 GPT、Claude、Gemini、Grok、DeepSeek、Kimi、GLM 等。请求会在多个供应商之间路由，并按顺序自动回退；每一次请求都记录用量和费用。价格公开，按 token 计费。
+**[Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)** 是兼容 OpenAI 接口的 AI API 网关，已有 20 万+ 注册开发者。一个 API Key 就能调用来自 13 家供应商的 70+ 个文本、图片和视频模型，包括 GPT、Claude、Gemini、Grok、DeepSeek、Kimi、GLM 等。请求会在多个供应商之间路由，并按顺序自动回退；每一次请求都记录用量和费用。价格公开，按 token 计费。
 
-**[注册 Modelflare →](https://modelflare.dev/sign-up?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot)** ·
-[价格表](https://modelflare.dev/pricing?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot) ·
-[API 文档](https://docs.modelflare.dev/) ·
-[信任中心](https://modelflare.dev/trust) ·
+**[注册 Modelflare →](https://modelflare.dev/sign-up?utm_source=anymodelbot&utm_campaign=amb_readme)** ·
+[价格表](https://modelflare.dev/pricing?utm_source=anymodelbot&utm_campaign=amb_readme) ·
+[API 文档](https://docs.modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme) ·
+[信任中心](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme) ·
 [X](https://x.com/modelflare_dev)
 
 </td>
@@ -80,7 +80,7 @@ AnyModelBot 是一个本地优先的 AI 智能体应用，支持 Windows、macOS
 - **登录一次就行。** 首次启动会打开浏览器，登录（或注册）Modelflare。之后应用自己把这台设备连上，不用复制 Key。在 Docker 或服务器上运行？改为粘贴一个 API Key。
 - **所有模型，一个选择器。** 你的 Modelflare 模型会自动列出，每个模型旁边都有上下文长度、能力标记和参考价。
 - **用多少付多少。** 余额、低余额提醒和每日用量都在应用里看。选模型之前，先看公开价格表，和官方价格对比一下。
-- **一条诚实的边界。** 模型请求会经过 Modelflare 转发给你选定的供应商，Modelflare 会保留请求日志；保留什么、保留多久，见[信任中心](https://modelflare.dev/trust)。除此之外的内容都留在你的设备上（[详情](#-工作原理与隐私)）。
+- **一条诚实的边界。** 模型请求会经过 Modelflare 转发给你选定的供应商，Modelflare 会保留请求日志；保留什么、保留多久，见[信任中心](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme)。除此之外的内容都留在你的设备上（[详情](#-工作原理与隐私)）。
 
 ---
 
@@ -268,7 +268,7 @@ docker exec amb cat /data/ui-token   # 然后打开 http://<主机>:3600/?token=
 | 你的 API Key 和登录令牌 | 你登录 Modelflare 的过程，发生在 modelflare.dev |
 | 设置 | |
 
-Modelflare 会保留请求日志；保留什么、保留多久，见它的[信任中心](https://modelflare.dev/trust)。我们不声称能做到万无一失：凡是你发给模型的内容，都会离开你的设备。完整清单见 [docs/privacy.md](./docs/privacy.md)。
+Modelflare 会保留请求日志；保留什么、保留多久，见它的[信任中心](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme)。我们不声称能做到万无一失：凡是你发给模型的内容，都会离开你的设备。完整清单见 [docs/privacy.md](./docs/privacy.md)。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/architecture-dark.svg">
@@ -319,7 +319,7 @@ Modelflare 会保留请求日志；保留什么、保留多久，见它的[信�
 
 # 🔗 相关项目
 
-- [Modelflare](https://modelflare.dev)：AnyModelBot 模型背后的 AI API 网关。
+- [Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)：AnyModelBot 模型背后的 AI API 网关。
 - [magpie](https://github.com/yetone/magpie)：随应用打包的 Go 网关（MIT）。
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：智能体运行时（MIT）。
 - [Cua](https://github.com/trycua/cua)：电脑操作驱动。
@@ -374,6 +374,6 @@ AnyModelBot 以 [MIT 许可证](./LICENSE)发布。随附的第三方软件保�
 [stars-link]: https://github.com/modelflare-ai/AnyModelBot/stargazers
 [license-link]: https://github.com/modelflare-ai/AnyModelBot/blob/master/LICENSE
 [ci-link]: https://github.com/modelflare-ai/AnyModelBot/actions/workflows/ci.yml
-[pricing-link]: https://modelflare.dev/pricing?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot
-[modelflare-link]: https://modelflare.dev/?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot
+[pricing-link]: https://modelflare.dev/pricing?utm_source=anymodelbot&utm_campaign=amb_readme
+[modelflare-link]: https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme
 [x-link]: https://x.com/modelflare_dev

@@ -17,8 +17,8 @@
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">Download</a> |
   <a href="./README.md">简体中文</a> |
   English |
-  <a href="https://modelflare.dev">Modelflare</a> |
-  <a href="https://modelflare.dev/pricing">Pricing</a> |
+  <a href="https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme">Modelflare</a> |
+  <a href="https://modelflare.dev/pricing?utm_source=anymodelbot&utm_campaign=amb_readme">Pricing</a> |
   <a href="./docs/development_en.md">Development</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/issues">Feedback</a>
 </p>
@@ -46,7 +46,7 @@
 
 AnyModelBot is a local-first AI agent app for Windows, macOS and Linux. A bot is a persona with its own default model, workspace and memory. Chat with it in the app, or reach it from WeChat and Feishu. Let it read and write files, run commands and operate your desktop, with an approval prompt whenever it steps outside its workspace.
 
-Your conversations, memory, files and API keys live on your device. Models come from [Modelflare](https://modelflare.dev): one account, any model, priced per token. AnyModelBot itself has no subscription.
+Your conversations, memory, files and API keys live on your device. Models come from [Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme): one account, any model, priced per token. AnyModelBot itself has no subscription.
 
 📥 [Download](#-download) · 🌠 [Screenshots](#-screenshots) · 🌟 [Features](#-key-features) · 🔐 [Privacy](#-how-it-works--privacy)
 
@@ -57,18 +57,18 @@ Your conversations, memory, files and API keys live on your device. Models come 
 <table>
 <tr>
 <td width="200" align="center" valign="middle">
-  <a href="https://modelflare.dev/?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot">
+  <a href="https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme">
     <img src="docs/assets/modelflare/modelflare-logo.png" width="120" height="120" alt="Modelflare logo">
   </a>
 </td>
 <td>
 
-**[Modelflare](https://modelflare.dev/?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot)** is an OpenAI-compatible AI API gateway with 200,000+ registered developers. One API key opens 70+ text, image and video models from 13 providers, including GPT, Claude, Gemini, Grok, DeepSeek, Kimi and GLM. Requests are routed across providers with ordered fallback, and every request is recorded with its usage and cost. Prices are public and billed per token.
+**[Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)** is an OpenAI-compatible AI API gateway with 200,000+ registered developers. One API key opens 70+ text, image and video models from 13 providers, including GPT, Claude, Gemini, Grok, DeepSeek, Kimi and GLM. Requests are routed across providers with ordered fallback, and every request is recorded with its usage and cost. Prices are public and billed per token.
 
-**[Sign up for Modelflare →](https://modelflare.dev/sign-up?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot)** ·
-[Price list](https://modelflare.dev/pricing?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot) ·
-[API docs](https://docs.modelflare.dev/) ·
-[Trust Center](https://modelflare.dev/trust) ·
+**[Sign up for Modelflare →](https://modelflare.dev/sign-up?utm_source=anymodelbot&utm_campaign=amb_readme)** ·
+[Price list](https://modelflare.dev/pricing?utm_source=anymodelbot&utm_campaign=amb_readme) ·
+[API docs](https://docs.modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme) ·
+[Trust Center](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme) ·
 [X](https://x.com/modelflare_dev)
 
 </td>
@@ -80,7 +80,7 @@ Your conversations, memory, files and API keys live on your device. Models come 
 - **Sign in once.** The first launch opens your browser to sign in to (or sign up for) Modelflare. The app then connects this device itself, so there is no key to copy. Running in Docker or on a server? Paste an API key instead.
 - **Every model, one picker.** Your Modelflare models are listed automatically, with context length, capabilities and reference prices next to each one.
 - **Pay for what you use.** Balance, low-balance reminders and per-day usage show up inside the app. Check the public price list and compare it with the official rates before you choose a model.
-- **An honest boundary.** Model requests travel through Modelflare to the provider you pick, and Modelflare keeps request logs. See the [Trust Center](https://modelflare.dev/trust) for what is kept and for how long. Everything else stays on your device ([details](#-how-it-works--privacy)).
+- **An honest boundary.** Model requests travel through Modelflare to the provider you pick, and Modelflare keeps request logs. See the [Trust Center](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme) for what is kept and for how long. Everything else stays on your device ([details](#-how-it-works--privacy)).
 
 ---
 
@@ -268,7 +268,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 | Your API key and sign-in tokens | Your sign-in with Modelflare, which happens at modelflare.dev |
 | Settings | |
 
-Modelflare keeps request logs; its [Trust Center](https://modelflare.dev/trust) explains what is kept and for how long. We do not claim your data is beyond all risk: anything you send to a model leaves your device. The full inventory is in [docs/privacy_en.md](./docs/privacy_en.md).
+Modelflare keeps request logs; its [Trust Center](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme) explains what is kept and for how long. We do not claim your data is beyond all risk: anything you send to a model leaves your device. The full inventory is in [docs/privacy_en.md](./docs/privacy_en.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/architecture-dark.svg">
@@ -319,7 +319,7 @@ Read the full [contributing guide](./CONTRIBUTING_en.md). To report a security p
 
 # 🔗 Related Projects
 
-- [Modelflare](https://modelflare.dev): the AI API gateway behind AnyModelBot's models.
+- [Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme): the AI API gateway behind AnyModelBot's models.
 - [magpie](https://github.com/yetone/magpie): the Go gateway bundled with the app (MIT).
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): the agent runtime (MIT).
 - [Cua](https://github.com/trycua/cua): the computer-use driver.
@@ -374,6 +374,6 @@ AnyModelBot is released under the [MIT License](./LICENSE). Bundled third-party 
 [stars-link]: https://github.com/modelflare-ai/AnyModelBot/stargazers
 [license-link]: https://github.com/modelflare-ai/AnyModelBot/blob/master/LICENSE
 [ci-link]: https://github.com/modelflare-ai/AnyModelBot/actions/workflows/ci.yml
-[pricing-link]: https://modelflare.dev/pricing?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot
-[modelflare-link]: https://modelflare.dev/?utm_source=github&utm_medium=readme&utm_campaign=anymodelbot
+[pricing-link]: https://modelflare.dev/pricing?utm_source=anymodelbot&utm_campaign=amb_readme
+[modelflare-link]: https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme
 [x-link]: https://x.com/modelflare_dev

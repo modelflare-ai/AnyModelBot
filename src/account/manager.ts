@@ -151,7 +151,7 @@ export class AccountManager {
     const attempt = await startLogin(ep, {
       clientId: MODELFLARE_CLIENT_ID,
       scope: MODELFLARE_SCOPES,
-      extra: { ...UTM, utm_campaign: "login" },
+      extra: { ...UTM, utm_campaign: "amb_signup" }, // 授权页也是注册入口：没有账户的人在这里注册
       fetchImpl: this.fetch,
     });
     this.login = attempt;
@@ -302,7 +302,7 @@ export class AccountManager {
     const alerted = !!this.o.store.getKV(ALERTED);
     if (bal < lowBalanceUsd && !alerted) {
       this.o.store.setKV(ALERTED, String(Date.now()));
-      this.o.hooks.alert(`Modelflare 余额只剩 $${bal.toFixed(2)}，低于提醒线 $${lowBalanceUsd}。充值：${webUrl("/billing", "low-balance")}`, push);
+      this.o.hooks.alert(`Modelflare 余额只剩 $${bal.toFixed(2)}，低于提醒线 $${lowBalanceUsd}。充值：${webUrl("/billing", "amb_low_balance")}`, push);
     } else if (bal >= lowBalanceUsd && alerted) {
       this.o.store.deleteKV(ALERTED);
     }
@@ -327,7 +327,7 @@ export class AccountManager {
     const u = new URL("/sign-up", MODELFLARE_WEB);
     u.searchParams.set("aff", code);
     for (const [k, v] of Object.entries(UTM)) u.searchParams.set(k, v);
-    u.searchParams.set("utm_campaign", "invite");
+    u.searchParams.set("utm_campaign", "amb_invite");
     return { code, url: u.toString() };
   }
 

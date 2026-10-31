@@ -672,6 +672,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | Rule edited during a run | The run finishes under its recorded version; the next run uses the new version |
 | Two hosts open the same data dir | On desktop, Electron's `requestSingleInstanceLock()` already prevents it. The headless CLI and Docker build need a data-dir lock before the Scheduler starts (a small addition in 3d) |
 | Prompt injection from a web page during a task or rule | Permission caps (observe is read-only; act is capped at workspace), approvals go to needs-you, and denied acting tools. We can't fully prevent network side effects from shell tools, and the UI says so |
+| The DSH child's memory grows with sessions the SDK can't close (one per rule run) | About 0.25–0.45 MB per finished session (measured). After more than 100 task and rule sessions the child is replaced as soon as it is fully idle: no chat turn, run, pending approval, compaction or background job. Nothing is interrupted or recovered |
 | Disk growth (task folders, DSH session JSONL) | Retention: archive done tasks after 30 days, and offer to delete their folders and sessions; sizes are shown in the task detail (Q9) |
 
 ## 12. Testing strategy

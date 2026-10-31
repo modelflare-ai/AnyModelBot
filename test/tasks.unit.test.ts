@@ -814,6 +814,21 @@ describe("TaskService（假宿主）", () => {
     expect(svc.get(t.id)!.stage.key).toBe("needs-you/approval");
   });
 
+  it("run 结束时告诉宿主（代理进程完全空闲、开过的会话多了就换新的）；在跑、收尾中的 run 算忙", async () => {
+    const ended: string[] = [];
+    (host as TaskHost).runEnded = (botId) => void ended.push(botId);
+    expect(svc.busy("b")).toBe(false);
+    const t = start();
+    await flush();
+    expect(svc.busy("b")).toBe(true);
+    host.quiets.push({ quiet: false, jobs: ["j1"] });
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "好了"));
+    expect(store.listRuns({ taskId: t.id })[0].state).toBe("settling");
+    expect([svc.busy("b"), ended]).toEqual([true, []]);
+    svc.settled({ sessionId: t.sessionId });
+    expect([svc.busy("b"), svc.busy("other"), ended]).toEqual([false, false, ["b"]]);
+  });
+
   it("每个机器人最多 10 个进行中的任务", async () => {
     host.settingsValue = normalizeSettings({ taskSlots: 8 });
     for (let i = 0; i < 10; i++) start(`T${i}`);

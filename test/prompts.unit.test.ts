@@ -23,6 +23,7 @@ import {
   TASK_SECTION_ORDER,
   placeLine,
   recoveryNote,
+  resumeNote,
   segmentInput,
   taskBrief,
   RULE_NUDGE,
@@ -131,6 +132,8 @@ async function parts(): Promise<Record<string, string>> {
     task: TASK_RULES,
     "task brief": taskBrief({ title: "GPU 价格调研", original: "帮我调研三家云的 GPU 价格", brief: "比较 A100 包月价", recent: [], attachments: [], memory: "", folder: "tasks/gpu-abc123" }),
     "task recovery": recoveryNote(["sleep 600"]),
+    "task resume budget": resumeNote("budget", ["sleep 600"]),
+    "task resume reserve": resumeNote("reserve", []),
     "task nudge": NUDGE,
     "tool task_report": runtime ? JSON.stringify((await loadPlugins()).task.tools.find((t) => t.name === "task_report") ?? "") : "",
     "tool rule_create": tool("rule_create"),
@@ -189,6 +192,10 @@ const RULES: [rule: string, part: string, says: string[], gone?: string[]][] = [
   ["task_report：done / failed 的那句话是用户收到的，progress 不发；报完结束这一轮", "tool task_report", ["one line the user receives", "at most 300 characters", "never sent", "end your turn"]],
   ["任务的第一条输入：用户原话在前，说明在后", "task brief", ["[用户的原话]\n帮我调研三家云的 GPU 价格", "[对话助手的说明]\n比较 A100 包月价", "tasks/gpu-abc123"]],
   ["恢复说明：被停的后台命令；重复外部动作之前先查日志和外部系统", "task recovery", ["The app restarted", "sleep 600", "Before repeating any outside action", ".task/journal.md", "task_report"]],
+  // —— 花费与预算（3e）：用户说了上限才填；停下之后接着做时说清为什么停、被停的后台命令、先查再重复外部动作 ——
+  ["task_start：用户说了花费上限才填 budget_usd，默认 $1", "tool task_start", ["budget_usd", "Only when the user names a spending limit", "Default 1"]],
+  ["预算用完、用户加了预算后接着做：上一步可能没做完，先查日志再重复外部动作", "task resume budget", ["used its budget", "the user has now added more", "sleep 600", "Before repeating any outside action", ".task/journal.md", "task_report"]],
+  ["为聊天留预算暂停、恢复后接着做", "task resume reserve", ["keep the bot's remaining budget for chat", "stopped: none", ".task/journal.md", "task_report"]],
   ["没报告时提醒一次：done 带一句话、failed 带原因", "task nudge", ["task_report", "done", "failed"]],
   // —— 规则（3d）：检查从观察开始，只在值得说时说一句；观察只看不动；执行最多可写工作区 ——
   ["rule_create：用户原话原样；检查从观察开始只记录；提醒到点发那句；确认一句", "tool rule_create", ["verbatim", "starts in observe mode", "only recording what it would say", "kind remind", "Confirm in one sentence", "every 30m", "weekly mon,thu"]],
@@ -272,6 +279,7 @@ describe.skipIf(!runtime)("提示词约定", () => {
    * 3a 基线 8,514（提示词 907 + 工具 7,607，其中 task_start、task_message、task_list 1,370）；3b、3c 之后 8,751（工具 7,844）。
    * 3d 加上 rule_create（819）、rule_update（467）和 task_list 多一句「and rules」后 10,049（工具 9,142）。上限高约 5%。
    * 暂停开关 background_pause（280）之后 10,329（工具 9,422），还在上限之内，上限不变。
+   * 3e：task_start 加上 budget_usd（116）之后 10,445（工具 9,538），还在上限之内，上限不变。
    * 缩短了就调低；要调高，在提交说明里写清原因。
    */
   const BUDGET = 10_550;

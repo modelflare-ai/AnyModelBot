@@ -14,4 +14,7 @@ export default {
   minutes: { other: "{count} 分钟" },
   paused: "后台工作已暂停",
   resume: "恢复",
+  cost: "花费",
+  costOf: "约 {spent} / {budget}",
+  costShort: "约 {spent}",
 };

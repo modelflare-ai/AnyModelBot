@@ -100,7 +100,7 @@ export class ApprovalCenter {
   /** 启动：上次运行遗留的阻塞请求（DSH 那次调用已经不在了）一律视为拒绝；任务的提问留着。之后定时清理过期。 */
   start(): void {
     for (const r of this.store.listApprovals({ status: "pending", limit: 500 })) {
-      if (r.blocking) this.store.decideApproval(r.id, "expired", "restart");
+      if (r.blocking) this.store.decideApproval(r.id, "expired", "restart", "", this.now());
     }
     this.timer ??= setInterval(() => this.sweep(), 5000);
     this.timer.unref?.();
@@ -184,7 +184,8 @@ export class ApprovalCenter {
   }
 
   private finish(id: string, status: Exclude<ApprovalRow["status"], "pending">, by: string, result = ""): boolean {
-    const ok = this.store.decideApproval(id, status, by, result);
+    // 决定的时间按审批中心的时钟（任务的时间上限要扣掉等批准的那段，3e）
+    const ok = this.store.decideApproval(id, status, by, result, this.now());
     if (ok) {
       const row = this.store.getApproval(id)!;
       log.info(`${row.kind} ${row.code} → ${status}`, { by });

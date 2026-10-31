@@ -14,4 +14,7 @@ export default {
   minutes: { one: "{count} min", other: "{count} min" },
   paused: "Background work is paused",
   resume: "Resume",
+  cost: "Cost",
+  costOf: "About {spent} of {budget}",
+  costShort: "About {spent}",
 };

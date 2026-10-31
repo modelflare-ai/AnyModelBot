@@ -5,6 +5,8 @@
  * 两个任务在跑时，聊天消息不排在它们后面（人的通道）；收尾（后台命令）、没报告时的提醒、每种会话的工具。
  * 3b 退出演示：任务在微信里问「中文还是英文？」，用户回编号，任务接着做完；桌面的「需要你」列出它，回答后变空。
  * 另外：引用回答、中间的普通聊天不被当成回答；任务会话里的审批推到同一个微信会话（带任务名），y 编号批准后接着做。
+ * 3e 退出演示：模型每次请求报的用量按（mock 的）Modelflare 价格目录估算，任务花到 $1 停下，微信和「需要你」里问
+ * 「已用约 $1.00，再给 $1 继续？」，在桌面上点继续后同一个会话接着做完。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -26,7 +28,13 @@ async function body(req: http.IncomingMessage): Promise<any> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 const textOf = (c: any): string => (typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => (typeof p === "string" ? p : (p?.text ?? ""))).join("") : "");
-type Step = { tool?: { name: string; args: any }; text?: string; hang?: boolean };
+/** usage：这次请求报的输入 tokens（默认 10） */
+type Step = { tool?: { name: string; args: any }; text?: string; hang?: boolean; usage?: number };
+/**
+ * mock 的 Modelflare 价格目录（AMB_MODELFLARE_ISSUER 指向 mock）：mock-agent 输入 $4 / 百万 tokens，一次 62,500 tokens = $0.25；
+ * 上下文 100 万，几次大请求不会触发压缩。平常的请求只有 10 个 tokens，花费可以忽略。
+ */
+const PRICING = { data: [{ model_name: "mock-agent", quota_type: 0, input_price: 4, completion_ratio: 1, enable_groups: ["default"], context_window: 1_000_000 }], group_ratio: { default: 1 }, usable_group: { default: "" } };
 
 describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("background tasks (real DSH, WeChat)", () => {
   const OWNER = "owner@im.wechat";
@@ -83,6 +91,11 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
       return report(`APPROVED-${tag}<<${out.includes("appr-42") ? "ran" : "not run"}>>`, 1);
     }
     if (tag.startsWith("HANG")) return { hang: true };
+    // BUDGET：每一步都是一次 $0.25 的请求，一直做下去，直到宿主在 $1 停下它；加了预算之后报告做完
+    if (tag.startsWith("BUDGET")) {
+      if (/^This task was stopped when it used its budget/.test(user)) return report(`BUDGET-DONE-${tag}：报告写好了。`);
+      return { tool: { name: "bash", args: { description: "run", command: `echo step-${done}` } }, usage: 62_500 };
+    }
     if (tag.startsWith("TOOLS")) return done ? { text: `TASKTOOLS` } : report(`TASKTOOLS-${tag}<<${tools.join(",")}>>`);
     if (tag.startsWith("QUIET")) return { text: "我做完了" }; // 不调用 task_report：宿主提醒一次
     if (tag.startsWith("BG")) return done ? { text: "后台命令在跑" } : { tool: { name: "bash", args: { description: "run", command: "sleep 2 && echo bg-done", run_in_background: true } } };
@@ -103,6 +116,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     llm = await listen(async (req, res) => {
       const url = req.url?.split("?")[0] ?? "";
       if (url.endsWith("/models")) return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: [{ id: "mock-agent", object: "model" }] }));
+      if (url === "/api/pricing") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(PRICING));
       const b = await body(req);
       const tools = (b.tools ?? []).map((t: any) => t.function?.name ?? t.name);
       const step: Step = b.tools ? plan(b.messages ?? [], tools) : { text: "标题" };
@@ -118,10 +132,13 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
         send({ choices: [{ index: 0, delta: { role: "assistant", content: step.text } }] });
         send({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
       }
-      send({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
+      const prompt = step.usage ?? 10;
+      send({ choices: [], usage: { prompt_tokens: prompt, completion_tokens: 5, total_tokens: prompt + 5 } });
       res.end("data: [DONE]\n\n");
     });
     ilink = await mockIlink();
+    // 价格目录（估算花费）从 mock 读
+    process.env.AMB_MODELFLARE_ISSUER = llm.url;
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-tasks-"));
     app = makeApp();
     // 主人已经扫码登录；渠道连到 mock iLink
@@ -136,6 +153,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     await app?.stop();
     await llm?.close();
     await ilink?.close();
+    delete process.env.AMB_MODELFLARE_ISSUER;
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -311,6 +329,52 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     expect(sentTo("APPROVED-APPR1")[0].text).toBe("APPROVED-APPR1<<ran>>。引用这条消息可以继续问。");
     await waitFor(() => stage("APPR1") === "ready");
     expect((await api("/attention")).items).toEqual([]);
+  }, 180_000);
+
+  it("exit demo (3e): a task stops at its $1 budget and asks 「再给 $1 继续？」 on WeChat and in needs-you; continuing from the desktop finishes it in the same session", async () => {
+    expect((await api("/attention")).items).toEqual([]);
+    const t = await research("BUDGETQ");
+    const taskCalls = () => calls.filter((c) => c.task && c.users.some((u) => u.includes("RESEARCH BUDGETQ"))).length;
+    await waitFor(() => stage("BUDGETQ") === "needs-you/budget");
+    // 4 次 $0.25 的请求之后停下：这一轮被取消，模型不再被调用（取消到达之前已经发出的那一次也记上）
+    const n = taskCalls();
+    await new Promise((r) => setTimeout(r, 2000));
+    expect(taskCalls()).toBe(n);
+    expect(n).toBeLessThanOrEqual(5);
+    // 每次还有 5 个输出 tokens（$0.00002）；第 5 次请求可能在取消到达之前就回来了：那就是 $1.25
+    const spent = app.store.getTask(t.id)!.spentUsd;
+    expect([1, 1.25].some((v) => Math.abs(spent - v) < 0.001), `spent ${spent}`).toBe(true);
+    // 微信里问一次，设计里的样子
+    await waitFor(() => sentTo("❓「调研 BUDGETQ」").length === 1);
+    expect(sentTo("❓「调研 BUDGETQ」")[0].text).toBe("❓「调研 BUDGETQ」想问你：已用约 $1.00，再给 $1 继续？\n1. 继续\n2. 停止\n（回复编号，或引用这条消息回答）");
+    // 桌面：「需要你」一行，状态是预算用完；任务详情里有花费
+    const { items } = await api("/attention");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: "question", subject: "调研 BUDGETQ", status: "预算用完", line: "已用约 $1.00，再给 $1 继续？", taskId: t.id, actions: ["answer"] });
+    expect(items[0].questions[0].options.map((o: any) => o.label)).toEqual(["继续", "停止"]);
+    const d0 = await api(`/tasks/${t.id}`);
+    expect(d0.task).toMatchObject({ budgetUsd: 1, stage: { key: "needs-you/budget", label: "预算用完" } });
+    expect(d0.runs.map((r: any) => [r.cause, r.outcome])).toEqual([["launch", "budget"]]);
+    expect(d0.runs[0].costUsd).toBeCloseTo(spent, 6);
+    // 在「需要你」里点「继续」：预算加 $1，同一个会话接着做完，结果发回微信
+    const r = await api(`/attention/${encodeURIComponent(items[0].id)}/answer`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "1" }) });
+    expect(r.ok).toBe(true);
+    await waitFor(() => sentTo("BUDGET-DONE-BUDGETQ").length === 1);
+    await waitFor(() => stage("BUDGETQ") === "ready");
+    const d = await api(`/tasks/${t.id}`);
+    expect(d.task.budgetUsd).toBe(2);
+    expect(d.task.spentUsd).toBeGreaterThan(spent);
+    expect(d.task.spentUsd).toBeLessThan(spent + 0.01);
+    expect(d.runs.map((x: any) => [x.cause, x.outcome])).toEqual([
+      ["launch", "budget"],
+      ["continue", "done"],
+    ]);
+    const last = calls.filter((c) => c.task && c.users.some((u) => u.includes("RESEARCH BUDGETQ"))).at(-1)!;
+    expect(last.users.filter((u) => /^This task was stopped when it used its budget/.test(u))).toHaveLength(1);
+    expect(last.users.filter((u) => u.includes("[用户的原话]\nRESEARCH BUDGETQ"))).toHaveLength(1);
+    expect((await api("/attention")).items).toEqual([]);
+    await app.outbox.idle();
+    expect(sentTo("❓「调研 BUDGETQ」")).toHaveLength(1);
   }, 180_000);
 
   it("each session kind gets its own tools: tasks report and never present, ask or start tasks; chats start tasks but cannot report", async () => {

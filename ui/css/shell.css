@@ -311,7 +311,7 @@ button.thread:active { background: var(--side-press); }
   text-align: left; font-size: var(--fs-xs); color: var(--fg-2); border-radius: var(--r-sm); transition: color var(--t-fast);
 }
 .rule-run-head:hover { color: var(--fg); }
-.rule-run-head :is(.at, .m) { flex: none; color: var(--muted); }
+.rule-run-head :is(.at, .m, .c) { flex: none; color: var(--muted); }
 .rule-run-head .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rule-run.open .rule-run-head .l { white-space: normal; overflow-wrap: anywhere; }
 .rule-run-head .chev { flex: none; align-self: center; color: var(--muted); transition: transform var(--t-fast); }

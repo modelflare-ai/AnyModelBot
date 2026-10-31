@@ -470,6 +470,9 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           : app.agent.approvals.answerText(item.approvalId!, String(b.text ?? ""), "web");
       } else if (item.kind === "delivery" && (action === "retry" || action === "dismiss")) ok = app.delivery.act(item.id, action);
       else if (item.kind === "rule" && action === "retry") ok = !app.tasks.resumeRule(item.ruleId!).error;
+      // 加预算接着做：规则每月再给 $3，任务再给 $1
+      else if (item.kind === "rule" && action === "continue") ok = !app.tasks.addRuleBudget(item.ruleId!).error;
+      else if (action === "continue") ok = !(await app.tasks.addBudget(item.taskId!, undefined, "web")).error;
       else if (action === "retry") ok = !(await app.tasks.retry(item.taskId!)).error;
       else if (action === "stop") ok = await app.tasks.stopTask(item.taskId!, "web");
       if (!ok) throw new HttpError(409, tr("web.couldntComplete"));
@@ -492,8 +495,17 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       const task = seg[1] ? app.tasks.get(decodeURIComponent(seg[1])) : undefined;
       if (!task) throw new HttpError(404, tr("web.taskNotFound"));
       if (seg.length === 2 && m === "GET") {
-        const runs = app.store.listRuns({ taskId: task.id }).map((r) => ({ id: r.id, cause: r.cause, state: r.state, outcome: r.outcome, error: r.error, queuedAt: r.queuedAt, startedAt: r.startedAt, endedAt: r.endedAt, steps: app.tasks.activity(r.id).length }));
+        const runs = app.store
+          .listRuns({ taskId: task.id })
+          .map((r) => ({ id: r.id, cause: r.cause, state: r.state, outcome: r.outcome, error: r.error, costUsd: r.costUsd, queuedAt: r.queuedAt, startedAt: r.startedAt, endedAt: r.endedAt, steps: app.tasks.activity(r.id).length }));
         return send(res, 200, { task, runs });
+      }
+      // 加预算（3e）：{addUsd}，默认 $1；停在预算上的任务接着做
+      if (seg.length === 3 && seg[2] === "budget" && m === "POST") {
+        const b = await readJson(req);
+        const r = await app.tasks.addBudget(task.id, b.addUsd === undefined ? undefined : Number(b.addUsd), "web");
+        if (r.error) throw new HttpError(400, r.error);
+        return send(res, 200, { task: r.task });
       }
       if (seg.length === 5 && seg[2] === "runs" && seg[4] === "activity" && m === "GET") {
         const run = app.store.getRun(decodeURIComponent(seg[3]));
@@ -541,6 +553,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         if (b.instruction !== undefined) patch.instruction = String(b.instruction);
         if (b.message !== undefined) patch.message = String(b.message);
         if (b.conversationId !== undefined) patch.conversationId = String(b.conversationId);
+        if (b.runBudgetUsd !== undefined) patch.runBudgetUsd = Number(b.runBudgetUsd);
+        if (b.monthBudgetUsd !== undefined) patch.monthBudgetUsd = Number(b.monthBudgetUsd);
         if (b.mode !== undefined) {
           if (!["off", "observe", "act"].includes(b.mode)) throw new HttpError(400, t("rules.badMode"));
           patch.mode = b.mode as RuleMode;

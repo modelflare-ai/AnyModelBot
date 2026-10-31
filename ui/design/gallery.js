@@ -607,7 +607,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <${NeedsRow} count=${3} onClick=${() => {}} /><${NeedsRow} count=${2} on onClick=${() => {}} /><${NeedsRow} count=${0} />
           </div>`}
         <//>
-        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你批准 / 未送达 / 失败 / 登录过期">
+        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天">
           ${() => html`<div class="list needs-list">${NEEDS.map((it) => html`<${NeedItem} item=${it} multiBot onAct=${async () => {}} />`)}</div>`}
         <//>
       <//>
@@ -655,10 +655,13 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
 const NEEDS = [
   { id: "q", kind: "question", botName: "小蓝", subject: "GPU 价格调研", status: "等你回答", line: "报告用中文还是英文？", since: Date.now() - 2 * 60_000, severity: "warn", questions: [{ id: "a", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }] },
   { id: "a", kind: "approval", botName: "小蓝", subject: "清理旧构建", status: "等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
+  { id: "bq", kind: "question", botName: "小蓝", subject: "季度报告 PPT", status: "预算用完", line: "已用约 $1.00，再给 $1 继续？", since: Date.now() - 8 * 60_000, severity: "warn", questions: [{ id: "budget", question: "已用约 $1.00，再给 $1 继续？", options: [{ label: "继续" }, { label: "停止" }] }] },
   { id: "d", kind: "delivery", botName: "小蓝", subject: "1 条结果未送达微信", status: "在微信里发条消息就能收到", line: "季度报告做好了，在 tasks 文件夹里。", since: Date.now() - 20 * 60_000, severity: "warn", actions: [] },
   { id: "f", kind: "failed", botName: "红魔", subject: "季度报告", status: "失败", line: "X 云的价格页要登录，我进不去", since: Date.now() - 40 * 60_000, severity: "err" },
   { id: "r", kind: "rule", botName: "红魔", subject: "规则「每日 issue 巡检」", status: "连续失败 3 次，已暂停", line: "GitHub 返回 401：令牌可能过期了", since: Date.now() - 90 * 60_000, severity: "err", actions: ["retry"] },
+  { id: "rb", kind: "rule", botName: "小蓝", subject: "规则「看 X 价格」", status: "本月预算用完", line: "已用约 $3.00，下月自动恢复。再给 $3 继续？", since: Date.now() - 2 * 3600_000, severity: "warn", actions: ["continue"] },
   { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
+  { id: "rs", kind: "budget", botName: "小蓝", subject: "后台工作已停", status: "", line: "机器人预算只剩约 $1.80（共 $10），留给聊天", since: Date.now() - 4 * 3600_000, severity: "warn", actions: ["open"] },
 ];
 
 /** 规则的样例（单人：自己的机器人小蓝）：每天 8 点看 X 价格（观察了 3 次）、每周的 issue 周报、暂停了的巡检、一次性的提醒 */
@@ -670,15 +673,15 @@ const at = (days, h, m = 0) => {
 };
 const rule = (o) => ({ botId: "b", kind: "check", mode: "observe", observeLeft: 0, failures: 0, hint: false, observed: 0, channel: "weixin", message: "", trigger: { kind: "schedule" }, version: 1, ...o });
 const RULES = [
-  rule({ id: "g1", title: "看 X 价格", when: "每天 08:00", instruction: "每天早上看看 X 的价格，降到 200 以下告诉我", state: { key: "observe", label: "观察中", dot: "" }, nextRunAt: at(1, 8), hint: true, observed: 3 }),
+  rule({ id: "g1", title: "看 X 价格", when: "每天 08:00", instruction: "每天早上看看 X 的价格，降到 200 以下告诉我", state: { key: "observe", label: "观察中", dot: "" }, nextRunAt: at(1, 8), hint: true, observed: 3, monthUsd: 0.41, monthBudgetUsd: 3 }),
   rule({ id: "g2", title: "issue 周报", when: "每周一 09:00", instruction: "每周一早上把仓库上周的 issue 汇总成三句话发给我", mode: "act", state: { key: "act", label: "执行中", dot: "ok" }, nextRunAt: at(3, 9) }),
   rule({ id: "g3", title: "每日 issue 巡检", when: "每天 08:30", instruction: "每天看看有没有新的 issue 需要我回复", mode: "act", state: { key: "paused", label: "已暂停", dot: "err" }, failures: 3, nextRunAt: 0 }),
   rule({ id: "g4", title: "交房租", when: "11月3日 12:00", kind: "remind", mode: "act", message: "该交房租了。", state: { key: "remind", label: "提醒", dot: "ok" }, nextRunAt: at(2, 12) }),
 ];
 const RULE_RUNS = [
-  { id: "x1", at: at(0, 8), mode: "observe", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", summary: "X 现在 ¥199，比昨天低 ¥60，低于 200。", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule" },
-  { id: "x2", at: at(-1, 8), mode: "observe", line: "本会保持安静：X 现在 ¥259", summary: "X 现在 ¥259，高于 200。", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule" },
-  { id: "x3", at: at(-2, 8), mode: "observe", line: "失败：页面打不开", summary: "", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule" },
+  { id: "x1", at: at(0, 8), mode: "observe", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", summary: "X 现在 ¥199，比昨天低 ¥60，低于 200。", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule", costUsd: 0.03 },
+  { id: "x2", at: at(-1, 8), mode: "observe", line: "本会保持安静：X 现在 ¥259", summary: "X 现在 ¥259，高于 200。", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule", costUsd: 0.02 },
+  { id: "x3", at: at(-2, 8), mode: "observe", line: "失败：页面打不开", summary: "", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule", costUsd: 0.01 },
   { id: "x4", at: at(-5, 8), mode: "observe", line: "跳过：电脑没开", summary: "", would: "", version: 1, permission: "", steps: 0, cause: "schedule" },
 ];
 

@@ -926,6 +926,7 @@ export class AgentManager {
       },
       steer: (botId, sessionId, id, text) => this.hosts.get(botId)?.steerTask(sessionId, id, text) ?? Promise.resolve(false),
       stop: async (botId, sessionId) => void (await this.hosts.get(botId)?.stopTask(sessionId)),
+      cancel: async (botId, sessionId) => void (await this.hosts.get(botId)?.cancelTask(sessionId)),
       quiet: (botId, sessionId) => this.hosts.get(botId)?.taskQuiet(sessionId) ?? Promise.resolve({ quiet: true }),
       runEnded: (botId) => void this.hosts.get(botId)?.restartIfStale().catch(() => undefined),
     };

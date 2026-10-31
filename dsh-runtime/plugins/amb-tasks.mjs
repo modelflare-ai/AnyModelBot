@@ -23,7 +23,8 @@
 // the ops it does not know to this plugin). A session that still owns running background jobs or subagents is not
 // quiet; the plugin then watches it and posts /dsh/task-settled once it is idle with nothing running and nothing
 // queued for it, or stops its jobs AMB_TASK_SETTLE_MS (30 minutes) after its last turn and says which. `task-stop`
-// cancels the turn, its subagents and every job the session owns.
+// cancels the turn, its subagents and every job the session owns. `task-cancel` does the same but leaves the session
+// usable (the host stopped it at its budget or time cap, and continues it later).
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const name = 'amb-tasks'
@@ -103,6 +104,7 @@ export function apply(ctx) {
         title: { type: 'string', required: true, description: 'Short title in the user\'s language.' },
         brief: { type: 'string', required: true, description: 'What to do and what result to give, at most 1,500 characters. The user\'s words and the recent chat are added automatically.' },
         anytime: { type: 'boolean', description: 'true only when the user asked to be told the moment it is done, even at night. Otherwise a result that is ready during their quiet hours waits until morning.' },
+        budget_usd: { type: 'number', description: 'Only when the user names a spending limit, in US dollars. Default 1.' },
       },
       output: TEXT_OUT,
       execute: tool('start'),
@@ -336,17 +338,20 @@ export function apply(ctx) {
     watch(id)
     return { quiet: false, jobs: runningJobs(id).map((j) => String(j.id)) }
   }
-  handlers['task-stop'] = async ({ sessionId }) => {
+  /** Cancel the turn, its subagents and the session's jobs; `stop` also refuses every later tool call. */
+  async function halt(sessionId, stop, why) {
     const id = String(sessionId)
-    stopped.add(id)
+    if (stop) stopped.add(id)
     unwatch(id)
     const agent = agents()?.get(id)
     if (!agent) return { running: false }
     for (const child of descendants(agent)) try { child.cancel({ kind: 'parent' }) } catch {}
     try { agent.cancel({ kind: 'user' }, { keepInbox: false }) } catch {}
-    const killed = await killJobs(id, 'stopped by the user').catch(() => [])
+    const killed = await killJobs(id, why).catch(() => [])
     return { running: true, killed }
   }
+  handlers['task-stop'] = ({ sessionId }) => halt(sessionId, true, 'stopped by the user')
+  handlers['task-cancel'] = ({ sessionId }) => halt(sessionId, false, 'the app paused the task')
 
   try {
     ctx.on('agent/disposed', ({ agent }) => {
@@ -359,6 +364,7 @@ export function apply(ctx) {
       for (const id of [...watching.keys()]) unwatch(id)
       delete handlers['task-quiet']
       delete handlers['task-stop']
+      delete handlers['task-cancel']
     })
   } catch {}
 }

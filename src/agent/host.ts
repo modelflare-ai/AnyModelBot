@@ -1690,6 +1690,12 @@ exec "$REAL" "$@"
     await this.control.send("task-stop", { sessionId }, 15_000);
   }
 
+  /** 停下任务会话的这一轮（amb-tasks：取消它、子代理和它的后台命令），会话之后还能接着用：预算用完、时间到了（3e） */
+  async cancelTask(sessionId: string): Promise<void> {
+    if (!this.harness || !this.control.connected) return;
+    await this.control.send("task-cancel", { sessionId }, 15_000);
+  }
+
   /** 任务会话空闲时，还有没有它的后台命令、子代理在跑（插件在它们结束后报 task-settled）；通道不通按安静算 */
   async taskQuiet(sessionId: string): Promise<{ quiet: boolean; jobs?: string[] }> {
     if (!this.harness || !this.control.connected) return { quiet: true };

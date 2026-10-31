@@ -19,7 +19,11 @@
  *   排队、名额、收尾、提醒、重试；不同的是结束之后（见「规则」一节）：观察只记「本会发送」，执行时那一句经出站队列发出去，
  *   连续失败 3 次自动暂停。定时器在 scheduler.ts，错过的按宽限期补跑一次或记为跳过。
  *
- * 3e–3f 的缝：花费（cost_usd、budget）。
+ * - 花费（3e，设计第 8 节）：会话里每次模型请求的用量按参考价估算（cost.ts），记在 run 上、累加到任务上，规则按月汇总。
+ *   任务的预算（默认 $1）用完时取消这一轮（指令通道，之后还能接着用），问用户「已用约 $1.00，再给 $1 继续？」（一个提问：
+ *   推给会话、在「需要你」里，回答「继续」加预算接着做，「停止」停掉）；规则每次运行 $0.10（这次以 budget 结束，算一次失败），
+ *   每月 $3（暂停，「需要你」里一行，下个月自动恢复）。机器人有 Modelflare 预算 Key 时，剩下的不到 20% 就停后台工作，留给聊天。
+ *   任务每次运行最多 4 小时（等人批准的时间不算），到了算失败。
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -30,15 +34,28 @@ import { ActivityLog, type ActivityStep } from "../agent/activity.js";
 import { ResumeFailed, deliverables } from "../agent/host.js";
 import { answerLine, promptButtons, questionsOf, taskPromptText, type ApprovalCenter, type ApprovalEvent, type QuestionItem, type ReplyContext } from "../agent/approvals.js";
 import { actionCardSpec } from "../channels/feishu/transport.js";
-import { NUDGE, RULE_NUDGE, RULE_RERUN, RULE_RESULT_SYSTEM, attachmentsOf, rebrief, recoveryNote, retryNote, ruleBrief, ruleResultInput, ruleRules, taskBrief } from "../agent/prompts/index.js";
+import { NUDGE, RULE_NUDGE, RULE_RERUN, RULE_RESULT_SYSTEM, attachmentsOf, rebrief, recoveryNote, resumeNote, retryNote, ruleBrief, ruleResultInput, ruleRules, taskBrief } from "../agent/prompts/index.js";
 import type { BotSettings } from "../agent/settings.js";
 import type { ApprovalRow, Conversation, InputKind, RuleKind, RuleMode, RuleRow, RuleTrigger, RunCause, RunInputRow, RunOutcome, RunRow, Store, TaskReport, TaskRow } from "../store/db.js";
 import type { AttentionItem } from "./attention.js";
 import { logger } from "../log.js";
 import { localParts, systemTimeZone } from "../core/quiet.js";
+import {
+  BUDGET_TOOL,
+  RESERVE_SHARE,
+  RULE_MONTH_BUDGET_USD,
+  TASK_BUDGET_MAX_USD,
+  TASK_BUDGET_STEP_USD,
+  TASK_BUDGET_USD,
+  TASK_RUN_CAP_MS,
+  costOf,
+  stepText,
+  usdText,
+  type Rates,
+} from "./cost.js";
 import { DEFAULT_MAX_BACKGROUND, pickRuns, priorityOf } from "./slots.js";
 import { taskStage, type Stage } from "./stage.js";
-import { MAX_GRACE_MS, graceOf, nextRun, latestRun, parseSchedule, type Schedule } from "./schedule.js";
+import { MAX_GRACE_MS, graceOf, localTime, nextRun, latestRun, parseSchedule, type Schedule } from "./schedule.js";
 import { Scheduler } from "./scheduler.js";
 import { matchesFilter, type RuleEvent } from "./rule-events.js";
 import {
@@ -101,6 +118,8 @@ export interface TaskHost {
   steer(botId: string, sessionId: string, id: string, text: string): Promise<boolean>;
   /** 停掉这个会话：取消这一轮、它的子代理和后台命令，之后的工具调用一律拒绝 */
   stop(botId: string, sessionId: string): Promise<void>;
+  /** 停下这一轮（取消、停它的子代理和后台命令），会话之后还能接着用：预算用完、时间到了、给聊天留预算（3e） */
+  cancel(botId: string, sessionId: string): Promise<void>;
   /** 会话空闲时还有没有后台命令、子代理在跑；有就由插件在它们结束、会话再次空闲时报 task-settled */
   quiet(botId: string, sessionId: string): Promise<{ quiet: boolean; jobs?: string[] }>;
   /** 这个机器人的一个 run 结束了：代理进程完全空闲、开过的会话又多了，就换一个新的（host.ts restartIfStale） */
@@ -135,6 +154,14 @@ export interface TaskServiceOptions {
   timeZone?: string;
   /** 规则一次运行最长多久（测试注入） */
   ruleRunCapMs?: number;
+  /** 任务一次运行最长多久，不算等人批准的时间（默认 4 小时；测试注入） */
+  taskRunCapMs?: number;
+  /** 多久看一次任务的时间上限（默认 1 分钟） */
+  capCheckMs?: number;
+  /** 估算花费的单价（模型 → 美元 / 百万 tokens；同步，取应用缓存的 Modelflare 目录）；没有就不估算 */
+  rates?: (model: string) => Rates | undefined;
+  /** 机器人的 Modelflare 预算 Key（总额、还剩多少、什么时候读的）；没开预算就是 undefined */
+  botBudget?: (botId: string) => { limitUsd: number; remainUsd: number; at: number } | undefined;
 }
 
 /** 界面、/tasks 和 task_list 看到的任务 */
@@ -154,6 +181,9 @@ export interface TaskView {
   endedAt: number;
   /** 跑了几个 run */
   runs: number;
+  /** 估算已花的、预算（美元） */
+  spentUsd: number;
+  budgetUsd: number;
   /** 正在跑的那个 run：开始时间与步数 */
   live?: { runId: string; since: number; steps: number; current?: ActivityStep };
 }
@@ -192,9 +222,18 @@ interface Live {
   seen: Set<string>;
   tokensIn: number;
   tokensOut: number;
+  /** 这个 run 估算花了多少（美元） */
+  costUsd: number;
+  /** 按哪个模型的价估算（事件里没说是哪个模型时） */
+  priceModel: string;
+  /** 宿主让它停下的原因（预算、时间上限、给聊天留预算）：交输入时正好停了，再取消一次 */
+  halted?: Halt;
   /** 规则观察时要批准的事（自动拒绝了，记成「需要批准：…」） */
   would?: string[];
 }
+
+/** 宿主让一个 run 停下：任务的预算、时间上限；规则的单次、本月预算；机器人的预算留给聊天 */
+type Halt = "budget" | "cap" | "run" | "month" | "reserve";
 
 const hex = (n: number) => crypto.randomBytes(n).toString("hex");
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -221,6 +260,16 @@ export function slugOf(title: string): string {
 
 const NOTES = "task-notes:";
 
+/** 预算用完时的回答：不要了 */
+const STOP_WORDS = /^(停止|停|不用了?|不要了?|算了|取消|stop|no|cancel)[。.!！]*$/i;
+/** 只写了一个金额（「再给 $3」里的 3） */
+const AMOUNT_ONLY = /^\s*(?:再给|加|给它)?\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:美元|美金|刀|块|dollars?|usd)?\s*$/i;
+const amountIn = (text: string) => {
+  const m = /(\d+(?:\.\d+)?)/.exec(text);
+  const v = m ? Number(m[1]) : NaN;
+  return v > 0 && v <= 100 ? v : undefined;
+};
+
 /** 给聊天代理的便条：后台任务的结果发出去了，下一条聊天消息带上它（模型知道这件事，用户问"详细说说"时能接上） */
 export function takeTaskNotes(store: Store, conversationId: string): string {
   const v = store.getKV(NOTES + conversationId);
@@ -244,6 +293,14 @@ export class TaskService {
   /** 正在删除的机器人 */
   private dropped = new Set<string>();
   private unlisten: (() => void) | undefined;
+  /** 隔一会儿看一次任务的时间上限 */
+  private capTimer: NodeJS.Timeout | undefined;
+  /** 机器人从上次读预算 Key 之后又估算花了多少（读到新的就从零算）：快到 20% 时不用等下一次读 */
+  private botSpend = new Map<string, { at: number; usd: number }>();
+  /** 机器人从什么时候起预算不够、后台工作停着（「需要你」里那一行的时间） */
+  private reserveSince = new Map<string, number>();
+  /** 刚被宿主停下的会话：取消到达之前已经发出去的那次模型请求，花费照样记到这个 run 上（几分钟内） */
+  private halted = new Map<string, { runId: string; taskId: string; botId: string; model: string; until: number }>();
 
   /** 宿主的定时器：规则到点开 run（scheduler.ts） */
   readonly scheduler: Scheduler;
@@ -261,7 +318,7 @@ export class TaskService {
         .filter((r) => r.nextRunAt >= after)
         .map((r) => ({ label: r.title, at: r.nextRunAt, kind: r.kind === "remind" ? ("reminder" as const) : ("rule" as const) })),
     );
-    this.scheduler = new Scheduler({ next: () => this.store.nextRuleDue(), fire: (now) => this.fireDue(now), now: () => this.now() });
+    this.scheduler = new Scheduler({ next: () => this.nextWake(), fire: (now) => this.fireDue(now), now: () => this.now() });
   }
 
   private get store(): Store {
@@ -290,6 +347,10 @@ export class TaskService {
       } else if (r.outcome === "needs_you" && r.report?.question) {
         const task = this.store.getTask(r.taskId);
         if (task && task.endReason !== "stopped" && this.store.latestRun(task.id)?.id === r.id) this.ask(task, r.id, r.report.question);
+      } else if (r.outcome === "budget") {
+        // 停在预算上、还没问出去就退出了：补问一次
+        const task = this.store.getTask(r.taskId);
+        if (task && task.endReason !== "stopped" && this.store.latestRun(task.id)?.id === r.id) this.askBudget(task, r.id);
       }
     }
     for (const conv of new Set((this.o.approvals?.pendingAll() ?? []).filter((r) => r.taskId).map((r) => r.conversationId))) this.pushNext(conv);
@@ -297,19 +358,24 @@ export class TaskService {
     this.pump();
     // 定时器最后开：应用没开时错过的规则，宽限期内的补跑一次，更早的记为跳过
     this.scheduler.start();
+    clearInterval(this.capTimer);
+    this.capTimer = setInterval(() => this.checkCaps(), this.o.capCheckMs ?? 60_000);
+    this.capTimer.unref?.();
   }
 
   /** 应用退出：不再开始新的 run；跑着的留在库里（下次启动时恢复），步骤先存下 */
   stop(): void {
     this.closing = true;
     this.scheduler.stop();
+    clearInterval(this.capTimer);
+    this.capTimer = undefined;
     this.unlisten?.();
     this.unlisten = undefined;
     for (const l of this.live.values()) {
       clearTimeout(l.timer);
       clearTimeout(l.capTimer);
       try {
-        this.store.updateRun(l.runId, { activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut });
+        this.store.updateRun(l.runId, { activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut, costUsd: l.costUsd });
       } catch {
         /* 数据库可能已经关了 */
       }
@@ -340,7 +406,7 @@ export class TaskService {
       const l = this.live.get(run.id);
       const steps: ActivityStep[] = l ? l.activity.steps : parseSteps(this.store.getRun(run.id)?.activity);
       if (l) this.forget(l);
-      this.store.updateRun(run.id, { state: "ended", outcome: "interrupted", endedAt: this.now(), error: why, ...(l ? { activity: JSON.stringify(steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut } : {}) });
+      this.store.updateRun(run.id, { state: "ended", outcome: "interrupted", endedAt: this.now(), error: why, ...(l ? { activity: JSON.stringify(steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut, costUsd: l.costUsd } : {}) });
       if (run.ruleId) {
         this.recoverRule(run);
         continue;
@@ -391,7 +457,7 @@ export class TaskService {
       folder,
       model: conv.model || bot.defaultModel || this.o.defaultModel?.() || "",
       permission: st.permission,
-      budgetUsd: o.budgetUsd && o.budgetUsd > 0 ? Math.min(o.budgetUsd, 100) : 1,
+      budgetUsd: o.budgetUsd && o.budgetUsd > 0 ? Math.min(o.budgetUsd, 100) : TASK_BUDGET_USD,
       anytime: !!o.anytime,
       createdAt: now,
       updatedAt: now,
@@ -545,10 +611,26 @@ export class TaskService {
     return true;
   }
 
-  /** 有空名额就开始排队的 run（人的唤醒在前，见 slots.ts）；后台工作暂停了的机器人不开始新的 */
+  /**
+   * 机器人的预算快用完了：任务的排着等（加了预算、读到的余额回到 20% 以上再开始）；规则的这次记为跳过（预算留给聊天）。
+   * 返回 true = 现在不开始
+   */
+  private heldByReserve(run: RunRow): boolean {
+    if (!this.reserve(run.botId)) return false;
+    if (run.ruleId) {
+      this.store.updateRun(run.id, { state: "ended", outcome: "skipped", error: RUN_ERROR.reserve, endedAt: this.now() });
+      log.info("rule run skipped: the bot's budget is kept for chat", { rule: run.ruleId, run: run.id });
+      this.changed(run.ruleId);
+    }
+    return true;
+  }
+
+  /** 有空名额就开始排队的 run（人的唤醒在前，见 slots.ts）；后台工作暂停了、预算留给聊天的机器人不开始新的 */
   pump(): void {
     if (!this.started || this.closing) return;
-    const queued = this.store.listRuns({ states: ["queued"] }).filter((r) => (r.taskId || (r.ruleId && !this.skipStale(r))) && !this.dropped.has(r.botId) && !this.heldByPause(r));
+    const queued = this.store
+      .listRuns({ states: ["queued"] })
+      .filter((r) => (r.taskId || (r.ruleId && !this.skipStale(r))) && !this.dropped.has(r.botId) && !this.heldByPause(r) && !this.heldByReserve(r));
     if (!queued.length) return;
     // 等批准的 run 让出名额（DSH 那次调用照样等着，批了就接着做）
     const blocked = new Set((this.o.approvals?.pendingAll() ?? []).filter((a) => a.taskId && a.blocking && a.kind === "approval").map((a) => a.taskId));
@@ -572,6 +654,14 @@ export class TaskService {
       this.store.updateRun(runId, { state: "ended", outcome: "stopped", endedAt: now });
       return;
     }
+    // 预算已经用完（预算用完后又来了回答、追加）：不交给会话，输入留着，再问一次要不要加预算
+    if (task.spentUsd >= task.budgetUsd) {
+      this.store.updateRun(runId, { state: "ended", outcome: "budget", startedAt: now, endedAt: now, sessionId: task.sessionId });
+      log.info("background task is over its budget; asking before it continues", { task: task.id, run: runId });
+      this.askBudget(task, runId);
+      this.changed(task.id);
+      return;
+    }
     this.store.updateRun(runId, { state: "running", startedAt: now, sessionId: task.sessionId });
     const l: Live = {
       runId,
@@ -592,6 +682,8 @@ export class TaskService {
       seen: new Set(),
       tokensIn: 0,
       tokensOut: 0,
+      costUsd: 0,
+      priceModel: task.model || this.store.getBot(task.botId)?.defaultModel || this.o.defaultModel?.() || "",
     };
     this.live.set(runId, l);
     this.bySession.set(task.sessionId, l);
@@ -638,6 +730,8 @@ export class TaskService {
       if (this.live.get(l.runId) !== l) {
         // 交出去的时候任务被停了（规则被删了、超时了）：输入已经到了会话里，再停一次（插件拒绝它之后的工具调用）
         if (l.ruleId || this.store.getTask(l.taskId)?.endReason === "stopped") await this.o.host.stop(l.botId, l.sessionId).catch(() => undefined);
+        // 预算用完、时间到了、给聊天留预算：再取消一次这一轮（会话之后还要接着用）
+        else if (l.halted) await this.o.host.cancel(l.botId, l.sessionId).catch(() => undefined);
         return;
       }
       const at = this.now();
@@ -705,13 +799,17 @@ export class TaskService {
   /** root：任务会话 id（子代理的通知也归到它） */
   onEvent(_botId: string, root: string, n: TaskNotification): void {
     const l = this.bySession.get(root);
-    if (!l) return;
+    if (!l) return this.lateUsage(root, n);
     const p = n.params ?? {};
     if (n.method === "subagent.started" || n.method === "subagent.finished") {
       l.activity.apply(n.method.replace(".", "/"), p);
       return;
     }
-    if (p.sessionId !== root) return;
+    if (p.sessionId !== root) {
+      // 子代理的模型请求也算进花费（它的步骤不进这个 run 的处理过程）
+      if (n.method === "session.event" && p.event?.type === "assistant/message" && p.event.data?.usage) this.usage(l, p.event.data);
+      return;
+    }
     if (n.method === "session.status") {
       if (p.status === "running") {
         l.busy = true;
@@ -739,12 +837,192 @@ export class TaskService {
     } else if (type === "turn/start") l.turnError = undefined;
     else if (type === "turn/end") {
       if (data?.reason?.kind === "error") l.turnError = String(data.reason.error?.message ?? "unknown error");
-      this.store.updateRun(l.runId, { activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut });
+      this.store.updateRun(l.runId, { activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut, costUsd: l.costUsd });
       this.changed(l.taskId || l.ruleId);
-    } else if (type === "assistant/message" && data.usage) {
-      l.tokensIn += Number(data.usage.inputTokens) || 0;
-      l.tokensOut += Number(data.usage.outputTokens) || 0;
+    } else if (type === "assistant/message" && data.usage) this.usage(l, data);
+  }
+
+  // ---------- 花费与预算（3e） ----------
+
+  /**
+   * 一次模型请求的用量（assistant/message）：按参考价估算，记在 run 上（马上落库：本月的花费从库里汇总）、加到任务上，
+   * 再看各级预算。事件里有回答的模型就按它的价（子代理可能用别的模型），没有就按这个 run 的模型。
+   */
+  private usage(l: Live, data: any): void {
+    const u = data.usage ?? {};
+    l.tokensIn += (Number(u.inputTokens) || 0) + (Number(u.cacheReadTokens) || 0) + (Number(u.cacheWriteTokens) || 0);
+    l.tokensOut += Number(u.outputTokens) || 0;
+    const model = String(data.message?.source?.model ?? "");
+    const usd = costOf(u, (model ? this.o.rates?.(model) : undefined) ?? (l.priceModel ? this.o.rates?.(l.priceModel) : undefined));
+    if (usd > 0) {
+      l.costUsd += usd;
+      if (l.taskId) this.store.addTaskSpent(l.taskId, usd);
+      const b = this.o.botBudget?.(l.botId);
+      if (b) {
+        const cur = this.botSpend.get(l.botId);
+        this.botSpend.set(l.botId, { at: b.at, usd: (cur?.at === b.at ? cur.usd : 0) + usd });
+      }
     }
+    this.store.updateRun(l.runId, { tokensIn: l.tokensIn, tokensOut: l.tokensOut, costUsd: l.costUsd });
+    if (usd <= 0) return;
+    this.changed(l.taskId || l.ruleId);
+    this.checkBudgets(l);
+  }
+
+  /**
+   * 花了钱之后看预算（第一条超了的为准）：机器人的预算要留给聊天 → 停下这个机器人所有的后台 run；
+   * 任务的预算用完 → 停下、问要不要加；规则本月的、这次的预算用完 → 停下（本月的还要暂停规则）。
+   * 已经报了 done / failed、只差收尾的不停（下一次开始前再看）。
+   */
+  private checkBudgets(l: Live): void {
+    if (this.live.get(l.runId) !== l || this.closing) return;
+    if (this.reserve(l.botId)) return this.holdForReserve(l.botId);
+    if (l.final) return;
+    if (l.taskId) {
+      const task = this.store.getTask(l.taskId);
+      if (task && task.spentUsd >= task.budgetUsd) this.halt(l, "budget");
+      return;
+    }
+    const rule = this.store.getRule(l.ruleId);
+    if (!rule) return;
+    if (this.monthSpent(rule) >= rule.monthBudgetUsd) this.halt(l, "month");
+    else if (l.costUsd >= rule.runBudgetUsd) this.halt(l, "run");
+  }
+
+  /**
+   * 让一个 run 停下：取消这一轮（任务的会话之后还要接着用：只取消不封；规则的每次一个新会话，直接停掉）。
+   * 任务：预算用完 → budget，问要不要加；时间到了 → 失败（告诉用户，可以重试）；给聊天留预算 → 中断，排一个 run 等预算回来。
+   * 规则：budget 结束，原因是单次 / 本月 / 留给聊天。
+   */
+  private halt(l: Live, why: Halt): void {
+    if (this.live.get(l.runId) !== l) return;
+    l.halted = why;
+    const now = this.now();
+    this.halted.set(l.sessionId, { runId: l.runId, taskId: l.taskId, botId: l.botId, model: l.priceModel, until: now + 10 * 60_000 });
+    if (l.ruleId) {
+      l.activity.end(errorText(why === "run" ? RUN_ERROR.runBudget : why === "month" ? RUN_ERROR.monthBudget : RUN_ERROR.reserve), now);
+      log.warn("rule run stopped at a budget", { rule: l.ruleId, run: l.runId, why, costUsd: Math.round(l.costUsd * 10_000) / 10_000 });
+      this.end(l, "budget", undefined, why === "run" ? RUN_ERROR.runBudget : why === "month" ? RUN_ERROR.monthBudget : RUN_ERROR.reserve);
+      void this.o.host.stop(l.botId, l.sessionId).catch(() => undefined);
+      return;
+    }
+    const jobs = l.activity.steps.filter((s) => s.kind === "job" && s.status === "running").map((s) => clip(oneLine(s.summary || s.title), 120));
+    if (why === "budget") {
+      l.activity.end(tr("tasks.stageBudget"), now);
+      log.warn("background task used its budget; stopping it and asking the user", { task: l.taskId, run: l.runId, spentUsd: Math.round((this.store.getTask(l.taskId)?.spentUsd ?? 0) * 10_000) / 10_000 });
+      this.end(l, "budget");
+    } else if (why === "cap") {
+      const error = tr("tasks.timeCap", { hours: Math.round((this.o.taskRunCapMs ?? TASK_RUN_CAP_MS) / 3600_000) || 1 });
+      l.activity.end(error, now);
+      log.warn("background task run hit its time cap; stopping it", { task: l.taskId, run: l.runId });
+      this.end(l, "failed", undefined, error);
+    } else {
+      l.activity.end(tr("tasks.reserveStep"), now);
+      log.warn("background task paused: the bot's budget is kept for chat", { task: l.taskId, run: l.runId });
+      this.end(l, "interrupted", undefined, RUN_ERROR.reserve);
+      const task = this.store.getTask(l.taskId);
+      if (task && !task.endedAt) {
+        this.addInput(task.id, "recovery", resumeNote("reserve", jobs), false);
+        if (!this.queuedRun(task.id)) this.enqueue(task, "recover");
+        this.changed(task.id);
+      }
+    }
+    void this.o.host.cancel(l.botId, l.sessionId).catch((e) => log.warn("cancelling the task's turn failed", { task: l.taskId, message: (e as Error).message.slice(0, 200) }));
+  }
+
+  /** 停下之后才到的用量（取消到达之前已经发出去的请求）：记到停下的那个 run 和任务上，不再看预算 */
+  private lateUsage(root: string, n: TaskNotification): void {
+    const h = this.halted.get(root);
+    const ev = n.params?.event;
+    if (!h || n.method !== "session.event" || ev?.type !== "assistant/message" || !ev.data?.usage) return;
+    if (this.now() > h.until) return void this.halted.delete(root);
+    const model = String(ev.data.message?.source?.model ?? "");
+    const usd = costOf(ev.data.usage, (model ? this.o.rates?.(model) : undefined) ?? (h.model ? this.o.rates?.(h.model) : undefined));
+    const run = usd > 0 ? this.store.getRun(h.runId) : undefined;
+    if (!run) return;
+    this.store.updateRun(run.id, { costUsd: run.costUsd + usd });
+    if (h.taskId) this.store.addTaskSpent(h.taskId, usd);
+    const b = this.o.botBudget?.(h.botId);
+    const cur = this.botSpend.get(h.botId);
+    if (b) this.botSpend.set(h.botId, { at: b.at, usd: (cur?.at === b.at ? cur.usd : 0) + usd });
+    this.changed(h.taskId || run.ruleId);
+  }
+
+  /** 机器人的预算要留给聊天：它在跑的后台 run 都停下（已经报了结果、只差收尾的除外） */
+  private holdForReserve(botId: string): void {
+    for (const l of [...this.live.values()]) if (l.botId === botId && !l.final) this.halt(l, "reserve");
+    this.changed(botId);
+  }
+
+  /**
+   * 机器人的 Modelflare 预算 Key 快用完了：剩下的（上次读到的余额减去之后估算花掉的）不到总额的 20%，就返回还剩多少、总额。
+   * 没开预算（或没登录）是 undefined。
+   */
+  reserve(botId: string): { remainUsd: number; limitUsd: number } | undefined {
+    const b = this.o.botBudget?.(botId);
+    if (!b || !(b.limitUsd > 0)) {
+      this.reserveSince.delete(botId);
+      return undefined;
+    }
+    const spent = this.botSpend.get(botId);
+    const remain = b.remainUsd - (spent?.at === b.at ? spent.usd : 0);
+    if (remain >= RESERVE_SHARE * b.limitUsd) {
+      this.reserveSince.delete(botId);
+      return undefined;
+    }
+    if (!this.reserveSince.has(botId)) this.reserveSince.set(botId, this.now());
+    return { remainUsd: Math.max(0, remain), limitUsd: b.limitUsd };
+  }
+
+  /** 应用读到了新的预算 Key 余额（或改了预算）：预算回来了，等着的开始；「需要你」跟着变 */
+  budgetsChanged(): void {
+    this.pump();
+    this.scheduler.wake();
+    this.changed("");
+  }
+
+  /**
+   * 时间上限（每分钟看一次）：任务一次运行最多 4 小时，等人批准的时间不算（approvals 里这个 run 阻塞着的那几段）。
+   * 已经报了结果、只差收尾的不算（收尾最多 30 分钟，插件管）。
+   */
+  checkCaps(now = this.now()): void {
+    if (!this.started || this.closing) return;
+    for (const [sid, h] of this.halted) if (now > h.until) this.halted.delete(sid);
+    const cap = this.o.taskRunCapMs ?? TASK_RUN_CAP_MS;
+    for (const l of [...this.live.values()]) {
+      if (l.ruleId || l.final || this.live.get(l.runId) !== l) continue;
+      const run = this.store.getRun(l.runId);
+      if (!run?.startedAt) continue;
+      if (now - run.startedAt - this.waitedMs(l.runId, now) >= cap) this.halt(l, "cap");
+    }
+  }
+
+  /** 这个 run 里等人批准（或回答阻塞着的提问）一共等了多久 */
+  private waitedMs(runId: string, now: number): number {
+    let ms = 0;
+    for (const a of this.store.listApprovals({ runId, limit: 100 })) if (a.blocking) ms += Math.max(0, Math.min(now, a.decidedAt || now) - a.createdAt);
+    return ms;
+  }
+
+  /** 本月（主人的时区）从几号几点开始；next = 下个月 1 号 0 点 */
+  private monthStart(now: number, next = false): number {
+    const p = localParts(now, this.timeZone);
+    const mo = next ? (p.mo === 12 ? 1 : p.mo + 1) : p.mo;
+    const y = next && p.mo === 12 ? p.y + 1 : p.y;
+    return localTime(y, mo, 1, 0, this.timeZone);
+  }
+
+  /** 规则本月（主人的时区）估算花了多少 */
+  private monthSpent(rule: RuleRow, now = this.now()): number {
+    return this.store.ruleSpent(rule.id, this.monthStart(now));
+  }
+
+  /** 定时器下次醒来：最早该跑的规则；有规则因为本月预算暂停着，还有下个月 1 号（到时自动恢复） */
+  private nextWake(): number {
+    const due = this.store.nextRuleDue();
+    if (!this.store.listRules().some((r) => r.pausedReason === "budget")) return due;
+    const month = this.monthStart(this.now(), true);
+    return due ? Math.min(due, month) : month;
   }
 
   /**
@@ -819,12 +1097,13 @@ export class TaskService {
     if (l.ruleId) return this.endRule(l, outcome, report, error);
     this.forget(l);
     const now = this.now();
-    this.store.updateRun(l.runId, { state: "ended", outcome, report, error, endedAt: now, activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut });
+    this.store.updateRun(l.runId, { state: "ended", outcome, report, error, endedAt: now, activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut, costUsd: l.costUsd });
     const task = this.store.getTask(l.taskId);
     if (task && outcome === "done") this.store.updateTask(task.id, { endedAt: now, endReason: "done", updatedAt: now });
     else if (task) this.store.updateTask(task.id, { updatedAt: now });
     if (task && (outcome === "done" || outcome === "failed")) this.deliver(task, l.runId, outcome, report, error);
     if (task && outcome === "needs_you" && report?.question) this.ask(task, l.runId, report.question);
+    if (task && outcome === "budget") this.askBudget(task, l.runId);
     log.info("background task run ended", { task: l.taskId, run: l.runId, outcome, ...(error ? { error } : {}) });
     this.changed(l.taskId);
     this.pump();
@@ -955,6 +1234,11 @@ export class TaskService {
     const a = (b?.args ?? {}) as Record<string, unknown>;
     switch (String(b?.op ?? "")) {
       case "start": {
+        const low = this.reserve(botId);
+        if (low)
+          return {
+            error: `This bot's Modelflare budget is almost used up (about ${usdText(low.remainUsd)} of ${stepText(low.limitUsd)} left) and the rest is kept for chat, so no background task can start. Tell the user in one sentence; they can raise the bot's budget in its settings.`,
+          };
         const r = this.create({ botId, conversationId: conv.id, title: String(a.title ?? ""), brief: String(a.brief ?? ""), budgetUsd: Number(a.budget_usd) || undefined, anytime: a.anytime === true });
         if (!r.task) return { error: r.error };
         if (this.paused(botId))
@@ -1050,12 +1334,76 @@ export class TaskService {
     this.pushNext(row.conversationId);
   }
 
-  /** 用户回答了任务的提问：回答成为任务的新输入（人的唤醒：预留名额、排在前面） */
+  /** 用户回答了任务的提问：回答成为任务的新输入（人的唤醒：预留名额、排在前面）；预算的那个由任务服务自己处理 */
   private answered(task: TaskRow, row: ApprovalRow): void {
+    if (row.tool === BUDGET_TOOL) return this.budgetAnswered(task, row);
     const q = questionsOf(row)[0]?.question ?? row.detail;
     const input = this.addInput(task.id, "answer", `[用户回答了你的问题]\n问题：${q}\n回答：${answerLine(row) || "（没有写）"}`, true);
     log.info("the user answered a background task's question", { task: task.id, by: row.decidedBy });
     void this.wake(task, input, "answer");
+  }
+
+  /**
+   * 任务的预算用完了（3e）：问用户「已用约 $1.00，再给 $1 继续？」——一个不阻塞、不过期的提问（选项：继续 / 停止），
+   * 和任务的提问走同一条路：推给请求它的会话（一个会话一次一个）、在「需要你」里、回编号或引用回答。一个任务同时只问一个。
+   */
+  private askBudget(task: TaskRow, runId: string): void {
+    const a = this.o.approvals;
+    if (!a || a.pendingForTask(task.id).some((r) => r.tool === BUDGET_TOOL)) return;
+    const spent = this.store.getTask(task.id)?.spentUsd ?? task.spentUsd;
+    const question = tr("tasks.budgetAsk", { spent: usdText(spent), add: stepText(TASK_BUDGET_STEP_USD) });
+    const go = tr("tasks.budgetGo");
+    const stop = tr("tasks.budgetStop");
+    const item: QuestionItem = { id: "budget", question, options: [{ label: go }, { label: stop }] };
+    a.create({ kind: "question", botId: task.botId, conversationId: task.conversationId, sessionId: task.sessionId, tool: BUDGET_TOOL, detail: question, reason: "", payload: JSON.stringify([item]), taskId: task.id, runId, blocking: false, ttlMs: 0 });
+    log.info("background task asks the user for more budget", { task: task.id, run: runId });
+    this.note(task.conversationId, `[后台任务「${task.title}」预算用完，在等用户决定：${question}（${go} / ${stop}）。用户在聊天里回答它时，用 task_message 转给这个任务]`);
+  }
+
+  /**
+   * 用户回答了要不要加预算：选「停止」或说不要了 → 停掉任务；选「继续」→ 加 $1 接着做；自己写的：有金额就加那么多，
+   * 别的话连同加预算一起交给任务（「继续，改成英文」）。
+   */
+  private budgetAnswered(task: TaskRow, row: ApprovalRow): void {
+    const [go, stop] = (questionsOf(row)[0]?.options ?? []).map((o) => o.label);
+    const said = answerLine(row).trim();
+    const by = row.decidedBy || "user";
+    if (said === stop || STOP_WORDS.test(said)) {
+      log.info("the user stopped a background task at its budget", { task: task.id, by });
+      void this.stopTask(task.id, by);
+      return;
+    }
+    const custom = said && said !== go ? said : "";
+    const amount = custom ? amountIn(custom) : undefined;
+    const extra = custom && !AMOUNT_ONLY.test(custom) ? custom : "";
+    void this.addBudget(task.id, amount ?? TASK_BUDGET_STEP_USD, by, extra);
+  }
+
+  /**
+   * 加预算（「需要你」里的继续、预算提问的回答、POST /tasks/:id/budget）：预算加上 addUsd（加完还不够已花的，就从已花的再加）；
+   * 停在预算上的任务接着做（人的唤醒：continue run，第一条是说明），还在等的那个预算提问作废。没停的只是把预算调高。
+   */
+  async addBudget(taskId: string, addUsd: number = TASK_BUDGET_STEP_USD, by = "web", text = ""): Promise<{ task?: TaskView; error?: string }> {
+    const task = this.store.getTask(taskId);
+    if (!task) return { error: "task not found" };
+    if (task.endReason === "stopped") return { error: tr("tasks.stoppedShort", { title: task.title }) };
+    const add = Number(addUsd);
+    if (!Number.isFinite(add) || add <= 0 || add > 100) return { error: tr("tasks.badBudget") };
+    const raised = task.budgetUsd + add;
+    const budget = Math.round(Math.min(TASK_BUDGET_MAX_USD, raised > task.spentUsd ? raised : task.spentUsd + add) * 100) / 100;
+    this.store.updateTask(task.id, { budgetUsd: budget, updatedAt: this.now() });
+    log.info("background task budget raised", { task: task.id, budgetUsd: budget, by });
+    for (const r of this.o.approvals?.pendingForTask(task.id) ?? []) if (r.tool === BUDGET_TOOL) this.o.approvals!.cancel(r.id, by);
+    const last = this.store.latestRun(task.id);
+    if (last?.state === "ended" && last.outcome === "budget") {
+      const jobs = parseSteps(this.store.getRun(last.id)?.activity)
+        .filter((s) => s.kind === "job" && s.cut)
+        .map((s) => clip(oneLine(s.summary || s.title), 120));
+      const input = this.addInput(task.id, "followup", `${resumeNote("budget", jobs)}${text ? `\n\n[用户追加]\n${text.trim()}` : ""}`, true);
+      await this.wake(this.store.getTask(task.id)!, input, "continue");
+    }
+    this.changed(task.id);
+    return { task: this.get(task.id) };
   }
 
   /**
@@ -1100,7 +1448,8 @@ export class TaskService {
       quotes: (row, quote) => !!row.taskId && quotes(this.store.getOutbox(askId(row))?.body.text ?? "", quote, questionsOf(row)[0]?.question ?? row.detail),
       answered: (row) => {
         const t = this.store.getTask(row.taskId);
-        return t ? tr("tasks.continuing", { title: t.title }) : undefined;
+        // 预算用完时回了「停止」：说停了
+        return t ? tr(t.endReason === "stopped" ? "tasks.stoppedTask" : "tasks.continuing", { title: t.title }) : undefined;
       },
     };
   }
@@ -1150,19 +1499,25 @@ export class TaskService {
     return hits.length === 1 ? hits[0] : undefined;
   }
 
-  /** "需要你"里任务那一份：失败、预算用完（提问和审批由审批中心那一份给，没送到的由出站队列那一份给：core/delivery.ts） */
+  /**
+   * "需要你"里任务那一份：失败的；预算用完的（平常由审批中心那一份给：那个「再给 $1 继续？」的提问；这里只在它不在时补上）；
+   * 机器人的预算留给聊天、后台工作停着的（一个机器人一行，没有后台工作时不提）。
+   * 提问和审批由审批中心那一份给，没送到的由出站队列那一份给（core/delivery.ts）。
+   */
   attention(): AttentionItem[] {
     const out: AttentionItem[] = [];
     const since = this.now() - 7 * 86400_000;
     const tasks = [...this.store.listTasks({ open: true, limit: 200 }), ...this.store.listTasks({ open: false, since, limit: 100 })];
+    const asking = new Set((this.o.approvals?.pendingAll() ?? []).filter((a) => a.tool === BUDGET_TOOL).map((a) => a.taskId));
     for (const t of tasks) {
       const run = this.store.latestRun(t.id);
       const st = this.stage(t, run);
       if (st.key !== "failed" && st.key !== "needs-you/budget") continue;
+      if (st.key === "needs-you/budget" && asking.has(t.id)) continue;
       const bot = this.store.getBot(t.botId);
       const conv = this.store.getConversation(t.conversationId);
       const r = run?.report ?? t.report;
-      const line = st.key === "failed" ? r?.message || run?.error || tr("tasks.noResult") : r?.message || r?.summary.split("\n")[0] || "";
+      const line = st.key === "failed" ? r?.message || run?.error || tr("tasks.noResult") : tr("tasks.budgetAsk", { spent: usdText(t.spentUsd), add: stepText(TASK_BUDGET_STEP_USD) });
       out.push({
         id: `task:${t.id}`,
         kind: "failed",
@@ -1173,13 +1528,34 @@ export class TaskService {
         line: clip(oneLine(line), 200),
         since: run?.endedAt || t.updatedAt,
         severity: st.key === "failed" ? "err" : "warn",
-        actions: ["retry", "stop"],
+        actions: st.key === "failed" ? ["retry", "stop"] : ["continue", "stop"],
         conversationId: t.conversationId,
         channel: conv?.channel ?? "",
         taskId: t.id,
       });
     }
+    for (const bot of this.store.listBots()) {
+      const low = this.reserve(bot.id);
+      if (!low || !this.hasBackground(bot.id)) continue;
+      out.push({
+        id: `reserve:${bot.id}`,
+        kind: "budget",
+        botId: bot.id,
+        botName: bot.name,
+        subject: tr("tasks.reserveSubject"),
+        status: "",
+        line: tr("tasks.reserveLine", { remain: usdText(low.remainUsd), limit: stepText(low.limitUsd) }),
+        since: this.reserveSince.get(bot.id) ?? this.now(),
+        severity: "warn",
+        actions: ["open"],
+      });
+    }
     return out;
+  }
+
+  /** 这个机器人有没有后台工作：排着、在跑的 run，或开着的规则 */
+  private hasBackground(botId: string): boolean {
+    return this.store.listRuns({ botId, states: ["queued", "running", "settling"], limit: 1 }).length > 0 || this.store.listRules({ botId }).some((r) => r.mode !== "off" && !r.pausedReason);
   }
 
   // ---------- 查看 ----------
@@ -1187,9 +1563,11 @@ export class TaskService {
   private stage(task: TaskRow, run = this.store.latestRun(task.id)): Stage {
     // 结果没送到：留着等对方发消息、一直失败、放弃了（合进摘要的看那一条）；排着等早上的、在「需要你」里不再提示的不算
     const delivery = run?.delivery && !run.delivery.endsWith(":dropped") ? this.o.store.carrierOutbox(run.delivery) : undefined;
-    // 它在等的：任务会话（或子代理）里的审批、它报的提问
+    // 它在等的：任务会话（或子代理）里的审批、它报的提问（预算用完时的那个提问不算：阶段是预算用完）
     const now = this.now();
-    const rows = this.store.listApprovals({ status: "pending", botId: task.botId, limit: 200 }).filter((a) => (a.taskId === task.id || a.sessionId === task.sessionId) && (a.expiresAt === 0 || a.expiresAt > now));
+    const rows = this.store
+      .listApprovals({ status: "pending", botId: task.botId, limit: 200 })
+      .filter((a) => (a.taskId === task.id || a.sessionId === task.sessionId) && a.tool !== BUDGET_TOOL && (a.expiresAt === 0 || a.expiresAt > now));
     const waiting = rows.some((a) => a.kind === "approval") ? "approval" : rows.length ? "answer" : undefined;
     return taskStage({ stopped: task.endReason === "stopped", undelivered: needsPerson(delivery), waiting, run });
   }
@@ -1213,6 +1591,8 @@ export class TaskService {
       updatedAt: task.updatedAt,
       endedAt: task.endedAt,
       runs: this.store.listRuns({ taskId: task.id }).length,
+      spentUsd: task.spentUsd,
+      budgetUsd: task.budgetUsd,
       ...(l && run ? { live: { runId: run.id, since: run.startedAt, steps: l.activity.steps.length, current: l.activity.steps.findLast((s) => s.status === "running") } } : {}),
     };
   }
@@ -1386,11 +1766,21 @@ export class TaskService {
    * 改规则（界面、rule_update）。改原话：版本加 1；执行中的检查先观察 1 次再回到执行（决定 7）。只改时间表：模式不变。
    * 改模式：重新开的清掉连续失败和暂停。正在跑的那次照它开始时的版本跑完。
    */
-  updateRule(id: string, patch: { title?: string; instruction?: string; message?: string; schedule?: Schedule; mode?: RuleMode; conversationId?: string }): { rule?: RuleRow; error?: string } {
+  updateRule(
+    id: string,
+    patch: { title?: string; instruction?: string; message?: string; schedule?: Schedule; mode?: RuleMode; conversationId?: string; runBudgetUsd?: number; monthBudgetUsd?: number },
+  ): { rule?: RuleRow; error?: string } {
     const rule = this.store.getRule(id);
     if (!rule) return { error: "rule not found" };
     const now = this.now();
     const next: Partial<RuleRow> = { updatedAt: now };
+    // 预算（3e）：每次、每月；本月预算调高了、因此暂停着的，下次定时器醒来时接着跑
+    for (const k of ["runBudgetUsd", "monthBudgetUsd"] as const) {
+      if (patch[k] === undefined) continue;
+      const v = Number(patch[k]);
+      if (!Number.isFinite(v) || v <= 0 || v > TASK_BUDGET_MAX_USD) return { error: tr("tasks.badBudget") };
+      next[k] = Math.round(v * 100) / 100;
+    }
     if (patch.title !== undefined) {
       const t = clip(oneLine(patch.title), 40);
       if (!t) return { error: tr("rules.nameEmpty") };
@@ -1437,10 +1827,11 @@ export class TaskService {
     return { rule: this.store.getRule(id) };
   }
 
-  /** 暂停的规则重新开（「需要你」里的重试）：清掉连续失败，接着按时间表跑，并马上跑一次 */
+  /** 暂停的规则重新开（「需要你」里的重试）：清掉连续失败，接着按时间表跑，并马上跑一次（本月预算用完暂停的要先加预算） */
   resumeRule(id: string): { error?: string } {
     const rule = this.store.getRule(id);
     if (!rule) return { error: "rule not found" };
+    if (rule.pausedReason === "budget" && this.monthSpent(rule) >= rule.monthBudgetUsd) return { error: tr("rules.monthUsed", { spent: usdText(this.monthSpent(rule)) }) };
     if (rule.pausedReason || rule.failures) {
       const mode = rule.mode === "off" ? (rule.kind === "remind" ? "act" : "observe") : rule.mode;
       this.store.updateRule(id, { failures: 0, pausedReason: "", mode, nextRunAt: this.nextFor({ trigger: rule.trigger, mode, pausedReason: "" }, this.now()), updatedAt: this.now() });
@@ -1455,6 +1846,8 @@ export class TaskService {
     if (rule.mode === "off") return { error: tr("rules.isOff") };
     if (this.paused(rule.botId)) return { error: tr("rules.isPaused") };
     if (this.ruleBusy(id)) return { error: tr("rules.isRunning") };
+    if (rule.kind === "check" && this.reserve(rule.botId)) return { error: tr("rules.whyReserve") };
+    if (rule.kind === "check" && this.monthSpent(rule) >= rule.monthBudgetUsd) return { error: tr("rules.monthUsed", { spent: usdText(this.monthSpent(rule)) }) };
     this.fireRule(rule, "manual", this.now());
     this.pump();
     return {};
@@ -1486,6 +1879,7 @@ export class TaskService {
    */
   fireDue(now = this.now()): void {
     if (!this.started || this.closing) return;
+    this.resumeMonth(now);
     for (const rule of this.store.dueRules(now)) {
       if (this.dropped.has(rule.botId) || rule.trigger.kind !== "schedule") continue;
       const s = rule.trigger.schedule;
@@ -1500,6 +1894,11 @@ export class TaskService {
       // 后台工作暂停了：这次记为跳过，恢复后不补
       if (this.paused(rule.botId)) {
         this.skipRun(rule, last, RUN_ERROR.paused);
+        continue;
+      }
+      // 机器人的预算留给聊天：检查跳过（固定提醒不花钱，照发）
+      if (rule.kind === "check" && this.reserve(rule.botId)) {
+        this.skipRun(rule, last, RUN_ERROR.reserve);
         continue;
       }
       this.fireRule(rule, "schedule", last);
@@ -1522,6 +1921,10 @@ export class TaskService {
         this.skipRun(rule, now, RUN_ERROR.paused);
         continue;
       }
+      if (rule.kind === "check" && this.reserve(rule.botId)) {
+        this.skipRun(rule, now, RUN_ERROR.reserve);
+        continue;
+      }
       if (this.fireRule(rule, "event", now, { source, event })) out.push(rule.id);
     }
     if (out.length) {
@@ -1541,6 +1944,11 @@ export class TaskService {
       return undefined;
     }
     if (rule.kind === "remind") return this.remind(rule, cause, at);
+    // 本月的预算已经用完（预算调低了、这个月里又改回开着）：不跑，暂停到下个月
+    if (this.monthSpent(rule) >= rule.monthBudgetUsd) {
+      this.pauseForMonth(rule);
+      return undefined;
+    }
     const mode = runMode(rule);
     const id = `r_${hex(6)}`;
     const run = this.store.insertRun({ id, botId: rule.botId, taskId: "", ruleId: rule.id, ruleVersion: rule.version, mode, sessionId: `rule-${rule.id}-${id.slice(2)}`, cause, queuedAt: at });
@@ -1646,6 +2054,8 @@ export class TaskService {
       seen: new Set(),
       tokensIn: 0,
       tokensOut: 0,
+      costUsd: 0,
+      priceModel: model,
       would: [],
     };
     this.live.set(run.id, l);
@@ -1698,7 +2108,7 @@ export class TaskService {
     this.forget(l);
     const now = this.now();
     const would = [report?.would ?? "", ...(l.would ?? []).map((d) => `${WOULD_APPROVAL}${d}`)].filter(Boolean).join("\n");
-    this.store.updateRun(l.runId, { state: "ended", outcome, report, would, error, endedAt: now, activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut });
+    this.store.updateRun(l.runId, { state: "ended", outcome, report, would, error, endedAt: now, activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut, costUsd: l.costUsd });
     for (const a of this.o.approvals?.pendingAll().filter((x) => x.ruleId && x.runId === l.runId) ?? []) this.o.approvals!.cancel(a.id, "run ended");
     const rule = this.store.getRule(l.ruleId);
     if (rule) this.afterRuleRun(rule, l.runId, l.mode, outcome, report, error);
@@ -1710,7 +2120,8 @@ export class TaskService {
 
   /**
    * 一次运行之后：成功清零连续失败，改了原话后先观察的那一次跑完了就回到执行；有要说的那一句（观察时是「本会发送」）用主模型写，
-   * 执行时发出去。失败加 1，连续 3 次自动暂停：执行中的规则推一句 ⚠️，观察中的只在「需要你」里。
+   * 执行时发出去。失败加 1（超出单次预算也算），连续 3 次自动暂停：执行中的规则推一句 ⚠️，观察中的只在「需要你」里。
+   * 最后看本月的预算：用完了就暂停到下个月。
    */
   private afterRuleRun(rule: RuleRow, runId: string, mode: "observe" | "act", outcome: RunOutcome, report: TaskReport | undefined, error: string): void {
     const run = this.store.getRun(runId);
@@ -1719,18 +2130,67 @@ export class TaskService {
       if (mode === "observe" && rule.mode === "act" && rule.observeLeft > 0 && run?.ruleVersion === rule.version) patch.observeLeft = rule.observeLeft - 1;
       this.store.updateRule(rule.id, patch);
       if (report?.message) void this.ruleResult(rule, runId, mode, report);
-      return;
+    } else if (outcome === "failed" || (outcome === "budget" && error === RUN_ERROR.runBudget)) {
+      const failures = rule.failures + 1;
+      if (failures < RULE_FAILS_TO_PAUSE) this.store.updateRule(rule.id, { failures });
+      else {
+        this.store.updateRule(rule.id, { failures, pausedReason: "failures", nextRunAt: 0 });
+        log.warn("rule paused after failing in a row", { rule: rule.id, failures });
+        if (rule.mode === "act") {
+          // 后台推送：应用的语言
+          const why = clip(oneLine(report?.message || errorText(error || RUN_ERROR.noReport)), 200);
+          this.deliverRule(rule, runId, "failure", tr("rules.pausedPush", { title: rule.title, count: failures, why }));
+        }
+        return;
+      }
     }
-    if (outcome !== "failed") return;
-    const failures = rule.failures + 1;
-    if (failures < RULE_FAILS_TO_PAUSE) return void this.store.updateRule(rule.id, { failures });
-    this.store.updateRule(rule.id, { failures, pausedReason: "failures", nextRunAt: 0 });
-    log.warn("rule paused after failing in a row", { rule: rule.id, failures });
+    const fresh = this.store.getRule(rule.id);
+    if (fresh && fresh.kind === "check" && this.monthSpent(fresh) >= fresh.monthBudgetUsd) this.pauseForMonth(fresh);
+  }
+
+  /**
+   * 本月的预算用完：暂停到下个月 1 号（主人的时区，定时器到时自动恢复），「需要你」里一行（可以再给 $3 接着跑）；
+   * 执行中的规则还推一句（用户在等它的结果，不能悄悄停下），一个月只推一次。
+   */
+  private pauseForMonth(rule: RuleRow): void {
+    if (rule.pausedReason) return;
+    const now = this.now();
+    this.store.updateRule(rule.id, { pausedReason: "budget", nextRunAt: 0, updatedAt: now });
+    const spent = this.monthSpent(rule, now);
+    log.warn("rule paused: its monthly budget is used up", { rule: rule.id, spentUsd: Math.round(spent * 10_000) / 10_000, budgetUsd: rule.monthBudgetUsd });
     if (rule.mode === "act") {
-      // 后台推送：应用的语言
-      const why = clip(oneLine(report?.message || errorText(error || RUN_ERROR.noReport)), 200);
-      this.deliverRule(rule, runId, "failure", tr("rules.pausedPush", { title: rule.title, count: failures, why }));
+      const p = localParts(now, this.timeZone);
+      // 一个月、一个预算额只推一次（加了预算又用完会再推）
+      this.pushRule(rule, `rule:${rule.id}:budget:${p.y}-${pad2(p.mo)}:${rule.monthBudgetUsd}`, "failure", tr("rules.monthPush", { title: rule.title, spent: usdText(spent) }));
     }
+    this.ruleChanged(rule.id);
+  }
+
+  /** 新的一个月（或加了预算）：因为本月预算暂停的规则，花费回到预算以内的就接着按时间表跑 */
+  private resumeMonth(now: number): void {
+    for (const rule of this.store.listRules()) {
+      if (rule.pausedReason !== "budget" || this.monthSpent(rule, now) >= rule.monthBudgetUsd) continue;
+      this.store.updateRule(rule.id, { pausedReason: "", nextRunAt: this.nextFor({ ...rule, pausedReason: "" }, now), updatedAt: now });
+      log.info("rule resumed: its monthly budget has room again", { rule: rule.id });
+      this.changed(rule.id);
+    }
+  }
+
+  /** 给规则每月的预算加钱（「需要你」里的继续、接口）：本月预算用完暂停着的接着按时间表跑 */
+  addRuleBudget(id: string, addUsd = RULE_MONTH_BUDGET_USD): { rule?: RuleView; error?: string } {
+    const rule = this.store.getRule(id);
+    if (!rule) return { error: "rule not found" };
+    const add = Number(addUsd);
+    if (!Number.isFinite(add) || add <= 0 || add > 100) return { error: tr("tasks.badBudget") };
+    const now = this.now();
+    const spent = this.monthSpent(rule, now);
+    const raised = rule.monthBudgetUsd + add;
+    const budget = Math.round(Math.min(TASK_BUDGET_MAX_USD, raised > spent ? raised : spent + add) * 100) / 100;
+    this.store.updateRule(id, { monthBudgetUsd: budget, updatedAt: now });
+    log.info("rule monthly budget raised", { rule: id, budgetUsd: budget });
+    this.resumeMonth(now);
+    this.ruleChanged(id);
+    return { rule: this.getRuleView(id) };
   }
 
   /** 那一句用主模型写（检查用的小模型只给草稿）；执行时发出去。主模型不可用就用草稿 */
@@ -1760,8 +2220,14 @@ export class TaskService {
     const run = this.store.getRun(runId);
     if (!run || run.delivery) return;
     const id = purpose === "failure" ? `rule:${rule.id}:paused:${runId}` : `rule:${rule.id}:${runId}`;
+    this.store.updateRun(runId, { delivery: this.pushRule(rule, id, purpose, text) ? id : `${id}:dropped` });
+  }
+
+  /** 经出站队列送出规则的一句（id 固定，同一 id 只发一次），写进会话历史、给聊天代理留便条；会话没了返回 false */
+  private pushRule(rule: RuleRow, id: string, purpose: "rule" | "reminder" | "failure", text: string): boolean {
     const conv = this.store.getConversation(rule.conversationId);
-    if (!conv) return void this.store.updateRun(runId, { delivery: `${id}:dropped` });
+    if (!conv) return false;
+    if (this.store.getOutbox(id)) return true;
     if ((conv.channel === "weixin" || conv.channel === "feishu") && this.o.delivery) {
       this.o.delivery.push({
         id,
@@ -1777,9 +2243,9 @@ export class TaskService {
       });
     }
     this.store.addMessage(conv.id, "assistant", text);
-    this.store.updateRun(runId, { delivery: id });
     this.note(conv.id, purpose === "failure" ? `[规则「${rule.title}」暂停了，已告诉用户] ${text}` : `[规则「${rule.title}」发给了用户] ${text}`);
-    log.info("rule message handed over", { rule: rule.id, run: runId, purpose, channel: conv.channel });
+    log.info("rule message handed over", { rule: rule.id, id, purpose, channel: conv.channel });
+    return true;
   }
 
   /** 启动：结束了、要发却还没交出去的（交之前应用退出了）补交；只看两天之内的 */
@@ -1926,6 +2392,10 @@ export class TaskService {
       hint: rule.kind === "check" && rule.mode === "observe" && !rule.pausedReason && observed >= RULE_HINT_AFTER,
       observed,
       failures: rule.failures,
+      pausedReason: rule.pausedReason,
+      monthUsd: rule.kind === "check" ? this.monthSpent(rule) : 0,
+      monthBudgetUsd: rule.monthBudgetUsd,
+      runBudgetUsd: rule.runBudgetUsd,
       folder: rule.folder,
       version: rule.version,
       createdAt: rule.createdAt,
@@ -1962,22 +2432,42 @@ export class TaskService {
       version: r.ruleVersion,
       permission: permissionText(r.permission),
       steps: r.startedAt && r.outcome !== "skipped" ? this.activity(r.id).length : 0,
+      costUsd: r.costUsd,
       startedAt: r.startedAt,
       endedAt: r.endedAt,
     }));
   }
 
   /**
-   * 「需要你」里规则那一份：连续失败 3 次暂停了的（红），连续失败 2 次的（黄）。原因没了（重试成功、关掉、删掉）就消失。
-   * 规则执行时的审批由审批中心那一份给。
+   * 「需要你」里规则那一份：连续失败 3 次暂停了的（红），连续失败 2 次的（黄），本月预算用完暂停了的（黄，可以再给 $3 接着跑）。
+   * 原因没了（重试成功、关掉、删掉、下个月了）就消失。规则执行时的审批由审批中心那一份给。
    */
   ruleAttention(): AttentionItem[] {
     const out: AttentionItem[] = [];
     for (const rule of this.store.listRules()) {
       const paused = !!rule.pausedReason;
       if (!paused && (rule.mode === "off" || rule.failures < RULE_FAILS_TO_SHOW)) continue;
-      const last = this.store.ruleRuns(rule.id, { limit: 1, outcome: "failed" })[0];
       const conv = this.store.getConversation(rule.conversationId);
+      if (rule.pausedReason === "budget") {
+        out.push({
+          id: `rule:${rule.id}`,
+          kind: "rule",
+          botId: rule.botId,
+          botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
+          subject: tr("rules.subject", { title: rule.title }),
+          status: tr("rules.monthPaused"),
+          line: tr("rules.monthLine", { spent: usdText(this.monthSpent(rule)), add: stepText(RULE_MONTH_BUDGET_USD) }),
+          since: rule.updatedAt,
+          severity: "warn",
+          actions: ["continue"],
+          conversationId: rule.conversationId,
+          channel: conv?.channel ?? "",
+          ruleId: rule.id,
+        });
+        continue;
+      }
+      // 最近一次失败（超出单次预算也算）
+      const last = this.store.ruleRuns(rule.id, { limit: 10 }).find((r) => r.outcome === "failed" || (r.outcome === "budget" && r.error === RUN_ERROR.runBudget));
       out.push({
         id: `rule:${rule.id}`,
         kind: "rule",
@@ -1985,7 +2475,7 @@ export class TaskService {
         botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
         subject: tr("rules.subject", { title: rule.title }),
         status: tr(paused ? "rules.failingPaused" : "rules.failing", { count: rule.failures }),
-        line: last ? clip(oneLine(last.report?.message || errorText(last.error || RUN_ERROR.noReport)), 200) : "",
+        line: last ? clip(oneLine((last.outcome === "failed" && last.report?.message) || errorText(last.error || RUN_ERROR.noReport)), 200) : "",
         since: last?.endedAt || rule.updatedAt,
         severity: paused ? "err" : "warn",
         actions: ["retry"],

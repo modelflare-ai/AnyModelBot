@@ -9,6 +9,7 @@ import { api } from "../lib/api.js";
 import { confirmSheet, failed, toast } from "../lib/store.js";
 import { channelName } from "../lib/access.js";
 import { t, locale } from "../lib/i18n.js";
+import { hasCost, money } from "./tasks.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -37,10 +38,10 @@ export function fmtNext(at, now = Date.now()) {
   return t("time.dateTime", { date: shortDate(d), time: hm(d) });
 }
 
-/** 行的第二行：观察中 · 下次 明天 08:00；正在运行；已暂停 · 连续失败 3 次（状态文字由服务端按界面语言给） */
+/** 行的第二行：观察中 · 下次 明天 08:00；正在运行；已暂停 · 连续失败 3 次 / 本月预算用完（状态文字由服务端按界面语言给） */
 export function ruleSub(rule, now = Date.now()) {
   if (rule.live) return t(rule.live.state === "queued" ? "rules.queued" : "rules.running", { state: rule.state.label });
-  if (rule.state.key === "paused") return t("rules.paused", { count: rule.failures });
+  if (rule.state.key === "paused") return rule.pausedReason === "budget" ? t("rules.pausedBudget") : t("rules.paused", { count: rule.failures });
   if (rule.state.key === "off" || rule.state.key === "done") return rule.state.label;
   return rule.nextRunAt ? t("rules.sub", { state: rule.state.label, next: fmtNext(rule.nextRunAt, now) }) : rule.state.label;
 }
@@ -77,7 +78,7 @@ export function RuleRow({ rule, onChanged, open, onToggle }) {
     ${open && html`<div class="row-edit rule-edit"><${RuleDetail} rule=${rule} onChanged=${onChanged} /></div>`}`;
 }
 
-/** 运行记录的一行：时间 · 模式 · 一句话；点开看报告、步骤、版本和权限（不另起一块） */
+/** 运行记录的一行：时间 · 模式 · 一句话 · 花了多少（有了才写）；点开看报告、步骤、版本和权限（不另起一块） */
 function RunItem({ rule, run }) {
   const [open, setOpen] = useState(false);
   const mode = rule.kind === "remind" || !["observe", "act"].includes(run.mode) ? "" : t(`rules.mode.${run.mode}`);
@@ -85,6 +86,7 @@ function RunItem({ rule, run }) {
   return html`<li class=${`rule-run${open ? " open" : ""}`}>
     <button type="button" class="rule-run-head" aria-expanded=${open} onClick=${() => setOpen(!open)}>
       <span class="at num">${fmtRunAt(run.at)}</span>${mode && html`<span class="m">${mode}</span>`}<span class="l">${run.line}</span>
+      ${hasCost(run.costUsd) && html`<span class="c num">${t("tasks.costShort", { spent: money(run.costUsd) })}</span>`}
       <${Icon} name="chevRight" size=${12} class="chev" />
     </button>
     ${open && html`<div class="rule-run-body">
@@ -135,7 +137,9 @@ export function RuleDetail({ rule, runs: given, onChanged }) {
       : [["observe", t("rules.mode.observe")], ["act", t("rules.mode.act")], ["off", t("rules.mode.off")]];
   const where = rule.channel ? channelName(rule.channel) : "";
   const next = rule.nextRunAt && rule.state.key !== "paused" && rule.mode !== "off" ? t("rules.next", { time: fmtNext(rule.nextRunAt) }) : "";
-  const line = [next, where && t("rules.sendsTo", { where })].filter(Boolean).join(" · ");
+  // 本月的花费：有了才写（规则详情的 下次 … · 发到 … · 本月 约 $0.41 / $3.00）
+  const month = hasCost(rule.monthUsd) ? t("rules.month", { spent: money(rule.monthUsd), budget: money(rule.monthBudgetUsd) }) : "";
+  const line = [next, where && t("rules.sendsTo", { where }), month].filter(Boolean).join(" · ");
   return html`<div class="rule-detail">
     <p class="rule-words selectable">${t("rules.words", { text: rule.kind === "remind" ? rule.message : rule.instruction })}</p>
     ${line && html`<span class="hint">${line}</span>`}

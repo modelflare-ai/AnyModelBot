@@ -154,6 +154,10 @@ class FakeHost implements TaskHost {
   async stop(_botId: string, sessionId: string) {
     this.stops.push(sessionId);
   }
+  cancels: string[] = [];
+  async cancel(_botId: string, sessionId: string) {
+    this.cancels.push(sessionId);
+  }
   async quiet() {
     return this.quiets.shift() ?? { quiet: true };
   }

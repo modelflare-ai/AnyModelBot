@@ -12,16 +12,23 @@ import { questionsOf, type QuestionItem } from "../agent/approvals.js";
 import type { AttentionItem as DeliveryItem } from "../core/delivery.js";
 import { logger } from "../log.js";
 import { t as tr } from "../i18n/index.js";
+import { BUDGET_TOOL } from "./cost.js";
 
 const log = logger("attention");
 
-/** question / approval：在等你回答、批准；failed：任务失败了；rule：规则连续失败（暂停了）；delivery：结果没送到；login：渠道登录过期了 */
-export type AttentionKind = "question" | "approval" | "failed" | "rule" | "delivery" | "login";
-/** answer、approve、deny、retry（任务再试 / 消息再发）、stop、dismiss（不再提示）、relogin（去重新扫码）、open（打开对话） */
-export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open";
+/**
+ * question / approval：在等你回答、批准（任务预算用完时的「再给 $1 继续？」也是 question）；failed：任务失败了；
+ * rule：规则连续失败或本月预算用完（暂停了）；delivery：结果没送到；login：渠道登录过期了；budget：机器人的预算留给聊天，后台工作停着
+ */
+export type AttentionKind = "question" | "approval" | "failed" | "rule" | "delivery" | "login" | "budget";
+/**
+ * answer、approve、deny、retry（任务再试 / 消息再发）、stop、dismiss（不再提示）、relogin（去重新扫码）、
+ * open（打开对话；budget 是打开机器人设置的预算）、continue（加预算接着做：任务 $1，规则每月 $3）
+ */
+export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open" | "continue";
 
 export interface AttentionItem {
-  /** 稳定 id：approval:<id>、task:<id>、rule:<id>、delivery:<会话>:held|failed、login:<bot>:<渠道> */
+  /** 稳定 id：approval:<id>、task:<id>、rule:<id>、delivery:<会话>:held|failed、login:<bot>:<渠道>、reserve:<bot>（预算留给聊天） */
   id: string;
   kind: AttentionKind;
   botId: string;
@@ -47,8 +54,8 @@ export interface AttentionItem {
 
 export type AttentionSource = () => AttentionItem[];
 
-/** 排序：提问和审批在前（等着的事），再是失败、没送到，最后是系统的（登录）；同一类旧的在前 */
-const ORDER: Record<AttentionKind, number> = { question: 0, approval: 0, failed: 1, rule: 1, delivery: 2, login: 3 };
+/** 排序：提问和审批在前（等着的事），再是失败、没送到，最后是系统的（登录、预算）；同一类旧的在前 */
+const ORDER: Record<AttentionKind, number> = { question: 0, approval: 0, failed: 1, rule: 1, delivery: 2, login: 3, budget: 3 };
 
 const NOTIFIED = "attention:notified";
 
@@ -186,7 +193,8 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       botId: r.botId,
       botName: store.getBot(r.botId)?.name ?? r.botId,
       subject: task?.title ?? (rule ? tr("rules.subject", { title: rule.title }) : (channelLabel(channel) ?? tr("tasks.chWeb"))),
-      status: r.kind === "approval" ? tr("tasks.stageApproval") : tr("tasks.stageAnswer"),
+      // 任务预算用完时问的那个：状态是预算用完（第二行就是「已用约 $1.00，再给 $1 继续？」）
+      status: r.kind === "approval" ? tr("tasks.stageApproval") : r.tool === BUDGET_TOOL ? tr("tasks.stageBudget") : tr("tasks.stageAnswer"),
       line: line.length > 300 ? line.slice(0, 299) + "…" : line,
       since: r.createdAt,
       severity: "warn",

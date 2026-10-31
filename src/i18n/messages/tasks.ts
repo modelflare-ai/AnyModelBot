@@ -42,6 +42,15 @@ export const zh = {
   chWeb: "对话",
   notifyTitle: "{name} 需要你",
   trayTitle: { other: "{product} · {count} 件事需要你" },
+  // 花费与预算（3e）
+  budgetAsk: "已用约 {spent}，再给 {add} 继续？",
+  budgetGo: "继续",
+  budgetStop: "停止",
+  badBudget: "金额不对",
+  timeCap: "运行超过 {hours} 小时，已停下",
+  reserveStep: "预算留给聊天",
+  reserveSubject: "后台工作已停",
+  reserveLine: "机器人预算只剩约 {remain}（共 {limit}），留给聊天",
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
@@ -85,4 +94,12 @@ export const en: Catalog<typeof zh> = {
   chWeb: "Chat",
   notifyTitle: "{name} needs you",
   trayTitle: { one: "{product} · {count} thing needs you", other: "{product} · {count} things need you" },
+  budgetAsk: "Used about {spent}. Add {add} and continue?",
+  budgetGo: "Continue",
+  budgetStop: "Stop",
+  badBudget: "That amount doesn't work",
+  timeCap: "ran for over {hours} hours and was stopped",
+  reserveStep: "Budget kept for chat",
+  reserveSubject: "Background work stopped",
+  reserveLine: "The bot's budget is down to about {remain} of {limit}; the rest is kept for chat",
 };

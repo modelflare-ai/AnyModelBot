@@ -7,6 +7,8 @@ export default {
   running: "{state} · running",
   queued: "{state} · queued",
   paused: { one: "Paused · failed {count} time in a row", other: "Paused · failed {count} times in a row" },
+  pausedBudget: "Paused · monthly budget used up",
+  month: "This month about {spent} of {budget}",
   hint: { one: "Observed {count} time · switch to act?", other: "Observed {count} times · switch to act?" },
   nowActs: "“{title}” now acts",
   version: "Version {n}",

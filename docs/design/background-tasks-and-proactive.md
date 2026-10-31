@@ -1,6 +1,6 @@
 # Background tasks and proactive rules (Phase 3 design)
 
-Status: **3a–3d are built**: tasks, questions and needs-you, delivery, and rules with observe mode (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`). 3e–3f are still design. Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
+Status: **3a–3e are built**: tasks, questions and needs-you, delivery, rules with observe mode, and cost controls (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`, `test/cost.*`). 3f is still design. Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
 Feasibility evidence is in [Appendix A](#appendix-a-feasibility-answers-with-evidence). The spike that produced it is `scripts/spikes/p3-tasks/`.
 
 ## Summary
@@ -523,6 +523,15 @@ Notes:
 - **Protecting chat.** When a bot has a Modelflare budget key (`setBotBudget`), background runs stop once its remaining balance falls below 20 % of the limit. The rest stays for chat, and one needs-you item says so. Low account balance uses the existing alert.
 - **Time caps:** a task gets 4 h of running time, not counting time waiting for a person. Settling lasts at most 30 minutes after a turn ends. A rule run gets 15 minutes.
 - **Model choice:** a task uses the conversation's model. A rule may use the bot's `utilityModel` when it is set (Q5).
+
+As built (3e, `src/tasks/cost.ts` and the 「花费与预算」 part of `TaskService`):
+
+- **Prices.** `estimateRates` in `src/account/model-info.ts` adds cache-read and cache-write prices (`cache_ratio`, `create_cache_ratio`) and, for tiered models, the base tier. The model picker's reference price is unchanged. A model with no price (external endpoint, not in the catalog, offline) is not estimated, so its budgets never trigger; the time cap still applies.
+- **What counts.** Every `assistant/message` with usage in the task or rule session and in its subagents, priced by the model that answered. A request that was already in flight when the host cancelled the turn is still added to that run.
+- **Task budget.** The question is an ordinary non-blocking task question (tool `task_budget`, options 继续 / 停止), so it is pushed, answered by number, quote or code, shown in needs-you and on Feishu cards like any other. The stage stays `needs-you/budget`. 「继续」 adds $1; a written amount (「再给 3 美元」) adds that much; other words are passed to the task with the extra budget; 「停止」 stops it. `POST /tasks/:id/budget {addUsd}` does the same and withdraws the question. A person's input that arrives while the task is over budget is kept and the question is asked again. The cancel uses a new control op, `task-cancel`, which stops the turn, its subagents and jobs but, unlike `task-stop`, leaves the session usable.
+- **Rule budgets.** A run over $0.10 ends `budget` and counts as one failure (three in a row pause the rule as before). At $3 in a month the rule pauses (`paused_reason = budget`); an act-mode rule pushes one line, once per month and budget level. It resumes on the 1st at 00:00 in the owner's time zone, or when 「继续」 in needs-you raises its monthly budget by $3 (kept for later months).
+- **Reserve.** The bot's key limit and remaining balance are read every 5 minutes (and after a budget change); estimated background spend since the last read is subtracted. Below 20 %: running task turns are cancelled and their tasks wait (排队中) with a resume note, rule runs are skipped (「跳过：机器人预算留给聊天」), and `task_start` is refused. One needs-you row per bot with background work links to the bot's budget setting. It is not pushed.
+- **Time cap.** 4 h per task run, minus the time a blocking approval in that run waited. At the cap the turn is cancelled and the run fails (「运行超过 4 小时，已停下」), which is pushed like any failure; retry starts a new run with a fresh cap.
 
 ## 9. Data model (sqlite, `src/store/db.ts`)
 

@@ -381,6 +381,8 @@ try {
     const checks = {
       brokenToolFailed: !(summary.healBroken?.reply ?? "").includes("tool-ran-ok") && /windows-acl-run|CreateProcess|spawn|ENOENT/i.test(summary.healBroken?.reply ?? ""),
       markedBroken: !!summary.healFallback.bad,
+      // the reason is put in words (Win32 2 from the sandbox runner = pwsh.exe is gone)
+      reasonExplained: /找不到 pwsh\.exe/.test(summary.healFallback.bad?.reason ?? ""),
       fellBackTo51: psverOf(summary.healOn51) === "5" && /powershell\.exe$/i.test(summary.healFallback.using ?? ""),
       reinstalled: !!summary.healReinstalled.test?.ok,
       backOn7: psverOf(summary.healBack) === "7" && (summary.healBack?.reply ?? "").includes("tool-ran-ok"),

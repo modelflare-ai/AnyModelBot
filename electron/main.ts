@@ -7,7 +7,7 @@
  *  - 设置页里的开机自启、缩放、打开数据目录经 core.desktop 回调到这里（同进程，无需 preload/IPC）
  * CLI（npm start）与 Docker 走同一套 src/ 代码，本文件只做桌面外壳。
  */
-import { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, safeStorage } from "electron";
+import { app, BrowserWindow, Menu, Tray, nativeImage, net, shell, dialog, safeStorage } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -145,6 +145,8 @@ async function boot(): Promise<void> {
     secretBox: safeStorage.isEncryptionAvailable()
       ? { encrypt: (plain) => safeStorage.encryptString(plain), decrypt: (data) => safeStorage.decryptString(data) }
       : undefined,
+    // 下载内置 PowerShell 走 Chromium 的网络栈：和浏览器一样用系统代理设置与系统证书
+    fetch: ((input: string | URL | Request, init?: RequestInit) => net.fetch(input instanceof URL ? input.href : input, init)) as typeof fetch,
   };
   await core.start();
   if (!core.web) throw new Error("管理界面未启动");

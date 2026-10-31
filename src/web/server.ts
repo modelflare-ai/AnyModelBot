@@ -19,7 +19,7 @@ import { connectionFromPids } from "../agent/peer-guard.js";
 import type { ApprovalRow } from "../store/db.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
-import { pwshProbe, type PwshStatus } from "../agent/pwsh.js";
+import { pwshProbe, type PwshMode } from "../agent/pwsh.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -401,16 +401,39 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     }
     // busy：有消息在处理的机器人（纯对话、排队、代理还在启动都算），侧栏的"正在工作"
     if (p === "/agent" && m === "GET") return send(res, 200, { ...app.agent.status(), busy: [...new Set([...live.bots(), ...app.runtime.busyBots()])] });
-    // —— Windows：没有 PowerShell 7 时建议安装（对话空状态、设置 → 常规、故障排查）——
+    // —— Windows：代理用的 PowerShell（对话空状态、设置 → 常规、故障排查）——
     if (seg[0] === "pwsh") {
-      const view = (st: PwshStatus) => ({ ...st, dismissed: cfg.ui.pwshHintDismissed });
-      if (seg.length === 1 && m === "GET") return send(res, 200, view(await pwshProbe.check()));
+      const view = () => ({ ...pwshProbe.snapshot(), dismissed: cfg.ui.pwshHintDismissed });
+      const setMode = (mode: PwshMode) => {
+        if (cfg.agent.pwsh === mode) return;
+        cfg.agent.pwsh = mode;
+        saveConfigFile(cfg.dataDir, (f) => (f.agent = { ...(f.agent ?? {}), pwsh: mode }));
+      };
+      if (seg.length === 1 && m === "GET") {
+        await pwshProbe.check();
+        return send(res, 200, view());
+      }
+      // 重新检测：重新找、重新试运行（装好系统 PowerShell 7 后点它；空闲的代理进程随后换用）
       if (seg[1] === "recheck" && m === "POST") {
-        const before = pwshProbe.cachedDshPath;
-        const st = await pwshProbe.check(true);
-        // 代理进程空闲时下一条消息会换用新的 PowerShell（宿主的设置签名里带着它）
-        if (pwshProbe.cachedDshPath !== before) log.info("PowerShell changed; idle agent hosts restart on the next message", { from: before, to: pwshProbe.cachedDshPath });
-        return send(res, 200, view(st));
+        await pwshProbe.check(true);
+        return send(res, 200, view());
+      }
+      // 安装 / 重新安装应用内置的 PowerShell 7：后台进行，进度从 GET 读
+      if (seg[1] === "install" && m === "POST") {
+        if (process.platform !== "win32" || !pwshProbe.applicable) throw new HttpError(400, "只在 Windows 上需要");
+        const b = await readJson(req);
+        setMode("auto");
+        await pwshProbe.check();
+        pwshProbe.install({ reinstall: !!b.reinstall });
+        return send(res, 200, view());
+      }
+      // 改回系统默认（system）/ 重新用内置的（auto）
+      if (seg[1] === "mode" && m === "PUT") {
+        const b = await readJson(req);
+        const mode: PwshMode = b.mode === "system" ? "system" : "auto";
+        setMode(mode);
+        pwshProbe.setMode(mode);
+        return send(res, 200, view());
       }
       if (seg.length === 1 && m === "PUT") {
         const b = await readJson(req);
@@ -418,7 +441,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           cfg.ui.pwshHintDismissed = !!b.dismissed;
           saveConfigFile(cfg.dataDir, (f) => (f.ui = { ...(f.ui ?? {}), pwshHintDismissed: cfg.ui.pwshHintDismissed }));
         }
-        return send(res, 200, view(await pwshProbe.check()));
+        await pwshProbe.check();
+        return send(res, 200, view());
       }
       throw new HttpError(405, "method not allowed");
     }

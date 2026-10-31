@@ -267,7 +267,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       { tab: "about", id: "diagnostics", name: "诊断信息", sub: status ? `内置模型网关 · ${GATEWAY[status.gateway.state] || status.gateway.state}${status.gateway.restarts ? ` · 重启 ${status.gateway.restarts} 次` : ""}${status.gateway.lastError ? ` · ${status.gateway.lastError}` : ""}` : "", keys: "网关 gateway magpie",
         ctl: html`<button type="button" class="text" onClick=${() => onTab?.("troubleshoot")}>故障排查</button>` },
       // 故障排查页是单独的面板（troubleshoot.js），这一行只给搜索用：搜"日志""测试模型"时能找到入口
-      { tab: "troubleshoot", id: "troubleshoot", name: "故障排查", sub: "模型网关与代理进程的状态、测试模型、测试代理、最近日志、复制诊断信息", keys: "日志 log 测试 test 代理 agent 卡住 转圈 诊断 diagnostics 重启 PowerShell pwsh 命令慢",
+      { tab: "troubleshoot", id: "troubleshoot", name: "故障排查", sub: "模型网关与代理进程的状态、测试模型、测试代理、最近日志、复制诊断信息", keys: "日志 log 测试 test 代理 agent 卡住 转圈 诊断 diagnostics 重启 PowerShell pwsh 命令慢 安装 重新安装 内置 系统默认",
         ctl: html`<button type="button" class="text" onClick=${() => { setQ(""); onTab?.("troubleshoot"); }}>打开</button>` },
       { tab: "about", id: "links", name: "Modelflare", sub: "官网与文档",
         ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">modelflare.dev ↗</a><a class="text" href=${MF_DOCS} target="_blank" rel="noopener noreferrer">文档 ↗</a>` },

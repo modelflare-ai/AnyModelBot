@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { OutboundOp, ReplySession } from "../../core/types.js";
 import { splitText } from "../../core/types.js";
-import { Gone, ReplyIds, stableId, type Outbox } from "../../core/outbox.js";
+import { Gone, ReplyIds, sentText, stableId, type Outbox } from "../../core/outbox.js";
 import type { OutboxBody, OutboxKind, OutboxRow } from "../../store/db.js";
 import { CARD_ELEMENT_ID, actionCardSpec, type FeishuTransport } from "./transport.js";
 import { logger } from "../../log.js";
@@ -35,7 +35,7 @@ export async function deliverFeishu(transport: FeishuTransport, row: OutboxRow, 
   };
   switch (row.kind) {
     case "text": {
-      const text = b.text ?? "";
+      const text = sentText(b);
       if (b.cardId && row.attempts === 0 && row.progress === 0) {
         let shown = !!b.shown;
         const seq = b.cardSeq ?? 1;

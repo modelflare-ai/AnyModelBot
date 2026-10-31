@@ -38,6 +38,8 @@ export interface InboundEvent {
   mentions?: string[];
   /** 回复所需的平台句柄：飞书 message_id / 微信 context_token 等 */
   replyHandle: Record<string, string>;
+  /** 飞书：这条是回复（或话题里的消息）时，回复链的根消息和直接回复的那条（message_id） */
+  thread?: { rootId?: string; parentId?: string };
   receivedAt: number;
 }
 

@@ -25,6 +25,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { needsPerson, type Delivery } from "../core/delivery.js";
+import { sentText } from "../core/outbox.js";
 import { ActivityLog, type ActivityStep } from "../agent/activity.js";
 import { ResumeFailed, deliverables } from "../agent/host.js";
 import { answerLine, promptButtons, questionsOf, taskPromptText, type ApprovalCenter, type ApprovalEvent, type QuestionItem, type ReplyContext } from "../agent/approvals.js";
@@ -102,6 +103,8 @@ export interface TaskHost {
   stop(botId: string, sessionId: string): Promise<void>;
   /** 会话空闲时还有没有后台命令、子代理在跑；有就由插件在它们结束、会话再次空闲时报 task-settled */
   quiet(botId: string, sessionId: string): Promise<{ quiet: boolean; jobs?: string[] }>;
+  /** 这个机器人的一个 run 结束了：代理进程完全空闲、开过的会话又多了，就换一个新的（host.ts restartIfStale） */
+  runEnded?(botId: string): void;
 }
 
 /** DSH 的一条通知（SDK 的 session.event / session.status / subagent.*） */
@@ -788,6 +791,7 @@ export class TaskService {
     log.info("background task run ended", { task: l.taskId, run: l.runId, outcome, ...(error ? { error } : {}) });
     this.changed(l.taskId);
     this.pump();
+    this.o.host.runEnded?.(l.botId);
   }
 
   private forget(l: Live): void {
@@ -817,16 +821,20 @@ export class TaskService {
       return;
     }
     const msg = oneLine(report?.message ?? "");
-    const text = outcome === "done" ? clip(msg, MESSAGE_MAX) || tr("tasks.done", { title: task.title }) : tr("tasks.notDone", { title: task.title, why: clip(msg || error || tr("tasks.noResult"), MESSAGE_MAX) });
+    const pushed = (conv.channel === "weixin" || conv.channel === "feishu") && !!this.o.delivery;
+    // 结果后面那句「引用这条消息可以继续问」（失败那句本来就说了怎么办）：微信总有；飞书只在结果回复在请求那条消息下时有
+    // （回复链对得上才认得出是哪个任务，见 followUp）。连它一起不超过 300 字
+    const hint = pushed && outcome === "done" ? (conv.channel === "weixin" ? tr("tasks.hintQuote") : task.originRef ? tr("tasks.hintReply") : "") : "";
+    const text = outcome === "done" ? clip(msg, MESSAGE_MAX - (hint ? hint.length + 2 : 0)) || tr("tasks.done", { title: task.title }) : tr("tasks.notDone", { title: task.title, why: clip(msg || error || tr("tasks.noResult"), MESSAGE_MAX) });
     const files = outcome === "done" ? this.files(task, report?.files ?? []) : [];
-    if ((conv.channel === "weixin" || conv.channel === "feishu") && this.o.delivery) this.post(conv, task, id, purpose, text, files);
+    if (pushed) this.post(conv, task, id, purpose, text, files, hint);
     this.store.addMessage(conv.id, "assistant", files.length && conv.channel === "web" ? `${text}\n\n${files.map((f) => `- ${path.relative(this.o.host.workspace(task.botId), f)}`).join("\n")}` : text);
     this.store.updateRun(runId, { delivery: id });
     this.note(conv.id, outcome === "done" ? `[后台任务「${task.title}」已完成，已把结果发给用户] ${text}` : `[后台任务「${task.title}」失败了，已告诉用户] ${text}`);
   }
 
   /** 微信、飞书：按主动消息的规则写进出站队列（同步落库；渠道没上线时等它上线） */
-  private post(conv: Conversation, task: TaskRow, id: string, purpose: "result" | "failure", text: string, files: string[]): void {
+  private post(conv: Conversation, task: TaskRow, id: string, purpose: "result" | "failure", text: string, files: string[], hint: string): void {
     const channel = conv.channel as "weixin" | "feishu";
     const replyTo = channel === "feishu" ? task.originRef || replyHandle(this.store, conv.id).messageId || "" : "";
     const notice = channel === "feishu" && !replyTo;
@@ -838,6 +846,7 @@ export class TaskService {
       purpose,
       subject: task.title,
       text,
+      ...(hint ? { hint } : {}),
       files: notice ? [] : files,
       replyTo,
       kind: notice ? "notice" : "text",
@@ -1047,6 +1056,51 @@ export class TaskService {
     };
   }
 
+  /**
+   * 渠道里的一条消息是不是对某个任务的追加（设计 3「Follow-ups and routing」）：微信引用了推出去的结果或失败那句，
+   * 飞书发在请求那条消息的回复链里（结果就回复在它下面）。是就直接交给任务（同 task_message：在跑就并进去，
+   * 做完了、失败了在同一个任务里接着做），回一句收到，不经聊天代理；停了的照旧说不能再追加。
+   * 对不上、对上不止一个（引用了合成的摘要）就是普通聊天。runtime.interceptReply 在任务的提问、审批之后调用。
+   */
+  followUp(conversationId: string, m: { text: string; quote?: string; rootId?: string; parentId?: string }): { handled: boolean; ack?: string } {
+    const text = m.text.trim();
+    if (!text || text.startsWith("/")) return { handled: false };
+    const task = this.followTarget(conversationId, m);
+    if (!task) return { handled: false };
+    if (task.endReason === "stopped") return { handled: true, ack: tr("tasks.stoppedNoFollowup", { title: task.title }) };
+    log.info("a follow-up goes straight to its background task", { task: task.id, by: m.quote ? "quote" : "thread" });
+    void this.message(task.id, text).catch((e) => log.warn("follow-up to a background task failed", { task: task.id, message: (e as Error).message.slice(0, 200) }));
+    return { handled: true, ack: tr("tasks.continuing", { title: task.title }) };
+  }
+
+  /**
+   * 引用的是哪个任务推出去的结果或失败那句（按发出去的原文比，取最像的，见 quoteScore）；飞书按回复链的根、直接回复的那条比请求那条消息。
+   * 对上不止一个（引用了合成的摘要、一条消息开了两个任务）就不算
+   */
+  private followTarget(conversationId: string, m: { quote?: string; rootId?: string; parentId?: string }): TaskRow | undefined {
+    const tasks = this.store.listTasks({ conversationId, limit: 50 });
+    let hits: TaskRow[] = [];
+    if (m.quote) {
+      const quote = m.quote;
+      const score = (t: TaskRow) =>
+        Math.max(
+          0,
+          ...this.store.listRuns({ taskId: t.id }).map((r) => {
+            if (!/^task:[^:]+:(result|failure):/.test(r.delivery) || r.delivery.endsWith(":dropped")) return 0;
+            const row = this.store.getOutbox(r.delivery);
+            return row ? quoteScore(sentText(row.body), row.body.text ?? "", quote) : 0;
+          }),
+        );
+      const scored = tasks.map((t) => ({ t, s: score(t) }));
+      const best = Math.max(0, ...scored.map((x) => x.s));
+      hits = best ? scored.filter((x) => x.s === best).map((x) => x.t) : [];
+    } else {
+      const refs = [m.rootId, m.parentId].filter(Boolean);
+      if (refs.length) hits = tasks.filter((t) => !!t.originRef && refs.includes(t.originRef));
+    }
+    return hits.length === 1 ? hits[0] : undefined;
+  }
+
   /** "需要你"里任务那一份：失败、预算用完（提问和审批由审批中心那一份给，没送到的由出站队列那一份给：core/delivery.ts） */
   attention(): AttentionItem[] {
     const out: AttentionItem[] = [];
@@ -1135,6 +1189,11 @@ export class TaskService {
     const l = this.live.get(runId);
     if (l) return l.activity.steps;
     return parseSteps(this.store.getRun(runId)?.activity);
+  }
+
+  /** 这个机器人有没有在跑、收尾中的 run（任务的或规则的）：有就不换代理进程 */
+  busy(botId: string): boolean {
+    return [...this.live.values()].some((l) => l.botId === botId) || this.store.listRuns({ botId, states: ["running", "settling"], limit: 1 }).length > 0;
   }
 
   /** 每个机器人正在进行的任务数（侧栏"正在工作"） */
@@ -1585,6 +1644,7 @@ export class TaskService {
     log.info("rule run ended", { rule: l.ruleId, run: l.runId, mode: l.mode, outcome, ...(error ? { error } : {}) });
     this.changed(l.ruleId);
     this.pump();
+    this.o.host.runEnded?.(l.botId);
   }
 
   /**
@@ -1890,16 +1950,34 @@ function questionOf(b: any): TaskReport["question"] | undefined {
   return { question: clip(text, QUESTION_MAX), ...(options.length ? { options } : {}), ...(multi && options.length > 1 ? { multiSelect: true } : {}) };
 }
 
+/** 比引用时去掉空白、记号和末尾的省略号（引用可能被截短） */
+const normQuote = (s: string) => s.replace(/\s+/g, "").replace(/[❓⚠\uFE0F]/g, "").replace(/(…|\.\.\.)+$/, "");
+/** 前面可能带着发送者的名字（"小蓝："） */
+const unnamed = (q: string) => q.replace(/^[^:：「]{1,24}[:：]/, "");
+
 /** 引用的是不是推出去的那一条：去掉空白和记号再比；引用可能被截短（末尾省略号）、前面带名字 */
 export function quotes(sent: string, quote: string, question: string): boolean {
-  const norm = (s: string) => s.replace(/\s+/g, "").replace(/[❓⚠\uFE0F]/g, "").replace(/(…|\.\.\.)+$/, "");
-  const q = norm(quote);
+  const q = normQuote(quote);
   if (!q) return false;
-  const s = norm(sent);
-  const ask = norm(question);
-  // 前面可能带着发送者的名字（"小蓝："）
-  const bare = q.replace(/^[^:：「]{1,24}[:：]/, "");
+  const s = normQuote(sent);
+  const ask = normQuote(question);
+  const bare = unnamed(q);
   return (!!s && (s === q || [q, bare].some((x) => x.length >= 6 && s.includes(x)))) || (ask.length >= 2 && q.includes(ask));
+}
+
+/**
+ * 引用和推出去的结果（或失败那句）有多像，几个任务都对得上时取最像的：3 = 就是它（前面可能带名字）；
+ * 2 = 引用里有整句结果（「你不在时」合成的一条），或是它被截短；1 = 去掉开头像名字的一段才对得上（"RESULT：…" 这种开头也会被当成名字）；0 = 不是
+ */
+export function quoteScore(sent: string, text: string, quote: string): number {
+  const q = normQuote(quote);
+  const s = normQuote(sent);
+  if (!q || !s) return 0;
+  const a = normQuote(text);
+  const bare = unnamed(q);
+  if (s === q || s === bare) return 3;
+  if ((a.length >= 2 && q.includes(a)) || (q.length >= 6 && s.includes(q))) return 2;
+  return bare.length >= 6 && s.includes(bare) ? 1 : 0;
 }
 
 function parseSteps(json: string | undefined): ActivityStep[] {

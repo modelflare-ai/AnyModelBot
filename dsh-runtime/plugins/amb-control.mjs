@@ -13,6 +13,8 @@
 //                                            model sees it at its next step); refused when the agent is idle
 //   cancel    {sessionId}                   cancel just this session's turn (agent.cancel), its subagents
 //                                            and the shell jobs the turn started
+//   idle      {}                            how many agents are busy (not idle, or input queued) and how many
+//                                            shell jobs run: the host recycles the child only when both are 0
 //
 // Ops this plugin does not know go to the handlers other plugins put on globalThis[Symbol.for('amb.control.handlers')]
 // (amb-tasks: task-quiet, task-stop), so there is one command channel per child.
@@ -231,6 +233,21 @@ export function apply(ctx) {
       delivered.add(id)
       if (delivered.size > 1000) delivered.delete(delivered.values().next().value)
       return { accepted: true }
+    },
+    // the host recycles an idle child (the SDK cannot close a session, so each one stays until the child
+    // restarts): is anything still going on in it? Agents that are not idle or have queued input, and
+    // running shell jobs, whoever owns them.
+    async idle() {
+      const list = agents()?.list?.() ?? []
+      const registry = jobs()
+      const running = new Set()
+      for (const a of list) {
+        try {
+          for (const j of registry?.list?.(String(a.id)) ?? []) if (live(j.status)) running.add(String(j.id))
+        } catch {}
+      }
+      const busy = list.filter((a) => a.status !== 'idle' || pendingIds(a).size > 0).length
+      return { agents: list.length, busy, jobs: running.size }
     },
     async cancel({ sessionId }) {
       const agent = agents()?.get(String(sessionId))

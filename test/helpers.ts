@@ -291,6 +291,8 @@ export function feishuEvent(text: string, opts: Partial<FeishuMessageEvent> = {}
     senderOpenId: opts.senderOpenId ?? "ou_user1",
     mentions: opts.mentions ?? [],
     createTime: opts.createTime ?? Date.now(),
+    ...(opts.rootId ? { rootId: opts.rootId } : {}),
+    ...(opts.parentId ? { parentId: opts.parentId } : {}),
   };
 }
 

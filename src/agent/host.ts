@@ -176,6 +176,13 @@ export class ResumeFailed extends Error {}
 /** 设置变了、后台任务又一直在跑：最多等这么久就重启代理进程（任务随后恢复） */
 export const TASK_RESTART_WAIT_MS = 10 * 60_000;
 
+/**
+ * SDK 关不掉会话：每个任务、规则会话都留在子进程里，直到它重启。实测（真实 DSH + mock 模型，一次运行两三次模型请求）
+ * 一个跑完、空闲的会话让子进程多占约 0.25–0.45 MB（新进程约 160 MB）。开过这么多个之后，完全空闲时换一个新的子进程：
+ * 多出来的最多约 40 MB；最勤的规则（每 15 分钟，一天 96 次）大约一天换一次。AMB_DSH_RECYCLE_SESSIONS 可改。
+ */
+export const RECYCLE_AFTER_SESSIONS = 100;
+
 /** 换接口重做时交给模型的话（上一条用户消息已经在会话里） */
 export const RETRY_NOTE = "[系统提示]\n上一条用户消息因模型接口不兼容没有处理，现已换用其它接口。请直接处理上面那条用户消息。";
 
@@ -203,6 +210,8 @@ export interface AgentHostOptions {
   onWake?: (conversationId: string, sessionId: string) => void;
   /** 后台任务会话（task-*）和它们子代理的通知：root 是任务会话 id（任务服务据此记步骤、判断这一轮结束） */
   onTaskEvent?: (root: string, n: SdkNotification) => void;
+  /** 宿主这边也空闲（没有在跑或收尾的任务、规则 run，没有等批准的，没有在压缩的会话）：开过的会话多了可以换新的子进程 */
+  idle?: () => boolean;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
@@ -241,7 +250,8 @@ export type HostEvent =
   | { type: "spawned"; pid: number | undefined }
   | { type: "initialized"; pid: number | undefined; ms: number }
   | { type: "failed"; message: string }
-  | { type: "exit"; pid: number | undefined; code: number | null; signal: string | null };
+  /** recycled：空闲时为了放掉开过的会话换的（上面没有在跑的东西，不用恢复） */
+  | { type: "exit"; pid: number | undefined; code: number | null; signal: string | null; recycled?: boolean };
 
 /** 拿不到 Modelflare 的模型资料时的兜底（上下文窗口、最大输出） */
 const MODEL_LIMITS: Array<[RegExp, number, number]> = [
@@ -620,6 +630,12 @@ export class AgentHost {
   private taskBusy = new Set<string>();
   /** 设置变了、等着重启的起点（0 = 没在等） */
   private staleSince = 0;
+  /** 正在问子进程空不空（换新的子进程之前） */
+  private recycling = false;
+  /** 空闲时换掉的那个子进程（它的退出不用恢复什么） */
+  private recycledPid: number | undefined;
+  /** 空闲时换过几次子进程（不算重启：用户看不到） */
+  recycles = 0;
 
   constructor(private o: AgentHostOptions) {}
 
@@ -667,8 +683,10 @@ export class AgentHost {
     child.once?.("exit", (code: number | null, signal: string | null) => {
       lines.flush();
       this.lastExit = { pid, code, signal, at: Date.now() };
-      log.info("dsh process exited", { bot: this.o.botId, pid, code, signal });
-      this.emit({ type: "exit", pid, code, signal });
+      const recycled = pid !== undefined && pid === this.recycledPid;
+      if (recycled) this.recycledPid = undefined;
+      log.info("dsh process exited", { bot: this.o.botId, pid, code, signal, ...(recycled ? { recycled } : {}) });
+      this.emit({ type: "exit", pid, code, signal, ...(recycled ? { recycled } : {}) });
     });
   }
 
@@ -1046,14 +1064,59 @@ exec "$REAL" "$@"
   /**
    * 设置或 PowerShell 变了（比如内置 PowerShell 7 刚装好、或者坏了退回）而且空闲：在后台重启子进程，
    * 下一条消息不用再等启动。正在跑的回合不打断，等下一条消息时由 ensure() 换。
+   * 开过的任务、规则会话多了（RECYCLE_AFTER_SESSIONS）也走这里换一个新的，但只在完全空闲时（见 fullyIdle），从不等着打断谁：
+   * 没有要恢复的，用户看不到。回合、任务和规则的 run 结束时都来看一次。
    */
   async restartIfStale(): Promise<void> {
-    if (!this.harness || this.starting || this.active > 0 || this.entering > 0 || this.stopped || this.sig === this.settingsSig() || !this.tasksAllowRestart()) return;
+    if (!this.harness || this.starting || this.active > 0 || this.entering > 0 || this.stopped) return;
+    if (this.sig !== this.settingsSig()) {
+      if (!this.tasksAllowRestart()) return;
+      log.info("bot settings or PowerShell changed while idle, restarting dsh in the background", { bot: this.o.botId });
+    } else if (this.worn && !this.recycling) {
+      this.recycling = true;
+      let idle = false;
+      try {
+        idle = await this.fullyIdle();
+      } finally {
+        this.recycling = false;
+      }
+      if (!idle) return;
+      log.info("dsh holds many finished task and rule sessions; replacing it while idle", { bot: this.o.botId, sessions: this.taskSessions.size, pid: this.pid });
+      this.recycledPid = this.pid;
+      this.recycles++;
+    } else return;
     const model = this.model;
-    log.info("bot settings or PowerShell changed while idle, restarting dsh in the background", { bot: this.o.botId });
     await this.closeHarness();
     this.state = "stopped";
     await this.ensure(model).catch(() => undefined);
+  }
+
+  /** 这个子进程开过的任务、规则会话（含 resume 的）比 RECYCLE_AFTER_SESSIONS 多 */
+  private get worn(): boolean {
+    const env = Number(process.env.AMB_DSH_RECYCLE_SESSIONS);
+    return this.taskSessions.size > (env > 0 ? env : RECYCLE_AFTER_SESSIONS);
+  }
+
+  /**
+   * 能不能悄悄换掉子进程：这边没有聊天回合（含正在进入的、代理自己醒来的）、没有任务会话在跑一轮，宿主那边也空闲（o.idle：
+   * 没有在跑或收尾的 run、没有等批准的、没有在压缩的会话），子进程里每个代理都空着、没有排着的输入、没有在跑的后台命令。
+   * 问子进程要一来一回，回来之后再看一遍这边。
+   */
+  private async fullyIdle(): Promise<boolean> {
+    const here = () =>
+      !!this.harness &&
+      !this.starting &&
+      !this.stopped &&
+      this.active === 0 &&
+      this.entering === 0 &&
+      this.turns.size === 0 &&
+      this.claimed.size === 0 &&
+      this.wakes.size === 0 &&
+      this.taskBusy.size === 0 &&
+      (this.o.idle?.() ?? true);
+    if (!here() || !this.control.connected) return false;
+    const r = await this.control.send<{ busy?: number; jobs?: number }>("idle", {}, 5_000).catch(() => undefined);
+    return r?.busy === 0 && r?.jobs === 0 && here();
   }
 
   /** 本机上一次成功启动的耗时；没有记录 = 第一次启动（冷启动：杀毒软件逐个扫描运行时文件，可能要几分钟） */
@@ -1680,6 +1743,7 @@ exec "$REAL" "$@"
       if (this.wakes.get(w.sessionId) === w) this.wakes.delete(w.sessionId);
       if (this.turns.get(input.conversationId) === turn) this.turns.delete(input.conversationId);
       this.active--;
+      if (this.active === 0) void this.restartIfStale();
     }
   }
 
@@ -1772,6 +1836,9 @@ exec "$REAL" "$@"
       retryInMs: this.state === "error" ? Math.max(0, this.retryAfter - Date.now()) : undefined,
       startedAt: this.startedAt || undefined,
       lastExit: this.lastExit,
+      // 这个子进程开过的任务、规则会话，和空闲时换过几次（见 RECYCLE_AFTER_SESSIONS）
+      taskSessions: this.taskSessions.size,
+      recycles: this.recycles,
       nextStartInMs: this.state === "backoff" ? Math.max(0, this.nextStartAt - Date.now()) : undefined,
       stderrTail: this.stderrTail.slice(-50),
     };

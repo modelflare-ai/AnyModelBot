@@ -90,6 +90,17 @@ export function stableId(id: string, part: number, len = 32): string {
   return crypto.createHash("sha256").update(`${id}#${part}`).digest("hex").slice(0, len);
 }
 
+/** 发出去的文字：text 后面接上 hint（正文没有句末标点时补一个，中文「。」，英文「. 」） */
+export function sentText(b: Pick<OutboxBody, "text" | "hint">): string {
+  const text = b.text ?? "";
+  if (!b.hint) return text;
+  const head = text.trimEnd();
+  const cjk = /^[\u2e80-\u9fff\uff00-\uffef]/.test(b.hint);
+  if (!head) return b.hint;
+  if (/[。！？!?.…]$/.test(head)) return head + (cjk ? "" : " ") + b.hint;
+  return head + (cjk ? "。" : ". ") + b.hint;
+}
+
 /**
  * 一次回复里每条出站消息 id 的最后一段：最终回复按"第几个"（同一条入站只有一个最终回复，平台重复投递、模型答得不一样时也不会再发一遍），
  * 其余按内容（不同的消息不会因为先后顺序不同撞上同一个 id 而被吞掉）。

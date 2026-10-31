@@ -449,6 +449,9 @@ export class BotRuntime {
     const { quote, plain } = quoteOf(ev);
     const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`, { ...tasks?.replyContext(convId), ...(quote ? { quote, plain } : {}) });
     if (r.handled) return r;
+    // 引用了后台任务推来的结果或失败那句（微信），或发在任务请求那条消息的回复链里（飞书）：直接交给那个任务，不经聊天代理
+    const follow = tasks?.followUp(convId, { text: quote ? plain : text, ...(quote ? { quote } : {}), ...ev.thread });
+    if (follow?.handled) return follow;
     // 前一条还在处理：能并入进行中的代理回合时由 handle 并入并回一句；不能时说一声这条排在后面、怎么中止（每个回合只说一次），消息照常入队
     const cur = agent.turnsInProgress.get(convId);
     if (cur && !cur.queuedNotice && !agent.canSteer(convId)) {

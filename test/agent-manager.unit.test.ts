@@ -6,7 +6,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Store } from "../src/store/db.js";
 import { AgentManager } from "../src/agent/manager.js";
-import { TurnStopped, type TurnInput } from "../src/agent/host.js";
+import { RECYCLE_AFTER_SESSIONS, TurnStopped, type TurnInput } from "../src/agent/host.js";
 import type { MediaModel, MediaService } from "../src/agent/media.js";
 import { STEWARD_SYSTEM } from "../src/agent/steward.js";
 
@@ -293,5 +293,93 @@ describe("idle watchdog: long tool calls are work, a silent turn is still stoppe
       });
       expect(await stoppedIdle(s.turn())).toBeLessThan(5000);
     }
+  });
+});
+
+describe("recycling the agent process: only after more than RECYCLE_AFTER_SESSIONS task and rule sessions, and only when nothing at all is going on", () => {
+  it("each thing that is still going on holds it; the recycled child's exit recovers nothing, any other exit still does", async () => {
+    const store = new Store(":memory:");
+    store.createBot({ id: "b", name: "b" });
+    const mgr = new AgentManager({ store, dataDir: dir, runtimeDir: "/rt", upstream: () => ({ baseUrl: "", apiKey: "" }), enabled: true });
+    let runs = false;
+    const exits: string[] = [];
+    mgr.tasks = { busy: () => runs, onChildExit: (bot: string) => void exits.push(bot) } as any;
+    const host = mgr.host("b") as any;
+    const closed: string[] = [];
+    const children: EventEmitter[] = [];
+    const fakeHarness = (id: string, pid: number) => {
+      const child = Object.assign(new EventEmitter(), { pid });
+      children.push(child);
+      host.watchChild(child);
+      return { id, close: async () => void closed.push(id), client: { child } };
+    };
+    let spawned = 0;
+    host.spawn = async () => {
+      spawned++;
+      return (host.harness = fakeHarness(`new${spawned}`, 200 + spawned));
+    };
+    Object.assign(host, { harness: fakeHarness("old", 101), model: "m", state: "running" });
+    host.sig = host.settingsSig();
+    let reply: { busy: number; jobs: number } | Error = { busy: 0, jobs: 0 };
+    let connected = true;
+    const asked: string[] = [];
+    host.control = {
+      get connected() {
+        return connected;
+      },
+      send: async (op: string) => {
+        asked.push(op);
+        if (reply instanceof Error) throw reply;
+        return reply;
+      },
+      close() {},
+      reset() {},
+    };
+    const tryIt = async () => {
+      await host.restartIfStale();
+      return closed.length;
+    };
+    for (let i = 0; i < RECYCLE_AFTER_SESSIONS; i++) host.taskSessions.add(`rule-r-${i}`);
+    // 不多于门槛：不问、不换
+    expect(await tryIt()).toBe(0);
+    expect(asked).toEqual([]);
+    host.taskSessions.add("task-t_1");
+    // 子进程里还有事：有代理没空着（或有排着的输入）、有后台命令在跑、问不到
+    for (const r of [{ busy: 1, jobs: 0 }, { busy: 0, jobs: 1 }, new Error("timeout")]) {
+      reply = r;
+      expect(await tryIt()).toBe(0);
+    }
+    reply = { busy: 0, jobs: 0 };
+    // 宿主这边还有事：任务或规则的 run 在跑或收尾、有等批准的、有会话在原地压缩、有聊天回合、有任务会话在跑一轮、指令通道不通
+    runs = true;
+    expect(await tryIt()).toBe(0);
+    runs = false;
+    const a = mgr.approvals.create({ kind: "approval", botId: "b", conversationId: "b:web:console", sessionId: "s", tool: "bash", detail: "rm -rf x", reason: "" });
+    expect(await tryIt()).toBe(0);
+    mgr.approvals.cancel(a.id);
+    (mgr as any).compactDone.set("S1", { botId: "b", conv: "b:web:console", resolve: () => undefined });
+    expect(await tryIt()).toBe(0);
+    (mgr as any).compactDone.clear();
+    for (const k of ["active", "entering"]) {
+      host[k] = 1;
+      expect(await tryIt()).toBe(0);
+      host[k] = 0;
+    }
+    host.taskBusy.add("task-t_1");
+    expect(await tryIt()).toBe(0);
+    host.taskBusy.clear();
+    connected = false;
+    expect(await tryIt()).toBe(0);
+    connected = true;
+    expect(exits).toEqual([]);
+    // 全都空着：换一个新的子进程，重新计数；不算重启
+    expect(await tryIt()).toBe(1);
+    expect([closed, spawned, host.recycles, host.restarts, host.taskSessions.size, host.harness.id]).toEqual([["old"], 1, 1, 0, 0, "new1"]);
+    // 换掉的那个退出：它上面什么都没在跑，不恢复（之后才开始的 run 已经在用新进程）；别的退出照旧恢复
+    children[0].emit("exit", 0, null);
+    expect(exits).toEqual([]);
+    children[1].emit("exit", null, "SIGKILL");
+    expect(exits).toEqual(["b"]);
+    store.close();
   });
 });

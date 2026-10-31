@@ -4,7 +4,7 @@ import { splitText } from "../../core/types.js";
 import { Dedup, KeyedQueue } from "../../core/queue.js";
 import type { BotRuntime } from "../../core/runtime.js";
 import type { OutboxBody, OutboxKind, OutboxRow, Store } from "../../store/db.js";
-import { Gone, Held, Later, Outbox, ReplyIds, stableId, type HeldGroup } from "../../core/outbox.js";
+import { Gone, Held, Later, Outbox, ReplyIds, sentText, stableId, type HeldGroup } from "../../core/outbox.js";
 import { IlinkClient, MessageItemType, MessageType, WeixinApiError, hasDownloadableMedia, type InboundMedia, type MessageItem, type WeixinMessage } from "./api.js";
 import { StreamingMarkdownFilter } from "./markdown-filter.js";
 import { WeixinQuota } from "./quota.js";
@@ -170,7 +170,7 @@ export async function deliverWeixin(client: IlinkClient, quota: WeixinQuota, row
     quota.tryConsume(user);
     return;
   }
-  const text = row.body.text ?? "";
+  const text = sentText(row.body);
   const chunks = splitText(row.body.raw ? text.trim() : filterMarkdown(text), WEIXIN_CAPS.maxTextLength);
   let rest = chunks.slice(row.progress);
   const budget = budgetOf(quota, user, row);

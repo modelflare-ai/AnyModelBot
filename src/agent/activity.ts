@@ -3,6 +3,7 @@
  * 网页对话里折叠在"用时"下面，微信/飞书会话在信息面板里看；/status 和看门狗用它说明卡在哪一步。
  */
 import { summarizeCall } from "./host.js";
+import { t as tr } from "../i18n/index.js";
 
 export interface ActivityStep {
   /** 同一步的更新沿用同一个 id（工具调用 id、m<回合>.<步>…） */
@@ -33,7 +34,7 @@ const oneLine = (s: string, n = 140) => clip(s.replace(/\s+/g, " ").trim(), n);
 function textOf(content: unknown): string {
   if (!Array.isArray(content)) return typeof content === "string" ? content : "";
   return content
-    .map((b: any) => (b?.type === "text" ? String(b.text ?? "") : b?.type === "image" ? "[图片]" : ""))
+    .map((b: any) => (b?.type === "text" ? String(b.text ?? "") : b?.type === "image" ? tr("activity.image") : ""))
     .filter(Boolean)
     .join("\n");
 }
@@ -88,7 +89,7 @@ export class ActivityLog {
         return true;
       }
       case "step/start":
-        this.put({ id: `m${data.turn}.${data.step}`, kind: "model", title: this.model || "模型", status: "running", at: time });
+        this.put({ id: `m${data.turn}.${data.step}`, kind: "model", title: this.model || tr("activity.model"), status: "running", at: time });
         return true;
       case "assistant/message": {
         const msg = data.message ?? {};
@@ -105,9 +106,9 @@ export class ActivityLog {
         this.put({
           id,
           kind: "model",
-          title: model || "模型",
-          summary: text ? oneLine(text) : calls.length ? `调用 ${calls.join("、")}` : thinking ? "（只有思考，没有文字）" : "（空回复）",
-          output: clip([thinking && `[思考]\n${thinking}`, text].filter(Boolean).join("\n\n"), MAX_OUTPUT) || undefined,
+          title: model || tr("activity.model"),
+          summary: text ? oneLine(text) : calls.length ? tr("activity.calls", { list: calls.join(tr("activity.listSep")) }) : thinking ? tr("activity.thinkingOnly") : tr("activity.emptyReply"),
+          output: clip([thinking && `${tr("activity.thinkingTag")}\n${thinking}`, text].filter(Boolean).join("\n\n"), MAX_OUTPUT) || undefined,
           status: "ok",
           at,
           ms: Math.max(0, time - at),
@@ -137,7 +138,7 @@ export class ActivityLog {
         this.put({ ...prev, status: msg.isError ? "error" : "ok", ms: Math.max(0, time - prev.at), output: clip(textOf(msg.content), MAX_OUTPUT) || undefined });
         // 命令跑得太久，转到了后台：单独记一步，结束时（job/settled 或结束通知）更新
         const job = promotedJob(data);
-        if (job) this.put({ id: `j:${job}`, kind: "job", title: "后台命令", summary: prev.summary, input: prev.input, status: "running", at: time });
+        if (job) this.put({ id: `j:${job}`, kind: "job", title: tr("activity.job"), summary: prev.summary, input: prev.input, status: "running", at: time });
         return true;
       }
       case "job/settled": {
@@ -153,22 +154,22 @@ export class ActivityLog {
         if (!n) return true;
         const prev = this.find(`j:${n.id}`);
         if (prev?.status === "running") this.put({ ...prev, status: "ok", ms: Math.max(0, time - prev.at) });
-        else if (!prev) this.put({ id: `j:${n.id}`, kind: "job", title: "后台命令结束", summary: oneLine(n.summary) || undefined, status: "ok", at: time });
+        else if (!prev) this.put({ id: `j:${n.id}`, kind: "job", title: tr("activity.jobDone"), summary: oneLine(n.summary) || undefined, status: "ok", at: time });
         return true;
       }
       case "steer":
         // 宿主发的：用户在回合进行中又发了一条，并进了这一轮
-        this.put({ id: `u${time}`, kind: "steer", title: "追加消息", summary: oneLine(String(data.text ?? "")), status: "ok", at: time });
+        this.put({ id: `u${time}`, kind: "steer", title: tr("activity.steer"), summary: oneLine(String(data.text ?? "")), status: "ok", at: time });
         return true;
       case "llm/retry": {
         const f = data.failure ?? {};
-        const why = String(f.message ?? f.code ?? "请求失败");
+        const why = String(f.message ?? f.code ?? tr("activity.requestFailed"));
         const of = data.maxRetries ? `${data.retry}/${data.maxRetries}` : String(data.retry ?? "");
         this.put({
           id: `r${data.retryId ?? data.turn}.${data.retry}`,
           kind: "retry",
-          title: "模型请求失败，重试",
-          summary: oneLine(`第 ${of} 次，${Math.round((Number(data.delayMs) || 0) / 1000)} 秒后：${why}`),
+          title: tr("activity.retryTitle"),
+          summary: oneLine(tr("activity.retrySummary", { n: of, s: Math.round((Number(data.delayMs) || 0) / 1000), why })),
           status: "error",
           at: time,
         });
@@ -178,10 +179,10 @@ export class ActivityLog {
         return false;
       case "api/fallback":
         // 宿主发的：上游不接受这个接口上的请求，换 Chat Completions 重做这一轮
-        this.put({ id: `f${time}`, kind: "retry", title: "改用 Chat Completions 重试", summary: oneLine(`${data.from ?? ""} 被拒：${data.reason ?? ""}`), status: "ok", at: time });
+        this.put({ id: `f${time}`, kind: "retry", title: tr("activity.fallbackTitle"), summary: oneLine(tr("activity.fallbackSummary", { from: String(data.from ?? ""), reason: String(data.reason ?? "") })), status: "ok", at: time });
         return true;
       case "compaction/start":
-        this.put({ id: `c${time}`, kind: "compact", title: "压缩上下文", status: "running", at: time });
+        this.put({ id: `c${time}`, kind: "compact", title: tr("activity.compact"), status: "running", at: time });
         return true;
       case "compaction/end": {
         const prev = this.steps.findLast((s) => s.kind === "compact" && s.status === "running");
@@ -191,11 +192,11 @@ export class ActivityLog {
       // bridge 在后台让上游压缩了这个会话的历史（不是 DSH 事件，见 server-compaction.ts）；不算代理有进展
       case "server-compaction": {
         const k = (n: unknown) => `${Math.round((Number(n) || 0) / 1000)}k`;
-        this.put({ id: `sc${time}`, kind: "compact", title: "服务端压缩上下文", summary: `约 ${k(data.before)} → ${k(data.after)} tokens`, status: "ok", at: time, ms: Number(data.ms) || undefined });
+        this.put({ id: `sc${time}`, kind: "compact", title: tr("activity.serverCompact"), summary: tr("activity.compactSummary", { before: k(data.before), after: k(data.after) }), status: "ok", at: time, ms: Number(data.ms) || undefined });
         return false;
       }
       case "subagent/started":
-        this.put({ id: `s${data.childSessionId}`, kind: "subagent", title: "子代理", status: "running", at: time });
+        this.put({ id: `s${data.childSessionId}`, kind: "subagent", title: tr("activity.subagent"), status: "running", at: time });
         return true;
       case "subagent/finished": {
         const prev = this.find(`s${data.childSessionId}`);
@@ -203,7 +204,7 @@ export class ActivityLog {
         this.put({
           id: `s${data.childSessionId}`,
           kind: "subagent",
-          title: "子代理",
+          title: tr("activity.subagent"),
           summary: last ? oneLine(last) : String(data.stopReason ?? "") || undefined,
           output: last ? clip(last, MAX_OUTPUT) : undefined,
           status: data.status === "ok" ? "ok" : "error",
@@ -217,7 +218,7 @@ export class ActivityLog {
         if (r.kind === "error") {
           // 还挂着的步骤（模型请求、工具）跟着这个错误结束
           for (const s of this.steps) if (s.status === "running") this.put({ ...s, status: "error", cut: true, ms: Math.max(0, time - s.at) });
-          this.put({ id: `e${data.turn}`, kind: "error", title: "回合出错", summary: oneLine(String(r.error?.message ?? "unknown error"), 300), status: "error", at: time });
+          this.put({ id: `e${data.turn}`, kind: "error", title: tr("activity.turnError"), summary: oneLine(String(r.error?.message ?? "unknown error"), 300), status: "error", at: time });
         }
         return true;
       }
@@ -228,13 +229,13 @@ export class ActivityLog {
 
   /** 回合正常结束：还在后台跑的命令不算失败，注明回复时它仍在运行（结束后代理会被唤醒，另发一条回复） */
   finish(time = Date.now()): void {
-    for (const s of this.steps) if (s.kind === "job" && s.status === "running") this.put({ ...s, status: "ok", summary: [s.summary, "（回复时仍在后台运行）"].filter(Boolean).join(" "), ms: Math.max(0, time - s.at) });
+    for (const s of this.steps) if (s.kind === "job" && s.status === "running") this.put({ ...s, status: "ok", summary: [s.summary, tr("activity.stillRunning")].filter(Boolean).join(" "), ms: Math.max(0, time - s.at) });
   }
 
   /** 外部原因结束（/stop、看门狗、超时）：还在进行的步骤标成失败，再记一条说明 */
   end(why: string, time = Date.now()): void {
     for (const s of this.steps) if (s.status === "running") this.put({ ...s, status: "error", cut: true, ms: Math.max(0, time - s.at) });
-    this.put({ id: `x${time}`, kind: "error", title: "已中止", summary: why, status: "error", at: time });
+    this.put({ id: `x${time}`, kind: "error", title: tr("activity.stopped"), summary: why, status: "error", at: time });
   }
 
   private find(id: string): ActivityStep | undefined {
@@ -259,19 +260,19 @@ export function describeStep(s: ActivityStep): string {
   const doing = s.status === "running" || !!s.cut;
   switch (s.kind) {
     case "model":
-      return doing ? `等待 ${s.title} 回复` : `${s.title} 回复了${s.summary ? `：${s.summary}` : ""}`;
+      return doing ? tr("activity.descWaiting", { model: s.title }) : tr("activity.descReplied", { model: s.title, summary: s.summary ? tr("activity.withSummary", { text: s.summary }) : "" });
     case "tool":
-      return doing ? `正在运行 ${what}` : `${what}（${s.status === "error" ? "失败" : "完成"}）`;
+      return doing ? tr("activity.descRunning", { what }) : tr(s.status === "error" ? "activity.descFailed" : "activity.descDone", { what });
     case "retry":
-      return `模型请求失败，正在重试（${s.summary ?? ""}）`;
+      return tr("activity.descRetry", { summary: s.summary ?? "" });
     case "subagent":
-      return doing ? "子代理在工作" : `子代理结束${s.summary ? `：${s.summary}` : ""}`;
+      return doing ? tr("activity.descSubagent") : tr("activity.descSubagentDone", { summary: s.summary ? tr("activity.withSummary", { text: s.summary }) : "" });
     case "compact":
-      return doing ? "正在压缩上下文" : "压缩了上下文";
+      return tr(doing ? "activity.descCompacting" : "activity.descCompacted");
     case "job":
-      return doing ? `后台命令在运行${s.summary ? `：${s.summary}` : ""}` : `${s.title}${s.summary ? `：${s.summary}` : ""}`;
+      return doing ? tr("activity.descJob", { summary: s.summary ? tr("activity.withSummary", { text: s.summary }) : "" }) : `${s.title}${s.summary ? tr("activity.withSummary", { text: s.summary }) : ""}`;
     case "steer":
-      return `收到追加消息${s.summary ? `：${s.summary}` : ""}`;
+      return tr("activity.descSteer", { summary: s.summary ? tr("activity.withSummary", { text: s.summary }) : "" });
     case "error":
       return what;
   }
@@ -280,5 +281,5 @@ export function describeStep(s: ActivityStep): string {
 /** "12 秒" / "3 分 5 秒" */
 export function fmtSecs(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
-  return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分${s % 60 ? ` ${s % 60} 秒` : "钟"}`;
+  return s < 60 ? tr("activity.secs", { s }) : s % 60 ? tr("activity.minSecs", { m: Math.floor(s / 60), s: s % 60 }) : tr("activity.mins", { m: Math.floor(s / 60) });
 }

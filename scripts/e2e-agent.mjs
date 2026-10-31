@@ -305,7 +305,8 @@ try {
     }
   };
   const good = (c) => typeof c?.reply === "string" && c.reply.includes(ANSWER) && (!wantTool || c.reply.includes("tool-ran-ok"));
-  const statusOk = (c) => typeof c?.reply === "string" && c.reply.includes("当前模型") && c.ms < 20_000;
+  // 应用跟着系统语言（CI 的 Windows 是英文）：两种语言的说法都认
+  const statusOk = (c) => typeof c?.reply === "string" && /当前模型|Current model/.test(c.reply) && c.ms < 20_000;
   if (flag("status-probes")) {
     summary.statusFirst = await chat("/status", 20_000);
     say("/status (first):", JSON.stringify(summary.statusFirst).slice(0, 500));
@@ -386,7 +387,7 @@ try {
       fellBackTo51: psverOf(summary.healOn51) === "5" && /powershell\.exe$/i.test(summary.healFallback.using ?? ""),
       reinstalled: !!summary.healReinstalled.test?.ok,
       backOn7: psverOf(summary.healBack) === "7" && (summary.healBack?.reply ?? "").includes("tool-ran-ok"),
-      statusSaysPrivate: /应用内置/.test(summary.healStatusLine ?? ""),
+      statusSaysPrivate: /应用内置|app-managed/.test(summary.healStatusLine ?? ""),
     };
     summary.healChecks = checks;
     say(`self-healing checks ${JSON.stringify(checks)}`);

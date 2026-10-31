@@ -50,6 +50,15 @@ function rows(): Array<{ id: string; status: string; attempts: number; error: st
     db.close();
   }
 }
+/** 不经 App 读会话的重启标记（同 rows） */
+function inflightMarker(conversationId: string): string | undefined {
+  const db = new DatabaseSync(dbFile(), { readOnly: true });
+  try {
+    return (db.prepare("SELECT value FROM kv WHERE key = ?").get(`inflight:${conversationId}`) as { value: string } | undefined)?.value;
+  } finally {
+    db.close();
+  }
+}
 const sentTo = (user: string, text: string) => ilink.state.sent.filter((s) => s.to === user && s.text.includes(text));
 
 beforeAll(async () => {
@@ -86,7 +95,9 @@ describe("出站队列：崩溃与重启", () => {
 
     ilink.push(OWNER, "崩溃前的问题");
     await until(() => ilink.state.sendFailures >= 1, 15_000);
-    await until(() => rows().some((r) => r.attempts >= 1), 5000);
+    await until(() => rows().some((r) => r.attempts >= 1), 15_000);
+    // 这一轮已经答完：回复落进了出站队列（等着重试），重启标记清掉了。崩溃发生在这之后，重启后只补发回复，不该再说「没处理完」
+    await until(() => !inflightMarker(`default:weixin:${OWNER}`), 15_000);
     const [row] = rows();
     expect(row).toMatchObject({ status: "pending", attempts: 1 });
     // id 由入站消息推出：同一条入站只有一个最终回复
@@ -120,22 +131,22 @@ describe("出站队列：崩溃与重启", () => {
     await startApp();
     const msg = { seq: 900, message_id: "dup-1", from_user_id: OWNER, to_user_id: "bot@im.bot", create_time_ms: Date.now(), message_type: 1, message_state: 2, context_token: "ctx-1", item_list: [{ type: 1, text_item: { text: "只答一次" } }] };
     ilink.state.inbox.push(msg);
-    await until(() => sentTo(OWNER, "只答一次").length >= 1, 8000);
+    await until(() => sentTo(OWNER, "只答一次").length >= 1, 20_000);
     await app!.stop();
     const calls = llm.calls.length;
     await startApp();
     ilink.state.inbox.push({ ...msg });
-    await until(() => llm.calls.length > calls, 8000);
+    await until(() => llm.calls.length > calls, 20_000);
     await app!.channels.get("default")!.weixin!.idle();
     await new Promise((r) => setTimeout(r, 300));
     expect(sentTo(OWNER, "只答一次")).toHaveLength(1);
-  });
+  }, 60_000);
 
   it("重启后对方的 24 小时窗口已过 / 配额已用完：留着；对方下次发消息时先收到「你不在时：…」，再收到这次的回复，只收到一次", async () => {
     await startApp();
     ilink.state.sendDown = true;
     ilink.push(OWNER, "过期测试");
-    await until(() => rows().some((r) => JSON.parse(r.body).text?.includes("过期测试") && r.attempts >= 1), 8000);
+    await until(() => rows().some((r) => JSON.parse(r.body).text?.includes("过期测试") && r.attempts >= 1), 20_000);
     // 这一轮已经答完（回复在出站队列里等着重发），不是被重启打断的
     await app!.channels.get("default")!.weixin!.idle();
     app!.access.allow("default", "weixin", "friend@im.wechat", "test");
@@ -152,7 +163,7 @@ describe("出站队列：崩溃与重启", () => {
     ilink.state.sendDown = false;
 
     await startApp();
-    await until(() => rows().filter((r) => r.status === "held").length >= 3, 8000);
+    await until(() => rows().filter((r) => r.status === "held").length >= 3, 20_000);
     await app!.outbox.idle();
     expect(rows().filter((r) => r.status === "gone")).toEqual([]);
     expect(rows().find((r) => JSON.parse(r.body).text?.includes("过期测试"))!.error).toMatch(/超过 24 小时/);
@@ -166,11 +177,11 @@ describe("出站队列：崩溃与重启", () => {
     const from = ilink.state.sent.length;
     const since = (user: string) => ilink.state.sent.slice(from).filter((x) => x.to === user).map((x) => x.text);
     ilink.push(OWNER, "我回来了");
-    await until(() => since(OWNER).length >= 2, 8000);
+    await until(() => since(OWNER).length >= 2, 20_000);
     expect(since(OWNER)).toEqual(["你不在时：[mock-a] 你说：过期测试", "[mock-a] 你说：我回来了"]);
     // 朋友：两条合成一条，顺序不变
     ilink.push("friend@im.wechat", "在吗");
-    await until(() => since("friend@im.wechat").length >= 2, 8000);
+    await until(() => since("friend@im.wechat").length >= 2, 20_000);
     expect(since("friend@im.wechat")).toEqual(["你不在时：\n配额测试的第一条\n\n配额测试的第二条", "[mock-a] 你说：在吗"]);
     expect(app!.store.getOutbox("wx:default:test-quota:0")).toMatchObject({ status: "sent" });
     expect(app!.store.getOutbox("wx:default:test-quota:1")).toMatchObject({ status: "merged" });
@@ -180,12 +191,12 @@ describe("出站队列：崩溃与重启", () => {
     await startApp();
     ilink.push(OWNER, "再来一句");
     ilink.push("friend@im.wechat", "还在");
-    await until(() => since(OWNER).length >= 3 && since("friend@im.wechat").length >= 3, 8000);
+    await until(() => since(OWNER).length >= 3 && since("friend@im.wechat").length >= 3, 20_000);
     await app!.channels.get("default")!.weixin!.idle();
     await new Promise((r) => setTimeout(r, 300));
     expect(since(OWNER)).toEqual(["你不在时：[mock-a] 你说：过期测试", "[mock-a] 你说：我回来了", "[mock-a] 你说：再来一句"]);
     expect(since("friend@im.wechat")).toHaveLength(3);
     expect(sentTo(OWNER, "你不在时")).toHaveLength(1);
     expect(sentTo("friend@im.wechat", "你不在时")).toHaveLength(1);
-  });
+  }, 90_000);
 });

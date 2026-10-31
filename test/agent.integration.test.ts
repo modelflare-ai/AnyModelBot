@@ -95,7 +95,8 @@ function messagesError(b: any): string | undefined {
   return undefined;
 }
 
-type Step = { tool?: { name: string; args: any }; text?: string; hang?: boolean };
+/** hold：用例按住了这个名字（gate）时，这一步的回复等用例放行再发 */
+type Step = { tool?: { name: string; args: any }; text?: string; hang?: boolean; hold?: string };
 
 /** OpenAI Responses 的流式事件；请求要了 encrypted_content 时先给一条加密推理 */
 function responsesStream(res: http.ServerResponse, b: any, step: Step): void {
@@ -170,6 +171,36 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
    */
   const rejects: Record<string, "always" | "after-tool" | "busy"> = {};
   const hung: http.ServerResponse[] = [];
+  /**
+   * 用例按住的模型回复（plan 里带 hold 的那一步）：放行之前那一轮一直在进行，用例在这段时间里检查、插话、停止，
+   * 不靠命令 sleep 的长短。gate(name) 按住，返回放行函数
+   */
+  const holds = new Map<string, Promise<void>>();
+  const gate = (name: string) => {
+    let open!: () => void;
+    holds.set(name, new Promise<void>((r) => (open = r)));
+    return () => {
+      holds.delete(name);
+      open();
+    };
+  };
+  /**
+   * 跑到用例放行才结束的命令：等工作区里出现 file（最多 limitS 秒），用完删掉。命令还在跑的这段时间由用例控制，不靠 sleep 的长短。
+   * fileGate(file) 先清掉上次留下的，返回放行函数
+   */
+  const gated = (file: string, limitS: number) => `i=0; while [ ! -f ${file} ] && [ $i -lt ${limitS * 10} ]; do sleep 0.1; i=$((i+1)); done; rm -f ${file}`;
+  const fileGate = (file: string) => {
+    const f = path.join(dataDir, "workspaces", "default", file);
+    fs.rmSync(f, { force: true });
+    return () => fs.writeFileSync(f, "");
+  };
+  /** STEERME 的命令（最多 20 秒，比转后台的 30 秒短）：插话一定落在命令还在跑的时候 */
+  const STEER_GATE = ".steer-go";
+  const steerGate = () => fileGate(STEER_GATE);
+  /** BGJOB 转到后台的命令（最多 30 秒）：用例看完"还在跑"的回复再让它结束，唤醒代理 */
+  const BG_GATE = ".bg-go";
+  /** SLOWOK 的命令（最多 20 秒）：另一个会话做完要验证的事之前它一直在跑 */
+  const SLOW_GATE = ".slow-go";
   let base = "";
   /** 工作区与数据目录之外的目录（完全权限测试用） */
   let outside = "";
@@ -178,26 +209,29 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): Step {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|SUBASK|SUBHELLO|PADDED|STEERME|SLOWOK|BGJOB|TOKENS|^background job |\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|SUBASK|SUBHELLO|PADDED|STEERME|SLOWOK|BGJOB|TOKENS|^background job |^Background subagent |\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
+    // 后台子代理结束了：DSH 把它的结束语作为一条消息交给父代理（唤醒父代理再答一轮，或者并进还在进行的那一轮）。
+    // 固定回一句，用例据此知道这件事处理完了（subagentSettled）
+    if (/^Background subagent /.test(user)) return { text: "SUBDONE" };
     // 卡住的模型：请求收下了，一直不回
     if (/HANG/.test(user)) return { hang: true };
-    // 插话：先跑一条几秒的命令；命令结束后看有没有并进来的用户消息（文字、图片）
+    // 插话：先跑一条命令（跑到用例放行，见 steerGate）；命令结束后看有没有并进来的用户消息（文字、图片）
     if (/STEERME/.test(user)) {
       const later = messages.slice(lastUser + 1).filter((m) => m.role === "user");
       const img = later.find((m) => Array.isArray(m.content) && m.content.some((p: any) => p?.type === "image_url"));
       if (img) return { text: `SAWIMG<<${img.content.filter((p: any) => p?.type === "image_url").map((p: any) => String(p.image_url?.url ?? "").split(",")[0]).join(" ")}|${/\[图片 inbox\/[^\]]+\.png\]/.test(textOf(img.content)) ? "path" : "nopath"}>>` };
       const steered = later.find((m) => /STEERTEXT/.test(textOf(m.content)));
       if (steered) return { text: `SAW<<${textOf(steered.content)}>>` };
-      if (!tools.length) return { tool: { name: "bash", args: { description: "run", command: "sleep 3 && echo first-done" } } };
+      if (!tools.length) return { tool: { name: "bash", args: { description: "run", command: `${gated(STEER_GATE, 20)}; echo first-done` } } };
       return { text: "NOSTEER" };
     }
-    // 后台命令结束，代理被唤醒：读它的输出，再跑一条一秒的命令（这一轮有时间看 /status），然后回复
+    // 后台命令结束，代理被唤醒：读它的输出（用例 gate("wake") 时等放行，这一轮在这期间可以看 /status、停止），再跑一条一秒的命令，然后回复
     if (/^background job /.test(user)) {
       const id = /^background job (\S+)/.exec(user)?.[1];
-      if (tools.length === 0) return { tool: { name: "job_output", args: { job_id: id } } };
+      if (tools.length === 0) return { tool: { name: "job_output", args: { job_id: id } }, hold: "wake" };
       if (tools.length === 1) return { tool: { name: "bash", args: { description: "run", command: "sleep 1 && echo wake-step" } } };
       return { text: `BGDONE<<${tools.map((t) => textOf(t.content)).join("|")}>>` };
     }
@@ -224,9 +258,9 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
         ...(canStripTypes ? [{ name: "workflow", args: { script: "return { answer: 6 * 7 }", meta: { name: "calc", description: "multiply" } } }] : []),
       ]],
       [/COUNTER/, [{ name: "bash", args: { description: "run", command: "echo ran >> counter.txt && wc -l < counter.txt" } }]],
-      [/SLOWOK/, [{ name: "bash", args: { description: "run", command: "sleep 4 && echo slow-done" } }]],
+      [/SLOWOK/, [{ name: "bash", args: { description: "run", command: `${gated(SLOW_GATE, 20)}; echo slow-done` } }]],
       // 跑得比转后台的阈值久：命令转到后台，这一轮先回复"还在跑"
-      [/BGJOB/, [{ name: "bash", args: { description: "run", command: "sleep 4 && echo bg-finished-42" } }]],
+      [/BGJOB/, [{ name: "bash", args: { description: "run", command: `${gated(BG_GATE, 30)}; echo bg-finished-42` } }]],
       [/TOKENS/, [{ name: "bash", args: { description: "run", command: "echo token=${AMB_BRIDGE_TOKEN:-none} control=${AMB_CONTROL_TOKEN:-none} key=${AMB_MAGPIE_KEY:-none} url=${AMB_BRIDGE_URL:-none}" } }]],
       [/LOOPBACK/, [{ name: "bash", args: { description: "run", command: `python3 -c "import urllib.request as u\ntry:\n  print('API', u.urlopen('${base}/amb/api/status').status)\nexcept Exception as e:\n  print('API', getattr(e,'code',e))"` } }]],
       // 完全权限：写工作区外的目录、读宿主数据目录、显式要求 danger-full-access
@@ -296,8 +330,16 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
           .writeHead(400, { "content-type": "application/json" })
           .end(JSON.stringify({ error: { message: "Unsupported parameter: 'reasoning.summary' is not supported with this model.", type: "invalid_request_error", param: "reasoning.summary", code: "unsupported_parameter" } }));
       }
-      const step = b.tools ? plan(msgs) : { text: "标题" };
+      const step: Step = b.tools ? plan(msgs) : { text: "标题" };
       if ("hang" in step && step.hang) return void hung.push(res);
+      const held = step.hold ? holds.get(step.hold) : undefined;
+      if (held) {
+        let gone = false;
+        res.on("close", () => (gone = true));
+        await held;
+        // 回合在等的时候被停止了：代理已经断开这个请求
+        if (gone) return;
+      }
       if (process.env.AMB_TEST_LLM_LOG) fs.appendFileSync(process.env.AMB_TEST_LLM_LOG, JSON.stringify({ url: req.url, stream: b.stream, tools: (b.tools ?? []).map((t: any) => t.function?.name ?? t.name), msgs: msgs.map((m: any) => [m.role, textOf(m.content).slice(0, 200), m.tool_calls?.map((t: any) => t.function?.name)]), step }) + "\n");
       // 非流式的 Responses（服务端压缩探测的续接请求）
       if (api === "responses" && b.stream === false) {
@@ -352,6 +394,20 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const r = await fetch(`${base}/amb/api/bots/default/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
     expect(r.status).toBe(200);
     return (await r.json()) as { reply: string; progress?: string[]; prompts: any[]; files?: string[] };
+  };
+  const waitFor = async (fn: () => boolean | Promise<boolean>, ms = 30_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) if (await fn()) return;
+    throw new Error("waitFor: timeout");
+  };
+  /** 会话里没有在处理的消息：运行时的登记（含代理自己醒来的一轮）和代理的回合都结束了，收尾（存回复、清重启标记）也做完了 */
+  const idle = (conv: string) => app.runtime.busySince(conv) === undefined && !app.agent.turnsInProgress.has(conv);
+  /**
+   * 子代理在后台跑，结束时父代理还要答一轮（见 plan 里的 SUBDONE）：等那一轮答完、会话空闲。
+   * 不等的话，下一个用例发到这个会话的消息会并进那一轮，只收到一句"收到"。
+   */
+  const subagentSettled = async (conv: string) => {
+    await waitFor(() => app.store.listMessages(conv).some((m) => m.role === "assistant" && m.content.includes("SUBDONE")), 60_000);
+    await waitFor(() => idle(conv));
   };
 
   it("runs a sandboxed bash tool in the bot workspace (quicksort)", async () => {
@@ -433,15 +489,16 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
 
   it("subagents do not get the bot's section: they do not talk to the user", async () => {
     const from = calls.length;
-    await chat("SUBASK please");
+    // 用自己的会话：子代理结束后父代理还要在这个会话里答一轮，不该留给后面用网页对话的用例
+    await turnOn("sub-ask", "mock-agent", "SUBASK please");
     // 子代理在后台跑：等它发出第一个模型请求
     const childOf = () => calls.slice(from).find((c) => c.body.tools && userTexts(c).some((t) => t.includes("SUBHELLO")));
-    for (let i = 0; i < 300 && !childOf(); i++) await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => !!childOf());
     const child = childOf()!;
-    expect(child).toBeTruthy();
     expect(systemOf(child)).not.toContain("# 聊天规则");
     expect(systemOf(child)).not.toContain("# 机器人设定");
     expect(systemOf(requestFor("SUBASK please"))).toContain("# 聊天规则");
+    await subagentSettled("default:weixin:sub-ask");
   }, 120_000);
 
   it("escalation waits for approval; approve via API allows once", async () => {
@@ -648,10 +705,6 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     return { events, done, abort: () => ac.abort(), texts };
   };
   const stopWeb = async () => api(`/conversations/${encodeURIComponent("default:web:console")}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-  const waitFor = async (fn: () => boolean | Promise<boolean>, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) if (await fn()) return;
-    throw new Error("waitFor: timeout");
-  };
 
   it("web chat: a running agent turn is shown again after switching back (question + steps), re-attaches, and the stop button ends it", async () => {
     const s = stream("/bots/default/chat/stream", "HANG 网页里的这条");
@@ -996,11 +1049,13 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
 
   it("full: a subagent's recursive delete is gated too", async () => {
     fs.mkdirSync(path.join(outside, "victim2", "sub"), { recursive: true });
-    const pending = chat("SUBRM please");
+    // 自己的会话：子代理被拒后结束，父代理在这个会话里再答一轮
+    const pending = startOn("sub-rm", "mock-agent", "SUBRM please");
     const row = await pendingApproval();
     expect(row).toMatchObject({ tool: "bash", reason: "递归删除，需要你确认（rm -rf）" });
     await api(`/approvals/${row.id}/deny`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-    await pending;
+    await pending.done;
+    await subagentSettled(pending.conv);
     expect(fs.existsSync(path.join(outside, "victim2", "sub"))).toBe(true);
   }, 180_000);
 
@@ -1145,6 +1200,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const host = app.agent.host("default");
     const pid = host.pid;
     const conv = (await console_()).conversationId;
+    const go = steerGate();
     const first = chat("STEERME please");
     await waitFor(() => toolRunning(conv));
     const before = calls.length;
@@ -1152,6 +1208,8 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     // 网页的 live 登记里两条都在：第二条并进了第一条，没有自己的回复
     let d: any;
     await waitFor(async () => (d = await api("/bots/default/chat")).live?.length === 2 && d.live[1].steered);
+    // 并进去了：命令可以结束了，模型下一步看到第二条
+    go();
     expect(d.live.map((t: any) => [t.userText, t.steered])).toEqual([
       ["STEERME please", false],
       ["STEERTEXT extra-xyz", true],
@@ -1175,9 +1233,13 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
 
   it("an image sent while a turn runs reaches the agent with the steered message", async () => {
     if (!app.agent.host("default").imageInput) return; // Linux 上的 Electron：只给路径
+    const go = steerGate();
     const a = startOn("steer-img", "gpt-5-mock", "STEERME with a picture");
     await waitFor(() => toolRunning(a.conv));
     const b = startOn("steer-img", "gpt-5-mock", "LOOKSTEER", [png]);
+    // 并进去了（回了"收到"）再让命令结束
+    await waitFor(() => b.ops.some((o) => o.type === "text" && o.ack));
+    go();
     expect(await a.done).toMatch(/^SAWIMG<<data:image\/(png|jpeg|webp);base64\|path>>$/);
     expect(await b.done).toBe(STEER_ACK);
     const hist = app.store.listMessages(a.conv).map((m) => [m.role, m.content.replace(/inbox\/\S+\.png/, "inbox/X.png")]);
@@ -1192,12 +1254,16 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const host = app.agent.host("default");
     const pid = host.pid;
     const restarts = host.restarts;
+    const go = fileGate(SLOW_GATE);
     const b = startOn("stop-b", "mock-agent", "SLOWOK b");
     const a = startOn("stop-a", "mock-agent", "HANG stop-a");
     await waitFor(() => toolRunning(b.conv));
     await waitFor(async () => ((await api(`/conversations/${encodeURIComponent(a.conv)}/turn`)) as any).turn?.steps?.length > 0);
     expect(app.runtime.stop(a.conv)).toBe(true);
     expect(await a.done).toMatch(/^已中止（处理了 \d+ 秒）。可以继续发消息。$/);
+    // a 停下来的时候 b 的命令还在跑：放行之后它照常做完
+    expect(await toolRunning(b.conv)).toBe(true);
+    go();
     expect(await b.done).toContain("slow-done");
     expect(host.pid).toBe(pid);
     expect(host.restarts).toBe(restarts);
@@ -1213,10 +1279,14 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect((host.status() as any).models).not.toContain("claude-switch-mock");
     const from = calls.length;
     // 会话 X 在 gpt-6-mock（Responses）上跑一条几秒的命令；同时会话 Y 用一个新模型（Anthropic Messages）
+    const go = fileGate(SLOW_GATE);
     const x = startOn("switch-x", "gpt-6-mock", "SLOWOK on responses");
     await waitFor(() => toolRunning(x.conv));
     const y = await turnOn("switch-y", "claude-switch-mock", "QUICKSORT on a new model");
     expect(y.reply).toContain("[1, 2, 3, 5, 7, 9]");
+    // Y 做完时 X 的命令一直在跑
+    expect(await toolRunning(x.conv)).toBe(true);
+    go();
     expect(await x.done).toContain("slow-done");
     expect(callsFor("claude-switch-mock", from).map((c) => c.api)).toEqual(callsFor("claude-switch-mock", from).map(() => "messages"));
     expect(callsFor("claude-switch-mock", from).length).toBeGreaterThan(0);
@@ -1248,6 +1318,9 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const saved = { ...SHELL_LIMITS };
     // 测试里把转后台的阈值调到 1.5 秒（真实是 30 秒），重启代理进程让补丁生效
     Object.assign(SHELL_LIMITS, { bashMs: 1500, bashMaxMs: 3000 });
+    const bgGo = fileGate(BG_GATE);
+    // 醒来的那一轮先按住（第一个模型回复等放行）：看 /status 时它一定还在进行
+    const woke = gate("wake");
     try {
       await host.restart();
       expect((await chat("/reset")).reply).toMatch(/已清空/);
@@ -1255,19 +1328,21 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       const t0 = Date.now();
       const r = await chat("BGJOB now");
       expect(r.reply).toMatch(/^STILL-RUNNING<<\[still running after 1500ms; moved to background job bash-\S+\]/);
-      // 没有等命令跑完（它要 4 秒）：这一轮的回复里还没有它的输出
+      // 没有等命令跑完（它等用例放行）：这一轮的回复里还没有它的输出
       expect(r.reply).not.toContain("bg-finished-42");
       expect(Date.now() - t0).toBeLessThan(30_000);
       const first = await console_();
       const steps1 = (await api(`/conversations/${encodeURIComponent(conv)}/messages/${first.messages.at(-1).id}/activity`)).steps;
       expect(steps1.find((s: any) => s.kind === "job")).toMatchObject({ title: "后台命令", status: "ok", summary: expect.stringContaining("（回复时仍在后台运行）") });
       // 命令结束：代理被唤醒，宿主像普通回合一样跟着这一轮：网页 live 里有一条（没有用户消息），/status 和信息面板都认它
+      bgGo();
       let live: any;
       await waitFor(async () => !!(live = ((await api("/bots/default/chat")) as any).live.find((t: any) => t.userText === "")), 30_000);
       expect(live.steered).toBe(false);
       await waitFor(async () => !!((await api(`/conversations/${encodeURIComponent(conv)}/turn`)) as any).turn);
       expect((await chat("/status")).reply).toMatch(/本会话上一条消息还在处理/);
       expect((await api("/agent")).busy).toEqual(["default"]);
+      woke();
       // 回复存进历史、发到会话里
       let d: any;
       await waitFor(async () => /BGDONE/.test((d = await console_()).messages.at(-1)?.content ?? ""), 60_000);
@@ -1281,6 +1356,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       await waitFor(async () => ((await api("/bots/default/chat")) as any).live.length === 0);
       expect(((await api(`/conversations/${encodeURIComponent(conv)}/turn`)) as any).turn).toBeNull();
     } finally {
+      woke();
       Object.assign(SHELL_LIMITS, saved);
       await host.restart();
     }
@@ -1290,12 +1366,16 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const host = app.agent.host("default");
     const saved = { ...SHELL_LIMITS };
     Object.assign(SHELL_LIMITS, { bashMs: 1500, bashMaxMs: 3000 });
+    const bgGo = fileGate(BG_GATE);
+    // 醒来的那一轮按住不放：停止时它一定还在进行
+    const woke = gate("wake");
     try {
       await host.restart();
       expect((await chat("/reset")).reply).toMatch(/已清空/);
       const conv = (await console_()).conversationId;
       expect((await chat("BGJOB again")).reply).toMatch(/^STILL-RUNNING/);
       const pid = host.pid;
+      bgGo();
       await waitFor(async () => !!((await api(`/conversations/${encodeURIComponent(conv)}/turn`)) as any).turn, 30_000);
       expect((await chat("/stop")).reply).toMatch(/^正在中止上一条消息/);
       let d: any;
@@ -1306,6 +1386,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       expect((await chat("QUICKSORT after stopping the wake-up turn")).reply).toContain("[1, 2, 3, 5, 7, 9]");
       expect(host.pid).toBe(pid);
     } finally {
+      woke();
       Object.assign(SHELL_LIMITS, saved);
       await host.restart();
     }
@@ -1334,6 +1415,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       const host = app.agent.host("default");
       const saved = { ...SHELL_LIMITS };
       Object.assign(SHELL_LIMITS, { bashMs: 1500, bashMaxMs: 3000 });
+      const bgGo = fileGate(BG_GATE);
       try {
         await host.restart();
         const conv = `default:weixin:${OWNER}`;
@@ -1343,6 +1425,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
         await waitFor(() => sentTo(OWNER, "STILL-RUNNING").length === 1, 60_000);
         expect(sentTo(OWNER, "bg-finished-42")).toHaveLength(0);
         // 命令结束：代理醒来，回复作为一条新消息发到微信
+        bgGo();
         await waitFor(() => sentTo(OWNER, "BGDONE").length === 1, 60_000);
         const done = sentTo(OWNER, "BGDONE")[0];
         expect(done.text).toContain("bg-finished-42");
@@ -1368,7 +1451,8 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
           ["assistant", "STILL-RUNNING"],
           ["assistant", "BGDONE"],
         ]);
-        await waitFor(() => !app.agent.turnsInProgress.has(conv));
+        // 代理的回合先结束，运行时随后才收尾（存回复、交给出站队列、清重启标记、让出会话）：等会话空闲再看标记
+        await waitFor(() => idle(conv));
         expect(app.store.getKV(`inflight:${conv}`)).toBeFalsy();
       } finally {
         Object.assign(SHELL_LIMITS, saved);
@@ -1379,9 +1463,13 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     it("a message sent while the turn runs is steered: the 收到 ack and the one reply go through the outbox, once each", async () => {
       const conv = `default:weixin:${OWNER}`;
       const before = ilink.state.sent.length;
+      const go = steerGate();
       ilink.push(OWNER, "STEERME on wechat");
       await waitFor(() => toolRunning(conv), 60_000);
       ilink.push(OWNER, "STEERTEXT from wechat");
+      // 并进去了（运行时存下了这条用户消息）再让命令结束
+      await waitFor(() => app.store.listMessages(conv).some((m) => m.role === "user" && m.content === "STEERTEXT from wechat"), 60_000);
+      go();
       await waitFor(() => sentTo(OWNER, "SAW<<STEERTEXT from wechat>>").length === 1, 60_000);
       await app.outbox.idle();
       const mine = ilink.state.sent.slice(before).filter((s) => s.to === OWNER).map((s) => s.text);
@@ -1396,18 +1484,24 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
         ["user", "STEERTEXT from wechat"],
         ["assistant", "SAW<<STEERTEXT from wechat>>"],
       ]);
-      await waitFor(() => !app.agent.turnsInProgress.has(conv));
+      // 两条消息（并进来的那条也算）都收完尾、会话空闲时，重启标记必须已经清掉
+      await waitFor(() => idle(conv));
       expect(app.store.getKV(`inflight:${conv}`)).toBeFalsy();
     }, 120_000);
 
     it("a steer never bypasses the allowlist: removed while its turn runs, the next message is refused, not steered", async () => {
       const entry = app.access.allow("default", "weixin", FRIEND, "test");
       const conv = `default:weixin:${FRIEND}`;
+      const go = steerGate();
       ilink.push(FRIEND, "STEERME from a friend");
       await waitFor(() => toolRunning(conv), 60_000);
       // 主人在回合进行中把他移出允许名单
       app.access.remove(entry.id);
       ilink.push(FRIEND, "STEERTEXT should not get in");
+      // 准入拦下了这条（记成一条使用请求），回合还在跑：这时再让命令结束
+      await waitFor(() => !!app.store.getAccess("default", "weixin", FRIEND)?.text.includes("STEERTEXT should not get in"), 60_000);
+      expect(await toolRunning(conv)).toBe(true);
+      go();
       await waitFor(() => sentTo(FRIEND, "NOSTEER").length === 1, 60_000);
       await app.outbox.idle();
       expect(sentTo(FRIEND, "SAW<<")).toHaveLength(0);

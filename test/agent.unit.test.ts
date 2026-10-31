@@ -215,6 +215,23 @@ describe("context window written for DSH", () => {
     expect(modelLimits("claude-mini", 32_000)).toEqual({ window: 32_000, maxTokens: 8_000 });
   });
 
+  it("the agent process keeps the system time zone unless TZ is set", () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-tz-"));
+    const host = new AgentHost({ botId: "b", dataDir, runtimeDir: "/rt", bridge: { url: "http://127.0.0.1:1", token: "t" } as any, store: new Store(":memory:") });
+    fs.mkdirSync(host.home, { recursive: true });
+    const prev = process.env.TZ;
+    try {
+      delete process.env.TZ;
+      expect((host as any).env()).not.toHaveProperty("TZ");
+      process.env.TZ = "Europe/Berlin";
+      expect((host as any).env().TZ).toBe("Europe/Berlin");
+    } finally {
+      if (prev === undefined) delete process.env.TZ;
+      else process.env.TZ = prev;
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("the patch carries those numbers", () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-patch-"));
     const host = new AgentHost({ botId: "b", dataDir, runtimeDir: "/rt", bridge: { url: "http://127.0.0.1:1" } as any, store: new Store(":memory:") });

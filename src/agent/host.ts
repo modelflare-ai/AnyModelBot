@@ -554,7 +554,6 @@ exec "$REAL" "$@"
       AMB_ALLOW_READ: JSON.stringify([path.resolve(this.workspace), path.resolve(this.home)]),
       HOME: this.home,
       LANG: "C.UTF-8",
-      TZ: process.env.TZ || "Asia/Shanghai",
       DSH_PERMISSION_MODE: permissionMode(this.settings().permission),
       AMB_MEMORY: this.settings().memory.enabled ? "1" : "0",
       AMB_CU_APPROVAL: this.settings().computerUse.approval,
@@ -564,14 +563,15 @@ exec "$REAL" "$@"
       AMB_BRIDGE_TOKEN: this.o.bridge.token,
       AMB_BOT_ID: this.o.botId,
     };
+    // 时区：本进程设了 TZ 才传下去；没设就不设，子进程用系统时区（各平台都是，Windows 上 TZ 也只认 POSIX 写法）
+    if (process.env.TZ) env.TZ = process.env.TZ;
     if (process.platform === "win32") {
       // Windows：系统目录类变量不是密钥，但工具进程离不开（npm/pip 找 APPDATA，脚本找 ProgramFiles、ComSpec…）。
-      // libuv 只自动补 SystemRoot/TEMP/USERPROFILE 等少数几个。TZ 只认 POSIX 写法，不设，用系统时区。
+      // libuv 只自动补 SystemRoot/TEMP/USERPROFILE 等少数几个。
       for (const k of WIN_SYSTEM_ENV) {
         const v = process.env[k];
         if (v) env[k] = v;
       }
-      if (!process.env.TZ) delete env.TZ;
     }
     if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
     if (process.env.AMB_DSH_LOG_LEVEL) env.DSH_LOG_LEVEL = process.env.AMB_DSH_LOG_LEVEL;

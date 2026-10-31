@@ -56,10 +56,24 @@ export interface TurnProgress {
   abort: AbortController;
   /** 已经提示过"后来的消息排在它后面" */
   queuedNotice?: boolean;
+  /** 正在运行的工具调用（含子代理的）：工具运行期间 DSH 不发事件，看门狗不把它当成卡住 */
+  tools: Set<string>;
+  /** 进行中的生图 / 生视频任务 */
+  media: number;
 }
 
 /** 生成确认里"取消"那一项 */
 const CANCEL = "取消";
+
+/**
+ * 记下正在运行的工具调用（"session:callId"，本会话的 session 记为空）：tool/call 加入、tool/result 移除；
+ * 同一会话开始下一步（下一次模型请求要等所有工具结果）或回合结束时，清掉它剩下的。
+ */
+function trackTools(tools: Set<string>, session: string, type: string, data: any): void {
+  if (type === "tool/call") tools.add(`${session}:${data?.callId}`);
+  else if (type === "tool/result") tools.delete(`${session}:${data?.message?.toolCallId}`);
+  else if (type === "step/start" || type === "turn/end") for (const k of tools) if (k.startsWith(`${session}:`)) tools.delete(k);
+}
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -192,13 +206,14 @@ export class AgentManager {
   /** onStep：活动记录里每新增或更新一步就回调一次（网页对话实时显示、回合结束后存进消息） */
   async runTurn(botId: string, input: TurnInput & { onStep?: (step: ActivityStep) => void }) {
     const conv = input.conversationId;
-    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model), abort: new AbortController() };
+    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model), abort: new AbortController(), tools: new Set(), media: 0 };
     this.turnsInProgress.set(conv, t);
-    // 看门狗：代理已经在处理，却长时间没有进展（模型不回、工具不动、只在重试），又不是在等用户批准或回答 → 中止
+    // 看门狗：代理已经在处理，却长时间没有进展（模型不回、只在重试），又不是在等用户批准或回答、
+    // 也没有工具或生成任务在跑（生视频、长命令、子代理里的工具）→ 中止
     const idleMs = this.o.idleTimeoutMs ?? 10 * 60_000;
     const watchdog = setInterval(() => {
       if (!t.lastProgress || t.abort.signal.aborted) return;
-      if (this.approvals.pending(conv).length) t.lastProgress = Date.now();
+      if (this.approvals.pending(conv).length || t.tools.size || t.media) t.lastProgress = Date.now();
       else if (Date.now() - t.lastProgress > idleMs) {
         log.warn("agent turn idle, stopping", { bot: botId, conversationId: conv, idleMs, lastStep: t.activity.last });
         this.halt(conv, t, new TurnStopped("idle", idleMs));
@@ -211,7 +226,15 @@ export class AgentManager {
         input.observer?.onStart?.();
       },
       onEvent: (type, data, time) => {
-        if (t.activity.apply(type, data, time)) t.lastProgress = Date.now();
+        if (type === "subagent/event") {
+          // 子代理在干活：它的工具调用同样记下；它在重试模型请求不算进展
+          const ev = data?.event ?? {};
+          trackTools(t.tools, String(data?.sessionId ?? ""), String(ev.type), ev.data);
+          if (ev.type !== "llm/retry" && ev.type !== "llm/retry-started") t.lastProgress = Date.now();
+        } else {
+          trackTools(t.tools, "", type, data);
+          if (t.activity.apply(type, data, time)) t.lastProgress = Date.now();
+        }
         input.observer?.onEvent?.(type, data, time);
       },
     };
@@ -469,11 +492,30 @@ export class AgentManager {
           model = r.model;
         }
       }
-      return { text: await media.execute(botId, model, args) };
+      // 生成可能要十几分钟，期间没有会话事件：看门狗不把它当成卡住
+      const turn = this.turnsInProgress.get(conv);
+      if (turn) turn.media++;
+      let text: string;
+      try {
+        text = await media.execute(botId, model, args);
+      } finally {
+        if (turn) turn.media--;
+      }
+      // 回合已经中止（/stop、超过上限、代理进程被关）：结果到不了代理，已扣费的文件留在工作区，告诉用户
+      if (turn && (turn.abort.signal.aborted || this.turnsInProgress.get(conv) !== turn)) this.orphanedMedia(botId, plan.kind, text);
+      return { text };
     } catch (e) {
       log.warn("media tool failed", { bot: botId, op, message: (e as Error).message.slice(0, 300) });
       return { error: (e as Error).message };
     }
+  }
+
+  /** 生成完了，请求它的回合却已经结束：文件在工作区 media/，用界面通知告诉用户 */
+  private orphanedMedia(botId: string, kind: string, text: string): void {
+    const files = text.match(/media\/[\w.-]+/g) ?? ["media/"];
+    log.warn("media finished after its turn ended", { bot: botId, files });
+    const name = this.o.store.getBot(botId)?.name ?? botId;
+    this.o.onNotice?.(`机器人「${name}」生成的${kind === "image" ? "图片" : "视频"}已保存在它的工作区（${files.join("、")}），但请求它的那条消息已经中止，没有发到聊天里。需要的话在对话里让机器人把它发出来。`);
   }
 
   /** 生成前的确认：问用户这次用哪个模型（本次的、默认的和几个推荐的，或回复别的模型名），等到回答、取消或过期 */

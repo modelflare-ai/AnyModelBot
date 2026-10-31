@@ -49,7 +49,9 @@ AnyModelBot is a local-first AI agent app for Windows, macOS and Linux. A bot is
 
 Your conversations, memory, files and API keys live on your device. Models come from [Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme): one account, any model, priced per token. AnyModelBot itself has no subscription.
 
-📥 [Download](#-download) · 🌠 [Screenshots](#-screenshots) · 🌟 [Features](#-key-features) · 🔐 [Privacy](#-how-it-works--privacy)
+Like xAI's Grok Bot, OpenAI's dots and Anthropic's Claude Duet, it is an always-on personal AI agent: it works in the background and checks in when a decision is yours. The difference: AnyModelBot is open source (MIT), runs on your own computer or server, works with any model (GPT, Claude, Gemini, Grok and more) and is pay-per-use, with no single vendor's subscription ([full comparison](#-anymodelbot-vs-grok-bot-openai-dots-and-claude-duet)).
+
+📥 [Download](#-download) · 🌠 [Screenshots](#-screenshots) · 🌟 [Features](#-key-features) · 🆚 [Compare](#-anymodelbot-vs-grok-bot-openai-dots-and-claude-duet) · 🔐 [Privacy](#-how-it-works--privacy)
 
 ⭐ Like AnyModelBot? Star the repo to follow new releases.
 
@@ -250,6 +252,24 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 
 > [!NOTE]
 > Features depend on the model you choose, your operating system and the permissions you grant. Computer use requires a desktop session, and macOS computer use is in Beta. Model requests go through Modelflare to the provider you pick; see [How it works & privacy](#-how-it-works--privacy).
+
+# 🆚 AnyModelBot vs Grok Bot, OpenAI dots and Claude Duet
+
+In the second half of 2026, xAI's [Grok Bot](https://x.ai/bot), OpenAI's [dots](https://openai.com/index/introducing-dots/) and Anthropic's Claude Duet made the always-on personal AI agent the thing to watch: it keeps an eye on things, works in the background and comes to you when a decision is yours. AnyModelBot does the same kind of job a different way: open source, on your own device, with any model.
+
+| | AnyModelBot | Grok Bot | OpenAI dots | Claude Duet |
+| :--- | :--- | :--- | :--- | :--- |
+| Open source | ✅ MIT | — | — | — |
+| Where the agent runs | Your own computer or server | xAI's cloud computer | OpenAI's cloud computer | Anthropic's cloud |
+| Models | GPT, Claude, Gemini, Grok, DeepSeek, Kimi, GLM and 70+ more (through Modelflare) | Mainly xAI's Grok models | OpenAI's models | Claude (Opus 5.5) |
+| Cost | Free app, models billed per token | Subscription | ChatGPT Pro / Business Premium subscription | Claude Pro / Max subscription |
+| Where you reach it | Desktop app (Windows, macOS, Linux), Docker, WeChat, Feishu | Desktop app, iPhone | ChatGPT, Slack, Teams | iOS, Android, claude.ai |
+| Availability | Download it now | Beta | Select markets | Research preview, US waitlist |
+
+AnyModelBot works in the background too: a task you hand over can finish in the background and send its result to WeChat or Feishu, and anything that needs your approval or answer shows up under "Needs you" in the sidebar. Every step a bot takes is visible, and anything outside its workspace asks you first.
+
+> [!NOTE]
+> Details about the other products come from public reports as of October 2026 and may have changed; check each vendor's official information. Grok Bot, dots and Claude Duet are products and trademarks of xAI, OpenAI and Anthropic respectively. AnyModelBot is not affiliated with them.
 
 # 🔐 How it works & privacy
 

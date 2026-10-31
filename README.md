@@ -49,7 +49,9 @@ AnyModelBot 是一个本地优先的 AI 智能体应用，支持 Windows、macOS
 
 对话、记忆、文件和 API Key 都留在你的设备上。模型来自 [Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)：一个账户，任意模型，按 token 计费。AnyModelBot 本身没有订阅。
 
-📥 [下载](#-下载) · 🌠 [截图](#-截图) · 🌟 [核心功能](#-核心功能) · 🔐 [工作原理与隐私](#-工作原理与隐私)
+和 xAI 的 Grok Bot、OpenAI 的 dots、Anthropic 的 Claude Duet 一样，它是一个常驻的个人 AI 智能体：在后台替你干活，需要你拍板时再来问你。不同的是，AnyModelBot 开源（MIT），跑在你自己的电脑或服务器上，GPT、Claude、Gemini、Grok 等任意模型都能用，按量付费，不绑定某一家的订阅（[详细对比](#-对比-grok-bot--openai-dots--claude-duet)）。
+
+📥 [下载](#-下载) · 🌠 [截图](#-截图) · 🌟 [核心功能](#-核心功能) · 🆚 [对比](#-对比-grok-bot--openai-dots--claude-duet) · 🔐 [工作原理与隐私](#-工作原理与隐私)
 
 ⭐ 喜欢 AnyModelBot？点个 Star，第一时间收到新版本。
 
@@ -250,6 +252,24 @@ npm start          # 本地管理界面：http://127.0.0.1:3600/
 
 > [!NOTE]
 > 功能是否可用取决于你选择的模型、操作系统和授予的权限。电脑操作需要桌面会话，macOS 上的电脑操作为 Beta。模型请求会经过 Modelflare 转发给你选定的供应商，详见[工作原理与隐私](#-工作原理与隐私)。
+
+# 🆚 对比 Grok Bot / OpenAI dots / Claude Duet
+
+2026 年下半年，xAI 的 [Grok Bot](https://x.ai/bot)、OpenAI 的 [dots](https://openai.com/index/introducing-dots/) 和 Anthropic 的 Claude Duet 接连发布，"常驻的个人 AI 智能体"成了热门：它替你盯着事情、在后台干活，需要你决定时再来找你。AnyModelBot 做的是同一类事，换了一种做法：开源、跑在你自己的设备上、任意模型都能用。
+
+| | AnyModelBot | Grok Bot | OpenAI dots | Claude Duet |
+| :--- | :--- | :--- | :--- | :--- |
+| 开源 | ✅ MIT | — | — | — |
+| 智能体跑在哪 | 你自己的电脑或服务器 | xAI 的云端电脑 | OpenAI 的云端电脑 | Anthropic 的云端 |
+| 能用的模型 | GPT、Claude、Gemini、Grok、DeepSeek、Kimi、GLM 等 70+ 个（经 Modelflare） | 以 xAI 的 Grok 模型为主 | OpenAI 的模型 | Claude（Opus 5.5） |
+| 费用 | 应用免费，模型按 token 计费 | 订阅 | ChatGPT Pro / Business Premium 订阅 | Claude Pro / Max 订阅 |
+| 在哪找它 | 桌面应用（Windows、macOS、Linux）、Docker、微信、飞书 | 桌面应用、iPhone | ChatGPT、Slack、Teams | iOS、Android、claude.ai |
+| 现在能用吗 | 直接下载 | 测试版 | 部分地区开放 | 研究预览，美国候补名单 |
+
+AnyModelBot 同样能在后台干活：交代的任务可以在后台跑完，再把结果发到微信或飞书；需要你批准或回答时，它会出现在侧栏的「需要你」里。机器人做的每一步都看得见，越出工作区的操作先问你。
+
+> [!NOTE]
+> 其他产品的信息来自 2026 年 10 月的公开报道，可能已有变化，以各家官方说明为准。Grok Bot、dots、Claude Duet 分别是 xAI、OpenAI、Anthropic 的产品和商标，AnyModelBot 与它们没有关联。
 
 # 🔐 工作原理与隐私
 

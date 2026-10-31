@@ -2,6 +2,7 @@ import type { OutboundOp, ReplySession } from "../../core/types.js";
 import { splitText } from "../../core/types.js";
 import { CARD_ELEMENT_ID, actionCardSpec, type FeishuTransport } from "./transport.js";
 import { logger } from "../../log.js";
+import { t } from "../../i18n/index.js";
 
 const log = logger("feishu.card");
 
@@ -50,11 +51,11 @@ export class FeishuReply implements ReplySession {
             log.warn("feishu file upload failed", { name: op.name, message: (e as Error).message.slice(0, 200) });
           }
         }
-        return this.sendText(`⚠️ 文件「${op.name}」发送失败，可在工作区中查看。`);
+        return this.sendText(t("channel.file_failed", { name: op.name }));
       case "interactive":
         if (op.buttons?.length && this.transport.replyActionCard) {
           try {
-            const title = op.kind === "approval" ? `需批准（${op.code ?? ""}）` : "需要你的回答";
+            const title = op.kind === "approval" ? t("channel.approval_title", { code: op.code ?? "" }) : t("channel.question_title");
             await this.transport.replyActionCard(this.replyTo, actionCardSpec(title, op.prompt, op.buttons));
             return;
           } catch (e) {

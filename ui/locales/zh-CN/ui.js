@@ -1,0 +1,30 @@
+// ui · zh-CN：共用组件（components/ui.js）。按钮的「取消 / 确定 / 关闭 / 复制」用 common
+export default {
+  /** 状态徽标（Badge s="…"）：渠道、网关、扫码登录、审批、提问卡片的状态 */
+  state: {
+    disabled: "未启用",
+    connecting: "连接中",
+    connected: "已连接",
+    error: "错误",
+    expired: "已过期",
+    paused: "已暂停",
+    login_required: "未登录",
+    running: "运行中",
+    starting: "启动中",
+    restarting: "重启中",
+    failed: "失败",
+    stopped: "已停止",
+    wait: "等待扫码",
+    scaned: "已扫码",
+    need_verifycode: "需验证码",
+    confirmed: "已确认",
+    already_bound: "已绑定",
+    cancelled: "已取消",
+    idle: "空闲",
+    fetching: "获取中",
+    pending: "待处理",
+    allowed: "已批准",
+    rejected: "已拒绝",
+    answered: "已回答",
+  },
+};

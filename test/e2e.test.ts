@@ -266,6 +266,11 @@ describe("Web 界面 / API", () => {
     expect((await api("/settings", { method: "PUT", body: { autostart: true } })).status).toBe(400);
     await api("/settings", { method: "PUT", body: { defaultModel: "", closeToTray: true, zoom: 1 } });
   });
+  it("窗口按钮配色：浏览器模式下没有桌面外壳，静默忽略", async () => {
+    const r = await api("/desktop/title-bar", { method: "POST", body: { dark: true } });
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ ok: true });
+  });
   it("许可与第三方声明可在界面查看", async () => {
     const n = await api("/notices");
     expect(n.json.license).toContain("MIT");

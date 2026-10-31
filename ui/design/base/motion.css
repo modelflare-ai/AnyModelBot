@@ -5,14 +5,19 @@
 @keyframes rise-in { from { opacity: 0; transform: translateY(calc(var(--rise) * var(--motion))); } }
 @keyframes sink-out { to { opacity: 0; transform: translateY(calc(var(--rise) * var(--motion))); } }
 @keyframes slide-in { from { opacity: 0; transform: translateX(calc(var(--slide) * var(--motion))); } }
+@keyframes slide-out { to { opacity: 0; transform: translateX(calc(var(--slide) * var(--motion))); } }
 /* 弹出层：只管位移与缩放，配合 fade-in 一起用（两者时长不同） */
 @keyframes pop-in { from { transform: translateY(calc(var(--pop-dy) * var(--motion))) scale(calc(1 - (1 - var(--pop-scale)) * var(--motion))); } }
+/* 小东西原地出现：图标替换、提示点 */
+@keyframes scale-in { from { opacity: 0; transform: scale(calc(1 - (1 - var(--scale-from)) * var(--motion))); } }
 @keyframes pop-out { to { opacity: 0; transform: translateY(calc(var(--pop-dy) * var(--motion) / 2)) scale(calc(1 - (1 - var(--pop-scale)) * var(--motion) / 2)); } }
 /* 一次性反馈 */
 @keyframes bump { 40% { transform: scale(calc(1 + .12 * var(--motion))); } }
 @keyframes flash { 0%, 35% { background: var(--mark); } }
 /* 循环 */
 @keyframes spin { to { transform: rotate(360deg); } }
+/* 文字微光：配合 background-clip: text、300% 宽的渐变；扫过去（0–70%）后停一拍再来 */
+@keyframes sheen { 0% { background-position: 100% 0; } 70%, 100% { background-position: 0 0; } }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @keyframes breathe { 0%, 100% { opacity: .45; transform: scale(calc(1 - .15 * var(--motion))); } 50% { opacity: 1; transform: scale(1); } }
 @keyframes blink { 50% { opacity: 0; } }
@@ -21,13 +26,14 @@
 .anim-fade-in { animation: fade-in var(--anim-dur, var(--dur-base)) var(--anim-ease, var(--ease-out)) var(--anim-delay, 0s) both; }
 .anim-rise-in { animation: rise-in var(--anim-dur, var(--dur-moderate)) var(--anim-ease, var(--ease-out)) var(--anim-delay, 0s) both; }
 .anim-slide-in { animation: slide-in var(--anim-dur, var(--dur-moderate)) var(--anim-ease, var(--ease-out)) var(--anim-delay, 0s) both; }
+.anim-scale-in { animation: scale-in var(--anim-dur, var(--dur-slow)) var(--anim-ease, var(--ease-spring)) var(--anim-delay, 0s) both; }
 .anim-pop-in { animation: fade-in var(--dur-base) var(--ease-out), pop-in var(--anim-dur, var(--dur-slower)) var(--anim-ease, var(--ease-spring)); }
 .anim-fade-out { animation: fade-out var(--anim-dur, var(--dur-base)) var(--anim-ease, var(--ease-in)) forwards; pointer-events: none; }
+.anim-slide-out { animation: slide-out var(--anim-dur, var(--dur-base)) var(--anim-ease, var(--ease-in)) forwards; pointer-events: none; }
 .anim-sink-out { animation: sink-out var(--anim-dur, var(--dur-base)) var(--anim-ease, var(--ease-in)) forwards; pointer-events: none; }
 .anim-pop-out { animation: pop-out var(--anim-dur, var(--dur-base)) var(--anim-ease, var(--ease-in)) forwards; pointer-events: none; }
 .anim-flash { animation: flash var(--dur-flash) var(--ease-out); }
 .anim-bump { animation: bump var(--dur-slow) var(--ease-out); }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition-duration: var(--dur-off) !important; scroll-behavior: auto !important; }
-}
+/* 减少 / 关闭动画（<html data-motion>，见 tokens/motion.css）：过渡几乎瞬时，不平滑滚动 */
+:root:is([data-motion="reduce"], [data-motion="off"]) :is(*, ::before, ::after) { transition-duration: var(--dur-off) !important; scroll-behavior: auto !important; }

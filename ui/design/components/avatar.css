@@ -487,13 +487,11 @@
 @keyframes bf-orbit-x { from { translate: calc(var(--s) * -.34) 0; } to { translate: calc(var(--s) * .34) 0; } }
 @keyframes bf-orbit-y { from { transform: translateY(calc(var(--s) * -.07)) scale(.7); } to { transform: translateY(calc(var(--s) * .07)) scale(1.1); } }
 
-/* 减少动态效果：只留表情变化，不动 */
-@media (prefers-reduced-motion: reduce) {
-  .bot-face, .bot-face * { animation: none !important; transition: none !important; }
-  .bot-face .bf-look, .bot-face .bf-gaze { transform: none; }
-  .bot-face .fx:not(.fx-bang, .fx-think) { display: none; }
-  .bot-face[data-eyes="error"] .e-sad { opacity: 1; scale: 1; rotate: -14deg; }
-}
+/* 减少 / 关闭动画（<html data-motion>，见 tokens/motion.css）：只留表情变化，不动 */
+:root:is([data-motion="reduce"], [data-motion="off"]) :is(.bot-face, .bot-face *) { animation: none !important; transition: none !important; }
+:root:is([data-motion="reduce"], [data-motion="off"]) .bot-face :is(.bf-look, .bf-gaze) { transform: none; }
+:root:is([data-motion="reduce"], [data-motion="off"]) .bot-face .fx:not(.fx-bang, .fx-think) { display: none; }
+:root:is([data-motion="reduce"], [data-motion="off"]) .bot-face[data-eyes="error"] .e-sad { opacity: 1; scale: 1; rotate: -14deg; }
 
 /* —— 选角色 —— */
 .avatar-picker { display: flex; flex-wrap: wrap; gap: var(--space-1); }

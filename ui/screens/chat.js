@@ -6,30 +6,39 @@ import { BotAvatar } from "../components/avatar.js";
 import { Markdown, Linkified } from "../components/markdown.js";
 import { ModelPicker, shortModel, sameModel } from "../components/model-picker.js";
 import { PwshHint } from "../components/pwsh-hint.js";
+import { GuideChecklist, MediaDemo } from "../components/guide.js";
 import { api, streamChat } from "../lib/api.js";
-import { confirmSheet, failed, saved } from "../lib/store.js";
+import { confirmSheet, failed, saved, useStore } from "../lib/store.js";
+import { completed, currentStep, demo, fill, guide, isActive, isMediaFile, markDone, refreshGuide } from "../lib/guide.js";
 import { fmtSep, fmtClock, fmtDur } from "../lib/format.js";
+import { prefs } from "../lib/prefs.js";
+import { t, useLang } from "../lib/i18n.js";
+import { notify, plainSnippet } from "../lib/notify.js";
+import { reducedMotion, usePresence } from "../design/motion.js";
 
-const COMMANDS = [
-  ["/model", "列出或切换模型"],
-  ["/new", "开始新的一段对话（旧对话归档并留交接便条）"],
-  ["/reset", "清空本会话上下文"],
-  ["/status", "查看当前模型与运行方式"],
-  ["/help", "显示全部命令"],
+// 文案跟着界面语言：渲染时再取（写成函数，不在模块顶层缓存翻译）
+const commands = () => [
+  ["/model", t("chat.commands.model")],
+  ["/new", t("chat.commands.new")],
+  ["/reset", t("chat.commands.reset")],
+  ["/status", t("chat.commands.status")],
+  ["/help", t("chat.commands.help")],
 ];
 // 文件权限（输入框左下角，参考 Codex 的权限胶囊）：机器人设置里的同一项
-const PERMS = {
-  workspace: { label: "工作区可写", icon: "shield", note: "只能改这个机器人的工作区，越界操作先问你" },
-  readonly: { label: "只读", icon: "lock", note: "不能改文件，命令在只读沙箱里运行" },
-};
+const perms = () => ({
+  workspace: { label: t("chat.perm.workspace"), icon: "shield", note: t("chat.perm.workspaceNote") },
+  readonly: { label: t("chat.perm.readonly"), icon: "lock", note: t("chat.perm.readonlyNote") },
+});
 const NEAR_BOTTOM = 80;
-const LINE_PX = 22;
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+const MOD_ENTER = isMac ? "⌘Enter" : "Ctrl+Enter";
 let seq = 0;
 const uid = () => `l${++seq}`;
 
-const isError = (t) => typeof t === "string" && t.startsWith("⚠️");
-const errText = (t) => t.replace(/^⚠️\s*/, "");
-const isAuthError = (t) => /HTTP 401\b|\b401\b.*(key|密钥|unauthor)/i.test(t);
+const isError = (s) => typeof s === "string" && s.startsWith("⚠️");
+const errText = (s) => s.replace(/^⚠️\s*/, "");
+// 服务端报错的文字（两种语言都认）
+const isAuthError = (s) => /HTTP 401\b|\b401\b.*(key|密钥|unauthor)/i.test(s); // i18n-ignore
 
 function toItems(messages) {
   return messages.map((m) =>
@@ -53,8 +62,8 @@ export function PromptCard({ requestId, fallback }) {
   }, [load]);
   useEffect(() => {
     if (!row || row.status !== "pending") return;
-    const t = setInterval(load, 3000);
-    return () => clearInterval(t);
+    const timer = setInterval(load, 3000);
+    return () => clearInterval(timer);
   }, [row && row.status]);
 
   if (gone || (!row && !requestId)) return html`<${Notice}><span class="pre-wrap">${fallback}</span><//>`;
@@ -73,12 +82,12 @@ export function PromptCard({ requestId, fallback }) {
   };
   if (row.kind === "approval") {
     return html`<div class=${`card${pending ? "" : " done"}`}>
-      <div class="meta"><span>需要你的批准 · <span class="num">${row.code}</span></span>${!pending && html`<${Badge} s=${row.status} />`}</div>
-      <div class="q">${row.reason || "机器人想执行一个超出工作区的操作"}</div>
+      <div class="meta"><span>${t("chat.approval.needed", { code: html`<span class="num">${row.code}</span>` })}</span>${!pending && html`<${Badge} s=${row.status} />`}</div>
+      <div class="q">${row.reason || t("chat.approval.fallbackReason")}</div>
       ${(row.tool || row.detail) && html`<div class="cmd">${row.tool}${row.detail ? "  " + row.detail : ""}</div>`}
       ${pending && html`<div class="actions">
-        <button type="button" class="btn primary" disabled=${busy} onClick=${() => decide(true)}>允许（仅本次）</button>
-        <button type="button" class="btn" disabled=${busy} onClick=${() => decide(false)}>拒绝</button>
+        <button type="button" class="btn primary" disabled=${busy} onClick=${() => decide(true)}>${t("chat.approval.allowOnce")}</button>
+        <button type="button" class="btn" disabled=${busy} onClick=${() => decide(false)}>${t("chat.approval.deny")}</button>
       </div>`}
     </div>`;
   }
@@ -122,12 +131,12 @@ export function PromptCard({ requestId, fallback }) {
       </div>`}
     </div>`)}
     ${pending && !single && html`<div class="answer">
-      <input class="field" placeholder=${qs.some((q) => (q.options || []).length) ? "其他回答（可选）" : "输入你的回答"} value=${custom}
+      <input class="field" placeholder=${qs.some((q) => (q.options || []).length) ? t("chat.question.otherOptional") : t("chat.question.yourAnswer")} value=${custom}
         onInput=${(e) => setCustom(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && !e.isComposing && sendAll()} />
-      <button type="button" class="btn primary" disabled=${busy || (!custom.trim() && !Object.values(picked).some((v) => v.length))} onClick=${sendAll}>提交</button>
+      <button type="button" class="btn primary" disabled=${busy || (!custom.trim() && !Object.values(picked).some((v) => v.length))} onClick=${sendAll}>${t("chat.question.submit")}</button>
     </div>`}
     ${pending && single && html`<div class="answer">
-      <input class="field" placeholder="或者输入其他回答" value=${custom} onInput=${(e) => setCustom(e.target.value)}
+      <input class="field" placeholder=${t("chat.question.orOther")} value=${custom} onInput=${(e) => setCustom(e.target.value)}
         onKeyDown=${(e) => e.key === "Enter" && !e.isComposing && custom.trim() && submit([{ id: qs[0].id, selected: [], custom: custom.trim() }])} />
     </div>`}
     ${!pending && html`<div class="meta"><${Badge} s=${row.status} /></div>`}
@@ -136,37 +145,43 @@ export function PromptCard({ requestId, fallback }) {
 
 function FileCard({ name }) {
   return html`<div class="file-card">
-    <${Icon} name="file" size=${32} stroke=${1.2} />
+    <${Icon} name="file" size="xl" />
     <div class="grow">
       <div class="fname">${name}</div>
-      <div class="fsub">已交付到机器人工作区 · 微信/飞书会直接发送</div>
+      <div class="fsub">${t("chat.file.delivered")}</div>
     </div>
   </div>`;
 }
 
-/** 回复上方的工作状态：没出字时"思考中"，出字后"正在回复 N 秒"，结束后"用时 N 秒"（短于 3 秒不显示） */
+/** 回复上方的工作状态：没出字时"思考中"，出字后"正在回复 N 秒"，结束后"用时 N 秒"。
+ *  短于 3 秒的不显示"用时"：这一行原样收起（.work.gone，CSS 里平滑折叠），正文不会突然跳上去 */
 function WorkLine({ live, text, startedAt, workedMs }) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (!live) return;
-    const t = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
   }, [live]);
   const ms = live ? Date.now() - startedAt : workedMs;
-  if (!live && !(ms >= 3000)) return null;
-  const label = live ? (text ? `正在回复 ${fmtDur(ms)}` : ms >= 3000 ? `思考中 ${fmtDur(ms)}` : "思考中") : `用时 ${fmtDur(ms)}`;
-  return html`<div class=${`work-line${live ? " live" : ""}`} aria-live="off"><span class=${live ? "shimmer" : ""}>${label}</span></div>`;
+  const gone = !live && !(ms >= 3000);
+  const done = !live && !gone;
+  // 换阶段时文字淡入（key 变），秒数跳动不重播；收起的那一行保持原来的字，不再换
+  const phase = done ? "done" : text ? "reply" : "think";
+  const label = done ? t("chat.work.done", { d: fmtDur(ms) }) : text ? t("chat.work.replying", { d: fmtDur(ms) }) : ms >= 3000 ? t("chat.work.thinkingFor", { d: fmtDur(ms) }) : t("chat.work.thinking");
+  return html`<div class=${`work${gone ? " gone" : ""}`} aria-hidden=${gone ? "true" : undefined}><div class="work-in">
+    <div class=${`work-line${live ? " live" : ""}`} aria-live="off"><span key=${phase} class=${`wl${live ? " shimmer" : ""}`}>${label}</span></div>
+  </div></div>`;
 }
 
 /** 消息下方的操作：复制 + 时刻（悬停时出现，最后一条回复常显） */
 function MsgActions({ text, at }) {
-  return html`<div class="msg-actions"><${CopyButton} text=${text} label="复制这条消息" />${at && html`<span class="when num">${fmtClock(at)}</span>`}</div>`;
+  return html`<div class="msg-actions"><${CopyButton} text=${text} label=${t("chat.copyMessage")} />${at && html`<span class="when num">${fmtClock(at)}</span>`}</div>`;
 }
 
 function ErrorNotice({ text, onRetry, onFixKey }) {
   const auth = isAuthError(text);
-  return html`<${Notice} tone="red" action=${html`${auth && onFixKey && html`<button type="button" class="btn" onClick=${onFixKey}>去更新</button>`}
-    ${onRetry && html`<button type="button" class="btn" onClick=${onRetry}>重试</button>`}`}>${auth ? "Modelflare 密钥失效或已被撤销。" : text}<//>`;
+  return html`<${Notice} tone="red" action=${html`${auth && onFixKey && html`<button type="button" class="btn" onClick=${onFixKey}>${t("chat.error.fixKey")}</button>`}
+    ${onRetry && html`<button type="button" class="btn" onClick=${onRetry}>${t("common.retry")}</button>`}`}>${auth ? t("chat.error.authInvalid") : text}<//>`;
 }
 
 export function ChatScreen({ bot, models, modelsError, reloadModels, defaultModel, infoOpen, onToggleInfo, onWorking, onOpenSettings, onOpenBotSettings, onBotUpdated, pending = 0 }) {
@@ -183,6 +198,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const [slashOff, setSlashOff] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [cue, setCue] = useState(null); // 头像的一次性反应（出错）；完成时头像自己会播
+  const lang = useLang();
   const scroller = useRef(null);
   const stick = useRef(true);
   const ta = useRef(null);
@@ -192,6 +208,32 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const ctrl = useRef(null);
   const mounted = useRef(true);
   const lastUser = useRef("");
+  const sentOnce = useRef(false); // 发过消息：之后发送钮换回箭头时才播"升回来"，打开页面时不动
+  // 上手清单：完成一步时头像开心一下；引导卡片「填入」的句子进输入框（只认这个页面挂载之后的请求）
+  const g = useStore(guide);
+  const justDone = useStore(completed);
+  const fillReq = useStore(fill);
+  const demoReq = useStore(demo);
+  const { sendKey } = useStore(prefs);
+  const born = useRef(Date.now());
+  // 生图的预置演示：只在本地对话流里放一遍（你的那句话 + 演示卡片），不发给机器人，刷新后就没了
+  useEffect(() => {
+    if (!demoReq || demoReq.at < born.current) return;
+    stick.current = true;
+    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: demoReq.text, at: Date.now(), enter: true }, { kind: "media-demo", id: uid(), text: demoReq.text, enter: true }]);
+  }, [demoReq && demoReq.at]);
+  useEffect(() => {
+    if (justDone && justDone.at > born.current) setCue({ kind: "done", at: justDone.at });
+  }, [justDone && justDone.at]);
+  useEffect(() => {
+    if (!fillReq || fillReq.at < born.current) return;
+    setText(fillReq.text);
+    setSlashOff(true);
+    requestAnimationFrame(() => {
+      ta.current?.focus();
+      autoGrow(ta.current);
+    });
+  }, [fillReq && fillReq.at]);
 
   const load = useCallback(async () => {
     try {
@@ -241,24 +283,25 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   };
   const toBottom = () => {
     stick.current = true;
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: reducedMotion() ? "auto" : "smooth" });
     setUnseen(false);
   };
 
   const patchLive = (id, fn) => mounted.current && setItems((l) => (l || []).map((it) => (it.id === id ? fn(it) : it)));
 
   const send = async (raw) => {
-    const t = (raw ?? text).trim();
-    if (!t || generating) return;
+    const msg = (raw ?? text).trim();
+    if (!msg || generating) return;
     if (raw === undefined) {
       setText("");
-      requestAnimationFrame(() => autoGrow(ta.current, LINE_PX * 8 + 8));
+      requestAnimationFrame(() => autoGrow(ta.current));
     }
-    if (!t.startsWith("/")) lastUser.current = t;
+    if (!msg.startsWith("/")) lastUser.current = msg;
+    sentOnce.current = true;
     stick.current = true;
     const liveId = uid();
-    const isReset = /^\/reset\b/i.test(t);
-    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: t, at: Date.now(), enter: true }, { kind: "msg", id: liveId, role: "assistant", text: "", at: Date.now(), live: true, startedAt: Date.now() }]);
+    const isReset = /^\/reset\b/i.test(msg);
+    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: msg, at: Date.now(), enter: true }, { kind: "msg", id: liveId, role: "assistant", text: "", at: Date.now(), live: true, startedAt: Date.now() }]);
     const ac = new AbortController();
     ctrl.current = ac;
     setGenerating(true);
@@ -266,20 +309,26 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     try {
       await streamChat(
         bot.id,
-        t,
+        msg,
         {
           text: (d) => {
             finalText = d.text;
             patchLive(liveId, (it) => ({ ...it, text: d.text }));
           },
-          prompt: (d) => mounted.current && setItems((l) => {
-            const i = l.findIndex((x) => x.id === liveId);
-            const card = { kind: "prompt", id: uid(), requestId: d.requestId, prompt: d.prompt };
-            return i < 0 ? [...l, card] : [...l.slice(0, i), card, ...l.slice(i)];
-          }),
-          file: (d) => mounted.current && setItems((l) => [...l, { kind: "file", id: uid(), name: d.name }]),
+          prompt: (d) => {
+            notify(bot.name, t("notify.prompt"), `amb-prompt-${bot.id}`);
+            if (mounted.current) setItems((l) => {
+              const i = l.findIndex((x) => x.id === liveId);
+              const card = { kind: "prompt", id: uid(), requestId: d.requestId, prompt: d.prompt, enter: true };
+              return i < 0 ? [...l, card] : [...l.slice(0, i), card, ...l.slice(i)];
+            });
+          },
+          file: (d) => {
+            markDone(isMediaFile(d.name) ? "media" : "hands");
+            if (mounted.current) setItems((l) => [...l, { kind: "file", id: uid(), name: d.name, enter: true }]);
+          },
           error: (d) => {
-            finalText = "⚠️ " + (d.message || "出错了");
+            finalText = "⚠️ " + (d.message || t("common.error"));
           },
         },
         ac.signal,
@@ -287,6 +336,15 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     } catch (e) {
       // 在收到第一个字节前就点了停止：不是错误
       if (e.name !== "AbortError") finalText = "⚠️ " + e.message;
+    }
+    // 窗口不在前台时通知（设置 › 常规 › 回复完成时通知）；自己点了停止的不算
+    if (finalText && !ac.signal.aborted) notify(bot.name, isError(finalText) ? t("notify.replyError", { text: plainSnippet(errText(finalText)) }) : plainSnippet(finalText) || t("notify.replyDone"), `amb-reply-${bot.id}`);
+    // 上手清单：普通消息有了回复就算打过招呼；/model 切换成功算换过模型；其余能从数据里看出来的（记忆、渠道）问一次后端
+    if (finalText && !isError(finalText)) {
+      if (!msg.startsWith("/")) markDone("hello");
+      else if (/^\/model\s+\S/i.test(msg)) markDone("model");
+      const gs = guide.get();
+      if (isActive(gs) && currentStep(gs)) refreshGuide();
     }
     if (!mounted.current) return;
     ctrl.current = null;
@@ -296,12 +354,12 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       const out = [];
       for (const it of l || []) {
         if (it.id !== liveId) out.push(it);
-        else if (isError(finalText)) out.push({ kind: "error", id: liveId, text: errText(finalText), retry: t.startsWith("/") ? undefined : t, at: it.at });
+        else if (isError(finalText)) out.push({ kind: "error", id: liveId, text: errText(finalText), retry: msg.startsWith("/") ? undefined : msg, at: it.at, enter: true });
         else if (finalText) out.push({ ...it, text: finalText, live: false, workedMs: Date.now() - it.startedAt });
       }
       return isReset && !isError(finalText) ? out.filter((x) => x.id === liveId) : out;
     });
-    if (/^\/model\s+\S/i.test(t)) load();
+    if (/^\/model\s+\S/i.test(msg)) load();
   };
 
   const stop = () => {
@@ -310,7 +368,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
 
   // —— 斜杠命令菜单 ——
   const slashQuery = /^\/\S*$/.test(text) && !slashOff ? text.toLowerCase() : null;
-  const slashHits = slashQuery !== null ? COMMANDS.filter(([c]) => c.startsWith(slashQuery)) : [];
+  const slashHits = slashQuery !== null ? commands().filter(([c]) => c.startsWith(slashQuery)) : [];
   const slashOpen = slashHits.length > 0 && !(slashHits.length === 1 && slashHits[0][0] === text);
   const completeSlash = (cmd) => {
     setText(cmd === "/model" ? "/model " : cmd);
@@ -338,7 +396,8 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
         return setSlashOff(true);
       }
     }
-    if (e.key === "Enter" && !e.shiftKey) {
+    // 发送键（设置 › 常规 › 发送消息）：Enter 发送、Shift+Enter 换行；或 ⌘/Ctrl+Enter 发送、Enter 换行
+    if (e.key === "Enter" && !e.shiftKey && (sendKey !== "mod" || e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       send();
     } else if (e.key === "Escape" && generating) {
@@ -368,6 +427,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       await api(`/bots/${encodeURIComponent(bot.id)}/chat/model`, { method: "PUT", body: { model: m } });
       setConvModel(m);
       saved();
+      markDone("model");
     } catch (e) {
       failed(e);
     }
@@ -379,23 +439,24 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       setConvModel("");
       onBotUpdated(r.bot);
       saved();
+      markDone("model");
     } catch (e) {
       failed(e);
     }
   };
   const plusItems = [
-    { label: "切换模型…", onSelect: () => requestAnimationFrame(() => setMenu("model")) },
+    { label: t("chat.menu.switchModel"), onSelect: () => requestAnimationFrame(() => setMenu("model")) },
     { sep: true },
-    { label: "开始新的一段对话", note: "/new", onSelect: () => send("/new") },
+    { label: t("chat.menu.newConv"), note: "/new", onSelect: () => send("/new") },
     {
-      label: "清空上下文",
+      label: t("chat.menu.reset"),
       note: "/reset",
       onSelect: async () => {
-        if (await confirmSheet({ title: "清空本会话上下文？", body: `「${bot.name}」会忘掉这段网页对话的内容；长期记忆保留。`, confirmLabel: "清空", danger: true })) send("/reset");
+        if (await confirmSheet({ title: t("chat.reset.title"), body: t("chat.reset.body", { name: bot.name }), confirmLabel: t("chat.reset.confirm"), danger: true })) send("/reset");
       },
     },
-    { label: "查看状态", note: "/status", onSelect: () => send("/status") },
-    { label: "全部命令", note: "/help", onSelect: () => send("/help") },
+    { label: t("chat.menu.status"), note: "/status", onSelect: () => send("/status") },
+    { label: t("chat.menu.allCommands"), note: "/help", onSelect: () => send("/help") },
   ];
 
   // —— 渲染 ——
@@ -410,7 +471,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       }
       const role = it.kind === "msg" ? it.role : "assistant";
       const cont = prev && (prev.kind === "msg" ? prev.role : "assistant") === role;
-      const cls = `msg-row ${role}${cont ? " cont" : ""}${it.enter ? " enter" : ""}`;
+      const cls = `msg-row ${role}${cont ? " cont" : ""}${it.enter ? " enter" : ""}${it.live ? " live" : ""}`;
       if (it.kind === "msg") {
         out.push(html`<div class=${`${cls}${it.id === lastAi ? " last" : ""}`} key=${it.id}>
           ${it.role === "user"
@@ -423,87 +484,98 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
         out.push(html`<div class=${cls} key=${it.id}><${PromptCard} requestId=${it.requestId} fallback=${it.prompt} /></div>`);
       } else if (it.kind === "file") {
         out.push(html`<div class=${cls} key=${it.id}><${FileCard} name=${it.name} /></div>`);
+      } else if (it.kind === "media-demo") {
+        out.push(html`<div class=${cls} key=${it.id}><${MediaDemo} prompt=${it.text} /></div>`);
       } else if (it.kind === "error") {
         out.push(html`<div class=${cls} key=${it.id}><${ErrorNotice} text=${it.text} onRetry=${it.retry ? () => send(it.retry) : undefined} onFixKey=${() => onOpenSettings("modelflare", "connection")} /></div>`);
       }
       prev = it;
     }
     return out;
-  }, [items, generating]);
+  }, [items, generating, lang]);
 
   const empty = items && items.length === 0;
+  const showGuide = isActive(g) && !g.seen.includes("intro") && !!currentStep(g);
   // 头像跟着对话走：等你批准 > 还没出字（思考）/ 出字了（回复）> 你在输入（在听）
   const replying = generating && (items || []).some((x) => x.live && x.text);
   const face = pending > 0 ? "waiting" : generating ? (replying ? "replying" : "thinking") : text.trim() ? "listening" : "idle";
-  return html`<section class=${`chat${scrolled ? " scrolled" : ""}`} data-screen="chat" aria-label=${`和 ${bot.name} 的对话`}>
+  const toBottomBtn = usePresence(!atBottom);
+  // 点发送 / 停止不抢输入框的焦点：光标留在原处，接着就能打下一句（键盘 Tab 过去照样能按）
+  const keepFocus = (e) => e.preventDefault();
+  const permMap = perms();
+  return html`<section class=${`chat${scrolled ? " scrolled" : ""}`} data-screen="chat" aria-label=${t("chat.aria", { name: bot.name })}>
     <header class="chat-head">
-      <button type="button" class="head-bot bot-hover" aria-pressed=${infoOpen} title="信息面板（⌘⇧I）" onClick=${onToggleInfo}>
+      <button type="button" class="head-bot bot-hover" data-guide="info" aria-pressed=${infoOpen} title=${t("chat.infoPanel")} onClick=${onToggleInfo}>
         <${BotAvatar} bot=${bot} size=${22} state=${face} cue=${cue} />
         <span class="name">${bot.name}</span>
       </button>
       <span class="grow"></span>
-      <${IconButton} icon="compose" iconSize=${16} label="开始新的一段对话（/new）" disabled=${generating} onClick=${() => send("/new")} />
-      <${IconButton} icon="panel" iconSize=${16} label="信息面板（⌘⇧I）" on=${infoOpen} aria-pressed=${infoOpen} onClick=${onToggleInfo} />
+      <${IconButton} icon="compose" iconSize="md" label=${t("chat.newConvCmd")} disabled=${generating} onClick=${() => send("/new")} />
+      <${IconButton} icon="panel" iconSize="md" label=${t("chat.infoPanel")} on=${infoOpen} aria-pressed=${infoOpen} onClick=${onToggleInfo} />
     </header>
     <div class="chat-scroll" ref=${scroller} onScroll=${onScroll}>
-      <div class="chat-col" role="log" aria-live="polite" aria-busy=${generating}>
-        ${loadErr && html`<${Notice} tone="red" action=${html`<button type="button" class="btn" onClick=${load}>重试</button>`}>读取历史消息失败：${loadErr}<//>`}
+      <div class=${`chat-col${items ? " ready" : ""}`} role="log" aria-live="polite" aria-busy=${generating}>
+        ${loadErr && html`<${Notice} tone="red" action=${html`<button type="button" class="btn" onClick=${load}>${t("common.retry")}</button>`}>${t("chat.error.loadHistory", { error: loadErr })}<//>`}
         ${items === null && html`<div class="chat-skel"><${Skeleton} w="40%" /><${Skeleton} w="28%" /></div>`}
-        ${empty && html`<div class="chat-empty">
+        ${empty && html`<div class=${`chat-empty${showGuide ? " with-guide" : ""}`}>
           <${BotAvatar} bot=${bot} size=${88} state=${face} cue=${cue} lively pokeable greet />
-          <h2>和 ${bot.name} 开始对话</h2>
-          <p>在这里直接测试机器人；飞书和微信渠道在信息面板里配置。</p>
-          <div class="chips">
-            <button type="button" class="chip" onClick=${() => send("你能帮我做什么？")}>你能帮我做什么？</button>
-            <button type="button" class="chip" onClick=${() => send("/help")}>/help 查看命令</button>
-          </div>
+          ${showGuide
+            ? html`<h2>${t("chat.empty.guideTitle", { name: bot.name })}</h2>
+              <p>${t("chat.empty.guideBody")}</p>
+              <${GuideChecklist} bot=${bot} onSend=${(s) => send(s)} />`
+            : html`<h2>${t("chat.empty.title", { name: bot.name })}</h2>
+              <p>${t("chat.empty.body")}</p>
+              <div class="chips">
+                <button type="button" class="chip" onClick=${() => send(t("chat.empty.sample"))}>${t("chat.empty.sample")}</button>
+                <button type="button" class="chip" onClick=${() => send("/help")}>${t("chat.empty.helpChip")}</button>
+              </div>`}
           <${PwshHint} />
         </div>`}
         ${rows}
       </div>
     </div>
-    ${!atBottom && html`<button type="button" class="to-bottom" aria-label="回到底部" onClick=${toBottom}><${Icon} name="down" />${unseen && html`<span class="new"></span>`}</button>`}
+    ${toBottomBtn.mounted && html`<button type="button" class=${`to-bottom${toBottomBtn.leaving ? " leaving" : ""}`} aria-label=${t("chat.toBottom")} onClick=${toBottom}><${Icon} name="down" size="md" />${unseen && html`<span class="new"></span>`}</button>`}
     <div class="composer-dock">
-      <div class="composer">
-        <textarea ref=${ta} rows="1" placeholder=${`给「${bot.name}」发消息，/ 查看命令`} aria-label="消息" value=${text}
-          onInput=${(e) => { setText(e.target.value); setSlashOff(false); setSlashSel(0); autoGrow(e.target, LINE_PX * 8 + 8); }}
+      <div class="composer" data-guide="composer">
+        <textarea ref=${ta} rows="1" placeholder=${t("chat.composer.placeholder", { name: bot.name })} aria-label=${t("chat.composer.label")} value=${text}
+          onInput=${(e) => { setText(e.target.value); setSlashOff(false); setSlashSel(0); autoGrow(e.target); }}
           onKeyDown=${onKey} />
         <div class="composer-bar">
-        <button type="button" class="plus" ref=${plusRef} aria-label="更多操作" aria-haspopup="menu" aria-expanded=${menu === "plus"} onClick=${() => setMenu(menu === "plus" ? null : "plus")}><${Icon} name="plus" size=${15} stroke=${1.7} /></button>
-        ${PERMS[perm] && html`<button type="button" class=${`model-chip perm ${perm}`} ref=${permRef} title=${`文件权限：${PERMS[perm].note}`} aria-haspopup="menu" aria-expanded=${menu === "perm"}
+        <button type="button" class="plus" ref=${plusRef} aria-label=${t("chat.menu.more")} aria-haspopup="menu" aria-expanded=${menu === "plus"} onClick=${() => setMenu(menu === "plus" ? null : "plus")}><${Icon} name="plus" size="md" /></button>
+        ${permMap[perm] && html`<button type="button" class=${`model-chip perm ${perm}`} ref=${permRef} title=${t("chat.perm.title", { note: permMap[perm].note })} aria-haspopup="menu" aria-expanded=${menu === "perm"}
           onClick=${() => setMenu(menu === "perm" ? null : "perm")}>
-          <${Icon} name=${PERMS[perm].icon} size=${14} class="lead" /><span class="v">${PERMS[perm].label}</span><${Icon} name="chevDown" />
+          <${Icon} name=${permMap[perm].icon} size="sm" class="lead" /><span class="v">${permMap[perm].label}</span><${Icon} name="chevDown" />
         </button>`}
         <span class="grow"></span>
-        <button type="button" class="model-chip" ref=${modelRef} title=${effective ? `当前模型：${effective}` : "选择模型"} aria-haspopup="listbox" aria-expanded=${menu === "model"}
+        <button type="button" class="model-chip" ref=${modelRef} data-guide="model" title=${effective ? t("chat.composer.currentModel", { model: effective }) : t("chat.composer.pickModel")} aria-haspopup="listbox" aria-expanded=${menu === "model"}
           onClick=${() => setMenu(menu === "model" ? null : "model")}>
-          <span class="v">${effective ? shortModel(effective) : "选择模型"}</span><${Icon} name="chevDown" />
+          <span class="v">${effective ? shortModel(effective) : t("chat.composer.pickModel")}</span><${Icon} name="chevDown" />
         </button>
         ${generating
-          ? html`<button type="button" class="send stop" aria-label="停止生成（Esc）" title="停止（Esc）" onClick=${stop}><${Icon} name="stop" size=${12} /></button>`
-          : html`<button type="button" class="send" aria-label="发送" title="发送（Enter）" disabled=${!text.trim()} onClick=${() => send()}><${Icon} name="up" size=${15} stroke=${2} /></button>`}
+          ? html`<button type="button" class="send stop" aria-label=${t("chat.composer.stop")} title=${t("chat.composer.stopTitle")} onMouseDown=${keepFocus} onClick=${stop}><${Icon} name="stop" size="md" /></button>`
+          : html`<button type="button" class=${`send${sentOnce.current ? " back" : ""}`} aria-label=${t("chat.composer.send")} title=${t("chat.composer.sendTitle", { key: sendKey === "mod" ? MOD_ENTER : "Enter" })} disabled=${!text.trim()} onMouseDown=${keepFocus} onClick=${() => send()}><${Icon} name="up" size="md" strong /></button>`}
         </div>
       </div>
     </div>
-    ${slashOpen && ta.current && html`<${Popover} anchor=${ta.current} prefer="up" width=${320} keepFocus label="命令" onClose=${() => setSlashOff(true)}>
-      <ul role="listbox" aria-label="命令">
+    ${slashOpen && ta.current && html`<${Popover} anchor=${ta.current} prefer="up" width=${320} keepFocus label=${t("chat.commandsLabel")} onClose=${() => setSlashOff(true)}>
+      <ul role="listbox" aria-label=${t("chat.commandsLabel")}>
         ${slashHits.map(([c, d], i) => html`<li role="option" aria-selected=${i === slashSel} class=${`explained${i === Math.min(slashSel, slashHits.length - 1) ? " sel" : ""}`}
           onPointerDown=${(e) => e.preventDefault()} onPointerMove=${() => setSlashSel(i)} onClick=${() => completeSlash(c)}>
           <span class="v">${c}</span><span class="n">${d}</span>
         </li>`)}
       </ul>
     <//>`}
-    ${menu === "plus" && html`<${Menu} anchor=${plusRef.current} prefer="up" width=${240} label="更多操作" onClose=${() => setMenu(null)} items=${plusItems} />`}
-    ${menu === "perm" && html`<${Menu} anchor=${permRef.current} prefer="up" width=${280} label="文件权限" onClose=${() => setMenu(null)}
+    ${menu === "plus" && html`<${Menu} anchor=${plusRef.current} prefer="up" width=${240} label=${t("chat.menu.more")} onClose=${() => setMenu(null)} items=${plusItems} />`}
+    ${menu === "perm" && html`<${Menu} anchor=${permRef.current} prefer="up" width=${280} label=${t("chat.perm.menu")} onClose=${() => setMenu(null)}
       items=${[
-        { group: "文件权限" },
-        ...Object.entries(PERMS).map(([k, p]) => ({ label: p.label, note: p.note, icon: p.icon, cur: k === perm, onSelect: () => k !== perm && pickPerm(k) })),
+        { group: t("chat.perm.menu") },
+        ...Object.entries(permMap).map(([k, p]) => ({ label: p.label, note: p.note, icon: p.icon, cur: k === perm, onSelect: () => k !== perm && pickPerm(k) })),
         { sep: true },
-        { label: "更多权限设置…", onSelect: () => onOpenBotSettings?.(bot.id, "permission") },
+        { label: t("chat.perm.more"), onSelect: () => onOpenBotSettings?.(bot.id, "permission") },
       ]} />`}
     ${menu === "model" && html`<${ModelPicker} anchor=${modelRef.current} prefer="up" align="right" models=${models} error=${modelsError} onRetry=${reloadModels}
       current=${convModel || bot.defaultModel || defaultModel} onPick=${pickModel} onClose=${() => setMenu(null)}
-      reset=${{ label: "跟随机器人默认", note: shortModel(bot.defaultModel || defaultModel) || "自动", onSelect: () => pickModel("") }}
-      foot=${{ label: "设为此机器人的默认模型", disabled: !effective || sameModel(effective, bot.defaultModel), onClick: setBotDefault }} />`}
+      reset=${{ label: t("chat.model.followBot"), note: shortModel(bot.defaultModel || defaultModel) || t("common.auto"), onSelect: () => pickModel("") }}
+      foot=${{ label: t("chat.model.setDefault"), disabled: !effective || sameModel(effective, bot.defaultModel), onClick: setBotDefault }} />`}
   </section>`;
 }

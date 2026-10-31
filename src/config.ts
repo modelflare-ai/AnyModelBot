@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeLine, type ModelflareLine } from "./modelflare.js";
+import { normalizeGuide, type GuideState } from "./guide.js";
+import { normalizeLangPref, type LangPref } from "./i18n/index.js";
 
 /**
  * 配置：<dataDir>/config.json + 环境变量（环境变量优先）。
@@ -18,6 +20,10 @@ export interface AppConfig {
     closeToTray: boolean;
     /** Windows 上"建议安装 PowerShell 7"的提示点过"不再提示" */
     pwshHintDismissed: boolean;
+    /** 新手引导（上手清单）的进度，见 src/guide.ts */
+    guide: GuideState;
+    /** 界面语言：system 跟随系统，或 zh-CN / en；托盘菜单和机器人发出的系统消息也用它（src/i18n） */
+    lang: LangPref;
   };
   /**
    * Modelflare 线路；密钥本身只存在内置 magpie 的隔离配置里。
@@ -73,6 +79,8 @@ export function loadConfig(overrides: { dataDir?: string; env?: NodeJS.ProcessEn
       zoom: ZOOMS.includes(Number(file.ui?.zoom)) ? Number(file.ui?.zoom) : 1,
       closeToTray: file.ui?.closeToTray !== false,
       pwshHintDismissed: file.ui?.pwshHintDismissed === true,
+      guide: normalizeGuide(file.ui?.guide),
+      lang: normalizeLangPref(file.ui?.lang),
     },
     modelflare: {
       line: normalizeLine(file.modelflare?.line),

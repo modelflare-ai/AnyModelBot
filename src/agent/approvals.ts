@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { ApprovalRow, Store } from "../store/db.js";
 import { logger } from "../log.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("approvals");
 
@@ -165,34 +166,34 @@ export class ApprovalCenter {
 
   /**
    * 解析渠道里的用户回复（在每用户串行队列之前调用，避免与等待审批的回合互相阻塞）：
-   * - “y 1234” / “n 1234”（也接受 是/否/同意/拒绝/yes/no；会话中只有一个待批准时可省略编号）
+   * - “y 1234” / “n 1234”（也接受 是/否/同意/拒绝/yes/no/approve/allow/deny/reject；会话中只有一个待批准时可省略编号）
    * - 有待回答的提问时，回复编号（多选用逗号/空格分隔）或直接回复文字
    */
   handleReply(conversationId: string, text: string, by: string): ReplyResult {
-    const t = text.trim();
-    if (!t || t.startsWith("/")) return { handled: false };
-    const m = /^(y|yes|ok|是|同意|批准|允许|n|no|否|拒绝|不)\s*[#:：]?\s*(\d{4})?$/i.exec(t);
+    const s = text.trim();
+    if (!s || s.startsWith("/")) return { handled: false };
+    const m = /^(y|yes|ok|approve|allow|是|同意|批准|允许|n|no|deny|reject|否|拒绝|不)\s*[#:：]?\s*(\d{4})?$/i.exec(s);
     if (m && (m[2] || this.pending(conversationId, "approval").length)) {
-      const allow = /^(y|yes|ok|是|同意|批准|允许)$/i.test(m[1]);
+      const allow = /^(y|yes|ok|approve|allow|是|同意|批准|允许)$/i.test(m[1]);
       let row: ApprovalRow | undefined;
       if (m[2]) {
         row = this.store.pendingApprovalByCode(m[2]);
         if (!row || row.conversationId !== conversationId || row.kind !== "approval") {
-          return { handled: true, ack: `⚠️ 没有编号为 ${m[2]} 的待批准请求（可能已过期或已处理）` };
+          return { handled: true, ack: t("approvals.noSuchCode", { code: m[2] }) };
         }
       } else {
         const list = this.pending(conversationId, "approval");
         if (list.length === 1) row = list[0];
-        else return { handled: true, ack: `有 ${list.length} 个待批准请求，请带上编号回复，例如 y ${list[0].code}` };
+        else return { handled: true, ack: t("approvals.needCode", { count: list.length, code: list[0].code }) };
       }
       const ok = this.decide(row.id, allow, by);
-      if (!ok) return { handled: true, ack: `⚠️ 请求 ${row.code} 已过期或已处理` };
-      return { handled: true, ack: allow ? `✅ 已批准 ${row.code}（仅本次）` : `❌ 已拒绝 ${row.code}` };
+      if (!ok) return { handled: true, ack: t("approvals.expiredOrDone", { code: row.code }) };
+      return { handled: true, ack: t(allow ? "approvals.approved" : "approvals.rejected", { code: row.code }) };
     }
     const q = this.pending(conversationId, "question")[0];
     if (q) {
       const questions = safeJson<QuestionItem[]>(q.payload, []);
-      const answer = parseAnswer(questions, t);
+      const answer = parseAnswer(questions, s);
       this.answer(q.id, answer, by);
       return { handled: true };
     }
@@ -232,8 +233,8 @@ export function parseAnswer(questions: QuestionItem[], text: string): QuestionAn
 export function promptText(row: ApprovalRow): string {
   if (row.kind === "approval") {
     const cmd = row.detail ? ` \`${row.detail.replace(/`/g, "'").slice(0, 300)}\`` : "";
-    const why = row.reason && !row.detail ? `（${row.reason.slice(0, 200)}）` : "";
-    return `需批准: ${row.tool}${cmd}${why} — 回复 y ${row.code} / n ${row.code}`;
+    const why = row.reason && !row.detail ? t("approvals.promptWhy", { reason: row.reason.slice(0, 200) }) : "";
+    return t("approvals.prompt", { tool: row.tool, cmd, why, code: row.code });
   }
   const qs = safeJson<QuestionItem[]>(row.payload, []);
   const blocks = qs.map((q, i) => {
@@ -241,6 +242,11 @@ export function promptText(row: ApprovalRow): string {
     const opts = (q.options ?? []).map((o, j) => `  ${j + 1}. ${o.label}${o.description ? ` — ${o.description}` : ""}`);
     return [head, ...opts].join("\n");
   });
-  const hint = qs.length > 1 ? "（每行回答一个问题：回复编号或直接写答案）" : qs[0]?.options?.length ? `（回复编号${qs[0].multiSelect ? "，可多选用逗号分隔" : ""}，或直接写答案）` : "（直接回复答案）";
+  const hint =
+    qs.length > 1
+      ? t("approvals.hintMulti")
+      : qs[0]?.options?.length
+        ? t("approvals.hintOptions", { multi: qs[0].multiSelect ? t("approvals.hintOptionsMulti") : "" })
+        : t("approvals.hintFree");
   return `❓ ${blocks.join("\n\n")}\n${hint}`;
 }

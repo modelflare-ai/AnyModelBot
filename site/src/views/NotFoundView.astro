@@ -1,0 +1,18 @@
+---
+import Base from "../layouts/Base.astro";
+import EyesMark from "../components/EyesMark.astro";
+import { dict, href, type Lang } from "../i18n";
+import "../styles/pages.css";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+---
+<Base lang={lang} path="/404" title={t.notFound.title} noindex>
+  <div class="container nf">
+    <div>
+      <EyesMark size={200} />
+      <h1 class="h2">{t.notFound.h1}</h1>
+      <a class="btn btn--primary" href={href(lang, "/")}>{t.notFound.home}</a>
+    </div>
+  </div>
+</Base>

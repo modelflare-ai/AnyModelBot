@@ -11,6 +11,7 @@
 @import url("base/reset.css") layer(base);
 @import url("base/motion.css") layer(base);
 
+@import url("components/icon.css") layer(components);
 @import url("components/glass.css") layer(components);
 @import url("components/button.css") layer(components);
 @import url("components/field.css") layer(components);
@@ -21,6 +22,7 @@
 @import url("components/popover.css") layer(components);
 @import url("components/model-family.css") layer(components);
 @import url("components/sheet.css") layer(components);
+@import url("components/splitter.css") layer(components);
 @import url("components/toast.css") layer(components);
 @import url("components/notice.css") layer(components);
 @import url("components/feedback.css") layer(components);

@@ -2,6 +2,8 @@
  * 统一消息/事件模型：渠道把平台消息归一化成 InboundEvent，
  * 运行时只产出 OutboundOp，由渠道按自身能力（ChannelCapabilities）落地或降级。
  */
+import { t, type MessageKey } from "../i18n/index.js";
+
 export type ChannelId = "feishu" | "weixin" | "web";
 
 export type Part =
@@ -83,7 +85,11 @@ export type ChannelStatus = {
   since: number;
 };
 
-const MEDIA_LABEL = { image: "图片", file: "文件", video: "视频" } as const;
+const MEDIA_LABEL = {
+  image: ["app.media_image", "app.media_quoted_image"],
+  file: ["app.media_file", "app.media_quoted_file"],
+  video: ["app.media_video", "app.media_quoted_video"],
+} as const satisfies Record<string, readonly [MessageKey, MessageKey]>;
 
 export function eventText(ev: InboundEvent): string {
   return ev.parts
@@ -94,14 +100,14 @@ export function eventText(ev: InboundEvent): string {
         case "quote":
           return `> ${p.text}`;
         case "voice":
-          return p.transcript ? p.transcript : "[语音]";
+          return p.transcript ? p.transcript : t("app.media_voice");
         case "image":
         case "file":
         case "video": {
           // [图片 inbox/x.jpg]、[引用的文件 报告.pdf → inbox/x-报告.pdf]、[视频（未能下载：…）]
-          const label = `${p.quoted ? "引用的" : ""}${MEDIA_LABEL[p.type]}${p.type === "file" && p.name ? " " + p.name : ""}`;
+          const label = `${t(MEDIA_LABEL[p.type][p.quoted ? 1 : 0])}${p.type === "file" && p.name ? " " + p.name : ""}`;
           if (p.path) return `[${label}${p.type === "file" && p.name ? " →" : ""} ${p.path}]`;
-          return p.error ? `[${label}（未能下载：${p.error}）]` : `[${label}]`;
+          return p.error ? `[${t("app.media_not_downloaded", { label, error: p.error })}]` : `[${label}]`;
         }
       }
     })

@@ -1,4 +1,6 @@
 // 本机后端接口：JSON 请求 + 流式对话（POST + text/event-stream，EventSource 不支持 POST）。
+// 每个请求带 x-amb-lang（界面当前语言），服务端的报错和状态文字用同一种语言（src/i18n）。
+import { getLang } from "./i18n.js";
 export class ApiError extends Error {
   constructor(message, status, data) {
     super(message);
@@ -10,7 +12,7 @@ export class ApiError extends Error {
 export async function api(path, opts = {}) {
   const res = await fetch("/amb/api" + path, {
     method: opts.method || "GET",
-    headers: opts.body !== undefined ? { "content-type": "application/json" } : {},
+    headers: { "x-amb-lang": getLang(), ...(opts.body !== undefined ? { "content-type": "application/json" } : {}) },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     signal: opts.signal,
   });
@@ -65,7 +67,7 @@ export function sseParser(onEvent) {
 export async function streamChat(botId, text, handlers, signal) {
   const res = await fetch(`/amb/api/bots/${encodeURIComponent(botId)}/chat/stream`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-amb-lang": getLang() },
     body: JSON.stringify({ text }),
     signal,
   });

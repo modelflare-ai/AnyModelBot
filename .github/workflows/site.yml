@@ -1,0 +1,20 @@
+# 官网（site/）的检查：单测、文案 key、禁词、草稿构建（部署占位符只警告）。
+name: site
+on:
+  push:
+    paths: ["site/**", "ui/design/bots/**", "ui/components/avatar.js", "THIRD_PARTY_NOTICES.md", ".github/workflows/site.yml"]
+  pull_request:
+    paths: ["site/**", "ui/design/bots/**", "ui/components/avatar.js", "THIRD_PARTY_NOTICES.md", ".github/workflows/site.yml"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: site } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: site/package-lock.json }
+      - run: npm ci
+      - run: npm test
+      - run: npm run check
+      - run: npx astro check
+      - run: npm run build:draft

@@ -46,6 +46,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # README 自检（scripts/check-readme.mjs）。--allow-missing：截图和录屏还没全部提交，缺的素材只报警告；
+      # docs/assets/ 补齐后去掉这个参数。
+      - run: npm run docs:check -- --allow-missing
 
   # Does this change touch the agent host, the gateway or the desktop shell? Only then run the
   # Windows end-to-end job below (it needs a Windows runner and ~6 minutes).

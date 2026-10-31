@@ -16,6 +16,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { logger } from "../log.js";
+import { t, type MessageKey } from "../i18n/index.js";
 
 const log = logger("pwsh");
 const W = path.win32;
@@ -202,23 +203,24 @@ export function pwshPatchLines(pwshPath: string | undefined): string[] {
   return pwshPath ? ["- id: pwsh-sandbox", "  config:", `    pwshPath: ${JSON.stringify(pwshPath)}`] : [];
 }
 
-const SOURCE: Record<PwshSource, string> = { "program-files": "安装目录", path: "PATH", preview: "预览版", store: "Microsoft Store" };
+const SOURCE: Record<PwshSource, MessageKey> = { "program-files": "pwsh.sourceProgramFiles", path: "pwsh.sourcePath", preview: "pwsh.sourcePreview", store: "pwsh.sourceStore" };
 
-/** 聊天里 /status 的一行（只在 Windows 上有） */
+/** 聊天里 /status 的一行（只在 Windows 上有；按当前语言，读的时候才拼） */
 export function pwshStatusLine(st: PwshStatus): string {
   if (!st.applicable) return "";
-  if (st.checking) return "PowerShell：检测中";
-  if (!st.missing) return `PowerShell：${st.version ?? "7"}（代理用它执行命令）`;
-  const now = st.found && st.version ? `PowerShell ${st.version} 版本较旧` : "没有安装 PowerShell 7，代理执行命令用的是系统自带的 Windows PowerShell 5.1，每条可能要二三十秒";
-  return `PowerShell：${now}。装上 PowerShell 7，命令执行快得多，也更稳定：${PWSH_WINGET}（或打开 ${PWSH_INSTALL_URL}）`;
+  if (st.checking) return t("pwsh.statusChecking");
+  if (!st.missing) return t("pwsh.statusOk", { version: st.version ?? "7" });
+  const now = st.found && st.version ? t("pwsh.statusOld", { version: st.version }) : t("pwsh.statusNone");
+  return t("pwsh.statusAdvice", { now, winget: PWSH_WINGET, url: PWSH_INSTALL_URL });
 }
 
 /** 诊断报告里的一行（只在 Windows 上有） */
 export function pwshReportLine(st: PwshStatus): string | undefined {
   if (!st.applicable) return undefined;
-  if (st.checking) return "[PowerShell] 检测中";
-  const where = st.path ? ` · ${st.path}（${SOURCE[st.source!] ?? st.source}）` : "";
-  if (!st.missing) return `[PowerShell] ${st.version ?? "7（版本未知）"}${where} · 代理用它执行命令`;
-  if (st.found) return `[PowerShell] ${st.version ?? "?"} 版本较旧${where} · 建议安装 PowerShell 7`;
-  return `[PowerShell] 未安装 PowerShell 7：代理用 Windows PowerShell 5.1 执行命令（经沙箱每条约 25 秒，7 约 1 秒）${st.forced ? " · AMB_PWSH_FORCE 模拟" : ""}`;
+  if (st.checking) return t("pwsh.reportChecking");
+  const source = st.source && SOURCE[st.source] ? t(SOURCE[st.source]) : st.source;
+  const where = st.path ? t("pwsh.reportWhere", { path: st.path, source }) : "";
+  if (!st.missing) return t("pwsh.reportOk", { version: st.version ?? t("pwsh.reportUnknownVersion"), where });
+  if (st.found) return t("pwsh.reportOld", { version: st.version ?? "?", where });
+  return t("pwsh.reportNone", { forced: st.forced ? t("pwsh.reportForced") : "" });
 }

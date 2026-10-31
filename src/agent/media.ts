@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { logger } from "../log.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("agent.media");
 
@@ -64,7 +65,7 @@ export interface MediaPlan {
   all: MediaModel[];
   /** 代理按文档写了自己的请求体：换模型后需要按新模型的文档重写 */
   custom: boolean;
-  /** 给用户看的说明：提示词摘要、参数、参考素材 */
+  /** 给用户看的说明：提示词摘要、参数、参考素材（按当前语言） */
   summary: string;
 }
 
@@ -133,10 +134,11 @@ export function priceNote(e: CatalogEntry | undefined, catalog: Catalog): string
   if (perSecond.length) {
     const want = String(e.media_options?.video?.default_resolution ?? "");
     const [res, p] = perSecond.find(([r]) => r === want) ?? perSecond.sort((a, b) => a[1] - b[1])[0];
-    return `$${num(p * factor)}/秒（${res}）`;
+    return t("media.pricePerSecond", { price: `$${num(p * factor)}`, res });
   }
-  if (e.quota_type === 1 && typeof e.model_price === "number" && e.model_price > 0) return `$${num(e.model_price * factor)}/${e.billing_unit === "per_call" ? "次" : "张"}`;
-  if (e.billing_unit === "token") return "按 token 计费";
+  if (e.quota_type === 1 && typeof e.model_price === "number" && e.model_price > 0)
+    return t(e.billing_unit === "per_call" ? "media.pricePerCall" : "media.pricePerImage", { price: `$${num(e.model_price * factor)}` });
+  if (e.billing_unit === "token") return t("media.priceToken");
   return "";
 }
 
@@ -160,7 +162,8 @@ export function optionsNote(m: MediaModel): string {
 /** 从请求体里挑出给用户看的参数（分辨率、比例、时长……），并数一数参考素材 */
 export function describeBody(body: Record<string, unknown> | undefined): string {
   if (!body) return "";
-  const keys: Record<string, string> = { resolution: "", aspect_ratio: "", ratio: "", size: "", imageSize: "", aspectRatio: "", seconds: "秒", duration: "秒", quality: "" };
+  // true = 时长（数字时带单位"秒"）
+  const keys: Record<string, boolean> = { resolution: false, aspect_ratio: false, ratio: false, size: false, imageSize: false, aspectRatio: false, seconds: true, duration: true, quality: false };
   const seen = new Map<string, string>();
   let refs = 0;
   const walk = (v: unknown, depth: number) => {
@@ -173,13 +176,13 @@ export function describeBody(body: Record<string, unknown> | undefined): string 
       if (k in keys && (typeof x === "string" || typeof x === "number")) {
         // 时长两种写法只显示一个
         const label = k === "duration" ? "seconds" : k === "aspectRatio" || k === "aspect_ratio" ? "ratio" : k === "imageSize" ? "size" : k;
-        if (!seen.has(label)) seen.set(label, `${x}${keys[k] && Number(x) > 0 ? ` ${keys[k]}` : ""}`);
+        if (!seen.has(label)) seen.set(label, keys[k] && Number(x) > 0 ? t("media.seconds", { n: x }) : String(x));
       } else walk(x, depth + 1);
     }
   };
   walk(body, 0);
   const parts = [...seen.values()];
-  if (refs) parts.push(`${refs} 个参考素材`);
+  if (refs) parts.push(t("media.references", { count: refs }));
   return parts.join(" · ");
 }
 
@@ -334,8 +337,14 @@ export class MediaService {
     if (!model) throw new MediaError(`没有这个模型：${name}。可用：${all.map((m) => m.id).join("、")}`);
     const hasRefs = /"workspace(-base64)?:|"https?:\/\/|"data:/.test(JSON.stringify(body ?? {}));
     const candidates = [def, ...all].filter((m, i, a) => m !== model && a.indexOf(m) === i && (hasRefs || !m.requiresReference)).slice(0, 3);
-    const params = describeBody(body) || [typeof args.size === "string" ? args.size : "", Number(args.seconds) > 0 ? `${args.seconds} 秒` : ""].filter(Boolean).join(" · ");
-    const summary = [`提示词：${prompt.length > 120 ? `${prompt.slice(0, 120)}…` : prompt}`, params && `参数：${params}`, model.price && `参考价：${model.price}`].filter(Boolean).join("\n");
+    const params = describeBody(body) || [typeof args.size === "string" ? args.size : "", Number(args.seconds) > 0 ? t("media.seconds", { n: String(args.seconds) }) : ""].filter(Boolean).join(" · ");
+    const summary = [
+      t("media.summaryPrompt", { prompt: prompt.length > 120 ? `${prompt.slice(0, 120)}…` : prompt }),
+      params && t("media.summaryParams", { params }),
+      model.price && t("media.summaryPrice", { price: model.price }),
+    ]
+      .filter(Boolean)
+      .join("\n");
     return { kind, model, default: def, candidates, all, custom: !!body, summary };
   }
 

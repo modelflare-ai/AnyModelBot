@@ -7,6 +7,7 @@ import { IlinkClient, MessageItemType, MessageType, WeixinApiError, hasDownloada
 import { StreamingMarkdownFilter } from "./markdown-filter.js";
 import { WeixinQuota } from "./quota.js";
 import { logger } from "../../log.js";
+import { t } from "../../i18n/index.js";
 
 export const WEIXIN_CAPS: ChannelCapabilities = {
   streaming: false,
@@ -116,20 +117,20 @@ export class WeixinReply implements ReplySession {
             // 上传失败不占配额；发送串行，先查后扣不会超发
             await this.client.sendMedia(this.userId, op.path, this.contextToken);
             this.quota.tryConsume(this.userId);
-            this.sent.push(`[文件] ${op.name}`);
+            this.sent.push(t("channel.sent_file", { name: op.name }));
           } catch (e) {
             this.log.warn("weixin media send failed", { name: op.name, message: (e as Error).message.slice(0, 200) });
             if (this.quota.tryConsume(this.userId)) {
-              const t = `⚠️ 文件「${op.name}」发送失败，可在工作区中查看。`;
-              await this.client.sendText(this.userId, t, this.contextToken);
-              this.sent.push(t);
+              const text = t("channel.file_failed", { name: op.name });
+              await this.client.sendText(this.userId, text, this.contextToken);
+              this.sent.push(text);
             }
           }
         });
       case "interactive": {
         const text = op.requestId
           ? op.prompt // 代理请求：提示里已含编号/回复方式
-          : `${op.prompt}${op.options?.length ? "\n" + op.options.map((o, i) => `${i + 1}. ${o}`).join("\n") + "\n（回复编号选择）" : ""}`;
+          : `${op.prompt}${op.options?.length ? "\n" + op.options.map((o, i) => `${i + 1}. ${o}`).join("\n") + "\n" + t("channel.reply_with_number") : ""}`;
         return this.enqueue(async () => {
           await this.send(text, { raw: !!op.requestId });
           if (this.typingOn) await this.typing(true);
@@ -173,7 +174,7 @@ export class WeixinReply implements ReplySession {
     let toSend = chunks;
     if (chunks.length > budget) {
       toSend = chunks.slice(0, budget);
-      const note = "\n\n…（回复过长，已达到本轮可发送条数上限，请回复任意消息继续）";
+      const note = "\n\n" + t("channel.reply_truncated");
       toSend[budget - 1] = toSend[budget - 1].slice(0, WEIXIN_CAPS.maxTextLength - note.length) + note;
     }
     for (const c of toSend) {
@@ -187,7 +188,14 @@ export class WeixinReply implements ReplySession {
 /** 微信 iLink 渠道：getupdates 长轮询 → 每用户串行队列 → 运行时。 */
 export class WeixinChannel {
   readonly caps = WEIXIN_CAPS;
-  status: ChannelStatus = { state: "disabled", since: Date.now() };
+  private st: ChannelStatus = { state: "disabled", since: Date.now() };
+
+  /** 尚未扫码、登录过期的说明读的时候再翻译（界面换了语言跟着变） */
+  get status(): ChannelStatus {
+    if (this.st.state === "login_required") return { ...this.st, detail: t("channel.wx_login_required") };
+    if (this.st.state === "expired") return { ...this.st, detail: t("channel.wx_expired") };
+    return this.st;
+  }
   private client: IlinkClient | undefined;
   private abort: AbortController | undefined;
   private loop: Promise<void> | undefined;
@@ -216,7 +224,7 @@ export class WeixinChannel {
     if (this.loop) return;
     const acct = this.store.getWeixinAccount(this.botId);
     if (!acct) {
-      this.status = { state: "login_required", detail: "尚未扫码登录", since: Date.now() };
+      this.st = { state: "login_required", since: Date.now() };
       return;
     }
     this.client = new IlinkClient({ baseUrl: acct.baseUrl, token: acct.botToken, fetchImpl: this.opts.fetchImpl, cdnBaseUrl: this.opts.cdnBaseUrl });
@@ -241,7 +249,7 @@ export class WeixinChannel {
     this.abort?.abort();
     await this.loop?.catch(() => {});
     this.loop = undefined;
-    if (this.status.state !== "expired") this.status = { state: "disabled", since: Date.now() };
+    if (this.st.state !== "expired") this.st = { state: "disabled", since: Date.now() };
   }
 
   private sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -256,22 +264,22 @@ export class WeixinChannel {
 
   private async run(signal: AbortSignal): Promise<void> {
     let failures = 0;
-    this.status = { state: "connecting", since: Date.now() };
+    this.st = { state: "connecting", since: Date.now() };
     while (!signal.aborted) {
       const acct = this.store.getWeixinAccount(this.botId);
       if (!acct) {
-        this.status = { state: "login_required", detail: "尚未扫码登录", since: Date.now() };
+        this.st = { state: "login_required", since: Date.now() };
         return;
       }
       if (acct.pausedUntil > Date.now()) {
-        this.status = { state: "expired", detail: "登录已过期（-14），请在界面重新扫码", since: Date.now() };
+        this.st = { state: "expired", since: Date.now() };
         await this.sleep(Math.min(acct.pausedUntil - Date.now(), 60_000), signal);
         continue;
       }
       try {
         const resp = await this.client!.getUpdates(acct.cursor, this.opts.pollTimeoutMs ?? 35_000, signal);
         failures = 0;
-        if (this.status.state !== "connected") this.status = { state: "connected", since: Date.now() };
+        if (this.st.state !== "connected") this.st = { state: "connected", since: Date.now() };
         if (resp.get_updates_buf) this.store.setWeixinCursor(this.botId, resp.get_updates_buf);
         for (const m of resp.msgs ?? []) this.onMessage(m);
       } catch (e) {
@@ -279,12 +287,12 @@ export class WeixinChannel {
         if (e instanceof WeixinApiError && e.sessionExpired) {
           this.log.warn(`bot ${this.botId}: iLink session expired (-14), pausing 1h; re-login required`);
           this.store.setWeixinPaused(this.botId, Date.now() + SESSION_PAUSE_MS);
-          this.status = { state: "expired", detail: "登录已过期（-14），请在界面重新扫码", since: Date.now() };
+          this.st = { state: "expired", since: Date.now() };
           this.onExpired?.(this.botId);
           continue;
         }
         failures++;
-        this.status = { state: "error", detail: (e as Error).message, since: Date.now() };
+        this.st = { state: "error", detail: (e as Error).message, since: Date.now() };
         this.log.warn("getupdates failed", { failures, message: (e as Error).message });
         await this.sleep(failures >= 3 ? this.opts.backoffMs ?? 30_000 : this.opts.retryDelayMs ?? 2000, signal);
         if (failures >= 3) failures = 0;
@@ -327,7 +335,7 @@ export class WeixinChannel {
         await this.runtime.handle(ev, reply);
       } catch (e) {
         this.log.error("handle failed", { message: (e as Error).message });
-        await reply.apply({ type: "text", text: `⚠️ 处理失败：${(e as Error).message}` }).catch(() => {});
+        await reply.apply({ type: "text", text: t("channel.handle_failed", { message: (e as Error).message }) }).catch(() => {});
       }
     });
     this.pending.add(p);

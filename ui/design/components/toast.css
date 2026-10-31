@@ -12,7 +12,7 @@
   padding: var(--space-1) var(--space-3); border-radius: var(--r-full);
   max-width: min(480px, calc(100vw - 2 * var(--float-inset)));
   background: var(--grain), var(--toast-bg); color: var(--toast-fg); backdrop-filter: var(--glass-filter-sm);
-  box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 .5px var(--toast-edge), var(--shadow-md);   /* 描边：浮层玻璃的细边 */
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 var(--hairline) var(--toast-edge), var(--shadow-md);   /* 描边：浮层玻璃的细边 */
   display: flex; gap: var(--space-2); align-items: center;
   --rise: 6px;
   animation: rise-in var(--dur-base) var(--ease-out);

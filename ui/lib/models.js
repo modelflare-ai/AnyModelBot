@@ -5,7 +5,7 @@ export const normModel = (m) => (m && m.startsWith("modelflare/") ? m.slice("mod
 export const sameModel = (a, b) => !!a && !!b && normModel(a) === normModel(b);
 export const shortModel = (m) => (m && m.includes("/") ? m.slice(m.lastIndexOf("/") + 1) : m);
 
-// —— 模型族：按名字认（Modelflare 的 ID 不带厂商前缀，如 gpt-6-sol、claude-opus-5-5）。数组顺序就是显示顺序，认不出的归「其他」放最后 ——
+// —— 模型族：按名字认（Modelflare 的 ID 不带厂商前缀，如 gpt-6-sol、claude-opus-5-5）。数组顺序就是显示顺序，认不出的归 OTHER_FAMILY 放最后 ——
 const FAMILIES = [
   ["GPT", /^(gpt|chatgpt|codex|o\d)/],
   ["Claude", /^claude/],
@@ -20,7 +20,8 @@ const FAMILIES = [
   ["Llama", /^llama/],
   ["Mistral", /^(mistral|mixtral|magistral|codestral|devstral|ministral)/],
 ];
-export const OTHER_FAMILY = "其他";
+/** 认不出的族：一个不随语言变的记号，显示时由界面翻译（model-picker.js 的 familyName，「其他」/ Other） */
+export const OTHER_FAMILY = "other";
 const ORDER = [...FAMILIES.map(([f]) => f), OTHER_FAMILY];
 
 export function modelFamily(id) {

@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import type { AddressInfo } from "node:net";
 import { logger, redactText, registerSecret } from "../log.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("agent.bridge");
 
@@ -109,7 +110,7 @@ export class AgentBridge {
 
   private async proxy(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
     const up = this.h.upstream();
-    if (!up.baseUrl) throw new Error("模型网关未就绪");
+    if (!up.baseUrl) throw new Error(t("agent.gatewayNotReady"));
     const target = up.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "") + url;
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) {

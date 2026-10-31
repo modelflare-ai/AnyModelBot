@@ -1,0 +1,51 @@
+---
+// 第 4 节章节头的"填充"（放进 SectionHead 的插槽；样式在 styles/models-key.css）：把两句标题各落成一样实物——
+//   One key.    → 标题下面一颗公式胶囊：「🔑 1 个 Key → 70 个模型 · 13 家厂商」（数字来自价格快照）
+//   Every model. → 标题两侧散落一片毛玻璃厂商图标砖：有标志的厂商（不放快手，用户 2026-10-31 要求），标志用官方彩色版
+//                  （本来就是单色的几家跟着文字颜色走；彩色图标表由 Models.astro 的 VendorSprite color 放进页面）；
+//                  砖越大、越靠近标题，这家在 Modelflare 上的模型越多；悬停一块砖它会浮起并显示厂商名。窄屏少放几块，手机上不放（只留胶囊）。
+// 第一次滚到时随章节头依次浮现（内容出现），之后每块砖各自很轻地上下浮动（±3px，用户明确要的例外，见 README 动效规矩）。
+// 砖底只用中性白 / 灰的毛玻璃，不铺角色色和黄绿——颜色只来自标志本身。
+import "../styles/models-key.css";
+import Icon from "./Icon.astro";
+import VendorLogo from "./VendorLogo.astro";
+import { dict, fmt, buildVars, type Lang } from "../i18n";
+import { pricing } from "../lib/site";
+import { vendorLogo } from "../lib/vendors";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const v = buildVars(lang);
+
+// 有标志的厂商按价格快照里的模型数从多到少排（同样多的保持快照顺序）
+const count = (vd: string) => pricing.rows.filter((r) => r.vendor === vd).length;
+const vendors = pricing.vendors.filter((vd) => vendorLogo(vd)).map((vd, i) => ({ vd, n: count(vd), i })).sort((a, b) => b.n - a.n || a.i - b.i).map((x) => x.vd);
+
+// 砖的位置（章节头盒子的百分比）和边长：大的排在前面、离标题近；左右交替，左边多一块。
+// 标题占中间约 36–64%、说明占 26–74% 的下半部分，所有砖都避开这两块。
+// far：窄屏（< 1024px）收起的那几块（太靠近标题、在角上，或会碰到变宽了的说明）
+const SLOTS: { x: number; y: number; s: number; far?: boolean }[] = [
+  { x: 14, y: 50, s: 76 }, { x: 86, y: 48, s: 72 },
+  { x: 29, y: 30, s: 56, far: true }, { x: 71, y: 32, s: 56, far: true },
+  { x: 5, y: 22, s: 52 }, { x: 95, y: 24, s: 52 },
+  { x: 20, y: 84, s: 52, far: true }, { x: 80, y: 84, s: 48, far: true },
+  { x: 3, y: 76, s: 44 }, { x: 97, y: 74, s: 44 },
+  { x: 21, y: 12, s: 40, far: true }, { x: 79, y: 12, s: 40, far: true },
+  { x: 4, y: 50, s: 36, far: true },
+];
+const tiles = vendors.slice(0, SLOTS.length).map((vd, i) => ({ vd, ...SLOTS[i] }));
+const key = `<path d="M14.5 9.5a4.5 4.5 0 1 1-1.3-3.2"/><circle cx="10" cy="9.5" r="1.4"/><path d="M13.2 12.6 20 19.5M17.2 16.6l1.8-1.8M15.5 15l1.4-1.4"/>`;
+---
+<div class="mkey__tiles" aria-hidden="true">
+  {tiles.map((tl, i) => (
+    <span class:list={["mkey__tile", { "mkey__tile--far": tl.far }]} data-name={tl.vd}
+      style={`--x:${tl.x}%;--y:${tl.y}%;--s:${tl.s}px;--i:${i};--o:${(1 - i * 0.035).toFixed(2)}`}>
+      <VendorLogo vendor={tl.vd} size={Math.round(tl.s * 0.42)} />
+    </span>
+  ))}
+</div>
+<p class="mkey__eq">
+  <span class="mkey__key"><svg class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" set:html={key} />{t.models.keyOne}</span>
+  <Icon name="arrow" size={16} class="mkey__arrow" />
+  <span class="mkey__all">{fmt(t.models.keyAll, v)}</span>
+</p>

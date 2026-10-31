@@ -12,7 +12,7 @@
 .pick:active:not(:disabled) { background: var(--pill-press); transform: scale(var(--press)); }
 .pick:disabled { opacity: var(--o-disabled); }
 .pick .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pick .ic { width: 12px; height: 12px; color: var(--muted); transition: transform var(--t-base); }
+.pick .ic { --ic-size: var(--ic-xs); color: var(--muted); transition: transform var(--t-base); }
 .pick[aria-expanded="true"] .ic { transform: rotate(180deg); }
 
 /* —— 弹出层：从锚点方向（--ox）弹出；向上打开时加 .up —— */
@@ -53,7 +53,7 @@
 :is(.pop, .palette) .search { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border-bottom: 1px solid var(--line-2); color: var(--muted); flex: none; transition: color var(--t-fast); }
 :is(.pop, .palette) .search:focus-within { color: var(--fg-2); }
 :is(.pop, .palette) .search input { flex: 1; min-width: 0; background: none; border: 0; outline: none; height: 38px; font-size: var(--fs-md); }
-:is(.pop, .palette) .search input::placeholder { color: var(--faint); }
+:is(.pop, .palette) .search input::placeholder { color: var(--placeholder); }
 :is(.pop, .palette) ul { list-style: none; margin: 0; overflow-y: auto; padding: var(--pop-pad); flex: 1 1 auto; }
 :is(.pop, .palette) li {
   display: flex; align-items: center; gap: var(--space-2); min-height: 30px; padding: 0 var(--space-2);
@@ -81,7 +81,7 @@
 :is(.pop, .palette) li.explained { white-space: normal; padding: var(--space-1-5) var(--space-2); align-items: flex-start; flex-direction: column; gap: var(--space-0-5); }
 /* Menu 的说明项：[图标] 标题 / 说明两行 [✓] */
 :is(.pop, .palette) li.rich { white-space: normal; padding: var(--space-1-5) var(--space-2); }
-:is(.pop, .palette) li .lead { flex: none; align-self: flex-start; margin-top: 1px; color: var(--ctl-fg); display: inline-flex; }   /* 微调：图标和第一行文字居中 */
+:is(.pop, .palette) li .lead { flex: none; align-self: flex-start; margin-top: 2px; color: var(--ctl-fg); display: inline-flex; }   /* 微调：14px 图标和第一行文字（约 17.5px 行高）居中 */
 :is(.pop, .palette) li .txt { flex: 1; min-width: 0; display: grid; gap: var(--space-0-5); }
 :is(.pop, .palette) li .txt .n { font-size: var(--fs-xs); line-height: var(--lh-snug); }
 :is(.pop, .palette) .empty { padding: var(--space-3-5) var(--space-3); color: var(--muted); font-size: var(--fs-sm); text-align: center; }

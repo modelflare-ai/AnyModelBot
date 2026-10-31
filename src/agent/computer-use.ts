@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { cuaRoots, detectCua, CUA_READ_TOOLS, type CuaStatus } from "./cua-driver.js";
 import type { CuBackend } from "./settings.js";
+import { t, tl, type MessageKey } from "../i18n/index.js";
 
 /**
  * 电脑操作（Computer Use）有两个后端：
@@ -15,7 +16,8 @@ export const CU_SERVER = "computer-use";
 export const CU_TOOL_PREFIX = `mcp__${CU_SERVER}__`;
 /** Codex 桥里只读取界面、不改变任何东西的工具（ask-input 模式下也免审批） */
 export const CU_READONLY_TOOLS = ["list_apps", "get_app_state"];
-export const CU_UNAVAILABLE = "Codex Computer Use 桥: 需要 macOS 14.4+ 和已安装的 Codex Computer Use";
+/** 中文原文（测试比对用）；界面里的说明按当前语言，见 detectComputerUse */
+export const CU_UNAVAILABLE = tl("zh-CN", "cu.codexUnavailable");
 
 export interface CuProbe {
   platform: NodeJS.Platform;
@@ -29,7 +31,7 @@ export interface CuProbe {
 
 export interface CuStatus {
   available: boolean;
-  /** 给界面的说明（中文） */
+  /** 给界面的说明（检测时的当前语言；每次读状态都重新检测） */
   reason: string;
   client?: string;
   launcher?: string;
@@ -101,19 +103,19 @@ export function bundledRoots(runtimeDir: string): string[] {
 }
 
 export function detectComputerUse(roots: string[], probe: CuProbe = defaultProbe()): CuStatus {
-  const off = (why: string): CuStatus => ({ available: false, reason: `${CU_UNAVAILABLE}（${why}）` });
-  if (probe.platform !== "darwin") return off("当前系统不是 macOS");
-  if (!macAtLeast144(probe.release)) return off("macOS 版本低于 14.4");
+  const off = (why: MessageKey): CuStatus => ({ available: false, reason: t("cu.codexOff", { base: t("cu.codexUnavailable"), why: t(why) }) });
+  if (probe.platform !== "darwin") return off("cu.codexNotMac");
+  if (!macAtLeast144(probe.release)) return off("cu.codexOldMac");
   const root = roots.find((r) => probe.isFile(path.join(r, "bin", "computer-use-mcp-bridge.mjs")));
-  if (!root) return off("安装包缺少 kimi-computer-use 组件");
+  if (!root) return off("cu.codexNoBridge");
   const { codexHome, client } = clientPath(probe.env, probe.homedir);
-  if (!probe.isExecutable(client)) return off("未找到 Codex Computer Use 客户端");
+  if (!probe.isExecutable(client)) return off("cu.codexNoClient");
   const direct = probe.env.COMPUTER_USE_BRIDGE_DIRECT_LAUNCH === "1";
   const launcher = direct ? undefined : launcherCandidates(probe.env).find((p) => probe.isExecutable(p));
-  if (!direct && !launcher) return off("未找到 ChatGPT/Codex 应用自带的 codex 启动器");
+  if (!direct && !launcher) return off("cu.codexNoLauncher");
   return {
     available: true,
-    reason: "Codex Computer Use 桥: 可用（macOS）",
+    reason: t("cu.codexAvailable"),
     client,
     launcher,
     codexHome,
@@ -179,6 +181,6 @@ export function resolveComputerUse(want: CuBackend, runtimeDir: string): CuResol
   if (want === "codex" && codex.available) {
     return { backend: "codex", available: true, reason: codex.reason, backends, cua, codex, readTools: CU_READONLY_TOOLS };
   }
-  const fallback = want === "codex" ? `（Codex 桥不可用，已改用 Cua Driver：${codex.reason}）` : "";
+  const fallback = want === "codex" ? t("cu.codexFallback", { reason: codex.reason }) : "";
   return { backend: "cua", available: cua.available, reason: cua.reason + fallback, notice: cua.notice, backends, cua, codex, readTools: CUA_READ_TOOLS };
 }

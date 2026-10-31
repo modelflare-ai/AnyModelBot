@@ -1,0 +1,28 @@
+---
+// AnyModelBot Eyes 标记（§7.2）。装饰性，aria-hidden；动效见 styles/eyes.css 与 lib/eyes.ts。
+interface Props {
+  size?: number | string;
+  variant?: "solid" | "ring";
+  mode?: "idle" | "follow" | "static";
+  lookAt?: string;
+  on?: "accent";
+  class?: string;
+  id?: string;
+}
+const { size = "1em", variant = "solid", mode = "idle", lookAt, on, class: cls, id } = Astro.props;
+const s = typeof size === "number" ? `${size}px` : size;
+---
+<svg class:list={["amb-mark", cls]} id={id} viewBox="0 0 100 100" width={s} height={s} style={`--mark-size:${s}`}
+  aria-hidden="true" focusable="false" data-amb-mark data-mode={mode} data-variant={variant} data-look-at={lookAt} data-on={on}>
+  <g class="amb-mark__head">
+    <rect class="amb-mark__plate" x="3" y="9" width="94" height="82" rx="36" />
+    <g class="amb-mark__eyes">
+      <g class="amb-mark__squint">
+        <g class="amb-mark__lids">
+          <rect class="amb-mark__eye" x="29" y="36" width="13" height="28" rx="6.5" />
+          <rect class="amb-mark__eye" x="58" y="36" width="13" height="28" rx="6.5" />
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

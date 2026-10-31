@@ -6,6 +6,7 @@ import { ModelPicker, shortModel } from "../components/model-picker.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
 import { usd } from "../lib/links.js";
+import { t } from "../lib/i18n.js";
 
 function Row({ id, name, sub, title, children, off }) {
   return html`<div class=${`row${off ? " off" : ""}`} id=${`bot-${id}`} title=${title}>
@@ -57,20 +58,20 @@ function BudgetRows({ bot, budget, account, onSaved, onOpenSettings }) {
     if (v !== budget.limitUsd) save(budget.enabled, v);
   };
   if (!signedIn) {
-    return html`<${Row} id="budget" name="预算" sub="登录 Modelflare 账户后，可以给这个机器人单独设花费上限">
-      <button type="button" class="text accent" onClick=${() => onOpenSettings("modelflare", "account")}>去登录</button>
+    return html`<${Row} id="budget" name=${t("botSettings.budget.name")} sub=${t("botSettings.budget.signedOut")}>
+      <button type="button" class="text accent" onClick=${() => onOpenSettings("modelflare", "account")}>${t("botSettings.budget.signIn")}</button>
     <//>`;
   }
   const sub = !budget.enabled
-    ? "与其他机器人共用本机的 Key，不单独限额"
+    ? t("botSettings.budget.off")
     : use
-      ? `已用 ${usd(use.used_usd)}，还剩 ${usd(use.remain_usd)}${use.status === "exhausted" ? " · 已用完，机器人暂停调用模型" : ""}`
-      : "用这个机器人自己的 Key，花到上限就停";
-  return html`<${Row} id="budget" name="预算" sub=${sub}>
-      <${Switch} label="预算" value=${budget.enabled} disabled=${busy} onChange=${(v) => save(v, Number(limit) || budget.limitUsd)} />
+      ? t(use.status === "exhausted" ? "botSettings.budget.exhausted" : "botSettings.budget.usage", { used: usd(use.used_usd), remain: usd(use.remain_usd) })
+      : t("botSettings.budget.on");
+  return html`<${Row} id="budget" name=${t("botSettings.budget.name")} sub=${sub}>
+      <${Switch} label=${t("botSettings.budget.name")} value=${budget.enabled} disabled=${busy} onChange=${(v) => save(v, Number(limit) || budget.limitUsd)} />
     <//>
-    <${Row} id="budget-limit" name="上限（美元）" sub="包括已经花掉的部分；调高后用完的 Key 会自动恢复" off=${!budget.enabled}>
-      <input class="field num-in" type="number" min="0" step="1" inputmode="decimal" aria-label="预算上限（美元）" value=${limit} disabled=${!budget.enabled || busy}
+    <${Row} id="budget-limit" name=${t("botSettings.budget.limit")} sub=${t("botSettings.budget.limitSub")} off=${!budget.enabled}>
+      <input class="field num-in" type="number" min="0" step="1" inputmode="decimal" aria-label=${t("botSettings.budget.limitLabel")} value=${limit} disabled=${!budget.enabled || busy}
         onInput=${(e) => setLimit(e.target.value)} onBlur=${commitLimit} onKeyDown=${(e) => e.key === "Enter" && e.target.blur()} />
     <//>`;
 }
@@ -114,7 +115,7 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
     onBotUpdated();
   };
   const del = async () => {
-    if (!(await confirmSheet({ title: `删除「${bot.name}」？`, body: "会永久删除这个机器人及其全部会话，无法恢复。", confirmLabel: "永久删除", danger: true }))) return;
+    if (!(await confirmSheet({ title: t("botSettings.delete.title", { name: bot.name }), body: t("botSettings.delete.body"), confirmLabel: t("botSettings.delete.confirm"), danger: true }))) return;
     try {
       await api(`/bots/${bot.id}`, { method: "DELETE" });
       onDeleted();
@@ -133,35 +134,35 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
   const codex = cu && cu.backends && cu.backends.find((b) => b.id === "codex");
   return html`<section class="settings view" data-screen="bot-settings">
     <div class="set-head">
-      <button type="button" class="icon-btn set-back" aria-label="返回对话" title="返回对话（Esc）" onClick=${onBack}><${Icon} name="arrowLeft" size=${16} /></button>
+      <button type="button" class="icon-btn set-back" aria-label=${t("botSettings.back")} title=${t("botSettings.backTitle")} onClick=${onBack}><${Icon} name="arrowLeft" size="md" /></button>
       <${BotAvatar} bot=${bot} char=${s && s.avatar} size=${36} cue=${hi} pokeable />
-      <div class="set-titles"><h1 class="set-title">${bot.name}</h1><div class="set-sub">机器人设置</div></div>
+      <div class="set-titles"><h1 class="set-title">${bot.name}</h1><div class="set-sub">${t("botSettings.title")}</div></div>
     </div>
     <div class="set-body">
-      <div class="list-head">身份</div>
+      <div class="list-head">${t("botSettings.identity")}</div>
       <div class="set-field" id="bot-avatar">
-        <span class="k">头像<span class="hint">每个角色有自己的小动作</span></span>
+        <span class="k">${t("botSettings.avatar")}<span class="hint">${t("botSettings.avatarHint")}</span></span>
         ${s ? html`<${AvatarPicker} value=${s.avatar} fallback=${charOf(bot)} onChange=${pickAvatar} />` : html`<${Skeleton} w="60%" />`}
       </div>
       <label class="set-field" id="bot-name">
-        <span class="k">名称</span>
+        <span class="k">${t("botSettings.name")}</span>
         <input class="field" value=${name} maxlength="60" onInput=${(e) => setName(e.target.value)} onBlur=${commitName}
           onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.stopPropagation(); setName(bot.name); requestAnimationFrame(() => e.target.blur()); } }} />
       </label>
       <label class="set-field" id="bot-prompt">
-        <span class="k">人设 / 系统提示词<span class="hint">离开输入框时保存</span></span>
-        <textarea class="field" ref=${promptRef} placeholder="例如：你是一个乐于助人的中文助手，回答简洁准确。" value=${prompt}
+        <span class="k">${t("botSettings.prompt")}<span class="hint">${t("botSettings.promptHint")}</span></span>
+        <textarea class="field" ref=${promptRef} placeholder=${t("botSettings.promptPlaceholder")} value=${prompt}
           onInput=${(e) => setPrompt(e.target.value)} onBlur=${() => prompt !== (bot.systemPrompt || "") && putBot({ systemPrompt: prompt })} />
       </label>
 
-      <div class="list-head">模型</div>
+      <div class="list-head">${t("botSettings.model.head")}</div>
       <div class="list">
-        <${Row} id="model" name="默认模型" sub="会话里还可以临时切换">
+        <${Row} id="model" name=${t("botSettings.model.default")} sub=${t("botSettings.model.defaultSub")}>
           <${ModelButton} value=${bot.defaultModel} models=${models} modelsError=${modelsError} reloadModels=${reloadModels}
-            resetLabel=${`跟随全局默认${defaultModel ? `（${shortModel(defaultModel)}）` : ""}`} onChange=${(m) => putBot({ defaultModel: m })} />
+            resetLabel=${defaultModel ? t("botSettings.model.followGlobalWith", { model: shortModel(defaultModel) }) : t("botSettings.model.followGlobal")} onChange=${(m) => putBot({ defaultModel: m })} />
         <//>
-        <${Row} id="utility" name="后台小任务模型" sub="记忆整理、上下文管家与交接便条">
-          ${s && html`<${ModelButton} value=${s.utilityModel} models=${models} modelsError=${modelsError} reloadModels=${reloadModels} resetLabel="与对话模型相同" onChange=${(m) => put({ utilityModel: m })} />`}
+        <${Row} id="utility" name=${t("botSettings.model.utility")} sub=${t("botSettings.model.utilitySub")}>
+          ${s && html`<${ModelButton} value=${s.utilityModel} models=${models} modelsError=${modelsError} reloadModels=${reloadModels} resetLabel=${t("botSettings.model.sameAsChat")} onChange=${(m) => put({ utilityModel: m })} />`}
         <//>
         ${s && account && html`<${BudgetRows} bot=${bot} budget=${s.budget} account=${account} onOpenSettings=${onOpenSettings}
           onSaved=${(settings) => setD((v) => ({ ...v, settings }))} />`}
@@ -169,55 +170,55 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
 
       ${!s && html`<div class="list"><div class="row"><${Skeleton} w="45%" /></div><div class="row"><${Skeleton} w="35%" /></div></div>`}
       ${s && html`
-        <div class="list-head">权限</div>
+        <div class="list-head">${t("botSettings.perm.head")}</div>
         <div class="list">
-          <${Row} id="permission" name="文件权限" sub=${s.permission === "readonly" ? "不能改文件，命令在只读沙箱中运行" : "只能改本机器人工作区，越界操作需要你批准"}
-            title="工作区可写（默认）：只能改本机器人工作区，越界操作需审批；只读：不能改文件，命令在只读沙箱中运行">
-            <${Seg} label="文件权限" value=${s.permission} onChange=${(v) => put({ permission: v })} options=${[["workspace", "工作区可写"], ["readonly", "只读"]]} />
+          <${Row} id="permission" name=${t("botSettings.perm.name")} sub=${s.permission === "readonly" ? t("botSettings.perm.readonlySub") : t("botSettings.perm.workspaceSub")}
+            title=${t("botSettings.perm.title")}>
+            <${Seg} label=${t("botSettings.perm.name")} value=${s.permission} onChange=${(v) => put({ permission: v })} options=${[["workspace", t("botSettings.perm.workspace")], ["readonly", t("botSettings.perm.readonly")]]} />
           <//>
         </div>
 
-        <div class="list-head">记忆</div>
+        <div class="list-head">${t("botSettings.memory.head")}</div>
         <div class="list">
-          <${Row} id="memory" name="长期记忆" sub="remember / forget / recall">
-            <${Switch} label="长期记忆" value=${s.memory.enabled} onChange=${(v) => put({ memory: { enabled: v } })} />
+          <${Row} id="memory" name=${t("botSettings.memory.name")} sub="remember / forget / recall">
+            <${Switch} label=${t("botSettings.memory.name")} value=${s.memory.enabled} onChange=${(v) => put({ memory: { enabled: v } })} />
           <//>
-          <${Row} id="memory-review" name="回合结束后自动整理" off=${!s.memory.enabled}>
-            <${Switch} label="自动整理记忆" value=${s.memory.review} disabled=${!s.memory.enabled} onChange=${(v) => put({ memory: { review: v } })} />
+          <${Row} id="memory-review" name=${t("botSettings.memory.review")} off=${!s.memory.enabled}>
+            <${Switch} label=${t("botSettings.memory.reviewLabel")} value=${s.memory.review} disabled=${!s.memory.enabled} onChange=${(v) => put({ memory: { review: v } })} />
           <//>
-          <${Row} id="memory-team" name="允许写入团队记忆" sub="所有机器人共享" off=${!s.memory.enabled}>
-            <${Switch} label="团队记忆" value=${s.memory.teamWrite} disabled=${!s.memory.enabled} onChange=${(v) => put({ memory: { teamWrite: v } })} />
+          <${Row} id="memory-team" name=${t("botSettings.memory.team")} sub=${t("botSettings.memory.teamSub")} off=${!s.memory.enabled}>
+            <${Switch} label=${t("botSettings.memory.teamLabel")} value=${s.memory.teamWrite} disabled=${!s.memory.enabled} onChange=${(v) => put({ memory: { teamWrite: v } })} />
           <//>
         </div>
 
-        <div class="list-head">上下文</div>
+        <div class="list-head">${t("botSettings.context.head")}</div>
         <div class="list">
-          <${Row} id="steward" name="自动压缩或开新段" sub="上下文变长时整理，并留下交接便条">
-            <${Switch} label="上下文管家" value=${s.steward.enabled} onChange=${(v) => put({ steward: { enabled: v } })} />
+          <${Row} id="steward" name=${t("botSettings.context.name")} sub=${t("botSettings.context.sub")}>
+            <${Switch} label=${t("botSettings.context.label")} value=${s.steward.enabled} onChange=${(v) => put({ steward: { enabled: v } })} />
           <//>
         </div>
 
-        <div class="list-head">电脑操作</div>
+        <div class="list-head">${t("botSettings.computer.head")}</div>
         <div class="list">
-          <${Row} id="computer" name="电脑操作" sub=${cu ? cu.reason : ""} title=${cu && cu.notice}>
+          <${Row} id="computer" name=${t("botSettings.computer.head")} sub=${cu ? cu.reason : ""} title=${cu && cu.notice}>
             <span class=${`dot ${cu && cu.available ? "ok" : "err"}`}></span>
-            <${Switch} label="电脑操作" value=${s.computerUse.enabled} onChange=${(v) => put({ computerUse: { enabled: v } })} />
+            <${Switch} label=${t("botSettings.computer.head")} value=${s.computerUse.enabled} onChange=${(v) => put({ computerUse: { enabled: v } })} />
           <//>
-          <${Row} id="computer-backend" name="后端" off=${!s.computerUse.enabled}>
-            <${MenuButton} label="电脑操作后端" value=${s.computerUse.backend} disabled=${!s.computerUse.enabled} onChange=${(v) => put({ computerUse: { backend: v } })}
-              options=${[["cua", "Cua Driver", "随附，macOS / Windows / Linux"], ...(codex ? [["codex", "Codex 桥", codex.available ? "仅 macOS" : "仅 macOS，本机不可用"]] : [])]} />
+          <${Row} id="computer-backend" name=${t("botSettings.computer.backend")} off=${!s.computerUse.enabled}>
+            <${MenuButton} label=${t("botSettings.computer.backendLabel")} value=${s.computerUse.backend} disabled=${!s.computerUse.enabled} onChange=${(v) => put({ computerUse: { backend: v } })}
+              options=${[["cua", "Cua Driver", t("botSettings.computer.cuaNote")], ...(codex ? [["codex", t("botSettings.computer.codex"), codex.available ? t("botSettings.computer.macOnly") : t("botSettings.computer.macOnlyUnavailable")]] : [])]} />
           <//>
-          <${Row} id="computer-approval" name="审批" sub=${s.computerUse.approval === "auto" ? "所有操作自动执行" : "点击、输入等改变界面的操作先问我；读取界面仍自动"} off=${!s.computerUse.enabled}>
-            <${Seg} label="电脑操作审批" value=${s.computerUse.approval} disabled=${!s.computerUse.enabled} onChange=${(v) => put({ computerUse: { approval: v } })}
-              options=${[["auto", "自动执行"], ["ask-input", "改变界面前先问我"]]} />
+          <${Row} id="computer-approval" name=${t("botSettings.computer.approval")} sub=${s.computerUse.approval === "auto" ? t("botSettings.computer.autoSub") : t("botSettings.computer.askSub")} off=${!s.computerUse.enabled}>
+            <${Seg} label=${t("botSettings.computer.approvalLabel")} value=${s.computerUse.approval} disabled=${!s.computerUse.enabled} onChange=${(v) => put({ computerUse: { approval: v } })}
+              options=${[["auto", t("botSettings.computer.auto")], ["ask-input", t("botSettings.computer.ask")]]} />
           <//>
         </div>
       `}
 
-      <div class="list-head">危险操作</div>
+      <div class="list-head">${t("botSettings.danger.head")}</div>
       <div class="list">
-        <${Row} id="delete" name="删除机器人" sub="永久删除这个机器人及其全部会话">
-          <button type="button" class="text danger" onClick=${del}>删除机器人</button>
+        <${Row} id="delete" name=${t("botSettings.danger.delete")} sub=${t("botSettings.danger.deleteSub")}>
+          <button type="button" class="text danger" onClick=${del}>${t("botSettings.danger.delete")}</button>
         <//>
       </div>
     </div>

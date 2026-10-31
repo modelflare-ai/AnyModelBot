@@ -5,6 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { t } from "../i18n/index.js";
 
 /** 由桌面外壳提供的加解密（系统钥匙串） */
 export interface SecretBox {
@@ -38,16 +39,16 @@ export class AccountVault {
   load(): AccountRecord | undefined {
     if (!fs.existsSync(this.file)) return undefined;
     const raw = JSON.parse(fs.readFileSync(this.file, "utf8")) as FileShape;
-    if (raw.v !== 1) throw new Error("不认识的账户文件版本");
+    if (raw.v !== 1) throw new Error(t("account.vault_bad_version"));
     let json: string;
     if (raw.enc === "safe-storage") {
-      if (!this.box) throw new Error("账户凭据由桌面版加密，当前运行方式无法读取");
+      if (!this.box) throw new Error(t("account.vault_encrypted"));
       json = this.box.decrypt(Buffer.from(raw.data, "base64"));
     } else {
       json = Buffer.from(raw.data, "base64").toString("utf8");
     }
     const rec = JSON.parse(json) as AccountRecord;
-    if (!rec.refreshToken || !rec.issuer) throw new Error("账户文件不完整");
+    if (!rec.refreshToken || !rec.issuer) throw new Error(t("account.vault_incomplete"));
     return rec;
   }
 

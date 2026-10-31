@@ -1,0 +1,34 @@
+---
+// 常见问题：章节头 → 两栏，整节不用卡片（首页里的"安静段落"，样式见 sections.css 的"7 常见问题"）。
+// 左边闪闪顶着一个对话气泡（吸顶），打开哪个问题它就看向哪个、点个头（scripts/sections.ts），下面是去文档的链接。
+// 右边是只用细线分隔的折叠列表：编号 → 问题 → "+"（打开时转成"×"），回答平滑展开。
+import Icon from "../components/Icon.astro";
+import BotFace from "../components/BotFace.astro";
+import SectionHead from "../components/SectionHead.astro";
+import { dict, fmt, buildVars, type Lang } from "../i18n";
+import { docsUrl } from "../lib/docs";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const v = buildVars(lang);
+---
+<section class="section" id="faq" aria-labelledby="faq-h2">
+  <div class="container">
+    <SectionHead n={7} label={t.kicker.faq} id="faq-h2" title={t.faq.h2} dim={t.faq.h2dim} />
+    <div class="faq-wrap">
+      <div class="faq-wrap__aside" data-doze>
+        <p class="faq-wrap__bubble">{t.faq.ask}</p>
+        <BotFace char="yellow" size={120} lively pokeable class="faq-wrap__bot" />
+        <a class="faq-wrap__more" href={docsUrl(lang)} target="_blank" rel="noopener">{t.faq.more}<Icon name="arrow" size={16} /></a>
+      </div>
+      <div class="faq">
+        {t.faq.items.map((it, i) => (
+          <details data-faq={i + 1}>
+            <summary><span class="faq__n mono" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span><span class="faq__q">{it.q}</span><Icon name="plus" /></summary>
+            <div><p>{fmt(it.a, v)}</p></div>
+          </details>
+        ))}
+      </div>
+    </div>
+  </div>
+</section>

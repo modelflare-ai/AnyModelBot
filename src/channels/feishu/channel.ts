@@ -4,6 +4,7 @@ import type { BotRuntime } from "../../core/runtime.js";
 import type { FeishuMessageEvent, FeishuTransport } from "./transport.js";
 import { FeishuReply } from "./card.js";
 import { logger } from "../../log.js";
+import { t } from "../../i18n/index.js";
 
 export const FEISHU_CAPS: ChannelCapabilities = {
   streaming: true,
@@ -42,7 +43,7 @@ export function feishuParts(ev: FeishuMessageEvent): Part[] {
     case "audio":
       return [{ type: "voice", ref: c.file_key }];
     default:
-      return [{ type: "text", text: `[暂不支持的消息类型：${ev.messageType}]` }];
+      return [{ type: "text", text: t("channel.unsupported_message", { type: ev.messageType }) }];
   }
 }
 
@@ -110,7 +111,7 @@ export class FeishuChannel {
         await this.runtime.handle(inbound, reply);
       } catch (e) {
         this.log.error("handle failed", { message: (e as Error).message });
-        await reply.apply({ type: "text", text: `⚠️ 处理失败：${(e as Error).message}` }).catch(() => {});
+        await reply.apply({ type: "text", text: t("channel.handle_failed", { message: (e as Error).message }) }).catch(() => {});
       }
     });
     this.pending.add(p);

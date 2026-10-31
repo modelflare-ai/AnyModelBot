@@ -3,6 +3,7 @@
 import { useEffect } from "preact/hooks";
 import { api } from "./api.js";
 import { createStore, toast, useStore } from "./store.js";
+import { t } from "./i18n.js";
 
 export const PWSH_INSTALL_URL = "https://aka.ms/PSWindows";
 export const PWSH_WINGET = "winget install --id Microsoft.PowerShell --source winget";
@@ -22,7 +23,7 @@ export function loadPwsh() {
 export async function recheckPwsh() {
   const s = await api("/pwsh/recheck", { method: "POST", body: {} });
   pwshState.set(s);
-  toast(s.missing ? "还没有检测到 PowerShell 7" : `已检测到 PowerShell ${s.version || "7"}，下一条消息起生效`, s.missing ? "warn" : "ok");
+  toast(s.missing ? t("pwsh.notFound") : t("pwsh.found", { version: s.version || "7" }), s.missing ? "warn" : "ok");
   return s;
 }
 

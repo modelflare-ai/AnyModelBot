@@ -5,6 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { lineLogger, logger, registerSecret } from "../log.js";
+import { t } from "../i18n/index.js";
 import { BOT_PROVIDER_PREFIX, MODELFLARE_PROVIDER, botProviderId, keyTail, modelflareApiBases } from "../modelflare.js";
 
 const log = logger("magpie");
@@ -195,7 +196,7 @@ export class MagpieSupervisor {
 
   /** 运行一次 magpie CLI（同一隔离环境）。secret 通过 stdin 传入，不出现在命令行参数里。 */
   runCli(args: string[], stdin?: string, timeoutMs = 20_000): Promise<{ code: number; stdout: string; stderr: string }> {
-    if (!this.binPath) return Promise.reject(new Error("找不到 magpie 可执行文件，请先运行 npm run setup"));
+    if (!this.binPath) return Promise.reject(new Error(t("magpie.no_binary_cli")));
     if (!this.keys) this.prepare();
     return new Promise((resolve, reject) => {
       const p = spawn(this.binPath!, args, { env: this.env(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -221,7 +222,7 @@ export class MagpieSupervisor {
   async start(): Promise<void> {
     if (!this.binPath) {
       this.state = "failed";
-      this.lastError = "找不到 magpie 可执行文件（运行 npm run setup 从 vendor/magpie 构建）";
+      this.lastError = t("magpie.no_binary");
       throw new Error(this.lastError);
     }
     this.stopping = false;
@@ -414,13 +415,13 @@ export class MagpieSupervisor {
   }
 
   private async upsertProvider(existing: string | undefined, wantId: string, name: string, apiKey: string, baseUrl: string, allowed: string[], headers: Record<string, string>, picks: string[]): Promise<void> {
-    if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
-    if (!apiKey.trim()) throw new Error("缺少 API Key");
+    if (!allowed.includes(baseUrl)) throw new Error(t("magpie.unsupported_url"));
+    if (!apiKey.trim()) throw new Error(t("magpie.missing_key"));
     registerSecret(apiKey.trim());
     let id = existing;
     if (!id) {
       const add = await this.runCli(["provider", "add", name, `id=${wantId}`, `url=${baseUrl}`, "key=placeholder-key"]);
-      if (add.code !== 0) throw new Error(`创建 Modelflare 连接失败：${(add.stderr || add.stdout).trim().slice(0, 300)}`);
+      if (add.code !== 0) throw new Error(t("magpie.create_failed", { detail: (add.stderr || add.stdout).trim().slice(0, 300) }));
       id = this.hasProvider(wantId) ? wantId : await this.findProviderId(wantId);
     }
     await this.saveProvider(id, { ...modelflareApiBases(baseUrl), key: apiKey.trim(), headers, ...(picks.length ? { models: picks } : {}) });
@@ -428,7 +429,7 @@ export class MagpieSupervisor {
 
   /** 切换线路：只改地址，key 不变（机器人自己的 provider 一起切） */
   async setModelflareUrl(baseUrl: string, allowed: string[]): Promise<void> {
-    if (!allowed.includes(baseUrl)) throw new Error("不支持的 Modelflare 地址");
+    if (!allowed.includes(baseUrl)) throw new Error(t("magpie.unsupported_url"));
     for (const id of [this.modelflareId(), ...this.botProviderIds()]) if (id) await this.saveProvider(id, modelflareApiBases(baseUrl));
   }
 
@@ -452,14 +453,14 @@ export class MagpieSupervisor {
   }
 
   private async deleteProvider(id: string): Promise<void> {
-    if (this.state !== "running") throw new Error("模型网关未运行，稍后再试");
+    if (this.state !== "running") throw new Error(t("magpie.not_running"));
     const res = await fetch(`${this.webOrigin}/api/provider/delete`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie: `${this.cookieName}=${this.webKey}`, origin: this.webOrigin },
       body: JSON.stringify({ id }),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) throw new Error(`断开失败：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    if (!res.ok) throw new Error(t("magpie.disconnect_failed", { status: res.status, body: (await res.text()).slice(0, 200) }));
   }
 
   hasProvider(id: string): boolean {
@@ -514,7 +515,7 @@ export class MagpieSupervisor {
   }
 
   private async saveProvider(id: string, patch: Record<string, unknown>): Promise<void> {
-    if (this.state !== "running") throw new Error("模型网关未运行，稍后再试");
+    if (this.state !== "running") throw new Error(t("magpie.not_running"));
     const p = this.readProviderRaw(id);
     if (!p) throw new Error(`provider ${id} not found`);
     const res = await fetch(`${this.webOrigin}/api/provider/save`, {
@@ -523,9 +524,9 @@ export class MagpieSupervisor {
       body: JSON.stringify({ ...p, ...patch, from: id }),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) throw new Error(`保存失败：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    if (!res.ok) throw new Error(t("magpie.save_failed", { status: res.status, body: (await res.text()).slice(0, 200) }));
     const saved = this.readProviderRaw(id);
-    for (const [k, v] of Object.entries(patch)) if (JSON.stringify(saved?.[k] ?? {}) !== JSON.stringify(v ?? {})) throw new Error("保存后校验失败");
+    for (const [k, v] of Object.entries(patch)) if (JSON.stringify(saved?.[k] ?? {}) !== JSON.stringify(v ?? {})) throw new Error(t("magpie.verify_failed"));
   }
 
   private readProviderRaw(id: string): Record<string, unknown> | undefined {

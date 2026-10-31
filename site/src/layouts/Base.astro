@@ -1,0 +1,104 @@
+---
+// 全站样式：token、基础、共用组件、Eyes 标记。各页自己的版式在 views/* 里引入（home / pricing / pages.css）；
+// 机器人头像（bots.css）随 BotFace 组件、演示导览（tour.css）随 DemoTour 组件、顶部公告条（banner.css）随 SiteBanner 加载。
+import "../styles/base.css";
+import "../styles/tokens.css";
+import "../styles/components.css";
+import "../styles/eyes.css";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import SiteBanner from "../components/SiteBanner.astro";
+import { dict, href, type Lang } from "../i18n";
+import { ORIGIN, ANALYTICS_SCRIPT_URL, ANALYTICS_SITE_ID, releases, GITHUB_URL } from "../lib/site";
+
+interface Props {
+  lang: Lang;
+  /** 不带语言前缀的路径，如 "/"、"/pricing" */
+  path: string;
+  title?: string;
+  description?: string;
+  jsonLd?: object[];
+  noindex?: boolean;
+}
+const { lang, path, title, description, jsonLd = [], noindex = false } = Astro.props;
+const t = dict(lang);
+const pageTitle = title ?? t.meta.title;
+const desc = description ?? t.meta.description;
+const canonical = `${ORIGIN}${href(lang, path)}`;
+const alt = { zh: `${ORIGIN}${href("zh", path)}`, en: `${ORIGIN}${href("en", path)}` };
+const og = `${ORIGIN}${t.meta.ogImage}`;
+const dlData = {
+  version: releases.version,
+  publishedAt: releases.publishedAt,
+  platforms: Object.fromEntries(Object.entries(releases.platforms).filter(([k]) => k !== "docker")),
+  docker: releases.platforms.docker.command,
+  github: `${GITHUB_URL}/releases`,
+  i18n: {
+    win: t.download.win, mac: t.download.mac, linux: t.download.linux, mobile: t.download.mobile, generic: t.download.generic,
+    downloading: t.download.downloading, started: t.download.started, copied: t.ui.copied, copyFailed: t.ui.copyFailed,
+    bannerLeft: t.banner.left, bannerLastDay: t.banner.lastDay,
+  },
+  lang,
+};
+---
+<!doctype html>
+<html lang={t.meta.lang} data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={desc} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="zh-CN" href={alt.zh} />
+    <link rel="alternate" hreflang="en" href={alt.en} />
+    <link rel="alternate" hreflang="x-default" href={alt.zh} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="AnyModelBot" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={desc} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={og} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content={lang === "zh" ? "zh_CN" : "en_US"} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={desc} />
+    <meta name="twitter:image" content={og} />
+    <meta name="theme-color" content="#060706" data-theme-color />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
+    <script is:inline>
+      (function () {
+        var d = document.documentElement, pref = "dark";
+        try { pref = localStorage.getItem("amb-theme") || "dark"; } catch (e) {}
+        var dark = pref === "system" ? matchMedia("(prefers-color-scheme: dark)").matches : pref !== "light";
+        d.dataset.theme = dark ? "dark" : "light";
+        d.dataset.themePref = pref;
+        d.classList.add("js");
+        var tc = document.querySelector("meta[data-theme-color]");
+        if (tc) tc.setAttribute("content", dark ? "#060706" : "#f4f5f7");
+      })();
+    </script>
+    {jsonLd.map((j) => <script type="application/ld+json" set:html={JSON.stringify(j)} />)}
+    {import.meta.env.PROD && ANALYTICS_SCRIPT_URL && <script is:inline defer src={ANALYTICS_SCRIPT_URL} data-website-id={ANALYTICS_SITE_ID} data-do-not-track="true"></script>}
+    <script type="application/json" id="amb-data" set:html={JSON.stringify(dlData)} />
+  </head>
+  <body>
+    <a class="skip" href="#main">{t.nav.skip}</a>
+    <SiteBanner lang={lang} path={path} />
+    <Nav lang={lang} path={path} />
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <Footer lang={lang} path={path} />
+    <div class="toasts" role="status" aria-live="polite" data-toasts></div>
+    <script>
+      import "../scripts/client";
+    </script>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>录制舞台</title>
+  <!-- 录制舞台：真实的应用界面放在 iframe 里；应用外的画面（浏览器授权页、安装向导、文件窗口、文本编辑器、
+       看图窗口、手机聊天）都是中性的风格化示意，不仿任何第三方产品的界面。假鼠标由 stage.js 画在最上层。 -->
+  <link rel="stylesheet" href="/__stage/stage.css" />
+</head>
+<body>
+  <div id="screen"></div>
+  <div id="touch" aria-hidden="true"></div>
+  <div id="cursor" aria-hidden="true">
+    <svg width="22" height="30" viewBox="0 0 22 30"><path d="M2 2 L2 24.5 L7.6 19.4 L11.4 27.6 L15.2 25.9 L11.5 17.9 L19 17.9 Z" fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round" /></svg>
+    <i class="ring"></i>
+  </div>
+  <script src="/__stage/stage.js"></script>
+</body>
+</html>

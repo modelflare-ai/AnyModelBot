@@ -136,10 +136,10 @@ docker exec amb cat /data/ui-token   # 然后打开 http://<主机>:3600/?token=
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/chat-dark.webp">
-  <img src="docs/assets/screenshots/chat-light.webp" alt="聊天界面：流式回复里有 Markdown 和代码块，输入框里有模型按钮，左侧是机器人列表" width="100%">
+  <img src="docs/assets/screenshots/chat-light.webp" alt="聊天界面：一条带 Markdown 列表和代码块的回复，输入框旁有模型按钮，左侧是机器人列表" width="100%">
 </picture>
 
-<p align="center"><i>和机器人聊天。回复逐字流出，输入框会显示当前用的模型。</i></p>
+<p align="center"><i>和机器人聊天。回复支持 Markdown 和代码块，输入框会显示当前用的模型。</i></p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/agent-dark.webp">
@@ -164,7 +164,7 @@ docker exec amb cat /data/ui-token   # 然后打开 http://<主机>:3600/?token=
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/modelflare-dark.webp">
-  <img src="docs/assets/screenshots/modelflare-light.webp" alt="设置的 Modelflare 页：已连接的账户、钱包余额、每日用量和默认模型" width="100%">
+  <img src="docs/assets/screenshots/modelflare-light.webp" alt="设置的 Modelflare 页打开了用量弹窗：近 7 天的每日用量，下面是默认模型，余额显示在左下角的账户按钮上" width="100%">
 </picture>
 
 <p align="center"><i>应用里的 Modelflare 账户：余额、用量和默认设置。</i></p>
@@ -203,7 +203,7 @@ docker exec amb cat /data/ui-token   # 然后打开 http://<主机>:3600/?token=
 </p>
 
 <p align="center">
-  <img src="docs/assets/features/media-generation.gif" alt="机器人给出带模型和提示词的生图方案，用户确认后，成图出现在聊天里" width="100%">
+  <img src="docs/assets/features/media-generation.gif" alt="机器人生图前先问用哪个模型，用户确认后，成图作为文件交付到聊天里，并在看图窗口中打开" width="100%">
 </p>
 
 ## 🌐 任意模型，通过 Modelflare
@@ -234,7 +234,7 @@ docker exec amb cat /data/ui-token   # 然后打开 http://<主机>:3600/?token=
 </p>
 
 <p align="center">
-  <img src="docs/assets/features/channels-wechat.gif" alt="扫码连接微信，在手机上发出一个问题，机器人在手机和桌面应用里同时回答" width="100%">
+  <img src="docs/assets/features/channels-wechat.gif" alt="扫码连接微信，在手机上发出一个问题，机器人在手机上回答，同一段对话出现在桌面应用的「最近会话」里" width="100%">
 </p>
 
 ## 🔒 本地优先，也好看

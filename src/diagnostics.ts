@@ -7,6 +7,7 @@ import os from "node:os";
 import { appVersion, type App } from "./app.js";
 import type { HostEvent } from "./agent/host.js";
 import { isModelPath, type ProxyEvent } from "./agent/bridge.js";
+import { shapeRejection } from "./agent/api-fallback.js";
 import { logFilePath, logger, readLogTail, redactText, redactValue } from "./log.js";
 import { bareModel } from "./modelflare.js";
 import { pwshProbe, pwshReportLine } from "./agent/pwsh.js";
@@ -248,11 +249,15 @@ export async function testAgent(app: App, opts: { botId?: string; model?: string
     const d = host.diagnostics() as { startingForMs?: number; initStage?: string };
     st("spawn").detail = `等待正在进行的启动（已 ${Math.round((d.startingForMs ?? 0) / 1000)} 秒，阶段：${d.initStage ?? "-"}）`;
   }
+  /** 这一轮 Responses / Messages 被拒、代理换 Chat 重做：模型这一步等重做的结果，期间的重启不算失败 */
+  let rejected: { path: string; why: string } | undefined;
   const offHost = host.on((e: HostEvent) => {
     if (e.type === "spawned") st("spawn").detail = `pid ${e.pid ?? "?"}，等待初始化…`;
     else if (e.type === "initialized") mark("spawn", "ok", `pid ${e.pid ?? "?"}`, e.ms);
     else if (e.type === "failed") mark("spawn", "fail", e.message);
     else if (e.type === "exit") {
+      // 接口被拒、代理换到 Chat Completions 重做：这次退出是有意的重启
+      if (rejected && st("model").status === "pending") return;
       const pending = failedAlready() ? undefined : stages.find((s) => s.status === "pending");
       if (pending) mark(pending.id, "fail", `代理进程退出（code=${e.code ?? "-"}, signal=${e.signal ?? "-"}）${host.stderrTail.length ? `；stderr：${host.stderrTail.slice(-5).join(" | ")}` : ""}`);
     }
@@ -269,7 +274,13 @@ export async function testAgent(app: App, opts: { botId?: string; model?: string
       return;
     }
     if (!ours.has(e.id) || st("model").status !== "pending") return;
-    if (e.phase === "response") mark("model", e.status < 400 ? "ok" : "fail", e.status < 400 ? `HTTP ${e.status}` : `HTTP ${e.status}${e.error ? `：${e.error}` : ""}`, e.ms);
+    // Responses / Messages 第一次被拒（请求形状不被接受）：代理会换 Chat Completions 重做，等重做的结果
+    if (e.phase === "response" && !rejected && /\/v1\/(responses|messages)$/.test(e.path)) {
+      const why = e.status >= 400 ? shapeRejection([{ status: e.status, error: e.error ?? "" }], "") : undefined;
+      if (why) return void (rejected = { path: e.path, why });
+    }
+    const after = rejected ? `（${rejected.path} 被拒：${rejected.why}；已改用 Chat Completions）` : "";
+    if (e.phase === "response") mark("model", e.status < 400 ? "ok" : "fail", e.status < 400 ? `HTTP ${e.status}${after}` : `HTTP ${e.status}${e.error ? `：${e.error}` : ""}${after}`, e.ms);
     else mark("model", "fail", e.error, e.ms);
   });
 

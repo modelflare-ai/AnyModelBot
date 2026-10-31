@@ -4,7 +4,8 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { lineLogger, logger } from "../log.js";
 import type { Store } from "../store/db.js";
-import type { AgentBridge } from "./bridge.js";
+import { BOT_HEADER, type AgentBridge, type Rejection } from "./bridge.js";
+import { ApiFallbacks, shapeRejection, type ApiFallback } from "./api-fallback.js";
 import os from "node:os";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { adaptSkill, mcpPatchLines, resolveComputerUse, type CuResolved } from "./computer-use.js";
@@ -146,6 +147,24 @@ export class TurnStopped extends Error {
   }
 }
 
+/**
+ * 回合失败，原因是上游不接受这个接口上的请求（Responses / Anthropic Messages 被拒）。已记下回退；
+ * retryable：这一轮还没有调用过工具、也没有别的回合在用这个代理进程，可以换 Chat Completions 重做一遍。
+ */
+export class ApiRejected extends Error {
+  constructor(
+    message: string,
+    readonly api: AgentApi,
+    readonly reason: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+  }
+}
+
+/** 换接口重做时交给模型的话（上一条用户消息已经在会话里） */
+export const RETRY_NOTE = "[系统提示]\n上一条用户消息因模型接口不兼容没有处理，现已换用其它接口。请直接处理上面那条用户消息。";
+
 export interface AgentHostOptions {
   botId: string;
   dataDir: string;
@@ -164,6 +183,8 @@ export interface AgentHostOptions {
   contextWindow?: (model: string) => Promise<number | undefined>;
   /** 模型支持的接口与是否推理（Modelflare 模型资料），用来选对话接口；不知道时 undefined，走 Chat Completions */
   apiInfo?: (model: string) => Promise<ModelApiInfo | undefined>;
+  /** 被上游拒绝过的模型 → 改走 Chat Completions（所有机器人共用，存在数据目录）；不给时只在本进程内记 */
+  apiFallbacks?: ApiFallbacks;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
@@ -338,6 +359,9 @@ export class AgentHost {
   model = "";
   /** 当前子进程跟模型说话用的接口 */
   api: AgentApi | "" = "";
+  /** 当前子进程因为回退才走 Chat Completions：回退记录（状态里显示原因） */
+  fallback: ApiFallback | undefined;
+  private ownFallbacks: ApiFallbacks | undefined;
   /** 当前子进程补丁里写的上下文窗口与最大输出 */
   private limits: { window: number; maxTokens: number } | undefined;
   private harness: SdkHarness | undefined;
@@ -427,6 +451,9 @@ export class AgentHost {
       // 接口按模型选（agentApi）：Responses / Anthropic Messages / Chat Completions
       ...wire.provider,
       "        apiKeyEnv: AMB_MAGPIE_KEY",
+      // 标明是哪个机器人发的：bridge 据此把上游错误归到这个代理进程（不转给上游）
+      "        headers:",
+      `          ${BOT_HEADER}: ${yamlStr(this.o.botId)}`,
       "        models:",
       `          - id: ${yamlStr(model)}`,
       `            name: ${yamlStr(model.split("/").pop() || model)}`,
@@ -675,6 +702,10 @@ exec "$REAL" "$@"
       log.info("model changed, restarting dsh", { bot: this.o.botId, model });
       await this.closeHarness();
     }
+    if (this.harness && this.api && this.api !== "openai-completions" && this.fallbacks.get(this.model) && this.active === 0) {
+      log.info("model was rejected on its API before, restarting dsh on Chat Completions", { bot: this.o.botId, model: this.model, api: this.api });
+      await this.closeHarness();
+    }
     if (this.harness && this.sig !== this.settingsSig() && this.active === 0) {
       log.info("bot settings or PowerShell changed, restarting dsh", { bot: this.o.botId });
       await this.closeHarness();
@@ -734,7 +765,11 @@ exec "$REAL" "$@"
       const pwshPath = await pwshProbe.dshPath();
       const ask = <T>(p: Promise<T | undefined> | undefined) => withTimeoutOr(p ?? Promise.resolve(undefined), 3000, undefined).catch(() => undefined);
       const [known, info] = await Promise.all([ask(this.o.contextWindow?.(model)), ask(this.o.apiInfo?.(model))]);
-      const api = agentApi(info?.endpoints);
+      const chosen = agentApi(info?.endpoints);
+      // 这个模型在该接口上被拒过（24 小时内）：直接走 Chat Completions
+      const fb = chosen !== "openai-completions" ? this.fallbacks.get(model) : undefined;
+      const api: AgentApi = fb ? "openai-completions" : chosen;
+      this.fallback = fb;
       const patch = this.writePatch(model, apps, pwshPath, modelLimits(model, known), api, info?.reasoning);
       this.sig = this.settingsSig();
       const timeoutMs = this.initTimeoutMs();
@@ -877,7 +912,28 @@ exec "$REAL" "$@"
    */
   imageInput = !(process.versions.electron && process.platform === "linux") && process.env.AMB_DSH_IMAGES !== "0";
 
+  get fallbacks(): ApiFallbacks {
+    return this.o.apiFallbacks ?? (this.ownFallbacks ??= new ApiFallbacks());
+  }
+
+  /**
+   * 跑一个回合。Responses / Anthropic Messages 上的请求被上游拒绝（请求形状不被接受，不是限流、余额、故障）时：
+   * 记下这个模型改走 Chat Completions；这一轮还没调用过工具的话，把代理进程换到 Chat 上重做一遍（只重做一次）。
+   */
   async runTurn(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
+    try {
+      return await this.runOnce(input);
+    } catch (e) {
+      if (!(e instanceof ApiRejected) || !e.retryable || input.signal?.aborted) throw e;
+      log.warn("agent turn rejected on its API; retrying it once over Chat Completions", { bot: this.o.botId, model: input.model, api: e.api, reason: e.reason });
+      input.observer?.onEvent?.("api/fallback", { from: e.api, to: "openai-completions", reason: e.reason }, Date.now());
+      // ensure() 看到回退记录，空闲时把子进程换到 Chat 上。用户这条消息（连同图片）在被拒之前已经存进会话，
+      // 不再发一遍，只请模型处理它
+      return await this.runOnce({ ...input, text: RETRY_NOTE, images: undefined });
+    }
+  }
+
+  private async runOnce(input: TurnInput): Promise<{ text: string; sessionId: string; files: string[]; usage: TurnUsage }> {
     const h = await this.ensure(input.model);
     const s = await this.sessionFor(h, input.conversationId);
     // 在等进程 / 会话时就被中止了：消息还没交出去，不用重启子进程
@@ -890,6 +946,14 @@ exec "$REAL" "$@"
     const usage: TurnUsage = { tokens: 0, window: lim.window, maxTokens: lim.maxTokens };
     const images = this.imageInput ? (input.images ?? []) : [];
     let unlisten = () => {};
+    // 这一轮：用的接口、调用过几次工具、上游拒绝过本机器人的哪些模型请求
+    const api = this.api || "openai-completions";
+    let toolCalls = 0;
+    const rejections: Rejection[] = [];
+    const offRejection =
+      this.o.bridge.onRejection?.((r) => {
+        if (r.bot === this.o.botId && /\/v1\/(responses|messages)$/.test(r.path)) rejections.push(r);
+      }) ?? (() => {});
     try {
       const timeoutMs = this.o.turnTimeoutMs ?? 30 * 60_000;
       const prompt = images.length ? [{ type: "text", text: input.text }, ...images.map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType }))] : input.text;
@@ -902,6 +966,7 @@ exec "$REAL" "$@"
           const ev = n.params.event;
           const data = ev?.data ?? {};
           if (ev?.type === "tool/call") {
+            toolCalls++;
             this.calls.set(String(data.callId), { name: String(data.name), args: String(data.arguments ?? ""), at: Date.now() });
             if (this.calls.size > 500) this.calls.delete(this.calls.keys().next().value!);
             if (data.name === "present") presented.push(...presentPaths(String(data.arguments ?? "")));
@@ -930,7 +995,13 @@ exec "$REAL" "$@"
       });
       const r = await Promise.race([run, stopped]);
       this.failures = 0;
-      if (!r.finalResponse && turnError) throw new Error(turnError);
+      const rejected = turnError !== undefined && api !== "openai-completions" ? shapeRejection(rejections, turnError) : undefined;
+      if (rejected) this.rememberFallback(input.model, api, rejected);
+      if (!r.finalResponse && turnError) {
+        // 已经调用过工具（命令可能已经执行）就不重做，照常报错；下一轮起走 Chat
+        if (rejected) throw new ApiRejected(turnError, api, rejected, toolCalls === 0 && presented.length === 0 && this.active === 1);
+        throw new Error(turnError);
+      }
       return { text: r.finalResponse, sessionId: s.id, files: deliverables(this.workspace, presented), usage };
     } catch (e) {
       if (e instanceof TurnStopped) {
@@ -945,12 +1016,25 @@ exec "$REAL" "$@"
     } finally {
       clearTimeout(timer);
       unlisten();
+      offRejection();
       this.active--;
     }
   }
 
+  private rememberFallback(model: string, api: AgentApi, reason: string): void {
+    const fb = this.fallbacks.set(model, api, reason);
+    log.warn("upstream rejected the agent's requests on this API; using Chat Completions for this model", {
+      bot: this.o.botId,
+      model,
+      api,
+      reason,
+      until: new Date(fb.until).toISOString(),
+    });
+  }
+
   status(): Record<string, unknown> {
-    return { state: this.state, pid: this.pid, model: this.model, api: this.api || undefined, restarts: this.restarts, lastError: this.lastError, workspace: this.workspace, activeTurns: this.active };
+    const api = this.api ? (this.fallback ? `${this.api} (fallback: ${this.fallback.reason})` : this.api) : undefined;
+    return { state: this.state, pid: this.pid, model: this.model, api, restarts: this.restarts, lastError: this.lastError, workspace: this.workspace, activeTurns: this.active };
   }
 
   /** 故障排查用的完整状态（含 stderr 尾部与最近一次退出） */

@@ -6,7 +6,7 @@ import module from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { App } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { locateDshRuntime } from "../src/agent/host.js";
+import { RETRY_NOTE, locateDshRuntime } from "../src/agent/host.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
 import { listen } from "./helpers.js";
 
@@ -158,6 +158,11 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   const catalog: Record<string, string[]> = {};
   /** FLAKY：每条这样的用户消息第一次请求先失败一次（Responses 503、Messages 429），看代理会不会重试 */
   const flaked = new Set<string>();
+  /**
+   * 上游不接受某个模型在 Responses / Messages 上的请求（Chat 照常）：always 每次都 400；after-tool 带着工具结果时 400；
+   * busy 每次都 503（不是请求形状的问题）
+   */
+  const rejects: Record<string, "always" | "after-tool" | "busy"> = {};
   const hung: http.ServerResponse[] = [];
   let base = "";
 
@@ -165,7 +170,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): Step {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
@@ -191,6 +196,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
         { name: "glob", args: { pattern: "*.png" } },
         ...(canStripTypes ? [{ name: "workflow", args: { script: "return { answer: 6 * 7 }", meta: { name: "calc", description: "multiply" } } }] : []),
       ]],
+      [/COUNTER/, [{ name: "bash", args: { description: "run", command: "echo ran >> counter.txt && wc -l < counter.txt" } }]],
       [/LOOPBACK/, [{ name: "bash", args: { description: "run", command: `python3 -c "import urllib.request as u\ntry:\n  print('API', u.urlopen('${base}/amb/api/status').status)\nexcept Exception as e:\n  print('API', getattr(e,'code',e))"` } }]],
     ];
     for (const [re, steps] of scripts) {
@@ -218,6 +224,17 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       calls.push({ api, model: b.model, body: b, headers: req.headers, error: error ?? (flaky ? `${flaky}` : undefined) });
       if (error) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: error } }));
       if (flaky) return void res.writeHead(flaky, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: flaky === 429 ? "rate_limit_error" : "api_error", message: "slow down" } }));
+      const rule = api === "chat" ? undefined : rejects[b.model];
+      if (rule === "busy") {
+        calls[calls.length - 1].error = "503";
+        return void res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: { type: "api_error", message: "upstream overloaded" } }));
+      }
+      if (rule === "always" || (rule === "after-tool" && msgs.some((m: any) => m.role === "tool"))) {
+        calls[calls.length - 1].error = "400";
+        return void res
+          .writeHead(400, { "content-type": "application/json" })
+          .end(JSON.stringify({ error: { message: "Unsupported parameter: 'reasoning.summary' is not supported with this model.", type: "invalid_request_error", param: "reasoning.summary", code: "unsupported_parameter" } }));
+      }
       const step = b.tools ? plan(msgs) : { text: "标题" };
       if ("hang" in step && step.hang) return void hung.push(res);
       if (process.env.AMB_TEST_LLM_LOG) fs.appendFileSync(process.env.AMB_TEST_LLM_LOG, JSON.stringify({ url: req.url, stream: b.stream, tools: (b.tools ?? []).map((t: any) => t.function?.name ?? t.name), msgs: msgs.map((m: any) => [m.role, textOf(m.content).slice(0, 200), m.tool_calls?.map((t: any) => t.function?.name)]), step }) + "\n");
@@ -527,7 +544,79 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       expect(r.reply).toBe("好的");
       expect(callsFor(model, from).filter((c) => c.body.tools).map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual([`${api}:${status}`, `${api}:ok`]);
       expect(r.steps.some((s) => s.kind === "retry")).toBe(true);
+      // 限流、上游故障不是接口的问题：不回退
+      expect(app.agent.apiFallbacks.get(model)).toBeUndefined();
     }
+  }, 180_000);
+
+  // —— 安全网：Responses / Messages 被上游拒绝（请求形状不被接受）→ 这个模型改走 Chat Completions ——
+  const fallbackFile = () => JSON.parse(fs.readFileSync(path.join(dataDir, "dsh", "api-fallback.json"), "utf8")).models;
+
+  it("a 400 on /v1/responses: the turn is redone over Chat Completions, and the model stays on Chat", async () => {
+    catalog["deepseek-mock"] = ["openai", "openai-response", "anthropic", "gemini"];
+    rejects["deepseek-mock"] = "always";
+    const host = app.agent.host("default");
+    const from = calls.length;
+    const r = await turnOn("fb-user", "deepseek-mock", "QUICKSORT despite rejection");
+    expect(r.reply).toContain("[1, 2, 3, 5, 7, 9]");
+    const mine = callsFor("deepseek-mock", from).filter((c) => c.body.tools);
+    expect(mine.map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual(["responses:400", "chat:ok", "chat:ok"]);
+    // 重做的那次：用户这条消息只交给模型一次，工具只跑一次
+    const users = mine[1].body.messages.filter((m: any) => m.role === "user" && /QUICKSORT despite/.test(textOf(m.content)));
+    expect(users).toHaveLength(1);
+    expect(textOf(mine[1].body.messages.findLast((m: any) => m.role === "user").content)).toBe(RETRY_NOTE);
+    expect(r.steps.filter((s) => s.kind === "tool")).toHaveLength(1);
+    expect(r.steps.find((s) => s.kind === "retry")).toMatchObject({ title: "改用 Chat Completions 重试", summary: expect.stringContaining("HTTP 400: Unsupported parameter") });
+    // 状态、故障排查、磁盘上的记录（按去掉前缀的模型 id，24 小时）
+    expect(host.api).toBe("openai-completions");
+    expect(host.status().api).toBe("openai-completions (fallback: HTTP 400: Unsupported parameter: 'reasoning.summary' is not supported with this model.)");
+    const diag = ((await (await fetch(`${base}/amb/api/diagnostics`)).json()) as any).agent;
+    expect(diag.hosts.default.api).toContain("fallback: HTTP 400");
+    expect(diag.apiFallbacks.map((f: any) => [f.model, f.from])).toContainEqual(["deepseek-mock", "openai-responses"]);
+    const rec = fallbackFile()["deepseek-mock"];
+    expect(rec).toMatchObject({ from: "openai-responses", reason: expect.stringContaining("HTTP 400") });
+    expect(rec.until - rec.at).toBe(24 * 3600_000);
+    expect(JSON.stringify(fallbackFile())).not.toContain("gw-key");
+
+    // 下一轮直接走 Chat，不再先试 Responses
+    const next = calls.length;
+    expect((await turnOn("fb-user", "deepseek-mock", "QUICKSORT again on chat")).reply).toContain("[1, 2, 3, 5, 7, 9]");
+    expect(callsFor("deepseek-mock", next).map((c) => c.api)).toEqual(callsFor("deepseek-mock", next).map(() => "chat"));
+  }, 180_000);
+
+  it("a persistent 503 is not a rejection of the API: no fallback, the turn fails as before", async () => {
+    catalog["gpt-busy"] = ["openai", "openai-response"];
+    rejects["gpt-busy"] = "busy";
+    const from = calls.length;
+    const r = await turnOn("busy-user", "gpt-busy", "hello busy");
+    expect(r.reply).toMatch(/⚠️/);
+    const mine = callsFor("gpt-busy", from).filter((c) => c.body.tools);
+    expect(mine.length).toBeGreaterThan(1); // 代理自己重试过
+    expect(mine.every((c) => c.api === "responses" && c.error === "503")).toBe(true);
+    expect(app.agent.apiFallbacks.get("gpt-busy")).toBeUndefined();
+    expect(app.agent.host("default").api).toBe("openai-responses");
+    expect(r.steps.some((s) => s.title === "改用 Chat Completions 重试")).toBe(false);
+  }, 180_000);
+
+  it("a rejection after a tool ran is not redone (the tool is not run twice), but the next turn uses Chat", async () => {
+    catalog["glm-mock"] = ["openai", "openai-response", "anthropic"];
+    rejects["glm-mock"] = "after-tool";
+    const counter = path.join(dataDir, "workspaces", "default", "counter.txt");
+    fs.rmSync(counter, { force: true });
+    const from = calls.length;
+    const r = await turnOn("after-tool-user", "glm-mock", "COUNTER once");
+    expect(r.reply).toMatch(/⚠️/);
+    expect(r.reply).toContain("Unsupported parameter");
+    expect(fs.readFileSync(counter, "utf8")).toBe("ran\n");
+    expect(callsFor("glm-mock", from).filter((c) => c.body.tools).map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual(["responses:ok", "responses:400"]);
+    expect(app.agent.apiFallbacks.get("mfb-x/glm-mock")).toMatchObject({ from: "openai-responses" });
+
+    const next = calls.length;
+    const again = await turnOn("after-tool-user", "glm-mock", "COUNTER twice");
+    expect(again.reply).toContain("RESULT<<2");
+    expect(fs.readFileSync(counter, "utf8")).toBe("ran\nran\n");
+    expect(callsFor("glm-mock", next).filter((c) => c.body.tools).map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual(["chat:ok", "chat:ok"]);
+    expect(app.agent.host("default").status().api).toMatch(/^openai-completions \(fallback: HTTP 400/);
   }, 180_000);
 
   it("vision models get the image itself over Responses and Messages too", async () => {

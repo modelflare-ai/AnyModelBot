@@ -7,7 +7,9 @@ import { ApprovalCenter, parseAnswer, promptText } from "../src/agent/approvals.
 import { WeixinReply } from "../src/channels/weixin/channel.js";
 import { WeixinQuota } from "../src/channels/weixin/quota.js";
 import { AgentHost, agentApi, modelLimits, type AgentApi } from "../src/agent/host.js";
-import { AgentBridge, type ProxyEvent } from "../src/agent/bridge.js";
+import { AgentBridge, BOT_HEADER, type ProxyEvent, type Rejection } from "../src/agent/bridge.js";
+import { ApiFallbacks, shapeRejection } from "../src/agent/api-fallback.js";
+import { ActivityLog } from "../src/agent/activity.js";
 import { listen } from "./helpers.js";
 
 let dir: string;
@@ -267,6 +269,8 @@ describe("agent API per model", () => {
   it("the patch names the API; Anthropic's base URL is the bridge root (the SDK adds /v1/messages)", () => {
     const chat = patchFor("mfb-b/gemini-3.6-flash", "openai-completions");
     expect(chat).toContain('        api: openai-completions\n        baseURL: "http://127.0.0.1:1/v1"\n');
+    // 每个模型请求都标明机器人（bridge 用来归属上游错误）
+    expect(chat).toContain(`        apiKeyEnv: AMB_MAGPIE_KEY\n        headers:\n          ${BOT_HEADER}: "b"\n`);
     expect(chat).not.toMatch(/reasoning|compat/);
     const claude = patchFor("mfb-b/claude-sonnet-5", "anthropic-messages", true);
     expect(claude).toContain('        api: anthropic-messages\n        baseURL: "http://127.0.0.1:1"\n');
@@ -326,6 +330,22 @@ describe("agent bridge model proxy", () => {
     expect(seen[0].headers["x-api-key"]).toBeUndefined();
   });
 
+  it("the bot header is not forwarded; upstream rejections are reported with the bot that sent the request", async () => {
+    await up.close();
+    up = await listen(async (req, res) => {
+      seen.push({ path: req.url!, headers: req.headers, body: "" });
+      res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: `bad ${bridge.token}` } }));
+    });
+    const got: Rejection[] = [];
+    bridge.onRejection((r) => void got.push(r));
+    const r = await post("/v1/responses", { authorization: `Bearer ${bridge.token}`, [BOT_HEADER]: "bot-7" }, { model: "m", input: [] });
+    expect(r.status).toBe(400);
+    expect(seen[0].headers[BOT_HEADER]).toBeUndefined();
+    expect(got).toEqual([{ bot: "bot-7", path: "/v1/responses", status: 400, error: expect.stringContaining("bad ") }]);
+    // 错误体已脱敏（令牌不进日志、不进回退原因）
+    expect(got[0].error).not.toContain(bridge.token);
+  });
+
   it("rejects a wrong token in either header", async () => {
     expect((await post("/v1/messages", { "x-api-key": "nope" }, {})).status).toBe(401);
     expect((await post("/v1/responses", { authorization: "Bearer nope" }, {})).status).toBe(401);
@@ -346,5 +366,73 @@ describe("agent bridge model proxy", () => {
       ["/v1/responses", "b", ["bash"], "hi responses"],
       ["/v1/messages", "c", ["bash"], "hi messages"],
     ]);
+  });
+});
+
+describe("agent API fallback", () => {
+  const unsupported = JSON.stringify({ error: { message: "Unsupported parameter: 'reasoning.summary'", type: "invalid_request_error", code: "unsupported_parameter" } });
+
+  it("request-shape rejections (400/404/405/415/422) fall back; the reason is the upstream's message", () => {
+    expect(shapeRejection([{ status: 400, error: unsupported }], "magpie API error (400): …")).toBe("HTTP 400: Unsupported parameter: 'reasoning.summary'");
+    for (const status of [404, 405, 415, 422]) expect(shapeRejection([{ status, error: "no such route" }], "x")).toBe(`HTTP ${status}: no such route`);
+    expect(shapeRejection([{ status: 400, error: "" }], "x")).toBe("HTTP 400");
+    // 最近的一次说了算
+    expect(shapeRejection([{ status: 503, error: "x" }, { status: 422, error: "unknown field 'include'" }], "")).toBe("HTTP 422: unknown field 'include'");
+  });
+
+  it("rate limits, quota, auth, server errors, context overflow and content filters do not", () => {
+    for (const status of [401, 402, 403, 408, 409, 429, 500, 502, 503, 504, 529]) expect(shapeRejection([{ status, error: unsupported }], `${status} unsupported parameter`)).toBeUndefined();
+    expect(shapeRejection([{ status: 400, error: JSON.stringify({ error: { message: "This model's maximum context length is 200000 tokens", code: "context_length_exceeded" } }) }], "")).toBeUndefined();
+    expect(shapeRejection([{ status: 400, error: "Input is too long for requested model." }], "")).toBeUndefined();
+    expect(shapeRejection([{ status: 400, error: "Your request was flagged by our content policy" }], "")).toBeUndefined();
+    expect(shapeRejection([{ status: 400, error: "insufficient balance" }], "")).toBeUndefined();
+    expect(shapeRejection([], "pi-ai stream idle timeout after 300000ms")).toBeUndefined();
+    expect(shapeRejection([], "")).toBeUndefined();
+  });
+
+  it("without a status (error only in the stream): an 'unsupported / unknown parameter or endpoint' message falls back", () => {
+    expect(shapeRejection([], "Error Code invalid_request_error: Unsupported parameter: 'reasoning.effort'")).toMatch(/^Error Code/);
+    expect(shapeRejection([], "unknown_parameter: prompt_cache_retention")).toBeTruthy();
+    expect(shapeRejection([], "This endpoint does not support tools of type custom")).toBeTruthy();
+    expect(shapeRejection([], "429: unsupported parameter while rate limited")).toBeUndefined();
+    expect(shapeRejection([], "Rate limit reached for requests")).toBeUndefined();
+  });
+
+  it("is keyed by the bare model id, kept on disk for 24 hours, and expires", () => {
+    const file = path.join(dir, "dsh", "api-fallback.json");
+    const a = new ApiFallbacks(file);
+    a.set("mfb-b1/deepseek-v4-pro", "openai-responses", "HTTP 400: nope");
+    expect(a.get("modelflare/deepseek-v4-pro")).toMatchObject({ from: "openai-responses", reason: "HTTP 400: nope" });
+    expect(a.get("deepseek-v4-pro")).toBeTruthy();
+    expect(a.get("gpt-6-sol")).toBeUndefined();
+    const rec = JSON.parse(fs.readFileSync(file, "utf8")).models["deepseek-v4-pro"];
+    expect(rec.until - rec.at).toBe(24 * 3600_000);
+    if (process.platform !== "win32") expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    // 重启后仍然有效
+    expect(new ApiFallbacks(file).list()).toEqual([expect.objectContaining({ model: "deepseek-v4-pro", from: "openai-responses" })]);
+    // 过期了就不算，也从文件里去掉
+    const short = new ApiFallbacks(file, -1);
+    short.set("glm-5.3", "anthropic-messages", "HTTP 404");
+    expect(short.get("glm-5.3")).toBeUndefined();
+    expect(Object.keys(JSON.parse(fs.readFileSync(file, "utf8")).models)).not.toContain("glm-5.3");
+    // 文件坏了：从空开始
+    fs.writeFileSync(file, "{oops");
+    expect(new ApiFallbacks(file).list()).toEqual([]);
+    // 不给文件：只在内存里
+    const mem = new ApiFallbacks();
+    mem.set("x", "openai-responses", "r");
+    expect(mem.get("x")).toBeTruthy();
+  });
+
+  it("host status names the fallback; the activity log shows the redo as a retry step", () => {
+    const host = new AgentHost({ botId: "b", dataDir: dir, runtimeDir: "/rt", bridge: { url: "http://127.0.0.1:1" } as any, store });
+    host.api = "openai-responses";
+    expect(host.status().api).toBe("openai-responses");
+    host.api = "openai-completions";
+    host.fallback = { from: "openai-responses", reason: "HTTP 400: Unsupported parameter", at: 0, until: 1 };
+    expect(host.status().api).toBe("openai-completions (fallback: HTTP 400: Unsupported parameter)");
+    const log = new ActivityLog();
+    log.apply("api/fallback", { from: "openai-responses", to: "openai-completions", reason: "HTTP 400: Unsupported parameter" }, 1000);
+    expect(log.steps).toEqual([expect.objectContaining({ kind: "retry", title: "改用 Chat Completions 重试", summary: "openai-responses 被拒：HTTP 400: Unsupported parameter", status: "ok" })]);
   });
 });

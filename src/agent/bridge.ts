@@ -26,6 +26,17 @@ export type ProxyEvent =
   | { phase: "response"; id: number; path: string; status: number; ms: number; error?: string }
   | { phase: "error"; id: number; path: string; ms: number; error: string };
 
+/** 上游拒绝了一个模型请求（状态码 ≥ 400）：哪个机器人的代理进程发的、哪个路径、状态码、错误体（已脱敏、截断） */
+export interface Rejection {
+  bot?: string;
+  path: string;
+  status: number;
+  error: string;
+}
+
+/** 代理进程在每个模型请求上带的头：标明是哪个机器人发的（bridge 用它归属上游错误，不转给上游） */
+export const BOT_HEADER = "x-amb-bot";
+
 /**
  * 仅回环的内部桥：DSH 子进程用每次启动随机生成的令牌访问。
  * - /v1/*：模型代理（Chat Completions、Responses、Anthropic Messages），把令牌换成真实网关密钥（子进程环境里没有任何真实密钥）
@@ -37,6 +48,7 @@ export class AgentBridge {
   port = 0;
   private seq = 0;
   private proxyListeners = new Set<(e: ProxyEvent) => void>();
+  private rejectionListeners = new Set<(e: Rejection) => void>();
 
   constructor(private h: BridgeHandlers) {
     registerSecret(this.token);
@@ -55,6 +67,12 @@ export class AgentBridge {
         /* ignore */
       }
     }
+  }
+
+  /** 订阅上游拒绝（代理接口回退用；不解析请求体，开销很小）；返回取消函数 */
+  onRejection(fn: (e: Rejection) => void): () => void {
+    this.rejectionListeners.add(fn);
+    return () => this.rejectionListeners.delete(fn);
   }
 
   get url(): string {
@@ -117,7 +135,7 @@ export class AgentBridge {
     const target = up.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "") + url;
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) {
-      if (["host", "authorization", "x-api-key", "connection", "content-length", "transfer-encoding", "cookie"].includes(k) || v === undefined) continue;
+      if (["host", "authorization", "x-api-key", BOT_HEADER, "connection", "content-length", "transfer-encoding", "cookie"].includes(k) || v === undefined) continue;
       headers[k] = Array.isArray(v) ? v.join(", ") : v;
     }
     // 令牌只在本机有效：换成真实密钥；Anthropic 客户端发来的 x-api-key 也换掉（magpie 两种都认）
@@ -152,8 +170,16 @@ export class AgentBridge {
       // 上游报错：读完错误体（不大）记日志，再原样转给子进程
       const text = await r.text().catch(() => "");
       const error = redactText(text.slice(0, 1000));
-      log.warn("model request rejected by upstream", { path: p, status: r.status, ms: Date.now() - t0, body: error });
+      const bot = typeof req.headers[BOT_HEADER] === "string" ? (req.headers[BOT_HEADER] as string) : undefined;
+      log.warn("model request rejected by upstream", { path: p, status: r.status, ms: Date.now() - t0, bot, body: error });
       this.emitProxy({ phase: "response", id, path: p, status: r.status, ms: Date.now() - t0, error });
+      for (const fn of this.rejectionListeners) {
+        try {
+          fn({ bot, path: p, status: r.status, error });
+        } catch {
+          /* ignore */
+        }
+      }
       res.writeHead(r.status, out);
       return void res.end(text);
     }

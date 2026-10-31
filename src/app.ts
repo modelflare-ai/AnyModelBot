@@ -707,8 +707,10 @@ export class App {
     this.channels.set(botId, ch);
     if (bot.feishuAppId && bot.feishuAppSecret && !ch.feishu) {
       const transport = this.opts.feishuTransport?.(bot) ?? new LarkTransport(bot.feishuAppId, bot.feishuAppSecret);
-      ch.feishu = new FeishuChannel(bot.id, transport, this.runtime, this.queue, this.config.feishu.throttleMs, this.outbox);
+      ch.feishu = new FeishuChannel(bot.id, transport, this.runtime, this.queue, this.config.feishu.throttleMs, this.outbox, this.store);
       ch.feishu.delivery = this.delivery;
+      // 读不了飞书的历史消息：离线时发来的补不上，提示一次
+      ch.feishu.onHistoryDenied = () => this.notice("warn", t("app.feishu_history_denied", { name: this.store.getBot(bot.id)?.name ?? bot.name }));
       // 代理自己醒来的一轮（后台命令结束）：经出站队列回复到这个会话最近收到的那条消息
       const fs = ch.feishu;
       this.runtime.registerReplier(bot.id, "feishu", (conv, handle, key) => (handle?.messageId ? { out: fs.followUp(conv.peerId, handle.messageId, key) } : undefined));

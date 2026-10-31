@@ -23,6 +23,30 @@ export interface FeishuMessageEvent {
   createTime: number;
 }
 
+/** 读不了会话的历史消息（应用没开 im:message.history:readonly 这类权限、机器人不在群里、用户不在可用范围）：离线补消息做不了 */
+export class HistoryDenied extends Error {}
+
+/** 飞书说的「没权限」：HTTP 403，缺权限范围（99991672 / 99991679）、缺必要权限（230027）、不在群里（230002）、不在可用范围（230013） */
+export function historyDenied(status: number | undefined, code: number | undefined, msg = ""): boolean {
+  if (status === 403) return true;
+  if (code !== undefined && [99991672, 99991679, 230027, 230002, 230013].includes(code)) return true;
+  return /scope|permission|access denied|权限/i.test(msg);
+}
+
+/** 会话历史里的一条（im.v1.message.list 的 item）→ FeishuMessageEvent；chatType 由调用方给（列表里没有） */
+export function historyEvent(m: any, chatType: string): FeishuMessageEvent {
+  return {
+    messageId: String(m?.message_id ?? ""),
+    chatId: String(m?.chat_id ?? ""),
+    chatType,
+    messageType: String(m?.msg_type ?? ""),
+    content: m?.body?.content ?? "{}",
+    senderOpenId: m?.sender?.id_type === "open_id" ? String(m.sender.id ?? "") : "",
+    mentions: (m?.mentions ?? []).map((x: any) => ({ key: x.key, name: x.name, openId: x.id_type === "open_id" ? x.id : undefined })),
+    createTime: Number(m?.create_time ?? 0),
+  };
+}
+
 /**
  * 飞书传输层抽象（便于离线测试用 mock 替换）。
  * 真实实现：WSClient 长连接接收事件 + OpenAPI（CardKit 流式卡片 / 文本回复）。
@@ -54,6 +78,11 @@ export interface FeishuTransport {
   replyFile?(replyToMessageId: string, filePath: string, uuid?: string): Promise<void>;
   /** 主动发一条文本到会话（不是回复某条消息；用于余额提醒、使用请求通知） */
   sendText?(chatId: string, text: string, uuid?: string): Promise<void>;
+  /**
+   * 离线时漏掉的消息（长连接不补推离线时的事件）：会话里 since（毫秒）之后用户发的消息，旧的在前，最多 limit 条（最新的那几条）；
+   * 机器人自己发的、撤回的不算。读不了历史消息时抛 HistoryDenied
+   */
+  listMessages?(chatId: string, o: { since: number; limit: number; chatType: string }): Promise<FeishuMessageEvent[]>;
 }
 
 export const CARD_ELEMENT_ID = "md";
@@ -173,6 +202,7 @@ export class LarkTransport implements FeishuTransport {
       onReady: () => onState("connected"),
       onError: (err: Error) => onState("error", err?.message),
       onReconnecting: () => onState("connecting", "reconnecting"),
+      onReconnected: () => onState("connected", "reconnected"),
     } as any);
     await this.ws.start({ eventDispatcher: dispatcher });
   }
@@ -263,6 +293,27 @@ export class LarkTransport implements FeishuTransport {
       data: { msg_type: "text", content: JSON.stringify({ text }), ...(uuid ? { uuid } : {}) },
     });
     check(res, "im.message.reply(text)");
+  }
+
+  async listMessages(chatId: string, o: { since: number; limit: number; chatType: string }): Promise<FeishuMessageEvent[]> {
+    let res: any;
+    try {
+      res = await this.client.im.v1.message.list({
+        params: { container_id_type: "chat", container_id: chatId, start_time: String(Math.floor(o.since / 1000)), sort_type: "ByCreateTimeDesc", page_size: Math.min(50, Math.max(1, o.limit)) },
+      });
+    } catch (e) {
+      const r = (e as { response?: { status?: number; data?: { code?: number; msg?: string } } }).response;
+      if (historyDenied(r?.status, r?.data?.code, r?.data?.msg)) throw new HistoryDenied(`im.message.list denied: code=${r?.data?.code ?? r?.status} msg=${r?.data?.msg ?? ""}`);
+      throw e;
+    }
+    if (res?.code && historyDenied(undefined, res.code, res.msg)) throw new HistoryDenied(`im.message.list denied: code=${res.code} msg=${res.msg}`);
+    check(res, "im.message.list");
+    const items: any[] = res?.data?.items ?? [];
+    return items
+      .filter((m) => m?.sender?.sender_type === "user" && !m.deleted)
+      .map((m) => historyEvent(m, o.chatType))
+      .filter((ev) => ev.messageId && ev.createTime > o.since)
+      .reverse();
   }
 
   async sendText(chatId: string, text: string, uuid?: string): Promise<void> {

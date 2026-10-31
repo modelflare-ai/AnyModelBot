@@ -667,6 +667,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | Job runs forever | Killed 30 minutes after the turn ended; the session is told at its next turn |
 | Approval or question never answered | Blocking approval: rejected at its TTL; the task fails with 「批准超时」. Task question: stays in needs-you; no reminders; the task is archived after 14 days (Q9) |
 | Delivery fails (Feishu API, channel logged out) | Retries at 5 s doubling to 300 s; after 3 failures: needs-you `delivery`. Dropped only when the conversation no longer exists |
+| Feishu messages sent while the app is offline | The long connection doesn't re-push them (the SDK reconnects with no position; the platform only re-pushes events it delivered that weren't acked within 3 s). On start and on every reconnect the app reads each Feishu chat active in the last 7 days from history: messages from the last 24 h after the last one it saw, at most 20 per chat, through the normal inbound pipeline and dedupe. Without the history scope it says so once and carries on |
 | WeChat window closed or no quota | Held, piggybacked on the next inbound, shown in needs-you ([WeChat](#wechat-the-hard-constraint)) |
 | A rule floods (bad instruction) | Coalescing, the daily cap, then a digest; 3 failures in a row pause it; the monthly budget pauses it |
 | Rule edited during a run | The run finishes under its recorded version; the next run uses the new version |

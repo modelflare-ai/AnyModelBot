@@ -112,6 +112,12 @@ export function deliverables(workspace: string, paths: string[]): string[] {
   return out.slice(0, 8);
 }
 
+/** p 在 ms 内没结果就用 fallback */
+function withTimeoutOr<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let t: NodeJS.Timeout | undefined;
+  return Promise.race([p, new Promise<T>((r) => (t = setTimeout(() => r(fallback), ms)))]).finally(() => clearTimeout(t));
+}
+
 let sdkPromise: Promise<SdkModule> | undefined;
 function loadSdk(runtimeDir: string): Promise<SdkModule> {
   sdkPromise ??= import(pathToFileURL(path.join(runtimeDir, "node_modules", "@deepseek-ai", "dsh-sdk-client", "lib", "index.js")).href) as Promise<SdkModule>;
@@ -154,6 +160,8 @@ export interface AgentHostOptions {
   onNotice?: (text: string) => void;
   /** 能生图 / 生视频（已连接 Modelflare）：写入 media 技能说明 */
   media?: boolean;
+  /** 模型的上下文长度（Modelflare 模型资料）；不知道时 undefined，用内置兜底表 */
+  contextWindow?: (model: string) => Promise<number | undefined>;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
@@ -194,18 +202,25 @@ export type HostEvent =
   | { type: "failed"; message: string }
   | { type: "exit"; pid: number | undefined; code: number | null; signal: string | null };
 
+/** 拿不到 Modelflare 的模型资料时的兜底（上下文窗口、最大输出） */
 const MODEL_LIMITS: Array<[RegExp, number, number]> = [
+  [/-terra\b/i, 1_050_000, 32_000],
   [/grok-4/i, 256_000, 32_000],
   [/claude/i, 200_000, 32_000],
-  [/gpt-5|gpt-4\.1/i, 400_000, 32_000],
+  [/gpt-[5-9]|gpt-4\.1/i, 400_000, 32_000],
   [/gemini/i, 1_000_000, 32_000],
   [/deepseek/i, 128_000, 32_000],
 ];
 
-/** 模型的上下文窗口与最大输出（与写入 DSH 补丁的数值一致）。 */
-export function modelLimits(model: string): { window: number; maxTokens: number } {
+/**
+ * 模型的上下文窗口与最大输出（写进 DSH 补丁，上下文管家也按它算检查线）。
+ * known：Modelflare 模型资料里的上下文长度，有就用它；窗口写小了，DSH 和管家会过早、反复地压缩上下文。
+ */
+export function modelLimits(model: string, known?: number): { window: number; maxTokens: number } {
   const lim = MODEL_LIMITS.find(([re]) => re.test(model)) ?? [/./, 128_000, 16_000];
-  return { window: lim[1], maxTokens: lim[2] };
+  const window = Number(known) > 0 ? Number(known) : lim[1];
+  // 最大输出不超过窗口的四分之一（小窗口模型留够消息空间）
+  return { window, maxTokens: Math.min(lim[2], Math.floor(window / 4)) };
 }
 
 /** 随消息交给模型的图片（DSH SDK 的内联图片块：base64 + 格式，进会话前存入 DSH 的附件库） */
@@ -276,6 +291,8 @@ export class AgentHost {
   lastError = "";
   restarts = 0;
   model = "";
+  /** 当前子进程补丁里写的上下文窗口与最大输出 */
+  private limits: { window: number; maxTokens: number } | undefined;
   private harness: SdkHarness | undefined;
   private starting: Promise<SdkHarness> | undefined;
   private opened = new Set<string>();
@@ -347,8 +364,8 @@ export class AgentHost {
     });
   }
 
-  private writePatch(model: string, apps: CuaApp[] = [], pwshPath?: string): string {
-    const lim = MODEL_LIMITS.find(([re]) => re.test(model)) ?? [/./, 128_000, 16_000];
+  private writePatch(model: string, apps: CuaApp[] = [], pwshPath?: string, lim = modelLimits(model)): string {
+    this.limits = lim;
     const plugin = path.join(this.o.runtimeDir, "plugins", "amb-bridge.mjs");
     const memory = path.join(this.o.runtimeDir, "plugins", "amb-memory.mjs");
     this.writeMediaSkill();
@@ -365,8 +382,8 @@ export class AgentHost {
       "        models:",
       `          - id: ${yamlStr(model)}`,
       `            name: ${yamlStr(model.split("/").pop() || model)}`,
-      `            contextWindow: ${lim[1]}`,
-      `            maxTokens: ${lim[2]}`,
+      `            contextWindow: ${lim.window}`,
+      `            maxTokens: ${lim.maxTokens}`,
       // 默认只收文字；能看图的模型声明图片输入，用户发来的图片才会作为图片交给它
       ...(acceptsImages(model) ? ["            input: [text, image]"] : []),
       // Windows：命令用检测到的 PowerShell 7（DSH 自己只看 Program Files\PowerShell\7 和 PATH，找不到就退回 5.1）
@@ -666,7 +683,8 @@ exec "$REAL" "$@"
       const cu = this.computerUseActive();
       const apps = cu && cu.backend === "cua" ? await discoverAppsCached() : [];
       const pwshPath = await pwshProbe.dshPath();
-      const patch = this.writePatch(model, apps, pwshPath);
+      const known = await withTimeoutOr(this.o.contextWindow?.(model) ?? Promise.resolve(undefined), 3000, undefined).catch(() => undefined);
+      const patch = this.writePatch(model, apps, pwshPath, modelLimits(model, known));
       this.sig = this.settingsSig();
       const timeoutMs = this.initTimeoutMs();
       this.stage("patch written", t0, { computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
@@ -816,7 +834,7 @@ exec "$REAL" "$@"
     let timer: NodeJS.Timeout | undefined;
     let turnError: string | undefined;
     const presented: string[] = [];
-    const lim = modelLimits(input.model);
+    const lim = input.model === this.model && this.limits ? this.limits : modelLimits(input.model);
     const usage: TurnUsage = { tokens: 0, window: lim.window, maxTokens: lim.maxTokens };
     const images = this.imageInput ? (input.images ?? []) : [];
     let unlisten = () => {};

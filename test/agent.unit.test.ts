@@ -6,6 +6,7 @@ import { Store } from "../src/store/db.js";
 import { ApprovalCenter, parseAnswer, promptText } from "../src/agent/approvals.js";
 import { WeixinReply } from "../src/channels/weixin/channel.js";
 import { WeixinQuota } from "../src/channels/weixin/quota.js";
+import { AgentHost, modelLimits } from "../src/agent/host.js";
 
 let dir: string;
 let store: Store;
@@ -201,5 +202,26 @@ describe("WeChat media delivery", () => {
     fs.symlinkSync("/etc/hostname", path.join(ws, "link.txt"));
     const args = JSON.stringify({ files: [{ path: "ok.txt" }, { path: path.join(ws, "ok.txt") }, { path: "../../etc/passwd" }, { path: "/etc/hostname" }, { path: "link.txt" }, { path: "empty.txt" }, { path: "missing" }] });
     expect(deliverables(ws, presentPaths(args))).toEqual([path.join(fs.realpathSync(ws), "ok.txt")]);
+  });
+});
+
+describe("context window written for DSH", () => {
+  it("uses the window from Modelflare's model data; the built-in table is only a fallback", () => {
+    expect(modelLimits("mfb-b/gpt-6.1-terra", 1_050_000)).toEqual({ window: 1_050_000, maxTokens: 32_000 });
+    expect(modelLimits("modelflare/gpt-6.1-terra")).toEqual({ window: 1_050_000, maxTokens: 32_000 });
+    expect(modelLimits("gpt-6.2-sol")).toEqual({ window: 400_000, maxTokens: 32_000 });
+    expect(modelLimits("some-new-model")).toEqual({ window: 128_000, maxTokens: 16_000 });
+    // 小窗口模型：最大输出不超过窗口的四分之一
+    expect(modelLimits("claude-mini", 32_000)).toEqual({ window: 32_000, maxTokens: 8_000 });
+  });
+
+  it("the patch carries those numbers", () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-patch-"));
+    const host = new AgentHost({ botId: "b", dataDir, runtimeDir: "/rt", bridge: { url: "http://127.0.0.1:1" } as any, store: new Store(":memory:") });
+    fs.mkdirSync(host.home, { recursive: true });
+    const file = (host as any).writePatch("mfb-b/gpt-6.1-terra", [], undefined, modelLimits("gpt-6.1-terra", 1_050_000));
+    const text = fs.readFileSync(file, "utf8");
+    expect(text).toMatch(/contextWindow: 1050000\n\s+maxTokens: 32000/);
+    fs.rmSync(dataDir, { recursive: true, force: true });
   });
 });

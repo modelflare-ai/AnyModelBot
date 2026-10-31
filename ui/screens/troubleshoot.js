@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { html, Button, CopyButton, Icon, Skeleton } from "../components/ui.js";
 import { api } from "../lib/api.js";
 import { failed, toast } from "../lib/store.js";
-import { PWSH_INSTALL_URL, PWSH_WINGET, recheckPwsh } from "../lib/pwsh.js";
+import { PWSH_INSTALL_URL, PWSH_WINGET, installPwsh, pwshInstalling, pwshProgress, recheckPwsh, setPwshMode } from "../lib/pwsh.js";
 
 const GATEWAY = { running: ["运行中", "ok"], starting: ["启动中", "warn"], restarting: ["重启中", "warn"], failed: ["失败", "err"], stopped: ["已停止", "off"], external: ["外部端点", "ok"] };
 const HOST = { running: ["运行中", "ok"], starting: ["启动中", "warn"], backoff: ["等待重试", "warn"], error: ["已暂停", "err"], stopped: ["未启动", "off"] };
@@ -45,24 +45,58 @@ const Verdict = ({ ok }) => html`<span class="ts-state"><span class=${`dot ${ok 
 const ms = (v) => (v === undefined || v === null ? "" : v >= 10_000 ? `${(v / 1000).toFixed(1)} 秒` : `${v} ms`);
 const exitText = (e) => (e ? `上次退出 code=${e.code ?? "-"}${e.signal ? ` signal=${e.signal}` : ""}` : "");
 const join = (...a) => a.filter(Boolean).join(" · ");
-const PS_SOURCE = { "program-files": "安装目录", path: "PATH", preview: "预览版", store: "Microsoft Store" };
+const PS_SOURCE = { "program-files": "安装目录", path: "PATH", preview: "预览版", store: "Microsoft Store", private: "应用内置" };
+const fmtTime = (t) => (t ? new Date(t).toLocaleString() : "");
 
-/** PowerShell（只在 Windows 上）：版本或"未安装"；没有 7 时下面多一行安装命令和下载链接 */
-function PwshRows({ ps, busy, onRecheck }) {
+/**
+ * PowerShell（只在 Windows 上）：代理用的是哪个；下面一行是应用内置的 PowerShell 7（状态、安装进度、安装 / 重新安装 / 改回系统默认）；
+ * 没有 7 又没法自己装时再多一行手动安装命令
+ */
+function PwshRows({ ps, busy, onRecheck, onInstall, onMode }) {
   if (!ps || !ps.applicable) return null;
-  const [text, kind] = ps.checking ? ["检测中", ""] : !ps.missing ? [ps.version || "7", "ok"] : ps.found && ps.version ? [ps.version, "warn"] : ["未安装", "warn"];
+  const p = ps.private;
+  const installing = pwshInstalling(ps);
+  const [text, kind] = ps.checking ? ["检测中", ""] : !ps.missing ? [ps.version || "7", "ok"] : installing ? ["安装中", "warn"] : ps.found && ps.version ? [ps.version, "warn"] : ["未安装", "warn"];
+  const fb = ps.fallback ? `${fmtTime(ps.fallback.at)} ${ps.fallback.from} 起不来（${ps.fallback.reason}），已自动换掉` : "";
   const sub = ps.checking
     ? "正在找 PowerShell 7"
     : !ps.missing
-      ? join(ps.path, PS_SOURCE[ps.source], "代理用它执行命令")
-      : ps.found
-        ? join(ps.path, "版本较旧：装上 PowerShell 7，命令执行快得多，也更稳定")
-        : "代理执行命令用的是系统自带的 Windows PowerShell 5.1，每条可能要二三十秒。装上 PowerShell 7，命令执行快得多，也更稳定";
+      ? join(ps.path, PS_SOURCE[ps.source], "代理用它执行命令", fb)
+      : join(
+          ps.systemIssue ? `${ps.path} 用不了：${ps.systemIssue}` : ps.found && `${ps.path} 版本较旧`,
+          "代理执行命令用的是系统自带的 Windows PowerShell 5.1，每条可能要二三十秒",
+          installing ? "装好 PowerShell 7 后自动换用" : "装上 PowerShell 7，命令执行快得多，也更稳定",
+        );
+  // 内置副本
+  let row = null;
+  if (p) {
+    const inst = p.install || {};
+    const system = ps.mode === "system";
+    const [pt, pk] = !p.supported ? ["装不了", ""] : installing ? [pwshProgress(inst), "warn"] : system ? ["未使用", ""] : p.ready ? ["已就绪", "ok"] : p.bad ? ["用不了", "err"] : inst.state === "failed" ? ["没装上", "err"] : p.installed ? ["已安装", "warn"] : ["未安装", ""];
+    const psub = !p.supported
+      ? p.reason
+      : join(
+          installing ? "正在下载、核对哈希与微软签名、试运行，不需要管理员权限" : "",
+          !installing && p.ready && `${p.version}${p.arch ? ` ${p.arch}` : ""} · 已核对微软签名，试运行通过（${p.test ? `${p.test.ms} ms，${fmtTime(p.test.at)}` : ""}）`,
+          !installing && p.bad && `用不了：${p.bad.reason}`,
+          !installing && !p.bad && inst.state === "failed" && `没装上：${inst.error || "未知原因"}`,
+          !installing && !p.installed && inst.state !== "failed" && (system ? "已改回系统默认，不用应用内置的 PowerShell 7" : ps.autoInstall ? "系统里没有能用的 PowerShell 7 时自动安装" : `${p.version}，点"安装"下载（约 110 MB）`),
+          p.installed && system && "已改回系统默认，不用它",
+          p.dir,
+        );
+    const b = (what, label, fn, cls = "text") => html`<button type="button" class=${cls} disabled=${!!busy || installing} aria-busy=${busy === what || undefined} onClick=${fn}>${busy === what ? `${label}…` : label}</button>`;
+    row = html`<${Row} compact id="pwsh-private" name="应用内置的 PowerShell 7" sub=${psub}>
+      <span class="ts-state"><span class=${`dot ${pk}`}></span>${pt}</span>
+      ${p.supported && !installing && (system ? (p.ready ? b("pwsh-auto", "改用它", () => onMode("auto")) : b("pwsh-install", "安装", () => onInstall(false))) : !p.installed ? b("pwsh-install", "安装", () => onInstall(false)) : b("pwsh-install", "重新安装", () => onInstall(true)))}
+      ${p.supported && !installing && !system && (p.installed || p.ready) && b("pwsh-system", "改回系统默认", () => onMode("system"))}
+    <//>`;
+  }
   return html`<${Row} id="pwsh" name="PowerShell" sub=${sub}>
       <span class="ts-state"><span class=${`dot ${kind}`}></span>${text}</span>
       <button type="button" class="text" disabled=${!!busy} aria-busy=${busy === "pwsh" || undefined} onClick=${onRecheck}>${busy === "pwsh" ? "检测中…" : "重新检测"}</button>
     <//>
-    ${ps.missing && html`<${Row} compact id="pwsh-install" name="安装 PowerShell 7" sub=${PWSH_WINGET} mono>
+    ${row}
+    ${ps.missing && !installing && (!p || !p.supported || ps.mode === "system" || p.bad || p.install?.state === "failed") && html`<${Row} compact id="pwsh-manual" name="自己安装 PowerShell 7" sub=${PWSH_WINGET} mono>
       <${CopyButton} text=${PWSH_WINGET} label="复制安装命令" />
       <a class="btn sm" href=${PWSH_INSTALL_URL} target="_blank" rel="noopener noreferrer">下载安装 ↗</a>
     <//>`}`;
@@ -131,6 +165,8 @@ export function TroubleshootPane({ bots, desktop }) {
       toast(r.restarted.length ? "代理进程已重启" : "代理进程还没有启动，下一条消息时启动");
     });
   const recheckPs = () => run("pwsh", recheckPwsh);
+  const installPs = (reinstall) => run("pwsh-install", () => installPwsh(reinstall));
+  const modePs = (mode) => run(mode === "system" ? "pwsh-system" : "pwsh-auto", () => setPwshMode(mode));
   const copy = () =>
     run("copy", async () => {
       const { text } = await api("/diagnostics/report?lines=200");
@@ -157,7 +193,7 @@ export function TroubleshootPane({ bots, desktop }) {
         <${State} map=${HOST} s=${h.state} />
       <//>`)}
       ${tail.length > 0 && html`<div class="row-edit ts-tail"><span class="t-label">代理进程输出（stderr 最后 ${tail.length} 行）</span><pre class="ts-mono">${tail.join("\n")}</pre></div>`}
-      <${PwshRows} ps=${st.pwsh} busy=${busy} onRecheck=${recheckPs} />
+      <${PwshRows} ps=${st.pwsh} busy=${busy} onRecheck=${recheckPs} onInstall=${installPs} onMode=${modePs} />
       <${Row} id="version" name="版本" sub=${join(st.os, st.electron && `Electron ${st.electron}`, `Node ${st.node}`)}>
         <span class="val">${st.version} · ${st.platform} ${st.arch}</span>
       <//>

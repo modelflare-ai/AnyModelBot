@@ -219,10 +219,11 @@ button.thread:active { background: var(--side-press); }
   :root { --side-w: 240px; }
 }
 
-/* "建议安装 PowerShell 7"（components/pwsh-hint.js）：一条 .notice（淡底 + 图标 + 字，不描边），文字之下多一行等宽的
-   安装命令（就是一行字，不再套底）和一排操作。对话空状态与设置 → 常规共用 */
+/* 代理的 PowerShell（components/pwsh-hint.js）：一条 .notice（淡底 + 图标 + 字，不描边）——正在安装（转圈 + 进度）、装好了、
+   没装上、起不来已换掉、建议安装；文字之下可以多一行等宽的安装命令（就是一行字，不再套底）和一排操作。对话空状态与设置 → 常规共用 */
 .notice.pwsh-hint { align-items: flex-start; padding: var(--space-3); text-align: left; }
-.notice.pwsh-hint > .ic { margin-top: 3px; }   /* 微调：图标对齐第一行文字（14px 图标 / 约 20px 行高） */
+.notice.pwsh-hint > .ic, .notice.pwsh-hint > .spinner { margin-top: 3px; }   /* 微调：图标对齐第一行文字（14px 图标 / 约 20px 行高） */
+.notice.pwsh-hint > .spinner { color: var(--notice-ic); }
 .pwsh-body { flex: 1; min-width: 0; display: grid; gap: var(--space-2); }
 .pwsh-body b { display: block; margin-bottom: var(--space-0-5); font-weight: var(--fw-semibold); }
 .pwsh-cmd { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }

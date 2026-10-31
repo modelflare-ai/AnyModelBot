@@ -3,6 +3,8 @@ dist/
 build/
 release/
 data/
+# 应用数据目录之外的同名目录：官网的数据文件要入库
+!site/src/data/
 .env
 *.log
 test-results/

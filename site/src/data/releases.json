@@ -1,0 +1,11 @@
+{
+  "version": "{VERSION}",
+  "publishedAt": "{PUBLISHED_AT}",
+  "platforms": {
+    "win-x64": { "url": "{WIN_X64_URL}", "sha256": "{WIN_X64_SHA256}", "sizeMB": 0 },
+    "mac-arm64": { "url": "{MAC_ARM64_URL}", "sha256": "{MAC_ARM64_SHA256}", "sizeMB": 0 },
+    "mac-x64": { "url": "{MAC_X64_URL}", "sha256": "{MAC_X64_SHA256}", "sizeMB": 0 },
+    "linux-x64": { "url": "{LINUX_X64_URL}", "sha256": "{LINUX_X64_SHA256}", "sizeMB": 0 },
+    "docker": { "image": "{DOCKER_IMAGE}", "command": "docker run -d --name amb -p 3600:3600 -v amb-data:/data {DOCKER_IMAGE}" }
+  }
+}

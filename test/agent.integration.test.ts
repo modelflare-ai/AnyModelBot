@@ -11,8 +11,8 @@ import { findAppRoot } from "../src/magpie/supervisor.js";
 import { listen } from "./helpers.js";
 
 /**
- * 真实 DSH 子进程 + 脚本化的 OpenAI 兼容模型（会发出工具调用）。
- * 验证：插件加载、bridge 注入密钥、bash 沙箱、审批流程（API 批准/拒绝）、读围栏、回环 API 防护。
+ * 真实 DSH 子进程 + 脚本化的模型（会发出工具调用），Chat Completions、Responses、Anthropic Messages 三种接口都能答。
+ * 验证：插件加载、bridge 注入密钥、bash 沙箱、审批流程（API 批准/拒绝）、读围栏、回环 API 防护、按模型选接口。
  */
 const runtime = locateDshRuntime(findAppRoot());
 /** workflow 脚本先剥离 TS 类型；Electron 自带的 Node 支持，部分发行版的系统 Node 不带 amaro。 */
@@ -38,16 +38,131 @@ function textOf(c: any): string {
   return "";
 }
 
+const rnd = () => Math.random().toString(36).slice(2, 10);
+const imageUrl = (url: string) => ({ type: "image_url", image_url: { url } });
+
+/** Responses 的 input → Chat 形状的消息（脚本只看 user / tool） */
+function fromResponses(input: any[]): any[] {
+  const out: any[] = [];
+  for (const it of input ?? []) {
+    if (it.type === "function_call_output") out.push({ role: "tool", content: typeof it.output === "string" ? it.output : textOf(it.output) });
+    else if (it.role && (it.type === undefined || it.type === "message"))
+      out.push({ role: it.role, content: typeof it.content === "string" ? it.content : it.content.map((p: any) => (p.type === "input_image" ? imageUrl(p.image_url) : { type: "text", text: p.text ?? "" })) });
+  }
+  return out;
+}
+
+/** Anthropic 的 messages → Chat 形状：tool_result 拆成 tool 消息 */
+function fromAnthropic(messages: any[]): any[] {
+  const out: any[] = [];
+  for (const m of messages ?? []) {
+    const blocks: any[] = typeof m.content === "string" ? [{ type: "text", text: m.content }] : m.content;
+    for (const r of blocks.filter((b) => b.type === "tool_result")) out.push({ role: "tool", content: textOf(r.content) });
+    const rest = blocks.filter((b) => b.type === "text" || b.type === "image");
+    if (rest.length) out.push({ role: m.role, content: rest.map((b) => (b.type === "image" ? imageUrl(`data:${b.source.media_type};base64,${b.source.data}`) : { type: "text", text: b.text })) });
+  }
+  return out;
+}
+
+/** 像 OpenAI 那样校验 Responses 请求（store:false 时推理条目必须带 encrypted_content，工具结果要对得上调用） */
+function responsesError(b: any): string | undefined {
+  if (b.store !== false) return "store must be false";
+  const calls = new Set<string>();
+  for (const it of b.input ?? []) {
+    if (it.type === "reasoning" && !it.encrypted_content) return `Item with id '${it.id}' not found. Items are not persisted when \`store\` is set to false.`;
+    if (it.type === "function_call") {
+      if (it.id !== undefined && !String(it.id).startsWith("fc")) return `Invalid 'input.id': '${it.id}'. Expected an ID that begins with 'fc'.`;
+      calls.add(it.call_id);
+    }
+    if (it.type === "function_call_output" && !calls.has(it.call_id)) return `No tool call found for function call output with call_id ${it.call_id}.`;
+  }
+  return undefined;
+}
+
+/** 像 Anthropic 那样校验：max_tokens 必填，tool_result 紧跟在对应的 tool_use 之后 */
+function messagesError(b: any): string | undefined {
+  if (!(b.max_tokens > 0)) return "max_tokens: Field required";
+  let pending = new Set<string>();
+  for (const m of b.messages ?? []) {
+    const blocks: any[] = typeof m.content === "string" ? [] : m.content;
+    for (const r of blocks.filter((x) => x.type === "tool_result")) if (m.role !== "user" || !pending.has(r.tool_use_id)) return `unexpected tool_use_id found in tool_result blocks: ${r.tool_use_id}`;
+    for (const t of blocks.filter((x) => x.type === "tool_use")) if (!/^[a-zA-Z0-9_-]+$/.test(t.id)) return `tool_use.id: String should match pattern '^[a-zA-Z0-9_-]+$'`;
+    pending = new Set(m.role === "assistant" ? blocks.filter((x) => x.type === "tool_use").map((x) => x.id) : []);
+  }
+  return undefined;
+}
+
+type Step = { tool?: { name: string; args: any }; text?: string; hang?: boolean };
+
+/** OpenAI Responses 的流式事件；请求要了 encrypted_content 时先给一条加密推理 */
+function responsesStream(res: http.ServerResponse, b: any, step: Step): void {
+  res.writeHead(200, { "content-type": "text/event-stream" });
+  const ev = (type: string, o: object) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...o })}\n\n`);
+  const id = "resp_" + rnd();
+  const output: any[] = [];
+  const item = (done: any, added: any, between: (i: number) => void = () => {}) => {
+    const i = output.length;
+    ev("response.output_item.added", { output_index: i, item: added });
+    between(i);
+    ev("response.output_item.done", { output_index: i, item: done });
+    output.push(done);
+  };
+  ev("response.created", { response: { id, object: "response", status: "in_progress", model: b.model, output: [] } });
+  if (b.include?.includes("reasoning.encrypted_content")) {
+    const rs = { type: "reasoning", id: "rs_" + rnd(), summary: [{ type: "summary_text", text: "想一想" }], encrypted_content: "enc-" + rnd() };
+    item(rs, { type: "reasoning", id: rs.id, summary: [] }, (i) => ev("response.reasoning_summary_text.delta", { output_index: i, item_id: rs.id, summary_index: 0, delta: "想一想" }));
+  }
+  if (step.tool) {
+    const args = JSON.stringify(step.tool.args);
+    const fc = { type: "function_call", id: "fc_" + rnd(), call_id: "call_" + rnd(), name: step.tool.name, arguments: args, status: "completed" };
+    item(fc, { ...fc, arguments: "", status: "in_progress" }, (i) => {
+      ev("response.function_call_arguments.delta", { output_index: i, item_id: fc.id, delta: args });
+      ev("response.function_call_arguments.done", { output_index: i, item_id: fc.id, arguments: args });
+    });
+  } else {
+    const text = step.text ?? "";
+    const msg = { type: "message", id: "msg_" + rnd(), role: "assistant", status: "completed", content: [{ type: "output_text", text, annotations: [] }] };
+    item(msg, { ...msg, status: "in_progress", content: [] }, (i) => ev("response.output_text.delta", { output_index: i, item_id: msg.id, content_index: 0, delta: text }));
+  }
+  const usage = { input_tokens: 10, output_tokens: 5, total_tokens: 15, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } };
+  ev("response.completed", { response: { id, object: "response", status: "completed", model: b.model, output, usage } });
+  res.end();
+}
+
+/** Anthropic Messages 的流式事件 */
+function messagesStream(res: http.ServerResponse, b: any, step: Step): void {
+  res.writeHead(200, { "content-type": "text/event-stream" });
+  const ev = (type: string, o: object) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...o })}\n\n`);
+  ev("message_start", { message: { id: "msg_" + rnd(), type: "message", role: "assistant", model: b.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } });
+  if (step.tool) {
+    ev("content_block_start", { index: 0, content_block: { type: "tool_use", id: "toolu_" + rnd(), name: step.tool.name, input: {} } });
+    ev("content_block_delta", { index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(step.tool.args) } });
+  } else {
+    ev("content_block_start", { index: 0, content_block: { type: "text", text: "" } });
+    ev("content_block_delta", { index: 0, delta: { type: "text_delta", text: step.text ?? "" } });
+  }
+  ev("content_block_stop", { index: 0 });
+  ev("message_delta", { delta: { stop_reason: step.tool ? "tool_use" : "end_turn", stop_sequence: null }, usage: { output_tokens: 5 } });
+  ev("message_stop", {});
+  res.end();
+}
+
 describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent host (DSH)", () => {
   let app: App;
   let dataDir: string;
   let llm: Awaited<ReturnType<typeof listen>>;
   const seenAuth = new Set<string>();
+  /** 上游收到的每个模型请求：走的接口、模型、请求体与请求头 */
+  const calls: Array<{ api: "chat" | "responses" | "messages"; model: string; body: any; headers: http.IncomingHttpHeaders; error?: string }> = [];
+  /** 测试注入的 Modelflare 目录：模型 → 支持的接口（外部端点模式下 App 不查目录） */
+  const catalog: Record<string, string[]> = {};
+  /** FLAKY：每条这样的用户消息第一次请求先失败一次（Responses 503、Messages 429），看代理会不会重试 */
+  const flaked = new Set<string>();
   const hung: http.ServerResponse[] = [];
   let base = "";
 
   /** 根据最后一条用户消息与之后的工具结果数量决定下一步 */
-  function plan(messages: any[]): { tool?: { name: string; args: any }; text?: string; hang?: boolean } {
+  function plan(messages: any[]): Step {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
@@ -89,14 +204,25 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   beforeAll(async () => {
     llm = await listen(async (req, res) => {
       seenAuth.add(String(req.headers.authorization));
-      if (req.url?.endsWith("/models")) {
+      const url = req.url?.split("?")[0] ?? "";
+      if (url.endsWith("/models")) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: [{ id: "mock-agent", object: "model" }] }));
         return;
       }
       const b = await body(req);
-      const step = b.tools ? plan(b.messages) : { text: "标题" };
+      const api = url.endsWith("/v1/responses") ? "responses" : url.endsWith("/v1/messages") ? "messages" : "chat";
+      const msgs = api === "responses" ? fromResponses(b.input) : api === "messages" ? fromAnthropic(b.messages) : b.messages;
+      const error = api === "responses" ? responsesError(b) : api === "messages" ? messagesError(b) : undefined;
+      const said = (msgs ?? []).filter((m: any) => m.role === "user").map((m: any) => textOf(m.content)).findLast((t: string) => /FLAKY/.test(t));
+      const flaky = api !== "chat" && b.tools && said && !flaked.has(said) ? (flaked.add(said), api === "responses" ? 503 : 429) : 0;
+      calls.push({ api, model: b.model, body: b, headers: req.headers, error: error ?? (flaky ? `${flaky}` : undefined) });
+      if (error) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: error } }));
+      if (flaky) return void res.writeHead(flaky, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: flaky === 429 ? "rate_limit_error" : "api_error", message: "slow down" } }));
+      const step = b.tools ? plan(msgs) : { text: "标题" };
       if ("hang" in step && step.hang) return void hung.push(res);
-      if (process.env.AMB_TEST_LLM_LOG) fs.appendFileSync(process.env.AMB_TEST_LLM_LOG, JSON.stringify({ url: req.url, stream: b.stream, tools: (b.tools ?? []).map((t: any) => t.function?.name), msgs: b.messages.map((m: any) => [m.role, textOf(m.content).slice(0, 200), m.tool_calls?.map((t: any) => t.function?.name)]), step }) + "\n");
+      if (process.env.AMB_TEST_LLM_LOG) fs.appendFileSync(process.env.AMB_TEST_LLM_LOG, JSON.stringify({ url: req.url, stream: b.stream, tools: (b.tools ?? []).map((t: any) => t.function?.name ?? t.name), msgs: msgs.map((m: any) => [m.role, textOf(m.content).slice(0, 200), m.tool_calls?.map((t: any) => t.function?.name)]), step }) + "\n");
+      if (api === "responses") return responsesStream(res, b, step);
+      if (api === "messages") return messagesStream(res, b, step);
       if (!b.stream) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [{ message: { role: "assistant", content: step.text ?? "" }, finish_reason: "stop" }] }));
         return;
@@ -119,6 +245,8 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       loadConfig({ dataDir, env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_WEIXIN_API_BASE: "http://127.0.0.1:9", AMB_DEFAULT_MODEL: "mock-agent" } }),
       { printQrToTerminal: false },
     );
+    // 外部端点模式下 App 不查 Modelflare 目录（只当它会 Chat）；这里注入目录，让模型名决定接口
+    (app.agent as any).o.apiInfo = async (model: string) => (catalog[model] ? { endpoints: catalog[model] } : undefined);
     await app.start();
     base = app.web!.url.replace(/\/+$/, "");
   }, 60_000);
@@ -327,4 +455,109 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(a.steps.map((s: any) => [s.kind, s.status])).toEqual([["model", "ok"], ["tool", "ok"], ["model", "ok"]]);
     expect(a.steps[1]).toMatchObject({ title: "bash", output: expect.stringContaining("[1, 2, 3, 5, 7, 9]") });
   }, 120_000);
+
+  // —— 按模型选接口：Modelflare 目录里有 Responses 就走 Responses，只有 Anthropic 的（Claude）走 Messages ——
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  /** 用一个微信会话（可单独设模型）发一条消息：回复与这一轮的步骤 */
+  const turnOn = async (user: string, model: string, text: string, images: Buffer[] = []) => {
+    const conv = app.store.ensureConversation("default", "weixin", user, user, "dm");
+    app.store.setConversationModel(conv.id, model);
+    const ops: any[] = [];
+    const parts = [{ type: "text" as const, text }, ...images.map((data) => ({ type: "image" as const, data, mime: "image/png" }))];
+    await app.runtime.handle({ id: `${user}-${rnd()}`, channel: "weixin", botId: "default", conversation: { kind: "dm", id: user }, sender: { id: user }, parts, replyHandle: {}, receivedAt: Date.now() }, { apply: async (op) => void ops.push(op) });
+    const msgs = (await api(`/conversations/${encodeURIComponent(conv.id)}/messages`)).messages;
+    const activity = await api(`/conversations/${encodeURIComponent(conv.id)}/messages/${msgs.at(-1).id}/activity`);
+    return { reply: ops.find((o) => o.type === "stream.finish")?.text as string, steps: (activity.steps ?? []) as any[] };
+  };
+  const callsFor = (model: string, from: number) => calls.slice(from).filter((c) => c.model === model);
+
+  it("a model offering the Responses API is driven over /v1/responses: tool calls, encrypted reasoning replay, usage", async () => {
+    catalog["gpt-6-mock"] = ["openai", "openai-response", "openai-response-compact"];
+    const from = calls.length;
+    const r = await turnOn("resp-user", "gpt-6-mock", "QUICKSORT over responses");
+    expect(r.reply).toContain("[1, 2, 3, 5, 7, 9]");
+    expect(app.agent.host("default").api).toBe("openai-responses");
+    const mine = callsFor("gpt-6-mock", from);
+    expect(mine.map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual(mine.map(() => "responses:ok"));
+    const [first, second] = mine.filter((c) => c.body.tools);
+    // 推理模型：要加密推理（store:false 下回放靠它），默认强度 medium
+    expect(first.body).toMatchObject({ stream: true, store: false, reasoning: { effort: "medium" }, include: ["reasoning.encrypted_content"] });
+    // 系统提示是 system 角色；工具显式 strict:false
+    expect(first.body.input[0].role).toBe("system");
+    expect(first.body.input.some((i: any) => i.role === "developer")).toBe(false);
+    expect(first.body.tools.every((t: any) => t.type === "function" && t.strict === false)).toBe(true);
+    // 第二次请求带回推理（含 encrypted_content）、工具调用与结果
+    expect(second.body.input.find((i: any) => i.type === "reasoning")?.encrypted_content).toMatch(/^enc-/);
+    const fc = second.body.input.find((i: any) => i.type === "function_call");
+    expect(fc).toMatchObject({ name: "bash", id: expect.stringMatching(/^fc_/) });
+    expect(second.body.input.find((i: any) => i.type === "function_call_output")).toMatchObject({ call_id: fc.call_id, output: expect.stringContaining("[1, 2, 3, 5, 7, 9]") });
+    expect(mine.every((c) => c.headers.authorization === "Bearer gw-key")).toBe(true);
+    // 步骤与用量照常记录
+    expect(r.steps.map((s) => [s.kind, s.status])).toEqual([["model", "ok"], ["tool", "ok"], ["model", "ok"]]);
+    expect(r.steps[0].tokens).toEqual({ input: 10, output: 5 });
+  }, 180_000);
+
+  it("Claude (Anthropic but no Responses) is driven over /v1/messages; the bridge swaps x-api-key for the real key", async () => {
+    catalog["claude-mock"] = ["anthropic", "openai"];
+    const from = calls.length;
+    const r = await turnOn("claude-user", "claude-mock", "QUICKSORT over messages");
+    expect(r.reply).toContain("[1, 2, 3, 5, 7, 9]");
+    expect(app.agent.host("default").api).toBe("anthropic-messages");
+    const mine = callsFor("claude-mock", from);
+    expect(mine.map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual(mine.map(() => "messages:ok"));
+    const [first, second] = mine.filter((c) => c.body.tools);
+    expect(first.body).toMatchObject({ stream: true, max_tokens: 32_000 });
+    expect(first.body.thinking).toBeUndefined();
+    expect(second.body.messages.at(-1).content.some((b: any) => b.type === "tool_result")).toBe(true);
+    for (const c of mine) {
+      expect(c.headers["anthropic-version"]).toBeTruthy();
+      expect(c.headers.authorization).toBe("Bearer gw-key");
+      expect(c.headers["x-api-key"]).toBe("gw-key");
+      // 子进程只有 bridge 令牌，它不会到上游
+      expect(JSON.stringify(c.headers)).not.toContain(app.agent.bridge.token);
+    }
+    expect(r.steps.map((s) => [s.kind, s.status])).toEqual([["model", "ok"], ["tool", "ok"], ["model", "ok"]]);
+    expect(r.steps[0].tokens).toEqual({ input: 10, output: 5 });
+  }, 180_000);
+
+  it("transient upstream errors are retried over Responses and Messages as over Chat", async () => {
+    for (const [model, api, status] of [["gpt-6-mock", "responses", "503"], ["claude-mock", "messages", "429"]]) {
+      const from = calls.length;
+      const r = await turnOn(`flaky-${api}`, model, `FLAKY over ${api}`);
+      expect(r.reply).toBe("好的");
+      expect(callsFor(model, from).filter((c) => c.body.tools).map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual([`${api}:${status}`, `${api}:ok`]);
+      expect(r.steps.some((s) => s.kind === "retry")).toBe(true);
+    }
+  }, 180_000);
+
+  it("vision models get the image itself over Responses and Messages too", async () => {
+    if (!app.agent.host("default").imageInput) return; // Linux 上的 Electron：只给路径（见上一个图片用例）
+    expect((await turnOn("resp-img", "gpt-6-mock", "LOOKIMG", [png])).reply).toMatch(/^SEEN<<data:image\/(png|jpeg|webp);base64\|path>>$/);
+    expect(calls.at(-1)?.api).toBe("responses");
+    expect((await turnOn("claude-img", "claude-mock", "LOOKIMG", [png])).reply).toMatch(/^SEEN<<data:image\/(png|jpeg|webp);base64\|path>>$/);
+    expect(calls.at(-1)?.api).toBe("messages");
+  }, 180_000);
+
+  it("AMB_AGENT_API=chat forces Chat Completions; a conversation started over Chat continues over Responses", async () => {
+    catalog["gpt-7-switch"] = ["openai", "openai-response"];
+    const host = app.agent.host("default");
+    process.env.AMB_AGENT_API = "chat";
+    try {
+      const r = await turnOn("switch-user", "gpt-7-switch", "QUICKSORT first");
+      expect(r.reply).toContain("[1, 2, 3, 5, 7, 9]");
+      expect(host.api).toBe("openai-completions");
+      expect(calls.at(-1)).toMatchObject({ api: "chat", model: "gpt-7-switch" });
+    } finally {
+      delete process.env.AMB_AGENT_API;
+    }
+    // 接口只在拉起子进程时选：重启后同一会话改走 Responses，上一轮 Chat 里的工具调用照样回放
+    await host.restart();
+    const from = calls.length;
+    const r = await turnOn("switch-user", "gpt-7-switch", "QUICKSORT second");
+    expect(r.reply).toContain("[1, 2, 3, 5, 7, 9]");
+    expect(host.api).toBe("openai-responses");
+    const mine = callsFor("gpt-7-switch", from).filter((c) => c.body.tools);
+    expect(mine.map((c) => `${c.api}:${c.error ?? "ok"}`)).toEqual(mine.map(() => "responses:ok"));
+    expect(mine[0].body.input.filter((i: any) => i.type === "function_call_output")).toHaveLength(1);
+  }, 180_000);
 });

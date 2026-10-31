@@ -28,7 +28,7 @@ export type ProxyEvent =
 
 /**
  * 仅回环的内部桥：DSH 子进程用每次启动随机生成的令牌访问。
- * - /v1/*：模型代理，替换 Authorization 为真实网关密钥（子进程环境里没有任何真实密钥）
+ * - /v1/*：模型代理（Chat Completions、Responses、Anthropic Messages），把令牌换成真实网关密钥（子进程环境里没有任何真实密钥）
  * - /dsh/ask|wait|cancel：amb-bridge 插件的审批/提问长轮询
  */
 export class AgentBridge {
@@ -61,10 +61,14 @@ export class AgentBridge {
     return `http://127.0.0.1:${this.port}`;
   }
 
+  /** OpenAI 兼容客户端用 Authorization: Bearer 带令牌，Anthropic 客户端用 x-api-key */
   private authorized(req: http.IncomingMessage): boolean {
-    const got = Buffer.from(String(req.headers.authorization || ""));
-    const want = Buffer.from(`Bearer ${this.token}`);
-    return got.length === want.length && crypto.timingSafeEqual(got, want);
+    const same = (got: unknown, want: string) => {
+      const a = Buffer.from(String(got || ""));
+      const b = Buffer.from(want);
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    };
+    return same(req.headers.authorization, `Bearer ${this.token}`) || same(req.headers["x-api-key"], this.token);
   }
 
   async start(): Promise<void> {
@@ -113,10 +117,14 @@ export class AgentBridge {
     const target = up.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "") + url;
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) {
-      if (["host", "authorization", "connection", "content-length", "transfer-encoding", "cookie"].includes(k) || v === undefined) continue;
+      if (["host", "authorization", "x-api-key", "connection", "content-length", "transfer-encoding", "cookie"].includes(k) || v === undefined) continue;
       headers[k] = Array.isArray(v) ? v.join(", ") : v;
     }
-    if (up.apiKey) headers.authorization = `Bearer ${up.apiKey}`;
+    // 令牌只在本机有效：换成真实密钥；Anthropic 客户端发来的 x-api-key 也换掉（magpie 两种都认）
+    if (up.apiKey) {
+      headers.authorization = `Bearer ${up.apiKey}`;
+      if (req.headers["x-api-key"] !== undefined) headers["x-api-key"] = up.apiKey;
+    }
     const body = req.method === "GET" || req.method === "HEAD" ? undefined : await this.readBody(req);
     const id = ++this.seq;
     const p = url.split("?")[0];
@@ -182,13 +190,20 @@ export class AgentBridge {
   }
 }
 
+/** 模型请求的路径：Chat Completions、Responses、Anthropic Messages（代理按模型选其一） */
+export function isModelPath(p: string): boolean {
+  return /\/v1\/(chat\/completions|responses|messages)$/.test(p);
+}
+
 /** 请求体里的模型名、工具名与第一条用户消息开头（只在有人订阅时解析；解析失败就不给） */
 function requestInfo(body: Buffer | undefined): { model?: string; tools?: string[]; lastUser?: string } {
   if (!body || body.length > 8 * 1024 * 1024) return {};
   try {
     const j = JSON.parse(body.toString("utf8"));
     const tools = Array.isArray(j?.tools) ? j.tools.map((t: any) => String(t?.function?.name ?? t?.name ?? "")).filter(Boolean) : undefined;
-    const users = Array.isArray(j?.messages) ? j.messages.filter((m: any) => m?.role === "user") : [];
+    // Chat、Anthropic 是 messages；Responses 是 input（字符串，或条目列表）
+    const items = Array.isArray(j?.messages) ? j.messages : Array.isArray(j?.input) ? j.input : typeof j?.input === "string" ? [{ role: "user", content: j.input }] : [];
+    const users = items.filter((m: any) => m?.role === "user");
     const text = (c: unknown): string => (typeof c === "string" ? c : Array.isArray(c) ? c.map((p: any) => (typeof p === "string" ? p : String(p?.text ?? ""))).join("") : "");
     const lastUser = users.length ? users.map((m: any) => text(m.content).slice(0, 2000)).join("\n") : undefined;
     return { model: typeof j?.model === "string" ? j.model : undefined, tools, lastUser };

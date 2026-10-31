@@ -3,7 +3,7 @@ import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
-import { AgentHost, TurnStopped, callDetail, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { AgentHost, TurnStopped, callDetail, type ModelApiInfo, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
 import { ActivityLog, type ActivityStep } from "./activity.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
@@ -44,6 +44,8 @@ export interface AgentManagerOptions {
   onNotice?: (text: string) => void;
   /** 模型的上下文长度（Modelflare 模型资料），写进 DSH 补丁 */
   contextWindow?: (model: string) => Promise<number | undefined>;
+  /** 模型支持的接口与是否推理（Modelflare 模型资料），DSH 按它选对话接口 */
+  apiInfo?: (model: string) => Promise<ModelApiInfo | undefined>;
 }
 
 /** 一个进行中的回合（/status、/stop、排队提示、信息面板和故障排查用） */
@@ -135,6 +137,7 @@ export class AgentManager {
         onNotice: this.o.onNotice,
         media: !!this.o.media,
         contextWindow: this.o.contextWindow,
+        apiInfo: this.o.apiInfo,
       });
       this.hosts.set(botId, h);
     }

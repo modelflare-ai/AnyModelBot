@@ -162,6 +162,8 @@ export interface AgentHostOptions {
   media?: boolean;
   /** 模型的上下文长度（Modelflare 模型资料）；不知道时 undefined，用内置兜底表 */
   contextWindow?: (model: string) => Promise<number | undefined>;
+  /** 模型支持的接口与是否推理（Modelflare 模型资料），用来选对话接口；不知道时 undefined，走 Chat Completions */
+  apiInfo?: (model: string) => Promise<ModelApiInfo | undefined>;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
@@ -221,6 +223,49 @@ export function modelLimits(model: string, known?: number): { window: number; ma
   const window = Number(known) > 0 ? Number(known) : lim[1];
   // 最大输出不超过窗口的四分之一（小窗口模型留够消息空间）
   return { window, maxTokens: Math.min(lim[2], Math.floor(window / 4)) };
+}
+
+/** DSH 跟模型说话用的接口（DSH 补丁里 provider 的 api） */
+export type AgentApi = "openai-completions" | "openai-responses" | "anthropic-messages";
+
+/** 选接口用的模型资料：endpoints 是 Modelflare 目录里的 supported_endpoint_types，reasoning 来自 model-profiles */
+export interface ModelApiInfo {
+  endpoints?: string[];
+  reasoning?: boolean;
+}
+
+/**
+ * 代理用哪个接口：模型支持 Responses 就用 Responses，否则支持 Anthropic Messages 就用它（Claude），
+ * 都没有或不知道（离线、目录拿不到）时用 Chat Completions。AMB_AGENT_API=chat 强制 Chat（排查用）。
+ */
+export function agentApi(endpoints: string[] | undefined, env: NodeJS.ProcessEnv = process.env): AgentApi {
+  if (env.AMB_AGENT_API?.trim().toLowerCase() === "chat") return "openai-completions";
+  if (endpoints?.includes("openai-response")) return "openai-responses";
+  if (endpoints?.includes("anthropic")) return "anthropic-messages";
+  return "openai-completions";
+}
+
+/**
+ * 补丁里随接口变化的几行（provider 一级、模型一级）。
+ * - Anthropic SDK 自己拼 /v1/messages，baseURL 是 bridge 根地址；另两个是 …/v1。
+ * - Responses：store:false 下推理条目要带 encrypted_content 才能回放，而 DSH 只在指定了推理强度时才要它，
+ *   所以推理模型（或不知道是不是）声明 low/medium/high、默认 medium；明确不推理的不发推理参数。
+ *   系统提示用 system 角色（网关转给非 OpenAI 模型时不一定认 developer）；工具显式 strict:false。
+ * - Anthropic、Chat 不声明推理（和以前一样，用模型默认）。
+ */
+export function apiPatchLines(api: AgentApi, bridgeUrl: string, reasoning?: boolean): { provider: string[]; model: string[] } {
+  const provider = [`        api: ${api}`, `        baseURL: ${yamlStr(api === "anthropic-messages" ? bridgeUrl : bridgeUrl + "/v1")}`];
+  if (api !== "openai-responses") return { provider, model: [] };
+  const think = reasoning !== false;
+  return {
+    provider: [...provider, ...(think ? ["        reasoning: medium"] : [])],
+    model: [
+      ...(think ? ["            reasoningEfforts:", "              low: low", "              medium: medium", "              high: high"] : []),
+      "            compat:",
+      "              supportsDeveloperRole: false",
+      "              supportsStrictMode: true",
+    ],
+  };
 }
 
 /** 随消息交给模型的图片（DSH SDK 的内联图片块：base64 + 格式，进会话前存入 DSH 的附件库） */
@@ -291,6 +336,8 @@ export class AgentHost {
   lastError = "";
   restarts = 0;
   model = "";
+  /** 当前子进程跟模型说话用的接口 */
+  api: AgentApi | "" = "";
   /** 当前子进程补丁里写的上下文窗口与最大输出 */
   private limits: { window: number; maxTokens: number } | undefined;
   private harness: SdkHarness | undefined;
@@ -364,8 +411,9 @@ export class AgentHost {
     });
   }
 
-  private writePatch(model: string, apps: CuaApp[] = [], pwshPath?: string, lim = modelLimits(model)): string {
+  private writePatch(model: string, apps: CuaApp[] = [], pwshPath?: string, lim = modelLimits(model), api: AgentApi = "openai-completions", reasoning?: boolean): string {
     this.limits = lim;
+    const wire = apiPatchLines(api, this.o.bridge.url, reasoning);
     const plugin = path.join(this.o.runtimeDir, "plugins", "amb-bridge.mjs");
     const memory = path.join(this.o.runtimeDir, "plugins", "amb-memory.mjs");
     this.writeMediaSkill();
@@ -376,8 +424,8 @@ export class AgentHost {
       "    providers:",
       "      magpie:",
       "        displayName: anymodel",
-      "        api: openai-completions",
-      `        baseURL: ${yamlStr(this.o.bridge.url + "/v1")}`,
+      // 接口按模型选（agentApi）：Responses / Anthropic Messages / Chat Completions
+      ...wire.provider,
       "        apiKeyEnv: AMB_MAGPIE_KEY",
       "        models:",
       `          - id: ${yamlStr(model)}`,
@@ -386,6 +434,7 @@ export class AgentHost {
       `            maxTokens: ${lim.maxTokens}`,
       // 默认只收文字；能看图的模型声明图片输入，用户发来的图片才会作为图片交给它
       ...(acceptsImages(model) ? ["            input: [text, image]"] : []),
+      ...wire.model,
       // Windows：命令用检测到的 PowerShell 7（DSH 自己只看 Program Files\PowerShell\7 和 PATH，找不到就退回 5.1）
       ...pwshPatchLines(pwshPath),
       "- insert:",
@@ -683,11 +732,13 @@ exec "$REAL" "$@"
       const cu = this.computerUseActive();
       const apps = cu && cu.backend === "cua" ? await discoverAppsCached() : [];
       const pwshPath = await pwshProbe.dshPath();
-      const known = await withTimeoutOr(this.o.contextWindow?.(model) ?? Promise.resolve(undefined), 3000, undefined).catch(() => undefined);
-      const patch = this.writePatch(model, apps, pwshPath, modelLimits(model, known));
+      const ask = <T>(p: Promise<T | undefined> | undefined) => withTimeoutOr(p ?? Promise.resolve(undefined), 3000, undefined).catch(() => undefined);
+      const [known, info] = await Promise.all([ask(this.o.contextWindow?.(model)), ask(this.o.apiInfo?.(model))]);
+      const api = agentApi(info?.endpoints);
+      const patch = this.writePatch(model, apps, pwshPath, modelLimits(model, known), api, info?.reasoning);
       this.sig = this.settingsSig();
       const timeoutMs = this.initTimeoutMs();
-      this.stage("patch written", t0, { computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
+      this.stage("patch written", t0, { api, computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
       h = new sdk.DeepSeekHarness({
         profile: "sdk",
         patches: [patch],
@@ -735,12 +786,13 @@ exec "$REAL" "$@"
       });
       this.harness = h;
       this.model = model;
+      this.api = api;
       this.state = "running";
       this.initStage = "";
       this.lastError = "";
       this.initFailures = 0;
       this.startedAt = Date.now();
-      log.info("dsh started", { bot: this.o.botId, pid: child?.pid, model, ms: Date.now() - t0, initMs });
+      log.info("dsh started", { bot: this.o.botId, pid: child?.pid, model, api, ms: Date.now() - t0, initMs });
       return h;
     } catch (e) {
       clearInterval(watchdog);
@@ -898,7 +950,7 @@ exec "$REAL" "$@"
   }
 
   status(): Record<string, unknown> {
-    return { state: this.state, pid: this.pid, model: this.model, restarts: this.restarts, lastError: this.lastError, workspace: this.workspace, activeTurns: this.active };
+    return { state: this.state, pid: this.pid, model: this.model, api: this.api || undefined, restarts: this.restarts, lastError: this.lastError, workspace: this.workspace, activeTurns: this.active };
   }
 
   /** 故障排查用的完整状态（含 stderr 尾部与最近一次退出） */

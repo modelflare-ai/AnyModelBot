@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { appVersion, type App } from "./app.js";
 import type { HostEvent } from "./agent/host.js";
-import type { ProxyEvent } from "./agent/bridge.js";
+import { isModelPath, type ProxyEvent } from "./agent/bridge.js";
 import { logFilePath, logger, readLogTail, redactText, redactValue } from "./log.js";
 import { bareModel } from "./modelflare.js";
 import { pwshProbe, pwshReportLine } from "./agent/pwsh.js";
@@ -258,7 +258,7 @@ export async function testAgent(app: App, opts: { botId?: string; model?: string
     }
   });
   const offProxy = app.agent.bridge.onProxy((e: ProxyEvent) => {
-    if (!e.path.endsWith("/chat/completions")) return;
+    if (!isModelPath(e.path)) return;
     if (e.phase === "request") {
       if (!e.lastUser?.includes(marker)) return;
       ours.add(e.id);

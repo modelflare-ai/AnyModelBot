@@ -6,7 +6,9 @@ import { Store } from "../src/store/db.js";
 import { ApprovalCenter, parseAnswer, promptText } from "../src/agent/approvals.js";
 import { WeixinReply } from "../src/channels/weixin/channel.js";
 import { WeixinQuota } from "../src/channels/weixin/quota.js";
-import { AgentHost, modelLimits } from "../src/agent/host.js";
+import { AgentHost, agentApi, modelLimits, type AgentApi } from "../src/agent/host.js";
+import { AgentBridge, type ProxyEvent } from "../src/agent/bridge.js";
+import { listen } from "./helpers.js";
 
 let dir: string;
 let store: Store;
@@ -223,5 +225,126 @@ describe("context window written for DSH", () => {
     const text = fs.readFileSync(file, "utf8");
     expect(text).toMatch(/contextWindow: 1050000\n\s+maxTokens: 32000/);
     fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+});
+
+describe("agent API per model", () => {
+  // Modelflare 公开目录里的 supported_endpoint_types（2026-10）
+  const gpt = ["openai", "openai-response", "openai-response-compact"];
+  const deepseek = ["openai", "openai-response", "anthropic", "gemini"];
+  const claude = ["anthropic", "openai"];
+  const gemini = ["gemini", "openai"];
+
+  it("Responses when offered, else Anthropic Messages, else Chat Completions", () => {
+    expect(agentApi(gpt, {})).toBe("openai-responses");
+    expect(agentApi(["openai-response", "openai-response-compact", "openai"], {})).toBe("openai-responses");
+    expect(agentApi(deepseek, {})).toBe("openai-responses");
+    expect(agentApi(claude, {})).toBe("anthropic-messages");
+    expect(agentApi(gemini, {})).toBe("openai-completions");
+    expect(agentApi(["openai"], {})).toBe("openai-completions");
+  });
+
+  it("unknown model or no catalog (offline, China line) stays on Chat Completions", () => {
+    expect(agentApi(undefined, {})).toBe("openai-completions");
+    expect(agentApi([], {})).toBe("openai-completions");
+  });
+
+  it("AMB_AGENT_API=chat forces Chat Completions", () => {
+    expect(agentApi(gpt, { AMB_AGENT_API: "chat" })).toBe("openai-completions");
+    expect(agentApi(claude, { AMB_AGENT_API: " Chat " })).toBe("openai-completions");
+    expect(agentApi(claude, { AMB_AGENT_API: "" })).toBe("anthropic-messages");
+  });
+
+  const patchFor = (model: string, api: AgentApi, reasoning?: boolean) => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-patch-"));
+    const host = new AgentHost({ botId: "b", dataDir, runtimeDir: "/rt", bridge: { url: "http://127.0.0.1:1" } as any, store: new Store(":memory:") });
+    fs.mkdirSync(host.home, { recursive: true });
+    const text = fs.readFileSync((host as any).writePatch(model, [], undefined, modelLimits(model, 1_000_000), api, reasoning), "utf8");
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    return text;
+  };
+
+  it("the patch names the API; Anthropic's base URL is the bridge root (the SDK adds /v1/messages)", () => {
+    const chat = patchFor("mfb-b/gemini-3.6-flash", "openai-completions");
+    expect(chat).toContain('        api: openai-completions\n        baseURL: "http://127.0.0.1:1/v1"\n');
+    expect(chat).not.toMatch(/reasoning|compat/);
+    const claude = patchFor("mfb-b/claude-sonnet-5", "anthropic-messages", true);
+    expect(claude).toContain('        api: anthropic-messages\n        baseURL: "http://127.0.0.1:1"\n');
+    expect(claude).toContain("            input: [text, image]\n");
+    // Claude 不开思考（和以前一样用模型默认）
+    expect(claude).not.toMatch(/reasoning|compat/);
+  });
+
+  it("Responses: reasoning models ask for medium effort (encrypted reasoning for replay); system role; explicit strict:false", () => {
+    const resp = patchFor("mfb-b/gpt-6.1-terra", "openai-responses", true);
+    expect(resp).toContain('        api: openai-responses\n        baseURL: "http://127.0.0.1:1/v1"\n        reasoning: medium\n        apiKeyEnv: AMB_MAGPIE_KEY\n');
+    expect(resp).toContain(
+      "            maxTokens: 32000\n            input: [text, image]\n            reasoningEfforts:\n              low: low\n              medium: medium\n              high: high\n            compat:\n              supportsDeveloperRole: false\n              supportsStrictMode: true\n",
+    );
+    // 不知道是不是推理模型：按推理模型处理（store:false 下推理条目没有 encrypted_content 就回放不了）
+    expect(patchFor("mfb-b/gpt-6.1-terra", "openai-responses")).toContain("        reasoning: medium\n");
+    // 明确不推理：不发推理参数
+    const plain = patchFor("mfb-b/gpt-6.1-terra", "openai-responses", false);
+    expect(plain).not.toMatch(/reasoning/);
+    expect(plain).toContain("            compat:\n              supportsDeveloperRole: false\n              supportsStrictMode: true\n");
+  });
+});
+
+describe("agent bridge model proxy", () => {
+  let up: Awaited<ReturnType<typeof listen>>;
+  let bridge: AgentBridge;
+  const seen: Array<{ path: string; headers: Record<string, unknown>; body: string }> = [];
+  beforeEach(async () => {
+    seen.length = 0;
+    up = await listen(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      seen.push({ path: req.url!, headers: req.headers, body: Buffer.concat(chunks).toString("utf8") });
+      res.writeHead(200, { "content-type": "text/event-stream" }).end("event: message_stop\ndata: {}\n\n");
+    });
+    bridge = new AgentBridge({ upstream: () => ({ baseUrl: up.url + "/v1", apiKey: "real-key" }), ask: async () => ({ id: "" }), wait: async () => ({}), cancel: async () => {} });
+    await bridge.start();
+  });
+  afterEach(async () => {
+    await bridge.stop();
+    await up.close();
+  });
+  const post = (p: string, headers: Record<string, string>, body: unknown) => fetch(bridge.url + p, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+
+  it("Anthropic clients authenticate with x-api-key; upstream gets the real key, never the bridge token", async () => {
+    const r = await post("/v1/messages?beta=true", { "x-api-key": bridge.token, "anthropic-version": "2023-06-01" }, { model: "m", messages: [] });
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("message_stop");
+    expect(seen[0].path).toBe("/v1/messages?beta=true");
+    expect(seen[0].headers).toMatchObject({ authorization: "Bearer real-key", "x-api-key": "real-key", "anthropic-version": "2023-06-01" });
+    expect(JSON.stringify(seen[0].headers)).not.toContain(bridge.token);
+  });
+
+  it("OpenAI clients keep using Authorization; no x-api-key is invented for them", async () => {
+    expect((await post("/v1/responses", { authorization: `Bearer ${bridge.token}` }, { model: "m", input: [] })).status).toBe(200);
+    expect(seen[0].headers.authorization).toBe("Bearer real-key");
+    expect(seen[0].headers["x-api-key"]).toBeUndefined();
+  });
+
+  it("rejects a wrong token in either header", async () => {
+    expect((await post("/v1/messages", { "x-api-key": "nope" }, {})).status).toBe(401);
+    expect((await post("/v1/responses", { authorization: "Bearer nope" }, {})).status).toBe(401);
+    expect((await post("/v1/messages", { "x-api-key": bridge.token.slice(1) }, {})).status).toBe(401);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("troubleshooting sees model requests on every API, with the first user message", async () => {
+    const events: ProxyEvent[] = [];
+    bridge.onProxy((e) => void events.push(e));
+    const auth = { authorization: `Bearer ${bridge.token}` };
+    await post("/v1/chat/completions", auth, { model: "a", tools: [{ type: "function", function: { name: "bash" } }], messages: [{ role: "user", content: "hi chat" }] });
+    await post("/v1/responses", auth, { model: "b", tools: [{ type: "function", name: "bash" }], input: [{ role: "system", content: "sys" }, { role: "user", content: [{ type: "input_text", text: "hi responses" }] }] });
+    await post("/v1/messages?beta=true", { "x-api-key": bridge.token }, { model: "c", tools: [{ name: "bash" }], messages: [{ role: "user", content: [{ type: "text", text: "hi messages" }] }] });
+    const reqs = events.filter((e) => e.phase === "request") as Array<Extract<ProxyEvent, { phase: "request" }>>;
+    expect(reqs.map((e) => [e.path, e.model, e.tools, e.lastUser])).toEqual([
+      ["/v1/chat/completions", "a", ["bash"], "hi chat"],
+      ["/v1/responses", "b", ["bash"], "hi responses"],
+      ["/v1/messages", "c", ["bash"], "hi messages"],
+    ]);
   });
 });

@@ -61,14 +61,15 @@ export function sseParser(onEvent) {
   };
 }
 
-/** 流式对话。返回 Promise（结束或中止时 resolve）。handlers: text/typing/prompt/file/done/error */
-export async function streamChat(botId, text, handlers, signal) {
-  const res = await fetch(`/amb/api/bots/${encodeURIComponent(botId)}/chat/stream`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
-    signal,
-  });
+/** 读完一个 text/event-stream 响应；中止时安静地返回 */
+async function readEvents(req, handlers) {
+  let res;
+  try {
+    res = await req;
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    throw e;
+  }
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => ({}));
     throw new ApiError(data.error || `HTTP ${res.status}`, res.status, data);
@@ -88,4 +89,25 @@ export async function streamChat(botId, text, handlers, signal) {
     if (e.name === "AbortError") return;
     throw e;
   }
+}
+
+/**
+ * 流式对话。返回 Promise（结束或中止时 resolve）。handlers: text/typing/activity/prompt/file/stopping/done/error。
+ * 中止只是不再接收：消息在服务端照常处理（停止要调 /conversations/:id/stop），回来时用 attachChat 接上。
+ */
+export function streamChat(botId, text, handlers, signal) {
+  return readEvents(
+    fetch(`/amb/api/bots/${encodeURIComponent(botId)}/chat/stream`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal,
+    }),
+    handlers,
+  );
+}
+
+/** 接上进行中的那条消息（切走再切回、刷新后）：先 snapshot（到目前为止的样子），之后的事件同 streamChat，最后 done */
+export function attachChat(botId, turnId, handlers, signal) {
+  return readEvents(fetch(`/amb/api/bots/${encodeURIComponent(botId)}/chat/live?turn=${encodeURIComponent(turnId)}`, { signal }), handlers);
 }

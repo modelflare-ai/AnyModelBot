@@ -512,6 +512,118 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect((await chat("hello once more")).reply).toBe("好的");
   }, 120_000);
 
+  // —— 网页对话：切走再切回接上进行中的回合；停止按钮在各种状态下都停得下来 ——
+  const stream = (p: string, text?: string) => {
+    const ac = new AbortController();
+    const events: Array<[string, any]> = [];
+    const done = (async () => {
+      const res = await fetch(`${base}/amb/api${p}`, text === undefined ? { signal: ac.signal } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }), signal: ac.signal });
+      let buf = "";
+      const dec = new TextDecoder();
+      try {
+        for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+          buf += dec.decode(chunk, { stream: true });
+          let i: number;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const block = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            const ev = /^event: (.*)$/m.exec(block)?.[1];
+            const data = /^data: (.*)$/m.exec(block)?.[1];
+            if (ev && data) events.push([ev, JSON.parse(data)]);
+          }
+        }
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") throw e;
+      }
+    })();
+    const texts = () => events.filter(([e]) => e === "text").map(([, d]) => d.text as string);
+    return { events, done, abort: () => ac.abort(), texts };
+  };
+  const stopWeb = async () => api(`/conversations/${encodeURIComponent("default:web:console")}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  const waitFor = async (fn: () => boolean | Promise<boolean>, ms = 30_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) if (await fn()) return;
+    throw new Error("waitFor: timeout");
+  };
+
+  it("web chat: a running agent turn is shown again after switching back (question + steps), re-attaches, and the stop button ends it", async () => {
+    const s = stream("/bots/default/chat/stream", "HANG 网页里的这条");
+    let d: any;
+    await waitFor(async () => !!(d = await api("/bots/default/chat")).live?.[0]?.steps?.length);
+    expect(d.live[0]).toMatchObject({ userText: "HANG 网页里的这条", stopping: false });
+    expect(d.live[0].steps.at(-1)).toMatchObject({ kind: "model", title: "mock-agent", status: "running" });
+    // 代理路径回合结束才存用户消息：进行中时由 live 显示
+    expect(d.messages.map((m: any) => m.content)).not.toContain("HANG 网页里的这条");
+    expect((await api("/agent")).busy).toEqual(["default"]);
+    // 切走：断开发消息的请求，回合照常进行
+    s.abort();
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await api(`/conversations/${encodeURIComponent(d.conversationId)}/turn`)).turn).not.toBeNull();
+    // 切回：接上，先 snapshot（步骤还在），再停止
+    const a = stream("/bots/default/chat/live");
+    await waitFor(() => a.events.length > 0);
+    expect(a.events[0][0]).toBe("snapshot");
+    expect(a.events[0][1]).toMatchObject({ id: d.live[0].id, userText: "HANG 网页里的这条", startedAt: d.live[0].startedAt });
+    expect(a.events[0][1].steps.length).toBeGreaterThan(0);
+    const t0 = Date.now();
+    expect(await stopWeb()).toEqual({ stopped: true });
+    await a.done;
+    expect(Date.now() - t0).toBeLessThan(15_000);
+    expect(a.events.map(([e]) => e)).toContain("stopping");
+    const final = a.texts().at(-1)!;
+    expect(final).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect(a.events.at(-1)![0]).toBe("done");
+    const after = await api("/bots/default/chat");
+    expect(after.live).toEqual([]);
+    expect(after.messages.filter((m: any) => m.content === "HANG 网页里的这条")).toHaveLength(1);
+    expect(after.messages.slice(-2).map((m: any) => [m.role, m.content])).toEqual([
+      ["user", "HANG 网页里的这条"],
+      ["assistant", final],
+    ]);
+    expect((await api("/agent")).busy).toEqual([]);
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+  }, 120_000);
+
+  it("web chat: stop while the agent is still starting ends the message at once; the agent never gets it", async () => {
+    const h = app.agent.host("default");
+    await h.restart();
+    expect(h.state).toBe("stopped");
+    // 启动慢一点（真实冷启动可能要几分钟）
+    const ensure = h.ensure.bind(h);
+    (h as any).ensure = async (m: string) => (await new Promise((r) => setTimeout(r, 5000)), ensure(m));
+    const before = calls.length;
+    try {
+      const s = stream("/bots/default/chat/stream", "hello while starting");
+      await waitFor(() => s.texts().some((t) => t.startsWith("代理正在启动")));
+      expect((await api("/bots/default/chat")).live[0].text).toMatch(/^代理正在启动/);
+      const t0 = Date.now();
+      expect(await stopWeb()).toEqual({ stopped: true });
+      await s.done;
+      expect(Date.now() - t0).toBeLessThan(2000);
+      expect(s.texts().at(-1)).toMatch(/^已中止（处理了 \d+ 秒）。$/);
+      expect(s.events.at(-1)![0]).toBe("done");
+      expect(app.agent.turnsInProgress.size).toBe(0);
+    } finally {
+      delete (h as any).ensure;
+    }
+    await new Promise((r) => setTimeout(r, 5500));
+    expect(calls.slice(before).some((c) => JSON.stringify(c.body).includes("hello while starting"))).toBe(false);
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+    expect((await chat("hello after the stop")).reply).toBe("好的");
+  }, 120_000);
+
+  it("web chat: stop while a question card waits cancels the card and ends the turn", async () => {
+    const s = stream("/bots/default/chat/stream", "ASKQ 然后停下");
+    await waitFor(() => s.events.some(([e]) => e === "prompt"), 60_000);
+    const id = s.events.find(([e]) => e === "prompt")![1].requestId;
+    expect((await api(`/bots/default/chat`)).live[0].prompts.map((p: any) => p.requestId)).toEqual([id]);
+    expect(await stopWeb()).toEqual({ stopped: true });
+    await s.done;
+    expect(s.texts().at(-1)).toMatch(/^已中止（处理了 \d+ 秒）。代理进程已重启，可以继续发消息。$/);
+    expect((await api(`/approvals/${id}`)).approval.status).toBe("cancelled");
+    expect((await chat("/reset")).reply).toMatch(/已清空/);
+    expect((await chat("hello once again")).reply).toBe("好的");
+  }, 120_000);
+
   it("a normal agent reply records its model and tool steps", async () => {
     const r = await chat("QUICKSORT again");
     expect(r.reply).toContain("[1, 2, 3, 5, 7, 9]");

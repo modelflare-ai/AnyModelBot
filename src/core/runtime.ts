@@ -108,10 +108,44 @@ const HELP = [
   "/help — 显示本帮助",
 ].join("\n");
 
+/** 一条正在处理的消息（各渠道都有）：/stop、网页的停止按钮经 abort 中止它 */
+interface Inflight {
+  botId: string;
+  since: number;
+  abort: AbortController;
+}
+
+/** 回合还没交给代理（或纯对话还没出字）就被停止时的回复 */
+export const stoppedText = (ms: number) => `已中止（处理了 ${fmtSecs(ms)}）。`;
+
 /** 渠道无关的对话运行时：命令处理、上下文拼装、流式调用模型、持久化。 */
 export class BotRuntime {
   private modelCache: { at: number; list: string[] } | undefined;
+  /** 会话 → 正在处理的消息 */
+  private inflight = new Map<string, Set<Inflight>>();
   constructor(private opts: RuntimeOptions) {}
+
+  /**
+   * 中止会话里正在处理的消息：纯对话中止模型请求（已生成的部分保留），代理回合交给代理之前直接收尾、之后在服务端中止
+   * （会重启代理进程）。返回有没有正在处理的消息。
+   */
+  stop(conversationId: string): boolean {
+    const set = this.inflight.get(conversationId);
+    for (const t of set ?? []) t.abort.abort();
+    const agentTurn = this.opts.agent?.stopTurn(conversationId) ?? false;
+    return !!set?.size || agentTurn;
+  }
+
+  /** 会话里最早那条还在处理的消息是什么时候收到的 */
+  busySince(conversationId: string): number | undefined {
+    const set = this.inflight.get(conversationId);
+    return set?.size ? Math.min(...[...set].map((t) => t.since)) : undefined;
+  }
+
+  /** 有消息正在处理的机器人（侧栏"正在工作"） */
+  busyBots(): string[] {
+    return [...new Set([...this.inflight.values()].flatMap((s) => [...s].map((t) => t.botId)))];
+  }
 
   async listModels(force = false): Promise<string[]> {
     if (!force && this.modelCache && Date.now() - this.modelCache.at < 30_000) return this.modelCache.list;
@@ -129,18 +163,52 @@ export class BotRuntime {
     return list[0];
   }
 
-  /** signal：网页"停止"按钮；纯对话路径会中止模型请求并保留已生成的部分（代理回合无法中途打断，会在后台跑完） */
+  /**
+   * signal：网页的停止按钮（排队时就停了也算）；/stop 经 stop() 走同一条路。纯对话中止模型请求并保留已生成的部分，
+   * 代理回合交给代理之前直接收尾，之后由代理中止。
+   */
   async handle(ev: InboundEvent, out: ReplySession, opts: { signal?: AbortSignal } = {}): Promise<void> {
     const { store } = this.opts;
     const bot = store.getBot(ev.botId);
     if (!bot) throw new Error(`unknown bot ${ev.botId}`);
     const conv = store.ensureConversation(bot.id, ev.channel, ev.conversation.id, ev.sender.name || ev.sender.id, ev.conversation.kind === "group" ? "group" : "dm");
+    const t: Inflight = { botId: bot.id, since: Date.now(), abort: new AbortController() };
+    const link = () => t.abort.abort();
+    if (opts.signal?.aborted) link();
+    else opts.signal?.addEventListener("abort", link, { once: true });
+    const set = this.inflight.get(conv.id) ?? new Set<Inflight>();
+    this.inflight.set(conv.id, set);
+    set.add(t);
+    try {
+      await this.handleMessage(ev, out, bot, conv.id, conv.model, t);
+    } finally {
+      opts.signal?.removeEventListener("abort", link);
+      set.delete(t);
+      if (!set.size && this.inflight.get(conv.id) === set) this.inflight.delete(conv.id);
+    }
+  }
+
+  private async handleMessage(ev: InboundEvent, out: ReplySession, bot: NonNullable<ReturnType<Store["getBot"]>>, convId: string, convModel: string, t: Inflight): Promise<void> {
+    const { store } = this.opts;
+    const conv = { id: convId, model: convModel };
+    const signal = t.abort.signal;
     const agent = this.opts.agent;
     // 代理模式：收到的图片/文件先进工作区，消息里写路径
     if (agent?.available) storeInbound(agent.host(bot.id).workspace, ev);
     const text = eventText(ev);
     if (!text) return;
     const images = inboundImages(ev);
+
+    // 排队时就被停止了：不再处理（命令也不执行），留一句"已中止"
+    if (signal.aborted) {
+      const msg = stoppedText(Date.now() - t.since);
+      if (!text.startsWith("/")) {
+        store.addMessage(conv.id, "user", text);
+        store.addMessage(conv.id, "assistant", msg);
+      }
+      await out.apply({ type: "text", text: msg });
+      return;
+    }
 
     if (text.startsWith("/")) {
       const reply = await this.command(text, conv.id, conv.model, bot.defaultModel, bot.id);
@@ -161,7 +229,7 @@ export class BotRuntime {
 
     let note = "";
     if (agent?.available) {
-      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, bot.systemPrompt, out, seen);
+      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, bot.systemPrompt, out, seen, t);
       if (handled === true) return;
       // 代理进程还在启动（第一次可能要几分钟）：这条消息先由模型直接回答，不让用户干等
       if (handled === "starting") note = "（代理还在启动，这条消息先由模型直接回答；启动完成后会自动用回代理。）";
@@ -181,7 +249,7 @@ export class BotRuntime {
     await out.apply({ type: "stream.start" });
     let acc = "";
     try {
-      const full = await this.opts.models.streamChat({ model: routed, messages, signal: opts.signal }, (delta) => {
+      const full = await this.opts.models.streamChat({ model: routed, messages, signal }, (delta) => {
         acc += delta;
         void out.apply({ type: "stream.update", text: acc });
       });
@@ -190,9 +258,11 @@ export class BotRuntime {
       await out.apply({ type: "stream.finish", text: note ? `${note}\n\n${finalText}` : finalText });
     } catch (e) {
       const err = e as Error & { status?: number };
-      if (opts.signal?.aborted) {
-        if (acc) store.addMessage(conv.id, "assistant", acc);
-        await out.apply({ type: "stream.finish", text: acc });
+      if (signal.aborted) {
+        // 停止：已生成的部分保留，末尾注明；还没出字就只说已中止
+        const msg = acc ? `${acc}\n\n（已中止）` : stoppedText(Date.now() - t.since);
+        store.addMessage(conv.id, "assistant", msg);
+        await out.apply({ type: "stream.finish", text: msg });
         return;
       }
       log.warn("model call failed", { model, status: err.status, message: err.message });
@@ -217,11 +287,11 @@ export class BotRuntime {
       if (bot) return { handled: true, ack: cmd === "/help" ? HELP : this.statusText(bot.id, convId, this.opts.store.getConversation(convId)?.model ?? "", bot.defaultModel) };
     }
     const agent = this.opts.agent;
-    // /stop 必须插队：它要停的正是排在前面、卡住的那个回合
+    // /stop 必须插队：它要停的正是排在前面、卡住的那个回合（纯对话、代理还在启动时也算）
     if (cmd === "/stop") {
-      const t = agent?.turnsInProgress.get(convId);
-      if (!t || !agent?.stopTurn(convId)) return { handled: true, ack: "当前没有正在处理的消息。" };
-      return { handled: true, ack: `正在中止上一条消息（已处理 ${fmtSecs(Date.now() - t.since)}）…` };
+      const since = this.busySince(convId) ?? agent?.turnsInProgress.get(convId)?.since;
+      if (since === undefined || !this.stop(convId)) return { handled: true, ack: "当前没有正在处理的消息。" };
+      return { handled: true, ack: `正在中止上一条消息（已处理 ${fmtSecs(Date.now() - since)}）…` };
     }
     if (!agent) return { handled: false };
     const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`);
@@ -276,8 +346,19 @@ export class BotRuntime {
    * 代理回合；返回 false 表示宿主不可用且尚无任何输出（调用方回退到纯对话），
    * "starting" 表示代理进程在等待时限内没有启动好（同样回退，启动在后台继续）。
    */
-  private async handleAgent(agent: AgentManager, botId: string, convId: string, text: string, model: string, systemPrompt: string, out: ReplySession, images: TurnImage[] = []): Promise<boolean | "starting"> {
+  private async handleAgent(
+    agent: AgentManager,
+    botId: string,
+    convId: string,
+    text: string,
+    model: string,
+    systemPrompt: string,
+    out: ReplySession,
+    images: TurnImage[],
+    inflight: Inflight,
+  ): Promise<boolean | "starting"> {
     const { store } = this.opts;
+    const signal = inflight.abort.signal;
     let visible = false;
     // 活动记录：网页对话实时显示（其它渠道忽略这个操作），回合结束后随回复存下来，信息面板里能看
     const steps = new Map<string, ActivityStep>();
@@ -308,6 +389,17 @@ export class BotRuntime {
       show();
       startup = setInterval(show, 5000);
     }
+    // 交给代理之前就被停止：不用动代理进程（启动在后台继续），直接收尾
+    const stoppedEarly = async () => {
+      clearInterval(startup);
+      log.info("message stopped before the agent took it", { bot: botId, conversationId: convId });
+      const msg = stoppedText(Date.now() - inflight.since);
+      store.addMessage(convId, "user", text);
+      store.addMessage(convId, "assistant", msg);
+      await out.apply({ type: "stream.finish", text: msg });
+      return true;
+    };
+    const stopped = new Promise<"stopped">((r) => (signal.aborted ? r("stopped") : signal.addEventListener("abort", () => r("stopped"), { once: true })));
     try {
       if (host.state !== "running") {
         const waitMs = Number(process.env.AMB_AGENT_START_WAIT_MS) || 90_000;
@@ -318,14 +410,18 @@ export class BotRuntime {
             () => false,
           ),
           new Promise<boolean>((r) => (timer = setTimeout(() => r(false), waitMs))),
+          stopped,
         ]).finally(() => clearTimeout(timer));
+        if (ready === "stopped") return await stoppedEarly();
         if (!ready && (host.state as string) !== "running") {
           log.warn("agent host not ready, answering with plain chat", { bot: botId, state: host.state, waitedMs: waitMs });
           return host.state === "starting" ? "starting" : false;
         }
       }
+      if (signal.aborted) return await stoppedEarly();
       const input = store.getAgentSession(convId) ? text : firstInput(agent, botId, convId, systemPrompt, text);
-      const r = await agent.runTurn(botId, {
+      // runTurn 同步登记回合，之后的停止交给代理（TurnStopped，会重启代理进程）
+      const turn = agent.runTurn(botId, {
         conversationId: convId,
         text: input,
         model,
@@ -337,7 +433,13 @@ export class BotRuntime {
             visible = true;
           },
         },
-      }).finally(() => clearInterval(startup));
+      });
+      const halt = () => agent.stopTurn(convId);
+      signal.addEventListener("abort", halt, { once: true });
+      const r = await turn.finally(() => {
+        clearInterval(startup);
+        signal.removeEventListener("abort", halt);
+      });
       store.addMessage(convId, "user", text);
       const finalText = r.text.trim() || "（已完成，没有文字回复）";
       store.addMessage(convId, "assistant", finalText, [...steps.values()]);

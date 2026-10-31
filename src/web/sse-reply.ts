@@ -2,8 +2,32 @@ import type http from "node:http";
 import type { OutboundOp, ReplySession } from "../core/types.js";
 
 /**
- * 网页对话渠道：把运行时的 OutboundOp 写成 text/event-stream。
- * 事件：text（到目前为止的完整回复，覆盖式）、typing、prompt（审批/提问）、file、activity（代理的一步，按 id 覆盖）、done、error。
+ * 运行时的 OutboundOp → 网页对话的 SSE 事件：text（到目前为止的完整回复，覆盖式）、typing、prompt（审批/提问）、
+ * file、activity（代理的一步，按 id 覆盖）。stream.start 不发。
+ */
+export function opEvent(op: OutboundOp): [string, unknown] | undefined {
+  switch (op.type) {
+    case "typing":
+      return ["typing", { on: op.on }];
+    case "stream.start":
+      return undefined;
+    case "stream.update":
+      return ["text", { text: op.text }];
+    case "stream.finish":
+    case "text":
+      return ["text", { text: op.text, final: true }];
+    case "file":
+      return ["file", { name: op.name }];
+    case "interactive":
+      return ["prompt", { kind: op.kind, prompt: op.prompt, requestId: op.requestId, code: op.code }];
+    case "activity":
+      return ["activity", op.step];
+  }
+}
+
+/**
+ * 网页对话渠道：把事件写成 text/event-stream。
+ * 事件见 opEvent，另有 snapshot（接上进行中的回合时先发一次）、stopping、done、error。
  * 运行时的 stream.update 本身就是累计文本，所以前端只需整体替换，不用拼接增量。
  */
 export class SseReply implements ReplySession {
@@ -37,25 +61,9 @@ export class SseReply implements ReplySession {
   }
 
   async apply(op: OutboundOp): Promise<void> {
-    switch (op.type) {
-      case "typing":
-        return this.send("typing", { on: op.on });
-      case "stream.start":
-        return;
-      case "stream.update":
-        this.text = op.text;
-        return this.send("text", { text: op.text });
-      case "stream.finish":
-      case "text":
-        this.text = op.text;
-        return this.send("text", { text: op.text, final: true });
-      case "file":
-        return this.send("file", { name: op.name });
-      case "interactive":
-        return this.send("prompt", { kind: op.kind, prompt: op.prompt, requestId: op.requestId, code: op.code });
-      case "activity":
-        return this.send("activity", op.step);
-    }
+    if (op.type === "stream.update" || op.type === "stream.finish" || op.type === "text") this.text = op.text;
+    const ev = opEvent(op);
+    if (ev) this.send(ev[0], ev[1]);
   }
 
   end(event: "done" | "error", data: unknown): void {

@@ -299,6 +299,9 @@ button.act-head:active { background: var(--pill-hover); }
 .send:hover:not(:disabled) { background: var(--primary-hover); }
 .send:hover:not(:disabled):not(.stop) .ic { transform: translateY(-1px); }
 .send:active:not(:disabled) { background: var(--primary-press); transform: scale(var(--press-strong)); }
-.send:disabled { background: var(--pill); color: var(--faint); box-shadow: none; }
+.send:disabled:not([aria-busy="true"]) { background: var(--pill); color: var(--faint); box-shadow: none; }
+/* 正在停止：保持本色转圈，只是不可点（同 Button 的 loading） */
+.send[aria-busy="true"] { cursor: progress; }
+.send .spinner { width: 12px; height: 12px; }
 .composer-disabled { pointer-events: auto; width: var(--col); margin: 0 auto var(--space-2); }
 }

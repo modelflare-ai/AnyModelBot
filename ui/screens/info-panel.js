@@ -134,7 +134,7 @@ function LiveTurn({ turn, convId }) {
   const stop = async () => {
     setStopping(true);
     try {
-      await api(`/conversations/${encodeURIComponent(convId)}/stop`, { method: "POST" });
+      await api(`/conversations/${encodeURIComponent(convId)}/stop`, { method: "POST", body: {} });
     } catch (e) {
       failed(`中止失败：${e.message}`);
       setStopping(false);

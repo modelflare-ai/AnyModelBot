@@ -1,6 +1,6 @@
 # Background tasks and proactive rules (Phase 3 design)
 
-Status: **design for discussion. Nothing here is built yet.** Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
+Status: **3a (task core) is built**: `src/tasks/`, `dsh-runtime/plugins/amb-tasks.mjs`, tests in `test/tasks.*.test.ts`. 3b–3f are still design. Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
 Feasibility evidence is in [Appendix A](#appendix-a-feasibility-answers-with-evidence). The spike that produced it is `scripts/spikes/p3-tasks/`.
 
 ## Summary

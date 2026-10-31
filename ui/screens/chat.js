@@ -7,6 +7,7 @@ import { Markdown, Linkified } from "../components/markdown.js";
 import { ModelPicker, shortModel, sameModel } from "../components/model-picker.js";
 import { PwshHint } from "../components/pwsh-hint.js";
 import { ActivityLine, currentStep, upsertStep } from "../components/activity.js";
+import { TaskChip } from "../components/tasks.js";
 import { api, attachChat, streamChat } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
 import { fmtSep, fmtClock, fmtDur } from "../lib/format.js";
@@ -18,6 +19,7 @@ const COMMANDS = [
   ["/reset", "清空本会话上下文"],
   ["/status", "查看当前模型、运行方式和处理进度"],
   ["/stop", "中止正在处理的消息"],
+  ["/tasks", "列出后台任务（/stop 编号 停止一个）"],
   ["/help", "显示全部命令"],
 ];
 // 文件权限（输入框左下角，参考 Codex 的权限胶囊）：机器人设置里的同一项，预设在 lib/perms.js
@@ -219,6 +221,9 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const attachRef = useRef(null);
   // 处理中又发的消息（并进正在进行的回复）结束后重新读一次历史：存下的顺序是两条用户消息、一条回复
   const reloadAfter = useRef(false);
+  // 这个会话的后台任务（胶囊挂在请求它的那条消息的回复下面）；任务结束时结果写进了历史，重新读一次
+  const [tasks, setTasks] = useState([]);
+  const taskGroups = useRef({});
 
   // ended：刚接着的那条消息结束了 { since, ms }，存下的回复照样显示"用时"（和一直停在这页时一样）
   const load = useCallback(async (ended) => {
@@ -265,6 +270,35 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     if (serverBusy && !following.current && mounted.current) load();
   }, [serverBusy]);
   useEffect(() => () => onWorking(bot.id, false), []);
+
+  const loadTasks = useCallback(
+    () =>
+      api(`/tasks?conversation=${encodeURIComponent(`${bot.id}:web:console`)}&limit=20`)
+        .then((d) => {
+          if (!mounted.current) return;
+          const list = d.tasks || [];
+          const finished = list.some((t) => taskGroups.current[t.id] === "working" && t.stage.group !== "working");
+          taskGroups.current = Object.fromEntries(list.map((t) => [t.id, t.stage.group]));
+          setTasks(list);
+          if (finished && !following.current) load();
+        })
+        .catch(() => {}),
+    [bot.id, load],
+  );
+  const tasksWorking = tasks.some((t) => t.stage.group === "working");
+  useEffect(() => {
+    taskGroups.current = {};
+    setTasks([]);
+    loadTasks();
+  }, [bot.id]);
+  // 回复结束（可能刚开了一个任务）就看一次；有任务在进行时 3 秒一次，否则 15 秒
+  useEffect(() => {
+    if (!generating) loadTasks();
+  }, [generating]);
+  useEffect(() => {
+    const t = setInterval(loadTasks, tasksWorking ? 3000 : 15000);
+    return () => clearInterval(t);
+  }, [loadTasks, tasksWorking]);
 
   // 只有用户本来就在底部附近时才跟随新内容；否则亮出"回到底部"
   useLayoutEffect(() => {
@@ -537,6 +571,22 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   ];
 
   // —— 渲染 ——
+  /** 任务胶囊挂在哪一项后面：请求那条用户消息之后的第一条回复；那一轮还在进行时挂在进行中的回复后面 */
+  const chipsAfter = useMemo(() => {
+    const map = new Map();
+    const list = items || [];
+    for (const t of [...tasks].sort((a, b) => a.createdAt - b.createdAt)) {
+      const i = list.findIndex((x) => x.mid === t.originMessageId);
+      let at;
+      if (i >= 0) at = list.find((x, k) => k > i && !(x.kind === "msg" && x.role === "user")) ?? list[i];
+      else if (list.some((x) => x.live)) at = list.findLast((x) => x.turn);
+      if (!at) continue;
+      map.set(at.id, [...(map.get(at.id) || []), t]);
+    }
+    return map;
+  }, [items, tasks]);
+
+  const chips = (it) => (chipsAfter.get(it.id) || []).map((t) => html`<${TaskChip} key=${t.id} task=${t} onChanged=${loadTasks} />`);
   const rows = useMemo(() => {
     const out = [];
     let prev = null;
@@ -556,6 +606,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
             : html`${(it.live || it.workedMs || it.steps) && html`<${WorkLine} live=${it.live} stopping=${it.live && stopping} text=${it.text} startedAt=${it.startedAt} workedMs=${it.workedMs}
                 steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}
               ${it.text && html`<div class="msg"><${Markdown} text=${it.text} /></div>`}
+              ${chips(it)}
               ${!it.live && html`<${MsgActions} text=${it.text} at=${it.at} />`}`}
         </div>`);
       } else if (it.kind === "prompt") {
@@ -568,10 +619,12 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
           <${ErrorNotice} text=${it.text} onRetry=${it.retry ? () => send(it.retry) : undefined} onFixKey=${() => onOpenSettings("modelflare", "connection")} />
         </div>`);
       }
+      // 回复下面直接挂在同一行里（在复制按钮之前）；挂在卡片、文件、出错提示后面时自成一行
+      if (!(it.kind === "msg" && it.role === "assistant") && chipsAfter.has(it.id)) out.push(html`<div class="msg-row assistant cont" key=${"task-" + it.id}>${chips(it)}</div>`);
       prev = it;
     }
     return out;
-  }, [items, generating, stopping]);
+  }, [items, generating, stopping, chipsAfter]);
 
   const empty = items && items.length === 0;
   // 头像跟着对话走：等你批准 > 还没出字（思考）/ 出字了（回复）> 你在输入（在听）

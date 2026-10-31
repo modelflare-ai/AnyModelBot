@@ -11,6 +11,7 @@ import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
+import type { TaskHost, TaskService } from "../tasks/service.js";
 import { DEFAULT_SETTINGS, type BotSettings, type MediaConfirm } from "./settings.js";
 import {
   HANDOFF_SYSTEM,
@@ -154,6 +155,8 @@ export class AgentManager {
 
   /** 服务端压缩（经 bridge 改写长会话的 Responses 请求）；没有注入时为空 */
   readonly serverCompaction: ServerCompaction | undefined;
+  /** 后台任务服务（App 建好后接上）：插件的 task_report / task-settled / 聊天工具经 bridge 交给它，任务会话的通知也给它 */
+  tasks: TaskService | undefined;
 
   constructor(private o: AgentManagerOptions) {
     this.approvals = new ApprovalCenter(o.store, { ttlMs: o.approvalTtlMs });
@@ -182,6 +185,14 @@ export class AgentManager {
         result: (b) => this.hosts.get(String(b?.botId ?? ""))?.control.result(b),
       },
       compaction: this.serverCompaction,
+      tasks: async (route, b) => {
+        const t = this.tasks;
+        if (!t || !this.hosts.has(String(b?.botId ?? ""))) return { error: "background tasks are not available" };
+        if (route === "report") return t.report(b);
+        if (route === "settled") return t.settled(b);
+        if (route === "tool") return t.chatTool(b);
+        return { error: "unknown route" };
+      },
     });
     this.memory = new MemoryStore(path.join(o.dataDir, "memory"));
     this.apiFallbacks = new ApiFallbacks(path.join(o.dataDir, "dsh", "api-fallback.json"));
@@ -219,10 +230,13 @@ export class AgentManager {
         apiInfo: this.o.apiInfo,
         apiFallbacks: this.apiFallbacks,
         onWake: (conv) => this.onWake?.(botId, conv),
+        onTaskEvent: (root, n) => this.tasks?.onEvent(botId, root, n),
       });
-      // 代理进程退出（中止宽限期内没停下、设置变化、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它
+      // 代理进程退出（中止宽限期内没停下、设置变化、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它；跑着的后台任务记为中断、排恢复
       h.on((e) => {
-        if (e.type === "exit") this.endCompaction((c) => c.botId === botId);
+        if (e.type !== "exit") return;
+        this.endCompaction((c) => c.botId === botId);
+        this.tasks?.onChildExit(botId);
       });
       this.hosts.set(botId, h);
     }
@@ -607,6 +621,8 @@ export class AgentManager {
    */
   private async mediaOp(b: any): Promise<{ text?: string; error?: string }> {
     const botId = String(b?.botId ?? "");
+    // 后台任务里还不能生成（确认要问用户，3b 才有任务的提问）
+    if (String(b?.sessionId ?? "").startsWith("task-")) return { error: "生成图片和视频暂时只能在聊天里用，后台任务里不行；需要的话在结果里告诉用户。" };
     if (!this.hosts.has(botId) || !this.activeConvs.get(botId)?.size) return { error: "unknown bot" };
     const media = this.o.media;
     if (!media) return { error: "生成图片和视频需要连接 Modelflare" };
@@ -865,9 +881,32 @@ export class AgentManager {
     return ids;
   }
 
+  /** 任务服务用的宿主接口：每个机器人的代理进程 */
+  taskHost(): TaskHost {
+    const self = this;
+    return {
+      get available() {
+        return self.available;
+      },
+      workspace: (botId) => this.host(botId).workspace,
+      settings: (botId) => this.settings(botId),
+      memoryPrefix: (botId, conv) => this.memoryPrefix(botId, conv),
+      prompt: (botId, o) => {
+        if (!this.available) return Promise.reject(new Error("代理模式不可用"));
+        return this.host(botId).promptTask(o);
+      },
+      steer: (botId, sessionId, id, text) => this.hosts.get(botId)?.steerTask(sessionId, id, text) ?? Promise.resolve(false),
+      stop: async (botId, sessionId) => void (await this.hosts.get(botId)?.stopTask(sessionId)),
+      quiet: (botId, sessionId) => this.hosts.get(botId)?.taskQuiet(sessionId) ?? Promise.resolve({ quiet: true }),
+    };
+  }
+
   private resolveConversation(botId: string, sessionId: string): string {
     const c = this.o.store.conversationForSession(sessionId);
     if (c) return c;
+    // 后台任务会话：落到请求它的会话（3b 再把审批推给用户）
+    const task = this.tasks?.conversationOf(sessionId);
+    if (task) return task;
     const active = [...(this.activeConvs.get(botId) ?? [])];
     return active.length === 1 ? active[0] : "";
   }

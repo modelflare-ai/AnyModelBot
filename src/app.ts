@@ -42,6 +42,7 @@ import { loadModelInfo, type ModelInfo } from "./account/model-info.js";
 import { MediaService, pickDefault } from "./agent/media.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
+import { TaskService } from "./tasks/service.js";
 
 const log = logger("app");
 
@@ -117,6 +118,8 @@ export class App {
   readonly outbox: Outbox;
   /** 谁能和机器人对话：主人 + 允许名单 + 使用请求 */
   readonly access: AccessControl;
+  /** 后台任务：自己的会话和文件夹，结果经出站队列回到请求它的会话 */
+  readonly tasks: TaskService;
   web: WebServer | undefined;
   desktop: DesktopHooks | undefined;
   /** Modelflare 账户（登录、余额、预算）；start() 时创建，桌面外壳的钥匙串那时已就绪 */
@@ -211,6 +214,15 @@ export class App {
         : undefined,
       onNotice: (text) => this.notice("warn", text),
     });
+    this.tasks = new TaskService({
+      store: this.store,
+      host: this.agent.taskHost(),
+      outbox: this.outbox,
+      defaultModel: () => this.config.llm.defaultModel,
+      route: (botId, model) => this.routeModel(botId, model),
+      maxBackground: config.agent.maxBackground,
+    });
+    this.agent.tasks = this.tasks;
     this.runtime = new BotRuntime({
       agent: this.agent,
       store: this.store,
@@ -385,6 +397,7 @@ export class App {
   /** 删除机器人时一并删掉它的预算 Key */
   async deleteBot(botId: string): Promise<void> {
     const bot = this.store.getBot(botId);
+    this.tasks.dropBot(botId);
     await this.stopBot(botId);
     await this.agent.stopBot(botId);
     if (bot?.settings.budget.enabled && this.account.signedIn) {
@@ -445,6 +458,8 @@ export class App {
     this.outbox.start();
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
     if (interrupted.length) void this.tellInterrupted(interrupted);
+    // 后台任务：上次没跑完的记为中断、带着恢复说明接着做（渠道已经上线，结果能发出去）
+    if (this.agent.available) this.tasks.start();
     if (!this.opts.noWeb) this.web = await startWebServer(this);
     if (this.magpie) {
       // 启动时和之后每小时核对一次启用的模型（新上架的加入，下架的移出）
@@ -502,6 +517,8 @@ export class App {
   async stop(): Promise<void> {
     // 先告诉运行时：之后因为退出而失败的回合不回复、不改用纯对话，留给下次启动提醒
     this.runtime.shutdown();
+    // 后台任务不再开始新的 run；跑着的留在库里，下次启动时恢复
+    this.tasks.stop();
     this.offPwsh?.();
     if (this.accountTimer) clearInterval(this.accountTimer);
     if (this.picksTimer) clearInterval(this.picksTimer);

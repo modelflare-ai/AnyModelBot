@@ -164,7 +164,145 @@ export interface OutboxRow {
   dismissed: boolean;
 }
 
+/**
+ * 后台任务（见 docs/design/background-tasks-and-proactive.md 第 9 节）：一个人要求的后台工作，有自己的 DSH 会话与文件夹。
+ * Report 是代理经 task_report 报来的状态：message 是给用户的一句话，summary 只给内部看。
+ */
+export type ReportState = "progress" | "needs_you" | "done" | "failed";
+export interface TaskReport {
+  state: ReportState;
+  summary: string;
+  message?: string;
+  files?: string[];
+  /** 3b：要问用户的一个问题 */
+  question?: { question: string; options?: string[]; multiSelect?: boolean };
+  at: number;
+}
+export interface TaskRow {
+  id: string;
+  botId: string;
+  conversationId: string;
+  /** 请求那条用户消息（messages.id） */
+  originMessageId: number;
+  /** 回复到哪条渠道消息（飞书 message_id）；不是密钥 */
+  originRef: string;
+  title: string;
+  brief: string;
+  sessionId: string;
+  /** 相对工作区：tasks/<slug>-<id6> */
+  folder: string;
+  model: string;
+  /** 建任务时机器人的权限预设（快照） */
+  permission: string;
+  budgetUsd: number;
+  spentUsd: number;
+  /** 最近一次 Report */
+  report: TaskReport | undefined;
+  endedAt: number;
+  /** done | stopped | archived */
+  endReason: string;
+  stoppedBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+export type RunState = "queued" | "running" | "settling" | "ended";
+export type RunOutcome = "" | "done" | "needs_you" | "failed" | "budget" | "stopped" | "interrupted" | "skipped";
+export type RunCause = "launch" | "answer" | "followup" | "retry" | "continue" | "recover" | "schedule" | "manual";
+/** 一段工作（一次启动、回答、追加、重试、恢复）：占着名额直到结束 */
+export interface RunRow {
+  id: string;
+  botId: string;
+  taskId: string;
+  ruleId: string;
+  ruleVersion: number;
+  mode: string;
+  sessionId: string;
+  cause: RunCause;
+  state: RunState;
+  outcome: RunOutcome;
+  report: TaskReport | undefined;
+  would: string;
+  /** ActivityStep[] JSON（最多 120 步） */
+  activity: string;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  error: string;
+  /** 结果交给出站队列 / 写进会话时的确定 id（交过就不再交） */
+  delivery: string;
+  queuedAt: number;
+  startedAt: number;
+  endedAt: number;
+}
+export type InputKind = "brief" | "answer" | "followup" | "note" | "recovery" | "nudge" | "schedule";
+/** 宿主欠会话的一条输入：交给 DSH 时记下收件 id（delivered），会话里出现这条用户消息时记下 taken；重启后没 taken 的再交一次 */
+export interface RunInputRow {
+  id: string;
+  taskId: string;
+  ruleId: string;
+  runId: string;
+  kind: InputKind;
+  text: string;
+  fromPerson: boolean;
+  messageId: string;
+  deliveredAt: number;
+  takenAt: number;
+  createdAt: number;
+}
+
 type Row = Record<string, unknown>;
+
+/** JSON 列 → 对象；坏的、空的都当没有 */
+function parseJson<T>(v: unknown): T | undefined {
+  if (v == null || v === "") return undefined;
+  try {
+    return JSON.parse(String(v)) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 按字段名改一行：cols 是字段 → 列名，布尔值存 0/1，对象存 JSON */
+function updateRow(db: DatabaseSync, table: string, cols: Record<string, string>, id: string, patch: Record<string, unknown>): void {
+  const keys = Object.keys(patch).filter((k) => k in cols && patch[k] !== undefined);
+  if (!keys.length) return;
+  const vals = keys.map((k) => {
+    const v = patch[k];
+    if (typeof v === "boolean") return v ? 1 : 0;
+    if (v && typeof v === "object") return JSON.stringify(v);
+    return v as string | number;
+  });
+  db.prepare(`UPDATE ${table} SET ${keys.map((k) => `${cols[k]} = ?`).join(", ")} WHERE id = ?`).run(...vals, id);
+}
+
+const TASK_COLS: Record<string, string> = {
+  originRef: "origin_ref",
+  title: "title",
+  sessionId: "session_id",
+  model: "model",
+  spentUsd: "spent_usd",
+  report: "report",
+  endedAt: "ended_at",
+  endReason: "end_reason",
+  stoppedBy: "stopped_by",
+  updatedAt: "updated_at",
+};
+const RUN_COLS: Record<string, string> = {
+  sessionId: "session_id",
+  state: "state",
+  outcome: "outcome",
+  report: "report",
+  would: "would",
+  activity: "activity",
+  tokensIn: "tokens_in",
+  tokensOut: "tokens_out",
+  costUsd: "cost_usd",
+  error: "error",
+  delivery: "delivery",
+  startedAt: "started_at",
+  endedAt: "ended_at",
+};
+const INPUT_COLS: Record<string, string> = { runId: "run_id", messageId: "message_id", deliveredAt: "delivered_at", takenAt: "taken_at" };
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS bots (
@@ -219,6 +357,31 @@ CREATE TABLE IF NOT EXISTS outbox (
   sent_at INTEGER NOT NULL DEFAULT 0, dismissed INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS outbox_status ON outbox(status, seq);
 CREATE INDEX IF NOT EXISTS outbox_bot ON outbox(bot_id, status);
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+  origin_message_id INTEGER NOT NULL DEFAULT 0, origin_ref TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL, brief TEXT NOT NULL, session_id TEXT NOT NULL, folder TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '', permission TEXT NOT NULL, budget_usd REAL NOT NULL, spent_usd REAL NOT NULL DEFAULT 0,
+  report TEXT NOT NULL DEFAULT '', ended_at INTEGER NOT NULL DEFAULT 0, end_reason TEXT NOT NULL DEFAULT '',
+  stopped_by TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS tasks_open ON tasks(bot_id, ended_at);
+CREATE INDEX IF NOT EXISTS tasks_conv ON tasks(conversation_id, created_at);
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, task_id TEXT NOT NULL DEFAULT '', rule_id TEXT NOT NULL DEFAULT '',
+  rule_version INTEGER NOT NULL DEFAULT 0, mode TEXT NOT NULL DEFAULT 'act', session_id TEXT NOT NULL,
+  cause TEXT NOT NULL, state TEXT NOT NULL, outcome TEXT NOT NULL DEFAULT '',
+  report TEXT NOT NULL DEFAULT '', would TEXT NOT NULL DEFAULT '', activity TEXT NOT NULL DEFAULT '',
+  tokens_in INTEGER NOT NULL DEFAULT 0, tokens_out INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '', delivery TEXT NOT NULL DEFAULT '',
+  queued_at INTEGER NOT NULL, started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS runs_live ON runs(state, queued_at);
+CREATE INDEX IF NOT EXISTS runs_task ON runs(task_id, queued_at);
+CREATE TABLE IF NOT EXISTS run_inputs (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL DEFAULT '', rule_id TEXT NOT NULL DEFAULT '', run_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL, text TEXT NOT NULL, from_person INTEGER NOT NULL DEFAULT 0,
+  message_id TEXT NOT NULL DEFAULT '', delivered_at INTEGER NOT NULL DEFAULT 0, taken_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS run_inputs_open ON run_inputs(task_id, taken_at);
 `;
 
 /** 旧库补列（CREATE TABLE IF NOT EXISTS 不会改已有表）。 */
@@ -370,6 +533,9 @@ export class Store {
     this.db.prepare("DELETE FROM agent_sessions WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM access WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM outbox WHERE bot_id = ?").run(id);
+    this.db.prepare("DELETE FROM run_inputs WHERE task_id IN (SELECT id FROM tasks WHERE bot_id = ?)").run(id);
+    this.db.prepare("DELETE FROM runs WHERE bot_id = ?").run(id);
+    this.db.prepare("DELETE FROM tasks WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM bots WHERE id = ?").run(id);
   }
 
@@ -776,6 +942,160 @@ export class Store {
   /** 清理：发出去的留 7 天（这期间同一 id 不会再发），发不出去的留 30 天 */
   pruneOutbox(now = Date.now()): void {
     this.db.prepare("DELETE FROM outbox WHERE (status = 'sent' AND updated_at < ?) OR (status = 'gone' AND updated_at < ?)").run(now - 7 * 86400_000, now - 30 * 86400_000);
+  }
+
+  // ---------- 后台任务（tasks / runs / run_inputs，只由 TaskService 写，见 tasks/service.ts） ----------
+  private toTask(r: Row): TaskRow {
+    return {
+      id: String(r.id),
+      botId: String(r.bot_id),
+      conversationId: String(r.conversation_id),
+      originMessageId: Number(r.origin_message_id),
+      originRef: String(r.origin_ref),
+      title: String(r.title),
+      brief: String(r.brief),
+      sessionId: String(r.session_id),
+      folder: String(r.folder),
+      model: String(r.model),
+      permission: String(r.permission),
+      budgetUsd: Number(r.budget_usd),
+      spentUsd: Number(r.spent_usd),
+      report: parseJson<TaskReport>(r.report),
+      endedAt: Number(r.ended_at),
+      endReason: String(r.end_reason),
+      stoppedBy: String(r.stopped_by),
+      createdAt: Number(r.created_at),
+      updatedAt: Number(r.updated_at),
+    };
+  }
+  insertTask(t: Omit<TaskRow, "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy">): TaskRow {
+    this.db
+      .prepare(
+        `INSERT INTO tasks(id, bot_id, conversation_id, origin_message_id, origin_ref, title, brief, session_id, folder, model, permission, budget_usd, created_at, updated_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(t.id, t.botId, t.conversationId, t.originMessageId, t.originRef, t.title, t.brief, t.sessionId, t.folder, t.model, t.permission, t.budgetUsd, t.createdAt, t.updatedAt);
+    return this.getTask(t.id)!;
+  }
+  getTask(id: string): TaskRow | undefined {
+    const r = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as Row | undefined;
+    return r ? this.toTask(r) : undefined;
+  }
+  /** 任务会话（task-…）属于哪个任务 */
+  taskBySession(sessionId: string): TaskRow | undefined {
+    const r = this.db.prepare("SELECT * FROM tasks WHERE session_id = ?").get(sessionId) as Row | undefined;
+    return r ? this.toTask(r) : undefined;
+  }
+  updateTask(id: string, patch: Partial<Pick<TaskRow, "originRef" | "title" | "sessionId" | "model" | "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy" | "updatedAt">>): void {
+    updateRow(this.db, "tasks", TASK_COLS, id, patch);
+  }
+  /** open：还没结束（停止、归档）的；since：之后更新过的 */
+  listTasks(opts: { botId?: string; conversationId?: string; open?: boolean; since?: number; limit?: number } = {}): TaskRow[] {
+    const where: string[] = [];
+    const args: Array<string | number> = [];
+    if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
+    if (opts.conversationId) (where.push("conversation_id = ?"), args.push(opts.conversationId));
+    if (opts.open !== undefined) where.push(opts.open ? "ended_at = 0" : "ended_at > 0");
+    if (opts.since) (where.push("updated_at >= ?"), args.push(opts.since));
+    const sql = `SELECT * FROM tasks ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC LIMIT ${Math.max(1, Math.min(500, opts.limit ?? 100))}`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toTask(r));
+  }
+
+  private toRun(r: Row): RunRow {
+    return {
+      id: String(r.id),
+      botId: String(r.bot_id),
+      taskId: String(r.task_id),
+      ruleId: String(r.rule_id),
+      ruleVersion: Number(r.rule_version),
+      mode: String(r.mode),
+      sessionId: String(r.session_id),
+      cause: String(r.cause) as RunCause,
+      state: String(r.state) as RunState,
+      outcome: String(r.outcome) as RunOutcome,
+      report: parseJson<TaskReport>(r.report),
+      would: String(r.would),
+      activity: String(r.activity),
+      tokensIn: Number(r.tokens_in),
+      tokensOut: Number(r.tokens_out),
+      costUsd: Number(r.cost_usd),
+      error: String(r.error),
+      delivery: String(r.delivery),
+      queuedAt: Number(r.queued_at),
+      startedAt: Number(r.started_at),
+      endedAt: Number(r.ended_at),
+    };
+  }
+  insertRun(r: Pick<RunRow, "id" | "botId" | "taskId" | "sessionId" | "cause" | "queuedAt">): RunRow {
+    this.db
+      .prepare("INSERT INTO runs(id, bot_id, task_id, session_id, cause, state, queued_at) VALUES(?, ?, ?, ?, ?, 'queued', ?)")
+      .run(r.id, r.botId, r.taskId, r.sessionId, r.cause, r.queuedAt);
+    return this.getRun(r.id)!;
+  }
+  getRun(id: string): RunRow | undefined {
+    const r = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Row | undefined;
+    return r ? this.toRun(r) : undefined;
+  }
+  updateRun(id: string, patch: Partial<Pick<RunRow, "sessionId" | "state" | "outcome" | "report" | "would" | "activity" | "tokensIn" | "tokensOut" | "costUsd" | "error" | "delivery" | "startedAt" | "endedAt">>): void {
+    updateRow(this.db, "runs", RUN_COLS, id, patch);
+  }
+  /** 一个任务的 runs（旧→新）；不含活动记录（大） */
+  listRuns(opts: { taskId?: string; botId?: string; states?: RunState[]; limit?: number } = {}): RunRow[] {
+    const where: string[] = [];
+    const args: Array<string | number> = [];
+    if (opts.taskId) (where.push("task_id = ?"), args.push(opts.taskId));
+    if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
+    if (opts.states?.length) (where.push(`state IN (${opts.states.map(() => "?").join(", ")})`), args.push(...opts.states));
+    const sql = `SELECT id, bot_id, task_id, rule_id, rule_version, mode, session_id, cause, state, outcome, report, would, '' AS activity, tokens_in, tokens_out, cost_usd, error, delivery, queued_at, started_at, ended_at
+      FROM runs ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY queued_at, rowid LIMIT ${Math.max(1, Math.min(1000, opts.limit ?? 500))}`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toRun(r));
+  }
+  /** 任务最近的一个 run（不含活动记录） */
+  latestRun(taskId: string): RunRow | undefined {
+    const r = this.db
+      .prepare("SELECT id, bot_id, task_id, rule_id, rule_version, mode, session_id, cause, state, outcome, report, would, '' AS activity, tokens_in, tokens_out, cost_usd, error, delivery, queued_at, started_at, ended_at FROM runs WHERE task_id = ? ORDER BY queued_at DESC, rowid DESC LIMIT 1")
+      .get(taskId) as Row | undefined;
+    return r ? this.toRun(r) : undefined;
+  }
+
+  private toInput(r: Row): RunInputRow {
+    return {
+      id: String(r.id),
+      taskId: String(r.task_id),
+      ruleId: String(r.rule_id),
+      runId: String(r.run_id),
+      kind: String(r.kind) as InputKind,
+      text: String(r.text),
+      fromPerson: Number(r.from_person) === 1,
+      messageId: String(r.message_id),
+      deliveredAt: Number(r.delivered_at),
+      takenAt: Number(r.taken_at),
+      createdAt: Number(r.created_at),
+    };
+  }
+  insertInput(i: Pick<RunInputRow, "id" | "taskId" | "runId" | "kind" | "text" | "fromPerson" | "createdAt"> & Partial<Pick<RunInputRow, "messageId" | "deliveredAt">>): RunInputRow {
+    this.db
+      .prepare("INSERT INTO run_inputs(id, task_id, run_id, kind, text, from_person, message_id, delivered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(i.id, i.taskId, i.runId, i.kind, i.text, i.fromPerson ? 1 : 0, i.messageId ?? "", i.deliveredAt ?? 0, i.createdAt);
+    return this.toInput(this.db.prepare("SELECT * FROM run_inputs WHERE id = ?").get(i.id) as Row);
+  }
+  updateInput(id: string, patch: Partial<Pick<RunInputRow, "runId" | "messageId" | "deliveredAt" | "takenAt">>): void {
+    updateRow(this.db, "run_inputs", INPUT_COLS, id, patch);
+  }
+  /** 会话还没收下的输入（旧→新）：下一个 run 开始时交给它 */
+  openInputs(taskId: string): RunInputRow[] {
+    return (this.db.prepare("SELECT * FROM run_inputs WHERE task_id = ? AND taken_at = 0 ORDER BY created_at, rowid").all(taskId) as Row[]).map((r) => this.toInput(r));
+  }
+  listInputs(taskId: string): RunInputRow[] {
+    return (this.db.prepare("SELECT * FROM run_inputs WHERE task_id = ? ORDER BY created_at, rowid").all(taskId) as Row[]).map((r) => this.toInput(r));
+  }
+  /** 会话里出现了这条用户消息（DSH 收件 id）：记下 taken；返回记下了几条 */
+  takeInputs(taskId: string, messageId: string, at = Date.now()): number {
+    return Number(this.db.prepare("UPDATE run_inputs SET taken_at = ? WHERE task_id = ? AND message_id = ? AND taken_at = 0").run(at, taskId, messageId).changes);
+  }
+  /** 任务的会话建过（交出去过输入）：之后要 resume */
+  taskPrompted(taskId: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM run_inputs WHERE task_id = ? AND delivered_at > 0 LIMIT 1").get(taskId);
   }
 }
 

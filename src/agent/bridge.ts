@@ -25,6 +25,8 @@ export interface BridgeHandlers {
   control?: { poll(body: any, signal: AbortSignal): Promise<unknown>; result(body: any): void };
   /** 服务端压缩：长会话的 /v1/responses 换上上游压缩过的历史（见 server-compaction.ts） */
   compaction?: ServerCompaction;
+  /** amb-tasks 插件：task_report（report）、收尾结束（settled）、聊天代理的任务工具（tool） */
+  tasks?(route: "report" | "settled" | "tool", body: any): Promise<unknown>;
 }
 
 /** 模型代理的一次请求（故障排查的"测试代理"用它判断模型调用这一步） */
@@ -49,6 +51,7 @@ export const BOT_HEADER = "x-amb-bot";
  * - /v1/*：模型代理（Chat Completions、Responses、Anthropic Messages），把令牌换成真实网关密钥（子进程环境里没有任何真实密钥）
  * - /dsh/ask|wait|cancel：amb-bridge 插件的审批/提问长轮询
  * - /dsh/control/poll|result：amb-control 插件取宿主的指令（中止、插话、换模型）并回报
+ * - /dsh/task-report|task-settled|task-tool：amb-tasks 插件（后台任务的报告、收尾结束、聊天代理的任务工具）
  */
 export class AgentBridge {
   readonly token = crypto.randomBytes(24).toString("base64url");
@@ -271,6 +274,9 @@ export class AgentBridge {
       res.on("close", () => ac.abort());
       out = await this.h.control.poll(body, ac.signal);
     } else if (url === "/dsh/control/result" && this.h.control) out = (this.h.control.result(body), { ok: true });
+    else if (url === "/dsh/task-report" && this.h.tasks) out = await this.h.tasks("report", body);
+    else if (url === "/dsh/task-settled" && this.h.tasks) out = await this.h.tasks("settled", body);
+    else if (url === "/dsh/task-tool" && this.h.tasks) out = await this.h.tasks("tool", body);
     else return void res.writeHead(404).end();
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
   }

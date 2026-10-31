@@ -14,7 +14,7 @@ import { cuaConfig, cuaMcpEnv, discoverAppsCached, type CuaApp } from "./cua-dri
 import { pwshPatchLines, pwshProbe } from "./pwsh.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 import { acceptsImages } from "../llm/client.js";
-import { CUA_SKILL, MEDIA_SKILL, agentPersona, botPrompt } from "./prompts/index.js";
+import { CUA_SKILL, MEDIA_SKILL, TASK_RULES, agentPersona, botPrompt } from "./prompts/index.js";
 
 const log = logger("agent.host");
 
@@ -169,6 +169,12 @@ export class ApiRejected extends Error {
   }
 }
 
+/** 后台任务的会话记录恢复不了（DSH 主目录里没有了或坏了）：任务服务换一个新会话、重新交代 */
+export class ResumeFailed extends Error {}
+
+/** 设置变了、后台任务又一直在跑：最多等这么久就重启代理进程（任务随后恢复） */
+export const TASK_RESTART_WAIT_MS = 10 * 60_000;
+
 /** 换接口重做时交给模型的话（上一条用户消息已经在会话里） */
 export const RETRY_NOTE = "[系统提示]\n上一条用户消息因模型接口不兼容没有处理，现已换用其它接口。请直接处理上面那条用户消息。";
 
@@ -194,6 +200,8 @@ export interface AgentHostOptions {
   apiFallbacks?: ApiFallbacks;
   /** 代理自己醒来开了一轮（后台命令结束）：调用方用 followTurn 跟踪它，把回复发到会话里 */
   onWake?: (conversationId: string, sessionId: string) => void;
+  /** 后台任务会话（task-*）和它们子代理的通知：root 是任务会话 id（任务服务据此记步骤、判断这一轮结束） */
+  onTaskEvent?: (root: string, n: SdkNotification) => void;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
@@ -605,6 +613,12 @@ export class AgentHost {
   private pwshPath: string | undefined;
   /** 进入 runOnce 还没结束的回合（含还在等进程、等会话的）：有就不在后台重启 */
   private entering = 0;
+  /** 当前子进程里打开过的任务会话（子代理的通知按它们归属） */
+  private taskSessions = new Set<string>();
+  /** 正在跑一轮的任务会话：有就不为设置变化重启（最多等 TASK_RESTART_WAIT_MS） */
+  private taskBusy = new Set<string>();
+  /** 设置变了、等着重启的起点（0 = 没在等） */
+  private staleSince = 0;
 
   constructor(private o: AgentHostOptions) {}
 
@@ -702,6 +716,9 @@ export class AgentHost {
       // 宿主 → 代理进程的指令通道：按会话中止、插话、按会话选模型；长命令转后台后等它的结果
       "    - id: amb-control",
       `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-control.mjs"))}`,
+      // 后台任务：聊天会话的 task_start / task_message / task_list；任务会话的限定工具、任务规则、task_report、收尾
+      "    - id: amb-tasks",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-tasks.mjs"))}`,
       ...this.computerUseLines(apps),
       ...this.fullAccessLines(),
       "",
@@ -880,6 +897,8 @@ exec "$REAL" "$@"
       AMB_BOT_ID: this.o.botId,
       AMB_PROMPT_FILE: this.promptFile,
       AMB_CONTROL_TOKEN: this.control.id,
+      // 任务会话的系统提示词段（amb-tasks 插件加在机器人段之后）
+      AMB_TASK_RULES: TASK_RULES,
     };
     // 时区：本进程设了 TZ 才传下去；没设就不设，子进程用系统时区（各平台都是，Windows 上 TZ 也只认 POSIX 写法）
     if (process.env.TZ) env.TZ = process.env.TZ;
@@ -973,8 +992,8 @@ exec "$REAL" "$@"
     if (!this.harness && !this.starting && this.state === "error" && Date.now() < this.retryAfter) {
       throw new Error(`代理进程启动失败，${Math.ceil((this.retryAfter - Date.now()) / 60_000)} 分钟后再试（或在 设置 → 故障排查 里重启代理进程）：${this.lastError}`);
     }
-    if (this.harness && this.sig !== this.settingsSig() && this.active === 0) {
-      log.info("bot settings or PowerShell changed, restarting dsh", { bot: this.o.botId });
+    if (this.harness && this.sig !== this.settingsSig() && this.active === 0 && this.tasksAllowRestart()) {
+      log.info("bot settings or PowerShell changed, restarting dsh", { bot: this.o.botId, backgroundTasks: this.taskBusy.size });
       await this.closeHarness();
     }
     if (this.harness) return this.harness;
@@ -1011,11 +1030,24 @@ exec "$REAL" "$@"
   }
 
   /**
+   * 设置变了时，后台任务允不允许重启：没有任务在跑一轮就可以；一直有就最多等 TASK_RESTART_WAIT_MS，
+   * 之后照样重启（跑着的任务记为中断，随后带着恢复说明接着做）。
+   */
+  private tasksAllowRestart(): boolean {
+    if (!this.taskBusy.size) {
+      this.staleSince = 0;
+      return true;
+    }
+    this.staleSince ||= Date.now();
+    return Date.now() - this.staleSince >= TASK_RESTART_WAIT_MS;
+  }
+
+  /**
    * 设置或 PowerShell 变了（比如内置 PowerShell 7 刚装好、或者坏了退回）而且空闲：在后台重启子进程，
    * 下一条消息不用再等启动。正在跑的回合不打断，等下一条消息时由 ensure() 换。
    */
   async restartIfStale(): Promise<void> {
-    if (!this.harness || this.starting || this.active > 0 || this.entering > 0 || this.stopped || this.sig === this.settingsSig()) return;
+    if (!this.harness || this.starting || this.active > 0 || this.entering > 0 || this.stopped || this.sig === this.settingsSig() || !this.tasksAllowRestart()) return;
     const model = this.model;
     log.info("bot settings or PowerShell changed while idle, restarting dsh in the background", { bot: this.o.botId });
     await this.closeHarness();
@@ -1137,6 +1169,8 @@ exec "$REAL" "$@"
         if (this.harness !== harness) return;
         this.harness = undefined;
         this.opened.clear();
+        this.taskSessions.clear();
+        this.taskBusy.clear();
         this.control.close();
         this.endWakes();
         if (this.stopped) return;
@@ -1202,6 +1236,8 @@ exec "$REAL" "$@"
     const h = this.harness;
     this.harness = undefined;
     this.opened.clear();
+    this.taskSessions.clear();
+    this.taskBusy.clear();
     this.control.close("代理进程已重启");
     this.endWakes();
     if (!h) return;
@@ -1330,7 +1366,7 @@ exec "$REAL" "$@"
     if (input.signal?.aborted) throw stopReason(input.signal);
     if (!(await this.useRoute(s.id, route))) {
       // 指令通道不通、或补不进这个模型：没有别的回合在跑时，带上这个模型重启子进程；忙的时候不能让这个会话悄悄用错模型
-      if (this.active > 0) throw new Error(`暂时无法切换到模型 ${input.model}（代理进程正忙，没能在运行中加上这个模型），请稍后再试`);
+      if (this.active > 0 || this.taskBusy.size > 0) throw new Error(`暂时无法切换到模型 ${input.model}（代理进程正忙，没能在运行中加上这个模型），请稍后再试`);
       log.warn("restarting dsh to use a model it could not add at runtime", { bot: this.o.botId, model: input.model });
       this.known.add(input.model);
       await this.closeHarness();
@@ -1482,6 +1518,16 @@ exec "$REAL" "$@"
    * 把这一轮的事件交给跟踪它的人。宿主发起的一轮在它第一次空闲之前不算。
    */
   private tap(n: SdkNotification): void {
+    // 后台任务的会话：交给任务服务（它自己判断一轮什么时候结束），不当成聊天会话的醒来
+    const root = this.taskRoot(n);
+    if (root) {
+      if (n.method === "session.status" && n.params?.sessionId === root) {
+        if (n.params.status === "running") this.taskBusy.add(root);
+        else if (n.params.status === "idle") this.taskBusy.delete(root);
+      }
+      this.o.onTaskEvent?.(root, n);
+      return;
+    }
     for (const w of this.wakes.values()) if (!w.ended && this.relates(n, w.sessionId)) w.push(n);
     // 每个会话最近的回合号（代理自己醒来的那一轮是下一个）
     const ev = n.method === "session.event" ? n.params?.event : undefined;
@@ -1513,6 +1559,66 @@ exec "$REAL" "$@"
     } catch (e) {
       log.warn("wake handler failed", { message: (e as Error).message });
     }
+  }
+
+  /** 通知属于哪个任务会话（task-* 本身，或它的子代理）；不属于任务就是 undefined */
+  private taskRoot(n: SdkNotification): string | undefined {
+    const sub = n.method === "subagent.started" || n.method === "subagent.finished";
+    const sid = String((sub ? n.params?.parentSessionId : n.params?.sessionId) ?? "");
+    if (!sid) return undefined;
+    if (sid.startsWith("task-")) return sid;
+    if (!this.taskSessions.size) return undefined;
+    const c = this.harness?.client;
+    if (typeof c?.isDescendantOf !== "function") return undefined;
+    for (const t of this.taskSessions) if (c.isDescendantOf(sid, t)) return t;
+    return undefined;
+  }
+
+  /**
+   * 把一条输入交给后台任务的会话（SDK：session/prompt），返回 DSH 的收件 id，不等这一轮结束：
+   * 这一轮的事件经 onTaskEvent 交给任务服务。会话第一次用时建出来（工作目录是任务文件夹，在工作区里，沙箱根仍是工作区）；
+   * 在新的子进程里先 resume（失败抛 ResumeFailed）。任务用它自己的模型（按会话选，和聊天一样不用重启）。
+   */
+  async promptTask(o: { sessionId: string; folder: string; model: string; text: string; resume: boolean }): Promise<string> {
+    if (!o.model) throw new Error("没有可用的模型");
+    const route = await this.routeFor(o.model);
+    const h = await this.ensure(o.model);
+    this.taskSessions.add(o.sessionId);
+    if (!this.opened.has(o.sessionId)) {
+      if (o.resume) {
+        try {
+          await h.resumeSession(o.sessionId);
+        } catch (e) {
+          throw new ResumeFailed((e as Error).message);
+        }
+      } else {
+        fs.mkdirSync(o.folder, { recursive: true });
+        await h.session(o.sessionId).setWorkingDirectory(o.folder);
+      }
+      this.opened.add(o.sessionId);
+    }
+    if (!(await this.useRoute(o.sessionId, route))) throw new Error(`代理进程无法使用模型 ${o.model}`);
+    this.known.add(o.model);
+    return await h.client.prompt(o.sessionId, [{ type: "text", text: o.text }]);
+  }
+
+  /** 并进任务正在进行的一轮（agent.steer，id 是我们的输入 id，会话里的用户消息用同一个 id）；会话空闲时返回 false */
+  async steerTask(sessionId: string, id: string, text: string): Promise<boolean> {
+    if (!this.control.connected) return false;
+    const r = await this.control.send<{ accepted?: boolean }>("steer", { sessionId, id, text, images: [] }, 15_000);
+    return !!r.accepted;
+  }
+
+  /** 停掉任务会话（amb-tasks：取消这一轮、子代理和它的所有后台命令，之后的工具调用一律拒绝） */
+  async stopTask(sessionId: string): Promise<void> {
+    if (!this.harness || !this.control.connected) return;
+    await this.control.send("task-stop", { sessionId }, 15_000);
+  }
+
+  /** 任务会话空闲时，还有没有它的后台命令、子代理在跑（插件在它们结束后报 task-settled）；通道不通按安静算 */
+  async taskQuiet(sessionId: string): Promise<{ quiet: boolean; jobs?: string[] }> {
+    if (!this.harness || !this.control.connected) return { quiet: true };
+    return await this.control.send<{ quiet: boolean; jobs?: string[] }>("task-quiet", { sessionId }, 15_000);
   }
 
   /** 通知属于这个会话或它的子代理 */

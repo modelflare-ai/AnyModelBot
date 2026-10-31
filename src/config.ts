@@ -41,7 +41,8 @@ export interface AppConfig {
    * 代理宿主：dsh = DeepSeek Harness（工具/沙箱/审批）；off = 纯对话。
    * pwsh（Windows）：auto = 系统里没有能用的 PowerShell 7 时用应用内置的（自动安装）；system = 改回系统默认，不用内置的。
    */
-  agent: { mode: "dsh" | "off"; turnTimeoutMs: number; idleTimeoutMs: number; approvalTtlMs: number; pwsh: "auto" | "system" };
+  /** maxBackground：所有机器人加起来最多同时跑几个后台任务 */
+  agent: { mode: "dsh" | "off"; turnTimeoutMs: number; idleTimeoutMs: number; approvalTtlMs: number; pwsh: "auto" | "system"; maxBackground: number };
 }
 
 export function defaultDataDir(): string {
@@ -108,6 +109,7 @@ export function loadConfig(overrides: { dataDir?: string; env?: NodeJS.ProcessEn
       idleTimeoutMs: num(env.AMB_AGENT_IDLE_TIMEOUT_MS, file.agent?.idleTimeoutMs ?? 10 * 60_000),
       approvalTtlMs: num(env.AMB_APPROVAL_TTL_MS, file.agent?.approvalTtlMs ?? 10 * 60_000),
       pwsh: file.agent?.pwsh === "system" ? "system" : "auto",
+      maxBackground: num(env.AMB_MAX_BACKGROUND, file.agent?.maxBackground ?? 4),
     },
   };
 }

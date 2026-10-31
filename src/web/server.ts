@@ -448,7 +448,39 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       return send(res, 200, { ok: true });
     }
     // busy：有消息在处理的机器人（纯对话、排队、代理还在启动都算），侧栏的"正在工作"
-    if (p === "/agent" && m === "GET") return send(res, 200, { ...app.agent.status(), busy: [...new Set([...live.bots(), ...app.runtime.busyBots()])] });
+    // background：每个机器人正在进行的后台任务数
+    if (p === "/agent" && m === "GET") return send(res, 200, { ...app.agent.status(), busy: [...new Set([...live.bots(), ...app.runtime.busyBots()])], background: app.tasks.background() });
+    // —— 后台任务（3a：列表、详情、一个 run 的步骤、停止）——
+    if (seg[0] === "tasks") {
+      if (seg.length === 1 && m === "GET") {
+        const recent = url.searchParams.get("recent");
+        return send(res, 200, {
+          tasks: app.tasks.list({
+            botId: url.searchParams.get("bot") || undefined,
+            conversationId: url.searchParams.get("conversation") || undefined,
+            since: recent ? Date.now() - Math.min(30, Math.max(0, Number(recent) || 1)) * 86400_000 : undefined,
+            limit: Math.min(100, Number(url.searchParams.get("limit")) || 50),
+          }),
+        });
+      }
+      const task = seg[1] ? app.tasks.get(decodeURIComponent(seg[1])) : undefined;
+      if (!task) throw new HttpError(404, "任务不存在");
+      if (seg.length === 2 && m === "GET") {
+        const runs = app.store.listRuns({ taskId: task.id }).map((r) => ({ id: r.id, cause: r.cause, state: r.state, outcome: r.outcome, error: r.error, queuedAt: r.queuedAt, startedAt: r.startedAt, endedAt: r.endedAt, steps: app.tasks.activity(r.id).length }));
+        return send(res, 200, { task, runs });
+      }
+      if (seg.length === 5 && seg[2] === "runs" && seg[4] === "activity" && m === "GET") {
+        const run = app.store.getRun(decodeURIComponent(seg[3]));
+        if (!run || run.taskId !== task.id) throw new HttpError(404, "没有这次运行");
+        return send(res, 200, { steps: app.tasks.activity(run.id) });
+      }
+      if (seg.length === 3 && seg[2] === "stop" && m === "POST") {
+        const ok = await app.tasks.stopTask(task.id, "web");
+        if (!ok) throw new HttpError(409, "任务已经停止了");
+        return send(res, 200, { task: app.tasks.get(task.id) });
+      }
+      throw new HttpError(404, "not found");
+    }
     // —— Windows：代理用的 PowerShell（对话空状态、设置 → 常规、故障排查）——
     if (seg[0] === "pwsh") {
       const view = () => ({ ...pwshProbe.snapshot(), dismissed: cfg.ui.pwshHintDismissed });

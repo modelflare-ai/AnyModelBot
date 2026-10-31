@@ -304,4 +304,26 @@ button.act-head:active { background: var(--pill-hover); }
 .send[aria-busy="true"] { cursor: progress; }
 .send .spinner { width: 12px; height: 12px; }
 .composer-disabled { pointer-events: auto; width: var(--col); margin: 0 auto var(--space-2); }
+
+/* —— 后台任务：请求那条消息的回复下面一个胶囊「后台任务 · 标题 · 进行中 ›」（静默填充，不描边）；
+   点开是最新进展、文件夹、每次运行折叠的处理过程（和回复上方的"用时"同一种写法）和停止 —— */
+.task-chip { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; margin-top: var(--space-2); }
+.task-pill {
+  display: inline-flex; align-items: center; gap: var(--space-1-5); max-width: 100%; height: var(--ctl-md); padding: 0 var(--space-2-5) 0 var(--space-3);
+  border-radius: var(--r-full); background: var(--pill); font-size: var(--fs-sm); color: var(--fg-2);
+  transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast);
+}
+.task-pill:hover { background: var(--pill-hover); color: var(--fg); }
+.task-pill:active { background: var(--pill-press); transform: scale(var(--press)); }
+.task-pill .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: var(--fw-medium); }
+.task-pill :is(.k, .sep, .st) { flex: none; }
+.task-pill .sep { color: var(--muted); }
+.task-pill .chev { flex: none; color: var(--muted); transition: transform var(--t-fast); }
+.task-detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); width: 100%; margin-top: var(--space-3); }
+.task-line { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-sm); color: var(--fg-2); }
+.task-line .t-label { flex: none; min-width: 4em; }
+.task-line .v { min-width: 0; overflow-wrap: anywhere; }
+.task-line .v.mono { font-family: var(--code); font-size: var(--fs-xs); }
+.task-detail .activity, .task-detail .work-line { margin-bottom: 0; }
+.task-actions { display: flex; justify-content: flex-start; }
 }

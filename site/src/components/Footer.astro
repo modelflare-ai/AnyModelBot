@@ -1,0 +1,64 @@
+---
+// 页脚：品牌（标记 + 一句话）｜ 三栏链接 → 版权行 → 眼睛田。
+// 眼睛田是页脚最下面的大字标：AnyModelBot 由几百枚迷你 Eyes 标记拼成，跟着指针看、点一下发消息、定时"换脑"（scripts/eyefield.ts）。
+// 纯装饰（aria-hidden），没有 JS 时整块不显示；样式在 styles/footer.css。
+import "../styles/footer.css";
+import EyesMark from "./EyesMark.astro";
+import { dict, href, altLang, switchHref, type Lang } from "../i18n";
+import { GITHUB_URL, MF, pricing } from "../lib/site";
+import { docsUrl } from "../lib/docs";
+import { pickModels } from "../lib/eyefield";
+interface Props { lang: Lang; path: string }
+const { lang, path } = Astro.props;
+const t = dict(lang);
+const c = t.footer.cols;
+const h = (p: string) => href(lang, p);
+const home = h("/");
+const cols = [
+  { title: c.product.title, links: [[c.product.links[0], `${home}#features`], [c.product.links[1], h("/pricing")], [c.product.links[2], h("/download")], [c.product.links[3], h("/changelog")]] },
+  { title: c.resources.title, links: [[c.resources.links[0], docsUrl(lang)], [c.resources.links[1], h("/security")], [c.resources.links[2], GITHUB_URL], [c.resources.links[3], MF.home]] },
+  { title: c.legal.title, links: [[c.legal.links[0], h("/privacy")], [c.legal.links[1], h("/licenses")]] },
+];
+const ext = (u: string) => /^https?:/.test(u);
+const other = altLang(lang);
+// 眼睛田"换脑"时轮流显示的模型：价格快照里每家厂商取一个
+const models = pickModels(pricing.rows);
+---
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__brand">
+      <a class="logo" href={home} aria-label={t.nav.home}><EyesMark size={40} lookAt="#cta-final" /><span aria-hidden="true">AnyModelBot</span></a>
+      <p class="footer__tag">{t.footer.tagline}</p>
+    </div>
+    <div class="footer__cols">
+      {cols.map((col) => (
+        <div>
+          <h2 class="footer__title">{col.title}</h2>
+          <ul role="list">
+            {col.links.map(([label, url]) => (
+              <li><a href={url} target={ext(url) ? "_blank" : undefined} rel={ext(url) ? "noopener" : undefined}>{label}</a></li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  </div>
+  <div class="container footer__bottom">
+    <span>{t.footer.copyright}</span>
+    <span>{t.footer.art}</span>
+    <span class="footer__switch">
+      <a href={switchHref(lang, path)} hreflang={other === "en" ? "en" : "zh-CN"} data-lang-switch>{t.nav.lang}</a>
+      <button type="button" data-theme-cycle aria-label={t.nav.theme}>{t.nav.theme}</button>
+    </span>
+  </div>
+  <div class="container footer__field" aria-hidden="true" data-eyefield data-models={JSON.stringify(models)}>
+    <p class="footer__field-cap">
+      <span class="footer__field-hint">{t.footer.fieldHint}</span>
+      <span class="footer__field-model"><i></i>{t.footer.fieldModel} → <b class="mono" data-field-model>{models[0]}</b></span>
+    </p>
+    <div class="footer__stage"><canvas class="footer__canvas"></canvas></div>
+  </div>
+</footer>
+<script>
+  import "../scripts/eyefield";
+</script>

@@ -1,0 +1,25 @@
+@layer tokens, base, components, app, utilities;
+/* Hero 背景里的模型厂商标志（components/HeroLogos.astro）。叠在天空上面、光晕和地平线下面（DOM 顺序），磨砂颗粒盖在最上面。
+   颜色是正文色按 --o 乘一个很低的比例：深色最清楚的一枚 12%，浅色 11%——隐约看得出是哪家，但不抢字。
+   （用户先说"淡一点"，压到 7% / 6% 后又说"看不到"，取在中间；远处几枚按 --o 再淡到一半左右。）
+   微浮动：上下 8px、左右 3px、转 ±1.5°，5–8.5 秒一个来回、起点错开，看得出在轻轻漂；入场随 Hero 淡入（第一屏的文字出完之后）。 */
+@layer app {
+  .hero__logos { --logo-a: 12%; position: absolute; inset: 0; pointer-events: none; }
+  [data-theme="light"] .hero__logos { --logo-a: 11%; }
+  .hero__logo {
+    position: absolute; display: block;
+    color: color-mix(in srgb, var(--text) calc(var(--logo-a) * var(--o, 1)), transparent);
+  }
+  .hero__logo svg { display: block; }
+  .hero__logo--far { filter: blur(.6px); }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero__logos { animation: hero-logos-in 1.6s var(--ease-out) .7s backwards; }
+    .hero__logo { animation: hero-logo-float calc(var(--d, 10s) * .65) ease-in-out var(--t, 0s) infinite alternate; }
+  }
+  @keyframes hero-logos-in { from { opacity: 0; } }
+  @keyframes hero-logo-float { from { translate: 0 0; rotate: -1.5deg; } to { translate: 3px -8px; rotate: 1.5deg; } }
+  /* 中等宽度：标题占的比例大了，只留外侧不压字的几枚；窄屏标题铺满，整层不放 */
+  @media (max-width: 1279px) { .hero__logo--far { display: none; } }
+  @media (max-width: 1023px) { .hero__logo:not(.hero__logo--far) { scale: .85; } }
+  @media (max-width: 767px) { .hero__logos { display: none; } }
+}

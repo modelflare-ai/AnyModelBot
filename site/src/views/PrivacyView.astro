@@ -1,0 +1,16 @@
+---
+import Base from "../layouts/Base.astro";
+import { dict, fmt, href, type Lang } from "../i18n";
+import { SITE_DOMAIN } from "../lib/site";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const p = t.privacy;
+---
+<Base lang={lang} path="/privacy" title={p.title} description={p.description}>
+  <article class="container page prose">
+    <header class="page__head"><h1>{p.h1}</h1></header>
+    {p.body.map((x) => <p>{fmt(x, { domain: SITE_DOMAIN })}</p>)}
+    <p class="page__cta"><a href={href(lang, "/security")}>{p.security}</a></p>
+  </article>
+</Base>

@@ -1,0 +1,71 @@
+@layer tokens, base, components, app, utilities;
+/* 页脚（components/Footer.astro）：品牌（标记 + 一句话）｜ 三栏链接 → 版权行 → 眼睛田。
+   眼睛田是页脚最下面的大字标：AnyModelBot 由几百枚迷你 Eyes 标记拼成，画在 canvas 上（scripts/eyefield.ts）。
+   两个主题两种画法，画布只认下面这些变量（主题切换时脚本会重读）：
+     深色 · 发光：统一的灰面罩 --field-plate + 角色色的眼睛（--lime、--bot-*-eye）+ 光晕 --field-glow。字形靠一排排发光的眼睛读出来。
+     浅色 · 淡彩：有 --field-ink 时启用。面罩是每个角色的辉光色（--lime、--bot-*-glow）调进底色的淡彩，
+                  从字标顶到底按 --field-tint-top → --field-tint-bottom 由浅变深（像光从上面打下来），一圈极细的边 --field-edge；
+                  眼睛统一墨色。整块字标是一片粉彩马赛克，"换脑"时整片换一个色调——不再是一块死黑，也没有白底上的荧光色。
+     --field-cut    探出头的脸外面那一圈缺口，取页面底色
+     --field-bleed  画布比字标盒子上下各多出这么多：探头、弹跳的脸可以画出盒子，盒子本身贴着字形，不用为它们留白 */
+@layer components {
+  .footer { margin-top: 32px; padding-top: clamp(40px, 5vw, 56px); border-top: 1px solid var(--line); overflow: clip; }
+  .footer__inner { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 40px var(--grid-gap); align-items: start; }
+  .footer__brand { display: grid; justify-items: start; gap: 12px; }
+  .footer__tag { max-width: 22em; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; }
+  :lang(zh) .footer__tag { max-width: 17em; }
+  .footer__cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+  .footer__title { margin-bottom: 12px; color: var(--text); font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0; }
+  .footer__cols ul { display: grid; gap: 10px; font-size: var(--fs-sm); }
+  .footer__cols a { color: var(--text-2); transition: color var(--dur-fast); }
+  .footer__cols a:hover { color: var(--text); text-decoration: none; }
+  .footer__bottom { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: var(--fs-xs); color: var(--text-2); }
+  .footer__switch { margin-left: auto; display: flex; gap: 16px; }
+  .footer__switch a, .footer__switch button { color: var(--text-2); font-size: var(--fs-xs); transition: color var(--dur-fast); }
+  .footer__switch a:hover, .footer__switch button:hover { color: var(--text); text-decoration: none; }
+  @media (max-width: 1023px) { .footer__inner { grid-template-columns: 1fr; } }
+  @media (max-width: 767px) { .footer__cols { grid-template-columns: 1fr 1fr; } .footer__switch { margin-left: 0; } }
+
+  /* —— 眼睛田 —— */
+  .footer__field {
+    --field-bleed: 16px;
+    --field-plate: #1c1e19;          /* 比深色底亮一档的灰（写成实色：画布的 fillStyle 不一定认 color-mix） */
+    --field-cut: var(--bg);
+    --field-glow: .22;
+    --field-dot-ring: 0 0 0 2px var(--field-plate);
+    margin-top: clamp(20px, 2.8vw, 32px); padding-bottom: var(--field-bleed);
+  }
+  [data-theme="light"] .footer__field {
+    --field-ink: var(--ink);
+    --field-tint-top: .14;
+    --field-tint-bottom: .32;
+    --field-edge: rgba(17, 24, 39, .08);
+    --field-glow: 0;
+    --field-dot-ring: 0 0 0 1px rgba(17, 24, 39, .16);
+  }
+  /* 没有 JS 就没有画面，整块不占位 */
+  html:not(.js) .footer__field { display: none; }
+
+  /* 字标上面一行小字：左边告诉你可以点，右边是正在用的模型（"换脑"时跟着字标一起换色、换名字） */
+  .footer__field-cap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 24px; margin-bottom: 4px; color: var(--text-2); font-size: var(--fs-xs); line-height: 1.5; }
+  .footer__field-model { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  /* 小圆点是"当前这一轮的颜色"：深色是眼睛色外面一圈灰面罩，浅色是面罩的淡彩外面一圈细边 */
+  .footer__field-model i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--field-dot, var(--accent-fg)); box-shadow: var(--field-dot-ring); transition: background .6s var(--ease-out); }
+  .footer__field-model b { color: var(--text); font-size: 12px; font-weight: 500; }
+  .footer__field-model b.is-swap { animation: field-swap .5s var(--ease-out); }
+  @keyframes field-swap { from { opacity: 0; translate: 0 6px; filter: blur(2px); } }
+
+  /* 字标盒子：比例由 CSS 定（脚本按这个比例决定排一行还是三行），首帧前就占好位，不会把页面往下顶。
+     比例贴着字形本身（一行的 AnyModelBot 约 7.4:1），上下几乎不留白；画布上下各出血 --field-bleed，盒子不为探头的脸留空 */
+  .footer__stage { position: relative; aspect-ratio: 7.4 / 1; }
+  .footer__canvas {
+    position: absolute; left: 0; top: calc(-1 * var(--field-bleed)); display: block; width: 100%; height: calc(100% + 2 * var(--field-bleed));
+    cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+  }
+  @media (max-width: 639px) { .footer__stage { aspect-ratio: 1.3 / 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .footer__canvas { cursor: default; }
+    .footer__field-model b.is-swap { animation: none; }
+    .footer__field-hint { display: none; }
+  }
+}

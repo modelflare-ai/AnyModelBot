@@ -1,0 +1,17 @@
+---
+import Base from "../layouts/Base.astro";
+import { dict, fmt, fmtDate, type Lang } from "../i18n";
+import { releases, GITHUB_URL } from "../lib/site";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const c = t.changelog;
+---
+<Base lang={lang} path="/changelog" title={c.title} description={c.description}>
+  <article class="container page prose">
+    <header class="page__head"><h1>{c.h1}</h1></header>
+    <p>{fmt(c.current, { version: releases.version, publishedAt: fmtDate(releases.publishedAt, lang) })}</p>
+    <p>{c.body}</p>
+    <p class="page__cta"><a class="btn btn--secondary" href={`${GITHUB_URL}/releases`} target="_blank" rel="noopener">{c.link}</a></p>
+  </article>
+</Base>

@@ -1,0 +1,57 @@
+---
+// 毛绒机器人头像：结构与 App 的 BotAvatar（ui/components/avatar.js）一致，样式在 styles/bots.css。
+// 看指针、戳一戳由 lib/eyes.ts 驱动；无 JS 时是静态的第一帧。
+import "../styles/bots.css";
+import { BOT_CHARS, type CharKey } from "../lib/bots";
+// 其余 data-* 原样挂到根元素上（循环示意的时间线用 data-states / data-shots / data-say-at，见 scripts/tour.ts）
+interface Props { char: CharKey; size?: number; lively?: boolean; pokeable?: boolean; state?: "idle" | "listening" | "working"; class?: string; seed?: number; [data: `data-${string}`]: string }
+const { char, size = 48, lively = false, pokeable = false, state = "idle", class: cls, seed, ...rest } = Astro.props;
+const c = BOT_CHARS[char];
+const p = (pt: [number, number]) => `${pt[0]}% ${pt[1]}%`;
+const style = [
+  `--s:${size}px`,
+  `--bf-sprite:url("/bots/${char}.webp")`,
+  `--bf-sprite-avif:url("/bots/${char}.avif")`, // 支持 AVIF 的浏览器用它（styles/bots.css 的 image-set）
+  `--o-el:${p(c.earL)}`, `--o-er:${p(c.earR)}`, `--o-top:${p(c.top)}`,
+  `--tip-x:${c.tip[0]}%`, `--tip-y:${c.tip[1]}%`,
+  `--bf-seed:${(seed ?? (char.charCodeAt(0) * 37 + char.length * 101) % 1000 / 1000).toFixed(3)}`,
+].join(";");
+const R = c.r;
+const f = (n: number) => +(n * R).toFixed(2);
+const spiral = Array.from({ length: 29 }, (_, i) => {
+  const t = (i / 28) * Math.PI * 4.2, rr = (0.12 + (0.9 * i) / 28) * R;
+  return `${i ? "L" : "M"}${(Math.cos(t) * rr).toFixed(2)} ${(Math.sin(t) * rr).toFixed(2)}`;
+}).join("");
+const parts = ["ear-l", "ear-r", "top"];
+---
+<div class:list={["bot-face", { lively, pokeable, sm: size < 36 }, cls]} style={style} data-char={char} data-state={state} data-eyes="open" aria-hidden="true" {...rest}>
+  {lively && <i class="bf-shadow"></i>}
+  <i class="bf-aura"></i>
+  <div class="bf-body">
+    <div class="bf-shot">
+      <div class="bf-look">
+        {parts.map((k) => <i class={`bf-part bf-${k}`}><i class="bf-pin"><b class="bf-img"></b><b class="bf-glow"></b></i></i>)}
+        <i class="bf-part bf-head"><b class="bf-img"></b><b class="bf-glow"></b></i>
+        {c.lens && c.lens.slice(0, 2).map((l) => <i class="bf-lens" style={`left:${(l as number[])[0]}%;top:${(l as number[])[1]}%;--lens:${c.lens![2] * 2}%`}></i>)}
+        {c.eyes.map((e) => <i class="bf-blush" style={`left:${(e[0] + (e[0] < 50 ? -5.6 : 5.6)).toFixed(2)}%;top:${(e[1] + 6.2).toFixed(2)}%`}></i>)}
+        <svg class="bf-eyes" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <g class="bf-gaze"><g class="bf-glance">
+            {c.eyes.map((e, i) => (
+              <g transform={`translate(${e[0]} ${e[1]})${i ? " scale(-1 1)" : ""}`}>
+                <g class="bf-lid">
+                  <circle class="e e-open" r={R} />
+                  <path class="e e-happy line" d={`M${f(-1.05)} ${f(0.45)}Q0 ${f(-1.3)} ${f(1.05)} ${f(0.45)}`} />
+                  <path class="e e-closed line" d={`M${f(-1.05)} ${f(-0.15)}Q0 ${f(0.8)} ${f(1.05)} ${f(-0.15)}`} />
+                  <path class="e e-sad" d={`M${f(-1.05)} 0L${f(1.05)} 0A${f(1.05)} ${f(1.05)} 0 0 1 ${f(-1.05)} 0Z`} />
+                  <path class="e e-x line" d={`M${f(-0.8)} ${f(-0.8)}L${f(0.8)} ${f(0.8)}M${f(0.8)} ${f(-0.8)}L${f(-0.8)} ${f(0.8)}`} />
+                  <path class="e e-spiral line thin" d={spiral} />
+                  <path class="e e-heart" d={`M0 ${f(1.05)}C${f(-1.7)} ${f(-0.05)} ${f(-1)} ${f(-1.4)} 0 ${f(-0.5)}C${f(1)} ${f(-1.4)} ${f(1.7)} ${f(-0.05)} 0 ${f(1.05)}Z`} />
+                </g>
+              </g>
+            ))}
+          </g></g>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>

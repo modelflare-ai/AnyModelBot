@@ -1,0 +1,11 @@
+---
+// 厂商标志：单色、跟着文字颜色走（currentColor），引用同页 VendorSprite 里的 <symbol>。
+// 没有标志的厂商（比如"快手"）用首字母小圆片顶上。纯装饰，对读屏隐藏——旁边总有厂商名或模型名。
+import { vendorLogo } from "../lib/vendors";
+interface Props { vendor?: string; size?: number; class?: string }
+const { vendor, size = 14, class: cls } = Astro.props;
+const key = vendorLogo(vendor);
+---
+{key
+  ? <svg class:list={["vlogo", cls]} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><use href={`#vl-${key}`} /></svg>
+  : vendor && <span class:list={["vlogo", "vlogo--mono", cls]} style={`--vl-size:${size}px`} aria-hidden="true">{Array.from(vendor)[0]}</span>}

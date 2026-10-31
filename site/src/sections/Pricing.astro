@@ -1,0 +1,55 @@
+---
+// /pricing 页（§6.5）：价格卡、与订阅制的对照、完整价格表、计算器。所有价格只来自 pricing.snapshot.json（构建时抓取 modelflare.dev/api/pricing）。
+// 首页只放精简的价格卡（components/PriceCards.astro compact）。
+import EyesMark from "../components/EyesMark.astro";
+import PriceCards from "../components/PriceCards.astro";
+import PriceTable from "../islands/PriceTable.tsx";
+import PriceCalculator from "../islands/PriceCalculator.tsx";
+import { dict, fmt, buildVars, type Lang } from "../i18n";
+import { pricing, MF } from "../lib/site";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+const p = t.pricing;
+const v = buildVars(lang);
+---
+<section class="section pricing" aria-labelledby="pricing-h">
+  <div class="container">
+    <div class="section-head center">
+      <span class="eyebrow">{p.eyebrow}</span>
+      <h1 class="h2" id="pricing-h"><mark class="hl reveal-hl">{p.h2mark}</mark>{p.h2rest}</h1>
+      <p class="lead prose">{p.lead}</p>
+      <p class="small muted">{pricing.stale ? fmt(p.stale, v) : fmt(p.source, v)}</p>
+    </div>
+
+    <PriceCards lang={lang} />
+
+    <div class="pricing__block">
+      <div class="table-wrap contrast reveal">
+        <table class="table">
+          <caption class="sr-only">{p.contrast.caption}</caption>
+          <thead><tr>{p.contrast.head.map((h, i) => (i === 0 ? <td></td> : <th scope="col">{h}</th>))}</tr></thead>
+          <tbody>{p.contrast.rows.map((r) => <tr><th scope="row">{r[0]}</th><td data-label={p.contrast.head[1]}>{r[1]}</td><td data-label={p.contrast.head[2]}>{r[2]}</td></tr>)}</tbody>
+        </table>
+      </div>
+      <p class="small muted">{p.contrast.note}</p>
+    </div>
+
+    <div class="pricing__block">
+      <PriceTable client:visible rows={pricing.rows} featured={pricing.config.featuredModels} t={p.table}
+        mediaText={fmt(p.table.media, v)} mediaHref={MF.pricing} initialAll />
+      <p class="small muted">{fmt(p.table.note, v)}</p>
+    </div>
+
+    <div class="pricing__block calc-wrap" id="calc">
+      <h2 class="h3">{p.calc.title}</h2>
+      <PriceCalculator client:visible rows={pricing.rows} defaultModel={pricing.config.sampleModel} t={p.calc} fetchedAt={v.fetchedAt as string} fullHref={MF.pricing} />
+    </div>
+
+    <div class="pbanner">
+      <EyesMark size={32} />
+      <p>{p.banner.text}</p>
+      <a class="btn btn--primary" href={MF.home} target="_blank" rel="noopener" data-track="mf_key_click" data-track-location="pricing">{p.banner.cta}</a>
+    </div>
+  </div>
+</section>

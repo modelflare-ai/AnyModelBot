@@ -1,0 +1,18 @@
+---
+// 首页章节头（样式在 components.css 的 .shead）：一列左对齐——细线 → "编号 / 名称"（.eyebrow）→ 两段式标题 → 说明。
+// 可选一个"主持"机器人，蹲在细线右端：跟着指针看、能戳，第一次滚到这一节时打个招呼（scripts/sections.ts）。
+// 本节内容里已经有大机器人的（认识机器人、常见问题）不放主持人。
+// 第一次滚进视口时（data-inview → .is-in）：细线从左往右画出来，编号、两句标题、说明依次升起（home.css）。
+import BotFace from "./BotFace.astro";
+import type { CharKey } from "../lib/bots";
+// center：居中版（只给版式"开放"的那一节用，见 sections.css 的"4 模型与价格"）——编号、标题、说明居中，主持机器人站在细线正中。
+interface Props { n: number; label: string; title: string; dim?: string; lead?: string; id: string; host?: CharKey; center?: boolean }
+const { n, label, title, dim, lead, id, host, center = false } = Astro.props;
+---
+<header class:list={["shead", { "shead--center": center }]} data-inview>
+  <p class="shead__kicker eyebrow"><span class="shead__n">{String(n).padStart(2, "0")}</span>{label}</p>
+  {host && <BotFace char={host} size={52} lively pokeable class="shead__host" />}
+  <h2 class="h2 shead__title" id={id}><span>{title}</span>{dim && <span class="h2__dim">{dim}</span>}</h2>
+  {lead && <p class="lead shead__lead">{lead}</p>}
+  <slot />
+</header>

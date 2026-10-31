@@ -1,0 +1,91 @@
+---
+// 顶部公告条：发版下载 / 宣传 / 公告轮播，外加语言提示。内容在 src/data/announcements.ts，条目整理在 lib/banner.ts。
+// 显示哪些条目由紧跟着的内联脚本在首帧前决定（关闭记录、时间窗、浏览器语言），页面不会在加载后被往下顶；
+// 轮播、翻页、关闭、按系统换下载链接、倒计时和埋点在 scripts/banner.ts。
+// 语言提示：有其他条目时缩成右侧的小胶囊，没有时单独占一条。
+import "../styles/banner.css";
+import Icon from "./Icon.astro";
+import { dict, switchHref, type Lang } from "../i18n";
+import { bannerItems } from "../lib/banner";
+import { ROTATE_MS } from "../data/announcements";
+interface Props { lang: Lang; path: string }
+const { lang, path } = Astro.props;
+const t = dict(lang).banner;
+const items = bannerItems(lang);
+const langHref = switchHref(lang, path);
+const target = lang === "zh" ? { hreflang: "en", lang: "en" } : { hreflang: "zh-CN", lang: "zh-CN" };
+const ext = (a: { external: boolean }) => (a.external ? { target: "_blank", rel: "noopener" } : {});
+const tr = (id: string, kind: string, where: string) => ({ "data-track": "banner_click", "data-track-id": id, "data-track-kind": kind, "data-track-target": where });
+---
+<aside class="sbar" aria-label={t.label} data-sbar data-lang={lang} data-rotate={ROTATE_MS} data-placement="banner" hidden>
+  <div class="container sbar__in">
+    <div class="sbar__pager" data-sbar-pager hidden>
+      <button type="button" class="sbar__btn sbar__prev" aria-label={t.prev} data-sbar-prev><Icon name="chevron" size={14} /></button>
+      <span class="sbar__count" aria-hidden="true" data-sbar-count>1/1</span>
+      <button type="button" class="sbar__btn sbar__next" aria-label={t.next} data-sbar-next><Icon name="chevron" size={14} /></button>
+    </div>
+    <div class="sbar__stack" data-sbar-stack>
+      {items.map((it) => (
+        <div class="sbar__item" data-sbar-item data-id={it.id} data-kind={it.kind} data-tone={it.tone} data-start={it.start} data-end={it.end} hidden>
+          <p class="sbar__msg">
+            <span class="sbar__tag">{it.tag}</span>
+            <span class="sbar__text">{it.text}</span>
+            {it.note && <span class="sbar__note" data-sbar-note>{it.note}</span>}
+            {it.cta && (
+              <a class="sbar__cta" href={it.cta.href} {...ext(it.cta)} data-dl-auto={it.cta.dl ? "" : undefined} {...tr(it.id, it.kind, "cta")}>
+                <span data-sbar-cta-label>{it.cta.label}</span><Icon name={it.cta.external ? "external" : "arrow"} size={14} />
+              </a>
+            )}
+            {it.link && <a class="sbar__link" href={it.link.href} {...ext(it.link)} {...tr(it.id, it.kind, "link")}>{it.link.label}</a>}
+          </p>
+        </div>
+      ))}
+      <div class="sbar__item" data-sbar-item data-id="lang" data-kind="lang" data-tone="neutral" hidden>
+        <p class="sbar__msg" lang={target.lang}>
+          <Icon name="globe" size={14} class="sbar__globe" />
+          <span class="sbar__text">{t.lang.text}</span>
+          <a class="sbar__cta" href={langHref} hreflang={target.hreflang} data-lang-switch {...tr("lang", "lang", "cta")}>
+            <span>{t.lang.action}</span><Icon name="arrow" size={14} />
+          </a>
+        </p>
+      </div>
+    </div>
+    <div class="sbar__side">
+      <a class="sbar__chip" href={langHref} hreflang={target.hreflang} lang={target.lang} title={t.lang.text} data-lang-switch data-sbar-chip hidden {...tr("lang", "lang", "chip")}>
+        <Icon name="globe" size={14} /><span>{t.lang.chip}</span>
+      </a>
+      <button type="button" class="sbar__btn sbar__close" aria-label={t.close} data-sbar-close><Icon name="close" size={14} /></button>
+    </div>
+  </div>
+</aside>
+<script is:inline>
+  // 首帧前选条目：没关过、在时间窗内的公告；浏览器语言和页面语言不一致、也没选过语言时加语言提示。?banner=preview 全部显示。
+  (function () {
+    var s = document.currentScript, bar = s && s.previousElementSibling;
+    if (!bar || !bar.hasAttribute("data-sbar")) return;
+    var preview = /[?&]banner=preview(&|$)/.test(location.search), gone = [], picked = null;
+    try { gone = JSON.parse(localStorage.getItem("amb-banner") || "[]"); picked = localStorage.getItem("amb-lang"); } catch (e) {}
+    if (!Array.isArray(gone)) gone = [];
+    var now = Date.now(), all = bar.querySelectorAll("[data-sbar-item]"), shown = [], langItem = null;
+    for (var i = 0; i < all.length; i++) {
+      var it = all[i];
+      if (it.getAttribute("data-kind") === "lang") { langItem = it; continue; }
+      var a = Date.parse(it.getAttribute("data-start") || ""), b = Date.parse(it.getAttribute("data-end") || "");
+      if (preview || (gone.indexOf(it.getAttribute("data-id")) < 0 && !(a > now) && !(b <= now))) { it.hidden = false; shown.push(it); }
+    }
+    var langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""], zh = false;
+    for (var j = 0; j < langs.length; j++) if (/^zh/i.test(langs[j])) zh = true;
+    if (langItem && (preview || (!picked && (bar.getAttribute("data-lang") === "zh") !== zh))) {
+      if (shown.length) bar.querySelector("[data-sbar-chip]").hidden = false;
+      else { langItem.hidden = false; shown.push(langItem); }
+    }
+    if (!shown.length) return;
+    shown[0].setAttribute("data-on", "");
+    bar.setAttribute("data-tone", shown[0].getAttribute("data-tone"));
+    if (shown.length > 1) {
+      bar.querySelector("[data-sbar-pager]").hidden = false;
+      bar.querySelector("[data-sbar-count]").textContent = "1/" + shown.length;
+    }
+    bar.hidden = false;
+  })();
+</script>

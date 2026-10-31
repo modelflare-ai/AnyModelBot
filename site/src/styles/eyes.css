@@ -1,0 +1,65 @@
+@layer tokens, base, components, app, utilities;
+/* AnyModelBot Eyes 标记（§7.3）：四个变换层各管一件事——head 头部转向 / eyes 目光 / squint 表情 / lids 眨眼。
+   只动 transform；无 JS 时空闲左右看与眨眼照常（纯 CSS），JS（src/lib/eyes.ts）只写 --look-x/--look-y 与 data-mode。 */
+@layer components {
+  .amb-mark {
+    --look-x: 0; --look-y: 0;
+    width: var(--mark-size, 1em); height: var(--mark-size, 1em);
+    display: inline-block; overflow: visible; vertical-align: -.1em; flex: none;
+  }
+  .amb-mark__plate { fill: var(--mark-plate); stroke: var(--mark-ring, transparent); stroke-width: 3; }
+  .amb-mark__eye { fill: var(--mark-eye); }
+  .amb-mark[data-variant="ring"] { --mark-plate: var(--ring-plate); --mark-ring: var(--ring-stroke); --mark-eye: var(--ring-eye); }
+  .amb-mark__head, .amb-mark__eyes, .amb-mark__squint, .amb-mark__lids { transform-box: fill-box; transform-origin: center; }
+  /* 面罩的转轴放在面罩中心而不是眼睛组 */
+  .amb-mark__head { transform-box: view-box; transform-origin: 50px 50px; }
+
+  /* —— 眨眼 —— */
+  .amb-mark__lids { animation: amb-blink var(--blink-period, var(--mark-blink-period)) cubic-bezier(.4, 0, .2, 1) var(--blink-delay, 0s) infinite; }
+  .amb-mark.is-double .amb-mark__lids { animation-name: amb-blink-double; }
+  @keyframes amb-blink { 0%, 96% { transform: scaleY(1); } 98% { transform: scaleY(.08); } 100% { transform: scaleY(1); } }
+  @keyframes amb-blink-double { 0%, 88% { transform: scaleY(1); } 90% { transform: scaleY(.08); } 92.5% { transform: scaleY(1); } 95% { transform: scaleY(.08); } 98% { transform: scaleY(1); } }
+
+  /* —— 空闲：自己左右看 —— */
+  .amb-mark[data-mode="idle"] .amb-mark__eyes { animation: amb-glance var(--mark-idle-period) cubic-bezier(.3, 0, .2, 1) var(--idle-delay, 0s) infinite; }
+  .amb-mark[data-mode="idle"] .amb-mark__head { animation: amb-head var(--mark-idle-period) cubic-bezier(.3, 0, .2, 1) var(--idle-delay, 0s) infinite; }
+  @keyframes amb-glance {
+    0%, 9% { transform: translate(0, 0); }
+    13%, 29% { transform: translate(calc(var(--mark-amp-x) * -1px), calc(var(--mark-amp-y) * -.2px)); }
+    33%, 51% { transform: translate(0, 0); }
+    55%, 71% { transform: translate(calc(var(--mark-amp-x) * 1px), calc(var(--mark-amp-y) * -.2px)); }
+    75%, 100% { transform: translate(0, 0); }
+  }
+  @keyframes amb-head {
+    0%, 9% { transform: none; }
+    13%, 29% { transform: translate(calc(var(--mark-head-x) * -.75px), 0) rotate(calc(var(--mark-head-tilt) * -.75)); }
+    33%, 51% { transform: none; }
+    55%, 71% { transform: translate(calc(var(--mark-head-x) * .75px), 0) rotate(calc(var(--mark-head-tilt) * .75)); }
+    75%, 100% { transform: none; }
+  }
+
+  /* —— 跟随 —— */
+  .amb-mark[data-mode="follow"] .amb-mark__eyes {
+    transform: translate(calc(var(--look-x) * var(--mark-amp-x) * 1px), calc(var(--look-y) * var(--mark-amp-y) * 1px));
+    transition: transform var(--mark-follow-dur) var(--ease-out);
+  }
+  .amb-mark[data-mode="follow"] .amb-mark__head {
+    transform: translate(calc(var(--look-x) * var(--mark-head-x) * 1px), calc(var(--look-y) * var(--mark-head-y) * 1px)) rotate(calc(var(--look-x) * var(--mark-head-tilt)));
+    transition: transform calc(var(--mark-follow-dur) * 1.6) var(--ease-out);
+  }
+
+  /* —— 表情：悬停/聚焦开心，按下眯眼，点击标记开心 0.9s —— */
+  .amb-mark__squint { transition: transform 120ms var(--ease-out); }
+  :is(.btn, .amb-mark-host):is(:hover, :focus-visible) .amb-mark__squint,
+  .amb-mark[data-state="happy"] .amb-mark__squint { transform: scale(.96, 1.14); }
+  :is(.btn, .amb-mark-host):active .amb-mark__squint { transform: scale(1.04, .55); }
+
+  /* —— 离开视口 / 标签页隐藏时暂停 —— */
+  .amb-mark[data-visible="false"] *, html[data-tab-hidden] .amb-mark * { animation-play-state: paused !important; }
+
+  /* —— 主操作色面上的标记（主按钮、首页的"App 免费"卡）：深色是黄绿面上的墨色标记，浅色是墨色面上的黄绿标记 —— */
+  [data-on="accent"] .amb-mark, .amb-mark[data-on="accent"] { --mark-plate: var(--primary-mark-plate); --mark-eye: var(--primary-mark-eye); --mark-ring: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .amb-mark * { animation: none !important; transition: none !important; transform: none !important; }
+}

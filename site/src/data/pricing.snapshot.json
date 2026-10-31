@@ -1,0 +1,1956 @@
+{
+  "fetchedAt": "2026-10-30T22:54:04+08:00",
+  "pricingVersion": "20260821-gemini-image-resolution-v1",
+  "source": "https://modelflare.dev/api/pricing",
+  "stale": false,
+  "counts": {
+    "models": 70,
+    "text": 41,
+    "media": 29,
+    "vendors": 13
+  },
+  "vendors": [
+    "xAI",
+    "Moonshot AI",
+    "Meta",
+    "TypeSafe",
+    "DeepSeek",
+    "ByteDance",
+    "Google",
+    "Zhipu AI",
+    "MiniMax",
+    "Anthropic",
+    "OpenAI",
+    "Alibaba Cloud",
+    "快手"
+  ],
+  "config": {
+    "featuredModels": [
+      "gpt-5.6-sol",
+      "gpt-6.1-terra",
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "deepseek-v4-flash"
+    ],
+    "sampleModel": "gpt-5.6-sol",
+    "sampleUsage": {
+      "days": 30,
+      "msgs": 50,
+      "inTok": 3000,
+      "outTok": 600
+    }
+  },
+  "rows": [
+    {
+      "model": "claude-opus-4-8",
+      "vendor": "Anthropic",
+      "contextWindow": 1000000,
+      "defaultGroup": "claude-stable",
+      "input": 1.575,
+      "output": 7.875,
+      "officialInput": 5,
+      "officialOutput": 25,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 5,
+          "output": 25
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.3,
+          "output": 1.5
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 1.25,
+          "output": 6.25
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 1.575,
+          "output": 7.875,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 2.5,
+          "output": 12.5
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.15,
+          "output": 0.75,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "vendor": "OpenAI",
+      "contextWindow": 1050000,
+      "defaultGroup": "openai-stable",
+      "input": 0.16,
+      "output": 0.96,
+      "officialInput": 2,
+      "officialOutput": 12,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 272000,
+          "input": 2,
+          "output": 12
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 4,
+          "output": 18
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.06,
+          "output": 0.36
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.16,
+          "output": 0.96,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.26,
+          "output": 1.56
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 1,
+          "output": 6
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.03,
+          "output": 0.18,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "jev-1.13",
+      "vendor": "TypeSafe",
+      "contextWindow": null,
+      "defaultGroup": "jev-premium",
+      "input": 0.0483,
+      "output": 0,
+      "officialInput": 0.042,
+      "officialOutput": 0,
+      "ratio": 1.15,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 0.042,
+          "output": 0
+        }
+      ],
+      "groups": [
+        {
+          "id": "jev-premium",
+          "kind": "stable",
+          "ratio": 1.15,
+          "input": 0.0483,
+          "output": 0,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "claude-haiku-5-5",
+      "vendor": "Anthropic",
+      "contextWindow": 1000000,
+      "defaultGroup": "claude-stable",
+      "input": 0.0315,
+      "output": 0.1575,
+      "officialInput": 0.1,
+      "officialOutput": 0.5,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 100000,
+          "input": 0.1,
+          "output": 0.5
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 0.5,
+          "output": 2.5
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.006,
+          "output": 0.03
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 0.025,
+          "output": 0.125
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 0.0315,
+          "output": 0.1575,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 0.05,
+          "output": 0.25
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.003,
+          "output": 0.015,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "vendor": "DeepSeek",
+      "contextWindow": 1000000,
+      "defaultGroup": "deepseek-stable",
+      "input": 0.771429,
+      "output": 2.314286,
+      "officialInput": 1.285714,
+      "officialOutput": 3.857143,
+      "ratio": 0.6,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 1.2857142857142858,
+          "output": 3.8571428571428577
+        }
+      ],
+      "groups": [
+        {
+          "id": "deepseek-award",
+          "kind": "award",
+          "ratio": 0.35,
+          "input": 0.45,
+          "output": 1.35
+        },
+        {
+          "id": "deepseek-stable",
+          "kind": "stable",
+          "ratio": 0.6,
+          "input": 0.771429,
+          "output": 2.314286,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "grok-4.5",
+      "vendor": "xAI",
+      "contextWindow": 500000,
+      "defaultGroup": "grok-stable",
+      "input": 0.22,
+      "output": 0.66,
+      "officialInput": 2,
+      "officialOutput": 6,
+      "ratio": 0.11,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 2,
+          "output": 6
+        }
+      ],
+      "groups": [
+        {
+          "id": "grok-award",
+          "kind": "campaign",
+          "ratio": 0.01,
+          "input": 0.02,
+          "output": 0.06
+        },
+        {
+          "id": "grok-stable",
+          "kind": "other",
+          "ratio": 0.11,
+          "input": 0.22,
+          "output": 0.66,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "vendor": "DeepSeek",
+      "contextWindow": 1000000,
+      "defaultGroup": "deepseek-stable",
+      "input": 0.257143,
+      "output": 0.771429,
+      "officialInput": 0.428571,
+      "officialOutput": 1.285714,
+      "ratio": 0.6,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 0.42857142857142855,
+          "output": 1.2857142857142856
+        }
+      ],
+      "groups": [
+        {
+          "id": "deepseek-award",
+          "kind": "award",
+          "ratio": 0.35,
+          "input": 0.15,
+          "output": 0.45
+        },
+        {
+          "id": "deepseek-stable",
+          "kind": "stable",
+          "ratio": 0.6,
+          "input": 0.257143,
+          "output": 0.771429,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "vendor": "OpenAI",
+      "contextWindow": 1050000,
+      "defaultGroup": "openai-stable",
+      "input": 0.08,
+      "output": 0.4,
+      "officialInput": 1,
+      "officialOutput": 5,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 272000,
+          "input": 1,
+          "output": 5
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 2,
+          "output": 7.5
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.03,
+          "output": 0.15
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.08,
+          "output": 0.4,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.13,
+          "output": 0.65
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 0.5,
+          "output": 2.5
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.015,
+          "output": 0.075,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "grok-4.6",
+      "vendor": "xAI",
+      "contextWindow": 500000,
+      "defaultGroup": "grok-stable",
+      "input": 0.22,
+      "output": 0.66,
+      "officialInput": 2,
+      "officialOutput": 6,
+      "ratio": 0.11,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 2,
+          "output": 6
+        }
+      ],
+      "groups": [
+        {
+          "id": "grok-award",
+          "kind": "campaign",
+          "ratio": 0.01,
+          "input": 0.02,
+          "output": 0.06
+        },
+        {
+          "id": "grok-stable",
+          "kind": "other",
+          "ratio": 0.11,
+          "input": 0.22,
+          "output": 0.66,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "jev-1.13.0",
+      "vendor": "TypeSafe",
+      "contextWindow": null,
+      "defaultGroup": "jev-premium",
+      "input": 0.0483,
+      "output": 0,
+      "officialInput": 0.042,
+      "officialOutput": 0,
+      "ratio": 1.15,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 0.042,
+          "output": 0
+        }
+      ],
+      "groups": [
+        {
+          "id": "jev-premium",
+          "kind": "stable",
+          "ratio": 1.15,
+          "input": 0.0483,
+          "output": 0,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "gpt-5.4",
+      "vendor": "OpenAI",
+      "contextWindow": 1000000,
+      "defaultGroup": "openai-stable",
+      "input": 0.2,
+      "output": 1.2,
+      "officialInput": 2.5,
+      "officialOutput": 15,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 2.5,
+          "output": 15
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.075,
+          "output": 0.45
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.2,
+          "output": 1.2,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.325,
+          "output": 1.95
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 1.25,
+          "output": 7.5
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.0375,
+          "output": 0.225,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "claude-opus-5",
+      "vendor": "Anthropic",
+      "contextWindow": 1000000,
+      "defaultGroup": "claude-stable",
+      "input": 1.575,
+      "output": 7.875,
+      "officialInput": 5,
+      "officialOutput": 25,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 5,
+          "output": 25
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.3,
+          "output": 1.5
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 1.25,
+          "output": 6.25
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 1.575,
+          "output": 7.875,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 2.5,
+          "output": 12.5
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.15,
+          "output": 0.75,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "vendor": "OpenAI",
+      "contextWindow": 1050000,
+      "defaultGroup": "openai-stable",
+      "input": 0.16,
+      "output": 0.8,
+      "officialInput": 2,
+      "officialOutput": 10,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 272000,
+          "input": 2,
+          "output": 10
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 4,
+          "output": 15
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.06,
+          "output": 0.3
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.16,
+          "output": 0.8,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.26,
+          "output": 1.3
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 1,
+          "output": 5
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.03,
+          "output": 0.15,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "vendor": "Google",
+      "contextWindow": 1000000,
+      "defaultGroup": "gemini-stable",
+      "input": 0.225,
+      "output": 1.35,
+      "officialInput": 1.5,
+      "officialOutput": 9,
+      "ratio": 0.15,
+      "tiers": [
+        {
+          "label": "base",
+          "maxInputTokens": null,
+          "input": 1.5,
+          "output": 9
+        }
+      ],
+      "groups": [
+        {
+          "id": "gemini-stable",
+          "kind": "stable",
+          "ratio": 0.15,
+          "input": 0.225,
+          "output": 1.35,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "claude-sonnet-5",
+      "vendor": "Anthropic",
+      "contextWindow": 1000000,
+      "defaultGroup": "claude-stable",
+      "input": 0.63,
+      "output": 3.15,
+      "officialInput": 2,
+      "officialOutput": 10,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 2,
+          "output": 10
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.12,
+          "output": 0.6
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 0.5,
+          "output": 2.5
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 0.63,
+          "output": 3.15,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 1,
+          "output": 5
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.06,
+          "output": 0.3,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.8-flash",
+      "vendor": "Google",
+      "contextWindow": 1000000,
+      "defaultGroup": "gemini-stable",
+      "input": 0.225,
+      "output": 1.125,
+      "officialInput": 1.5,
+      "officialOutput": 7.5,
+      "ratio": 0.15,
+      "tiers": [
+        {
+          "label": "base",
+          "maxInputTokens": null,
+          "input": 1.5,
+          "output": 7.5
+        }
+      ],
+      "groups": [
+        {
+          "id": "gemini-stable",
+          "kind": "stable",
+          "ratio": 0.15,
+          "input": 0.225,
+          "output": 1.125,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "codex-auto-review",
+      "vendor": "OpenAI",
+      "contextWindow": 272000,
+      "defaultGroup": "openai-stable",
+      "input": 0.2,
+      "output": 1.2,
+      "officialInput": 2.5,
+      "officialOutput": 15,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 2.5,
+          "output": 15
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.075,
+          "output": 0.45
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.2,
+          "output": 1.2,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.325,
+          "output": 1.95
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 1.25,
+          "output": 7.5
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.0375,
+          "output": 0.225,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-preview",
+      "vendor": "Google",
+      "contextWindow": 1000000,
+      "defaultGroup": "gemini-stable",
+      "input": 0.3,
+      "output": 1.8,
+      "officialInput": 2,
+      "officialOutput": 12,
+      "ratio": 0.15,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 200000,
+          "input": 2,
+          "output": 12
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 4,
+          "output": 18
+        }
+      ],
+      "groups": [
+        {
+          "id": "gemini-stable",
+          "kind": "stable",
+          "ratio": 0.15,
+          "input": 0.3,
+          "output": 1.8,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "vendor": "Anthropic",
+      "contextWindow": 200000,
+      "defaultGroup": "claude-stable",
+      "input": 0.315,
+      "output": 1.575,
+      "officialInput": 1,
+      "officialOutput": 5,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 1,
+          "output": 5
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.06,
+          "output": 0.3
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 0.25,
+          "output": 1.25
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 0.315,
+          "output": 1.575,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 0.5,
+          "output": 2.5
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.03,
+          "output": 0.15,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "gpt-6-astra",
+      "vendor": "OpenAI",
+      "contextWindow": 1050000,
+      "defaultGroup": "openai-stable",
+      "input": 0.8,
+      "output": 4,
+      "officialInput": 10,
+      "officialOutput": 50,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 272000,
+          "input": 10,
+          "output": 50
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 20,
+          "output": 75
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.3,
+          "output": 1.5
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.8,
+          "output": 4,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 1.3,
+          "output": 6.5
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 5,
+          "output": 25
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.15,
+          "output": 0.75,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "claude-fable-5-1",
+      "vendor": "Anthropic",
+      "contextWindow": null,
+      "defaultGroup": "claude-stable",
+      "input": 3.15,
+      "output": 15.75,
+      "officialInput": 10,
+      "officialOutput": 50,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 10,
+          "output": 50
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.6,
+          "output": 3
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 2.5,
+          "output": 12.5
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 3.15,
+          "output": 15.75,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 5,
+          "output": 25
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.3,
+          "output": 1.5,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.6-flash",
+      "vendor": "Google",
+      "contextWindow": 1000000,
+      "defaultGroup": "gemini-stable",
+      "input": 0.225,
+      "output": 1.125,
+      "officialInput": 1.5,
+      "officialOutput": 7.5,
+      "ratio": 0.15,
+      "tiers": [
+        {
+          "label": "base",
+          "maxInputTokens": null,
+          "input": 1.5,
+          "output": 7.5
+        }
+      ],
+      "groups": [
+        {
+          "id": "gemini-stable",
+          "kind": "stable",
+          "ratio": 0.15,
+          "input": 0.225,
+          "output": 1.125,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "vendor": "OpenAI",
+      "contextWindow": 1050000,
+      "defaultGroup": "openai-stable",
+      "input": 0.4,
+      "output": 2.4,
+      "officialInput": 5,
+      "officialOutput": 30,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 272000,
+          "input": 5,
+          "output": 30
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 10,
+          "output": 45
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.15,
+          "output": 0.9
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.4,
+          "output": 2.4,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.65,
+          "output": 3.9
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 2.5,
+          "output": 15
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.075,
+          "output": 0.45,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.7-flash",
+      "vendor": "Google",
+      "contextWindow": 1000000,
+      "defaultGroup": "gemini-stable",
+      "input": 0.225,
+      "output": 1.125,
+      "officialInput": 1.5,
+      "officialOutput": 7.5,
+      "ratio": 0.15,
+      "tiers": [
+        {
+          "label": "base",
+          "maxInputTokens": null,
+          "input": 1.5,
+          "output": 7.5
+        }
+      ],
+      "groups": [
+        {
+          "id": "gemini-stable",
+          "kind": "stable",
+          "ratio": 0.15,
+          "input": 0.225,
+          "output": 1.125,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "kimi-k3",
+      "vendor": "Moonshot AI",
+      "contextWindow": 1000000,
+      "defaultGroup": "kimi-stable",
+      "input": 1.857143,
+      "output": 9.285714,
+      "officialInput": 2.857143,
+      "officialOutput": 14.285714,
+      "ratio": 0.65,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 2.857142857142857,
+          "output": 14.285714285714286
+        }
+      ],
+      "groups": [
+        {
+          "id": "kimi-award",
+          "kind": "award",
+          "ratio": 0.35,
+          "input": 1,
+          "output": 5
+        },
+        {
+          "id": "kimi-stable",
+          "kind": "stable",
+          "ratio": 0.65,
+          "input": 1.857143,
+          "output": 9.285714,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "claude-sonnet-5-5",
+      "vendor": "Anthropic",
+      "contextWindow": null,
+      "defaultGroup": "claude-stable",
+      "input": 0.63,
+      "output": 3.15,
+      "officialInput": 2,
+      "officialOutput": 10,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 2,
+          "output": 10
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.12,
+          "output": 0.6
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 0.5,
+          "output": 2.5
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 0.63,
+          "output": 3.15,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 1,
+          "output": 5
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.06,
+          "output": 0.3,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "gpt-6-sol",
+      "vendor": "OpenAI",
+      "contextWindow": 1050000,
+      "defaultGroup": "openai-stable",
+      "input": 0.16,
+      "output": 0.8,
+      "officialInput": 2,
+      "officialOutput": 10,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 272000,
+          "input": 2,
+          "output": 10
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 4,
+          "output": 15
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.06,
+          "output": 0.3
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.16,
+          "output": 0.8,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.26,
+          "output": 1.3
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 1,
+          "output": 5
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.03,
+          "output": 0.15,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "muse-spark-1.3",
+      "vendor": "Meta",
+      "contextWindow": null,
+      "defaultGroup": "spark-premium",
+      "input": 1.4375,
+      "output": 4.8875,
+      "officialInput": 1.25,
+      "officialOutput": 4.25,
+      "ratio": 1.15,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 1.25,
+          "output": 4.25
+        }
+      ],
+      "groups": [
+        {
+          "id": "spark-premium",
+          "kind": "stable",
+          "ratio": 1.15,
+          "input": 1.4375,
+          "output": 4.8875,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "gpt-6-luna",
+      "vendor": "OpenAI",
+      "contextWindow": 1050000,
+      "defaultGroup": "openai-stable",
+      "input": 0.02,
+      "output": 0.1,
+      "officialInput": 0.25,
+      "officialOutput": 1.25,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": 272000,
+          "input": 0.25,
+          "output": 1.25
+        },
+        {
+          "label": "long_context",
+          "maxInputTokens": null,
+          "input": 0.5,
+          "output": 1.875
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.0075,
+          "output": 0.0375
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.02,
+          "output": 0.1,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.0325,
+          "output": 0.1625
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 0.125,
+          "output": 0.625
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.00375,
+          "output": 0.01875,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.5-flash-lite",
+      "vendor": "Google",
+      "contextWindow": null,
+      "defaultGroup": "gemini-stable",
+      "input": 0.045,
+      "output": 0.375,
+      "officialInput": 0.3,
+      "officialOutput": 2.5,
+      "ratio": 0.15,
+      "tiers": [
+        {
+          "label": "base",
+          "maxInputTokens": null,
+          "input": 0.3,
+          "output": 2.5
+        }
+      ],
+      "groups": [
+        {
+          "id": "gemini-stable",
+          "kind": "stable",
+          "ratio": 0.15,
+          "input": 0.045,
+          "output": 0.375,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "gpt-5.5",
+      "vendor": "OpenAI",
+      "contextWindow": 272000,
+      "defaultGroup": "openai-stable",
+      "input": 0.4,
+      "output": 2.4,
+      "officialInput": 5,
+      "officialOutput": 30,
+      "ratio": 0.08,
+      "tiers": [
+        {
+          "label": "base",
+          "maxInputTokens": null,
+          "input": 5,
+          "output": 30
+        }
+      ],
+      "groups": [
+        {
+          "id": "openai-award",
+          "kind": "award",
+          "ratio": 0.03,
+          "input": 0.15,
+          "output": 0.9
+        },
+        {
+          "id": "openai-stable",
+          "kind": "stable",
+          "ratio": 0.08,
+          "input": 0.4,
+          "output": 2.4,
+          "isDefault": true
+        },
+        {
+          "id": "openai-premium",
+          "kind": "stable",
+          "ratio": 0.13,
+          "input": 0.65,
+          "output": 3.9
+        },
+        {
+          "id": "openai-enterprise",
+          "kind": "enterprise",
+          "ratio": 0.5,
+          "input": 2.5,
+          "output": 15
+        },
+        {
+          "id": "openai-first-topup",
+          "kind": "campaign",
+          "ratio": 0.015,
+          "input": 0.075,
+          "output": 0.45,
+          "conditional": {
+            "minTopupUSD": 20
+          }
+        }
+      ]
+    },
+    {
+      "model": "claude-fable-5",
+      "vendor": "Anthropic",
+      "contextWindow": 1000000,
+      "defaultGroup": "claude-stable",
+      "input": 3.15,
+      "output": 15.75,
+      "officialInput": 10,
+      "officialOutput": 50,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 10,
+          "output": 50
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.6,
+          "output": 3
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 2.5,
+          "output": 12.5
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 3.15,
+          "output": 15.75,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 5,
+          "output": 25
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.3,
+          "output": 1.5,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "claude-opus-5-5",
+      "vendor": "Anthropic",
+      "contextWindow": 1000000,
+      "defaultGroup": "claude-stable",
+      "input": 1.26,
+      "output": 6.3,
+      "officialInput": 4,
+      "officialOutput": 20,
+      "ratio": 0.315,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 4,
+          "output": 20
+        }
+      ],
+      "groups": [
+        {
+          "id": "claude-tmp-cheap",
+          "kind": "other",
+          "ratio": 0.06,
+          "input": 0.24,
+          "output": 1.2
+        },
+        {
+          "id": "claude-award",
+          "kind": "award",
+          "ratio": 0.25,
+          "input": 1,
+          "output": 5
+        },
+        {
+          "id": "claude-stable",
+          "kind": "stable",
+          "ratio": 0.315,
+          "input": 1.26,
+          "output": 6.3,
+          "isDefault": true
+        },
+        {
+          "id": "claude-premium",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 2,
+          "output": 10
+        },
+        {
+          "id": "claude-first-topup",
+          "kind": "campaign",
+          "ratio": 0.03,
+          "input": 0.12,
+          "output": 0.6,
+          "conditional": {
+            "minTopupUSD": 50
+          }
+        }
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "vendor": "DeepSeek",
+      "contextWindow": null,
+      "defaultGroup": "deepseek-stable",
+      "input": 0.193548,
+      "output": 0.774194,
+      "officialInput": 0.322581,
+      "officialOutput": 1.290323,
+      "ratio": 0.6,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 0.3225806451612903,
+          "output": 1.2903225806451613
+        }
+      ],
+      "groups": [
+        {
+          "id": "deepseek-award",
+          "kind": "award",
+          "ratio": 0.35,
+          "input": 0.112903,
+          "output": 0.451613
+        },
+        {
+          "id": "deepseek-stable",
+          "kind": "stable",
+          "ratio": 0.6,
+          "input": 0.193548,
+          "output": 0.774194,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "glm-5.3-flash",
+      "vendor": "Zhipu AI",
+      "contextWindow": 1000000,
+      "defaultGroup": "glm-stable",
+      "input": 0.057143,
+      "output": 0.2,
+      "officialInput": 0.114286,
+      "officialOutput": 0.4,
+      "ratio": 0.5,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 0.11428571428571428,
+          "output": 0.39999999999999997
+        }
+      ],
+      "groups": [
+        {
+          "id": "glm-award",
+          "kind": "award",
+          "ratio": 0.35,
+          "input": 0.04,
+          "output": 0.14
+        },
+        {
+          "id": "glm-stable",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 0.057143,
+          "output": 0.2,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "vendor": "Zhipu AI",
+      "contextWindow": null,
+      "defaultGroup": "glm-stable",
+      "input": 0.571429,
+      "output": 2,
+      "officialInput": 1.142857,
+      "officialOutput": 4,
+      "ratio": 0.5,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 1.1428571428571428,
+          "output": 4
+        }
+      ],
+      "groups": [
+        {
+          "id": "glm-award",
+          "kind": "award",
+          "ratio": 0.35,
+          "input": 0.4,
+          "output": 1.4
+        },
+        {
+          "id": "glm-stable",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 0.571429,
+          "output": 2,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "grok-4.7",
+      "vendor": "xAI",
+      "contextWindow": 500000,
+      "defaultGroup": "grok-stable",
+      "input": 0.22,
+      "output": 0.66,
+      "officialInput": 2,
+      "officialOutput": 6,
+      "ratio": 0.11,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 2,
+          "output": 6
+        }
+      ],
+      "groups": [
+        {
+          "id": "grok-award",
+          "kind": "campaign",
+          "ratio": 0.01,
+          "input": 0.02,
+          "output": 0.06
+        },
+        {
+          "id": "grok-stable",
+          "kind": "other",
+          "ratio": 0.11,
+          "input": 0.22,
+          "output": 0.66,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.8-flash-high",
+      "vendor": "Google",
+      "contextWindow": null,
+      "defaultGroup": "gemini-stable",
+      "input": 0.225,
+      "output": 1.125,
+      "officialInput": 1.5,
+      "officialOutput": 7.5,
+      "ratio": 0.15,
+      "tiers": [
+        {
+          "label": "base",
+          "maxInputTokens": null,
+          "input": 1.5,
+          "output": 7.5
+        }
+      ],
+      "groups": [
+        {
+          "id": "gemini-stable",
+          "kind": "stable",
+          "ratio": 0.15,
+          "input": 0.225,
+          "output": 1.125,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "glm-5.2",
+      "vendor": "Zhipu AI",
+      "contextWindow": null,
+      "defaultGroup": "glm-stable",
+      "input": 0.7,
+      "output": 2.2,
+      "officialInput": 1.4,
+      "officialOutput": 4.4,
+      "ratio": 0.5,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 1.4,
+          "output": 4.4
+        }
+      ],
+      "groups": [
+        {
+          "id": "glm-award",
+          "kind": "award",
+          "ratio": 0.35,
+          "input": 0.49,
+          "output": 1.54
+        },
+        {
+          "id": "glm-stable",
+          "kind": "stable",
+          "ratio": 0.5,
+          "input": 0.7,
+          "output": 2.2,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "qwen3.8-max",
+      "vendor": "Alibaba Cloud",
+      "contextWindow": 1000000,
+      "defaultGroup": "qwen-stable",
+      "input": 1.371429,
+      "output": 4.114286,
+      "officialInput": 1.714286,
+      "officialOutput": 5.142857,
+      "ratio": 0.8,
+      "tiers": [
+        {
+          "label": "standard",
+          "maxInputTokens": null,
+          "input": 1.7142857142857142,
+          "output": 5.142857142857142
+        }
+      ],
+      "groups": [
+        {
+          "id": "qwen-stable",
+          "kind": "stable",
+          "ratio": 0.8,
+          "input": 1.371429,
+          "output": 4.114286,
+          "isDefault": true
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-flash-lite",
+      "vendor": "Google",
+      "contextWindow": null,
+      "defaultGroup": "gemini-stable",
+      "input": 0.0375,
+      "output": 0.225,
+      "officialInput": 0.25,
+      "officialOutput": 1.5,
+      "ratio": 0.15,
+      "tiers": [
+        {
+          "label": "base",
+          "maxInputTokens": null,
+          "input": 0.25,
+          "output": 1.5
+        }
+      ],
+      "groups": [
+        {
+          "id": "gemini-stable",
+          "kind": "stable",
+          "ratio": 0.15,
+          "input": 0.0375,
+          "output": 0.225,
+          "isDefault": true
+        }
+      ]
+    }
+  ],
+  "sample": {
+    "model": "gpt-5.6-sol",
+    "input": "$0.4",
+    "output": "$2.4",
+    "officialIn": "$5",
+    "officialOut": "$30",
+    "monthly": "$3.96"
+  }
+}

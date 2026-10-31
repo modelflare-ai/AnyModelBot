@@ -1,0 +1,9 @@
+{
+  "_": "public/bots/*.avif 是从哪一版 WebP 生成的（sha256）；scripts/make-bot-avif.ts 写、check-images.ts 查",
+  "blue": "f3e910e9b7a3fa33f1b1bd2d62b16654f70d43d37b52af84840a2cb2f0e08fcb",
+  "green": "49ede298abc380bf41f687b7fc2ec54cdfcc120f24f9e71807bf93ef48c43296",
+  "orange": "ea90f7470cc857a3f226541f3cb2f1ea4ffb28aa17ea083859895a2c520e72e5",
+  "purple": "6ea542fd0b0dcb15ae0b7e64b4c64464dc843c2c6aa3e85934a8f78a15d3670a",
+  "red": "6bedf7c776347639140b3ff19d2b59365102c8b239e38128b5cdfeb72edfdba8",
+  "yellow": "052c9f23a29285fa5edf208ac49e27c5bdd206822db0dd0fc51d1c2a69645013"
+}

@@ -1,0 +1,71 @@
+@layer tokens, base, components, app, utilities;
+/* 第 4 节章节头的填充（components/ModelsHeadArt.astro）：两侧的毛玻璃厂商图标砖 + 标题下的公式胶囊。
+   砖和胶囊都是浮在页面上的小件，按全站的毛玻璃写法：var(--grain) + var(--glass*) + var(--glass-ring) + 中性的轻投影。
+   砖不做背景模糊（十几块同时模糊太费，背后也只有很柔的底光，模糊不出东西）；胶囊只有一颗，做模糊。
+   标志用官方彩色版（本来就是单色的几家跟着砖上的文字颜色走），砖底只用中性的毛玻璃。
+   动效：第一次滚到时随章节头依次浮现（内容出现）；之后每块砖各自很轻地上下浮动（±3px、周期 6–10 秒、起点各不相同——
+   用户 2026-10-31 明确要的，是"背景不做动画"规矩里写明的例外）；悬停一块砖它再浮起来、显示厂商名（对操作的反馈）。 */
+@layer app {
+  .mkey__tiles { position: absolute; inset: 0; pointer-events: none; }
+  .mkey__tile {
+    position: absolute; left: var(--x); top: var(--y); width: var(--s); height: var(--s); translate: -50% -50%;
+    display: grid; place-items: center; border-radius: 30%;
+    background: var(--grain), var(--glass-strong); color: var(--text-2);
+    box-shadow: var(--glass-ring), 0 1px 2px var(--shadow-c), 0 18px 36px -20px var(--shadow-c-strong);
+    opacity: var(--o); pointer-events: auto;
+    transition: transform var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out), color var(--dur-fast);
+  }
+  .mkey__tile > .vlogo { flex: none; }
+  .mkey__tile:hover { transform: translateY(-4px); opacity: 1; color: var(--text); }
+  /* 悬停时砖下面冒出厂商名 */
+  .mkey__tile::after {
+    content: attr(data-name); position: absolute; top: calc(100% + 8px); left: 50%; translate: -50% 4px;
+    padding: 3px 10px; border-radius: var(--r-btn); white-space: nowrap;
+    background: var(--glass-strong); box-shadow: var(--glass-ring), 0 6px 16px -10px var(--shadow-c-strong);
+    color: var(--text); font-size: 12px; font-weight: 500; line-height: 1.5;
+    opacity: 0; pointer-events: none; transition: opacity var(--dur-fast), translate var(--dur-fast) var(--ease-out);
+  }
+  .mkey__tile:hover::after { opacity: 1; translate: -50% 0; }
+
+  /* 公式胶囊：「🔑 1 个 Key → 70 个模型 · 13 家厂商」。钥匙那一段是小块实心记号（浅色墨底黄绿、深色黄绿底墨字） */
+  .mkey__eq {
+    display: inline-flex; align-items: center; gap: 10px; margin: clamp(20px, 2.2vw, 28px) 0 0; padding: 5px 16px 5px 5px; border-radius: var(--r-btn);
+    background: var(--grain), var(--glass); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+    box-shadow: var(--glass-ring), 0 12px 30px -18px var(--shadow-c-strong);
+    color: var(--text-2); font-size: var(--fs-sm); line-height: 1.4;
+  }
+  .mkey__key {
+    display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px; border-radius: var(--r-btn);
+    background: var(--signal-bg); color: var(--signal-fg); font-weight: 600; white-space: nowrap;
+  }
+  .mkey__key .icon { flex: none; }
+  .mkey__arrow { flex: none; width: 16px; height: 16px; color: var(--text-2); }
+  .mkey__all { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  /* 入场：随章节头（.shead.is-in）一起出现——胶囊跟在说明后面升起，砖从近到远依次浮出。用 animation 而不是 transition，
+     这样悬停的浮起不会被入场的延迟拖住 */
+  @media (prefers-reduced-motion: no-preference) {
+    html.js .shead:not(.is-in) :is(.mkey__tile, .mkey__eq) { opacity: 0; }
+    html.js .shead.is-in .mkey__eq { animation: mkey-rise .8s var(--ease-out) 460ms backwards; }
+    /* 微浮：动的是 translate（砖本来就靠 translate: -50% -50% 定位，所以关键帧里带上这一半）；悬停的浮起走 transform，叠加不冲突 */
+    .mkey__tile { animation: mkey-float calc(6s + var(--i) * .33s) ease-in-out calc(var(--i) * -1.3s) infinite alternate; }
+    html.js .shead.is-in .mkey__tile {
+      animation:
+        mkey-pop .7s var(--ease-out) calc(320ms + var(--i) * 45ms) backwards,
+        mkey-float calc(6s + var(--i) * .33s) ease-in-out calc(var(--i) * -1.3s) infinite alternate;
+    }
+  }
+  @keyframes mkey-rise { from { opacity: 0; translate: 0 16px; } }
+  @keyframes mkey-pop { from { opacity: 0; scale: .82; } }
+  @keyframes mkey-float { from { translate: -50% calc(-50% - 3px); } to { translate: -50% calc(-50% + 3px); } }
+
+  /* 窄屏：收起靠近标题和角上的几块，其余缩小一点；手机上不放砖，只留胶囊 */
+  @media (max-width: 1023px) {
+    .mkey__tile--far { display: none; }
+    .mkey__tile { width: calc(var(--s) * .82); height: calc(var(--s) * .82); }
+  }
+  @media (max-width: 767px) {
+    .mkey__tiles { display: none; }
+    .mkey__eq { gap: 8px; padding-right: 14px; font-size: 13px; }
+  }
+}

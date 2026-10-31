@@ -1,0 +1,31 @@
+---
+// Hero 背景里的模型厂商标志（用户要求加的，README"动效的硬规矩"里记着这个例外）：
+// 标题两侧的空白里各五枚，单色、很淡（最清楚的一枚是正文色的 12%，浅色 11%；7% 时用户说看不到），远的更小、更淡、稍微虚一点；
+// 各自轻轻漂（上下 8px、左右 3px，5–8.5 秒一个来回，起点错开，不会一起动），入场时随 Hero 一起淡入。
+// 只放在文字两侧，不压标题、按钮和下面的舞台；宽屏才放满，中等宽度只留外侧的，窄屏不放；减少动态效果时静止。
+// 标志来自 LobeHub Icons 的单色版（src/data/vendor-logos.ts），直接内联，不依赖页面上别处的图标表。
+import "../styles/hero-logos.css";
+import { VENDOR_LOGOS } from "../lib/vendors";
+// side：靠左 / 右；x：离那一侧的距离（Hero 宽度的 %）；y：离 Hero 顶边（px）；s：大小；o：浓度（1 最清楚）；d：浮动一个来回的秒数；
+// far：远处的那几枚（更淡、虚一点，中等宽度时不放）
+const L = [
+  { k: "openai", side: "l", x: 8, y: 132, s: 40, o: 1, d: 9 },
+  { k: "anthropic", side: "r", x: 9, y: 150, s: 38, o: 1, d: 11 },
+  { k: "google", side: "l", x: 15, y: 304, s: 30, o: .75, d: 10 },
+  { k: "deepseek", side: "r", x: 16, y: 322, s: 32, o: .8, d: 8.5 },
+  { k: "xai", side: "l", x: 4, y: 436, s: 26, o: .55, d: 12, far: true },
+  { k: "moonshotai", side: "r", x: 4, y: 452, s: 28, o: .6, d: 9.5, far: true },
+  { k: "zhipuai", side: "l", x: 12, y: 548, s: 32, o: .8, d: 10.5 },
+  { k: "minimax", side: "r", x: 11, y: 562, s: 30, o: .75, d: 12.5 },
+  { k: "alibabacloud", side: "l", x: 21, y: 158, s: 22, o: .45, d: 13, far: true },
+  { k: "bytedance", side: "r", x: 22, y: 196, s: 22, o: .45, d: 11.5, far: true },
+].filter((x) => VENDOR_LOGOS[x.k]);
+---
+<div class="hero__logos" aria-hidden="true">
+  {L.map((x, i) => (
+    <span class:list={["hero__logo", { "hero__logo--far": x.far }]}
+      style={`${x.side === "l" ? "left" : "right"}:${x.x}%;top:${x.y}px;--o:${x.o};--d:${x.d}s;--t:-${(i * 1.9).toFixed(1)}s`}>
+      <svg viewBox="0 0 24 24" width={x.s} height={x.s} fill="currentColor" fill-rule="evenodd" focusable="false" set:html={VENDOR_LOGOS[x.k]} />
+    </span>
+  ))}
+</div>

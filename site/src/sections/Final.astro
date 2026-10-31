@@ -1,0 +1,63 @@
+---
+// 收尾横幅（和首屏呼应）：一张大圆角卡，跟着页面主题走——深色下是深色卡，浅色下是干净的白卡（不要写死 data-theme="dark"，
+// 否则浅色下卡片是白的、里面的字却还是深色主题的白字，几乎看不见）。
+// 背景全部静止：顶上一束白光 → 一层星空（深色小星点 / 浅色四角形细小闪光，标题背后不放）→ 底边一道扁扁的地平线 → 颗粒（样式在 sections.css）。
+// 正中：标题 → 一句话 → 下载 / Docker → 开源说明；六个机器人站在地平线后面，只探出上半个头。
+// 指针移到下载按钮上，六个机器人一起看过去、挨个蹦一下；点下载就一起庆祝（scripts/sections.ts）。
+// 全卡只有下载按钮用品牌色。桌面上横幅滚进来时像百叶窗一样一条条拉开（.shutter，进度由 scripts/scroll-fx.ts 写进 --p）。
+import BotFace from "../components/BotFace.astro";
+import DownloadButton from "../components/DownloadButton.astro";
+import Icon from "../components/Icon.astro";
+import { dict, href, type Lang } from "../i18n";
+import { GITHUB_URL } from "../lib/site";
+import { CHAR_KEYS } from "../lib/bots";
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dict(lang);
+// 星空：1200 × 360 的画布上伪随机撒点（每次构建都一样、不成网格）；标题和按钮背后那一块椭圆里几乎不放，只在两侧和顶上。
+// 深色用小星点（几颗亮星外面套一圈极淡的光），浅色用十来个四角形的细小闪光。全部静止。
+const GLINT = "M0-1C.1-.1.1-.1 1 0C.1.1.1.1 0 1C-.1.1-.1.1-1 0C-.1-.1-.1-.1 0-1Z";
+const sky = (() => {
+  let h = 31102026;
+  const rnd = () => (h = (Math.imul(h, 1103515245) + 12345) >>> 0) / 2 ** 32;
+  const inCopy = (x: number, y: number) => { const dx = (x - 600) / 380, dy = (y - 190) / 170; return dx * dx + dy * dy < 1; };
+  const dots: { x: number; y: number; r: number; o: number }[] = [];
+  while (dots.length < 110) {
+    const x = +(rnd() * 1200).toFixed(1), y = +(rnd() * 360).toFixed(1);
+    if (inCopy(x, y) && rnd() < 0.85) continue;
+    if (rnd() < 0.05) dots.push({ x, y, r: 3.8, o: 0.08 }, { x, y, r: 1.2, o: 0.9 });
+    else dots.push({ x, y, r: +(0.5 + rnd() * 0.6).toFixed(2), o: +(0.3 + rnd() * 0.5).toFixed(2) });
+  }
+  const glints: { x: number; y: number; s: number; o: number }[] = [];
+  while (glints.length < 14) {
+    const x = +(rnd() * 1200).toFixed(1), y = +(24 + rnd() * 260).toFixed(1);
+    if (inCopy(x, y)) continue;
+    glints.push({ x, y, s: +(3 + rnd() * 4).toFixed(1), o: +(0.45 + rnd() * 0.4).toFixed(2) });
+  }
+  return { dots, glints };
+})();
+---
+<section class="section final" aria-labelledby="final-h2">
+  <div class="container">
+    <div class="final__banner" data-fx data-fx-from=".95" data-fx-to=".3">
+      <div class="final__sky" aria-hidden="true">
+        <svg viewBox="0 0 1200 360" preserveAspectRatio="xMidYMin slice" focusable="false">
+          <g class="dot">{sky.dots.map((s) => <circle cx={s.x} cy={s.y} r={s.r} opacity={s.o} />)}</g>
+          <g class="glint">{sky.glints.map((g) => <path d={GLINT} transform={`translate(${g.x} ${g.y}) scale(${g.s})`} opacity={g.o} />)}</g>
+        </svg>
+      </div>
+      <div class="final__inner">
+        <h2 class="h2" id="final-h2">{t.final.h2}</h2>
+        <p class="lead">{t.final.sub}</p>
+        <div class="final__cta">
+          <DownloadButton lang={lang} placement="final" id="cta-final" />
+          <a class="final__docker" href={`${href(lang, "/download")}#docker`} data-track="cta_click" data-track-location="final-docker">{t.final.docker}</a>
+        </div>
+        <p class="final__oss small"><span class="badge badge--neutral">MIT</span> {t.final.oss} · <a href={GITHUB_URL} target="_blank" rel="noopener" data-track="github_click" data-track-location="final"><Icon name="branch" size={14} />{t.final.ossRepo}</a> · <a href={href(lang, "/licenses")} data-track="licenses_click">{t.final.ossLicenses}</a></p>
+      </div>
+      <div class="final__bots" aria-hidden="true" data-doze>{CHAR_KEYS.map((k, i) => <span class="final__bot" style={`--k:${i}`}><BotFace char={k} size={72} lively pokeable /></span>)}</div>
+      <div class="final__horizon" aria-hidden="true"></div>
+      <div class="shutter" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <i style={`--i:${i}`}></i>)}</div>
+    </div>
+  </div>
+</section>

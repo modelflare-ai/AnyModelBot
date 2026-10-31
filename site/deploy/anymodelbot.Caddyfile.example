@@ -1,0 +1,14 @@
+# 第 1 阶段：放进宿主机 Caddy 会 import 的站点目录（例如 /etc/caddy/sites.d/），然后 reload Caddy。
+# 宿主机 Caddy 关了自动 HTTPS（auto_https off）时，证书用 certbot（webroot，目录同下）签发：域名解析到本机之后再签，
+# 签好后把站点换成 HTTPS 版本（HTTP 跳 HTTPS、www 跳主域名）。
+# 这里不能引用还不存在的证书文件：整份 Caddy 配置校验失败的话，共用这个 Caddy 的其他站点也受影响。
+anymodel.bot:80, www.anymodel.bot:80 {
+	handle /.well-known/acme-challenge/* {
+		root * /var/lib/anymodelbot/acme
+		file_server
+	}
+	handle {
+		header -Server
+		reverse_proxy 127.0.0.1:18490
+	}
+}

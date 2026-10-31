@@ -10,6 +10,7 @@ import { ActivityLine, currentStep, upsertStep } from "../components/activity.js
 import { api, streamChat } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
 import { fmtSep, fmtClock, fmtDur } from "../lib/format.js";
+import { PERMS, confirmPermission } from "../lib/perms.js";
 
 const COMMANDS = [
   ["/model", "列出或切换模型"],
@@ -19,11 +20,7 @@ const COMMANDS = [
   ["/stop", "中止正在处理的消息"],
   ["/help", "显示全部命令"],
 ];
-// 文件权限（输入框左下角，参考 Codex 的权限胶囊）：机器人设置里的同一项
-const PERMS = {
-  workspace: { label: "工作区可写", icon: "shield", note: "只能改这个机器人的工作区，越界操作先问你" },
-  readonly: { label: "只读", icon: "lock", note: "不能改文件，命令在只读沙箱里运行" },
-};
+// 文件权限（输入框左下角，参考 Codex 的权限胶囊）：机器人设置里的同一项，预设在 lib/perms.js
 const NEAR_BOTTOM = 80;
 const LINE_PX = 22;
 let seq = 0;
@@ -365,6 +362,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
 
   // —— 文件权限 ——
   const pickPerm = async (p) => {
+    if (!(await confirmPermission(p))) return;
     const prev = perm;
     setPerm(p);
     try {
@@ -517,7 +515,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     ${menu === "perm" && html`<${Menu} anchor=${permRef.current} prefer="up" width=${280} label="文件权限" onClose=${() => setMenu(null)}
       items=${[
         { group: "文件权限" },
-        ...Object.entries(PERMS).map(([k, p]) => ({ label: p.label, note: p.note, icon: p.icon, cur: k === perm, onSelect: () => k !== perm && pickPerm(k) })),
+        ...Object.entries(PERMS).map(([k, p]) => ({ label: p.label, note: p.note, icon: p.icon, danger: p.danger, cur: k === perm, onSelect: () => k !== perm && pickPerm(k) })),
         { sep: true },
         { label: "更多权限设置…", onSelect: () => onOpenBotSettings?.(bot.id, "permission") },
       ]} />`}

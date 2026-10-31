@@ -22,6 +22,9 @@
 .settings .list-head { margin: var(--section-gap) 0 var(--heading-gap); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); }
 .settings .list-head:first-child { margin-top: var(--space-6); }
 .settings .list + .list { margin-top: var(--space-3); }
+/* 分组下方的风险提示（完全权限）：紧跟在组的下面，不放进组里 */
+.settings .list + .notice { margin-top: var(--space-2); align-items: flex-start; padding: var(--space-3); }
+.settings .list + .notice > .ic { margin-top: 3px; }   /* 微调：图标对齐第一行文字（14px 图标 / 约 20px 行高） */
 .settings .row { --row-h: 60px; --row-py: var(--space-3); --row-pl: var(--space-4); --row-pr: var(--space-4); --row-gap: var(--space-4); }
 .settings .row .name { font-size: var(--fs-lg); }
 .settings .row .sub { font-size: var(--fs-sm); line-height: var(--lh-snug); max-width: 460px; white-space: normal; }

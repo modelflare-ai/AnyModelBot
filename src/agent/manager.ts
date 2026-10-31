@@ -42,6 +42,8 @@ export interface AgentManagerOptions {
   media?: MediaService;
   /** 需要让用户看到的提示（代理进程起不来等） */
   onNotice?: (text: string) => void;
+  /** 模型的上下文长度（Modelflare 模型资料），写进 DSH 补丁 */
+  contextWindow?: (model: string) => Promise<number | undefined>;
 }
 
 /** 一个进行中的回合（/status、/stop、排队提示、信息面板和故障排查用） */
@@ -132,6 +134,7 @@ export class AgentManager {
         settings: () => this.settings(botId),
         onNotice: this.o.onNotice,
         media: !!this.o.media,
+        contextWindow: this.o.contextWindow,
       });
       this.hosts.set(botId, h);
     }

@@ -23,6 +23,7 @@ interface Profile {
 
 export interface PricingEntry {
   model_name: string;
+  context_window?: number;
   quota_type: number;
   input_price?: number;
   model_ratio?: number;
@@ -92,6 +93,8 @@ export async function loadModelInfo(o: {
   for (const entry of catalog?.data ?? []) {
     const price = referencePrice(entry, catalog!);
     if (price) out[entry.model_name] = { ...out[entry.model_name], price };
+    // 没有 Key（拿不到 model-profiles）时，上下文长度用公开目录里的
+    if (Number(entry.context_window) > 0 && !out[entry.model_name]?.context) out[entry.model_name] = { ...out[entry.model_name], context: Number(entry.context_window) };
   }
   return out;
 }

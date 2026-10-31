@@ -22,6 +22,7 @@ import { findAppRoot } from "./magpie/supervisor.js";
 import {
   MODELFLARE_LINES,
   MODELFLARE_PROVIDER,
+  bareModel,
   botProviderId,
   fetchKeyBalance,
   modelflareBaseUrl,
@@ -158,6 +159,12 @@ export class App {
       turnTimeoutMs: config.agent.turnTimeoutMs,
       idleTimeoutMs: config.agent.idleTimeoutMs,
       approvalTtlMs: config.agent.approvalTtlMs,
+      // 上下文长度来自 Modelflare 的模型资料（和模型选择器里显示的一致）；内置兜底表跟不上新模型
+      contextWindow: async (model) => {
+        const info = await this.modelInfo();
+        const bare = bareModel(model);
+        return (info[bare] ?? info[bare.split("/").pop() ?? bare])?.context;
+      },
       // 后台小任务（管家判定/交接/记忆整理）直接走 magpie，不经代理子进程
       complete: (botId, model, system, user) =>
         this.models.streamChat(

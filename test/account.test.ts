@@ -11,7 +11,7 @@ import { listen, mockModelflare, approveInBrowser, readJson } from "./helpers.js
 import { discover, startLogin, pkcePair } from "../src/account/oauth.js";
 import { AccountManager, summarizeUsage, type AccountHooks } from "../src/account/manager.js";
 import { AccountVault } from "../src/account/vault.js";
-import { referencePrice } from "../src/account/model-info.js";
+import { loadModelInfo, referencePrice } from "../src/account/model-info.js";
 import { MediaService, docSection } from "../src/agent/media.js";
 import { AgentManager } from "../src/agent/manager.js";
 import { locateDshRuntime } from "../src/agent/host.js";
@@ -251,6 +251,21 @@ describe("参考价", () => {
     expect(referencePrice({ model_name: "m", quota_type: 1, model_price: 0.05, enable_groups: ["default"] }, catalog)).toEqual({ perCall: 0.05 });
     expect(referencePrice({ model_name: "m", quota_type: 0, input_price: 1, billing_mode: "tiered_expr", enable_groups: ["default"] }, catalog)).toBeUndefined();
     expect(referencePrice({ model_name: "m", quota_type: 0, input_price: 1, enable_groups: ["hidden"] }, catalog)).toBeUndefined();
+  });
+});
+
+describe("模型资料", () => {
+  it("上下文长度：有 Key 用 model-profiles，没有就用公开价格目录里的", async () => {
+    const fetchImpl = (async (url: string) => {
+      if (url.endsWith("/model-profiles")) return Response.json({ data: { "gpt-6.1-terra": { context_window: 1_050_000, input_modalities: ["text", "image"] } } });
+      return Response.json({ data: [{ model_name: "gpt-6.1-terra", quota_type: 0, context_window: 999 }, { model_name: "grok-4.7", quota_type: 0, context_window: 256_000 }] });
+    }) as any;
+    const base = { baseUrl: "http://mf/v1", headers: {}, pricingUrl: "http://mf/api/pricing", fetchImpl };
+    const withKey = await loadModelInfo({ ...base, apiKey: "k" });
+    expect(withKey["gpt-6.1-terra"]).toMatchObject({ context: 1_050_000, vision: true });
+    expect(withKey["grok-4.7"].context).toBe(256_000);
+    const noKey = await loadModelInfo({ ...base, apiKey: "" });
+    expect(noKey["gpt-6.1-terra"].context).toBe(999);
   });
 });
 

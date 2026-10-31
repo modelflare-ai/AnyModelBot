@@ -6,6 +6,7 @@ import { Store, type Bot } from "./store/db.js";
 import { OpenAICompatClient, type ModelClient } from "./llm/client.js";
 import { BotRuntime } from "./core/runtime.js";
 import { KeyedQueue } from "./core/queue.js";
+import { deferNotice, interruptedText, takeInterrupted, type Interrupted } from "./core/recovery.js";
 import type { ChannelStatus } from "./core/types.js";
 import { MagpieSupervisor } from "./magpie/supervisor.js";
 import { FeishuChannel } from "./channels/feishu/channel.js";
@@ -412,7 +413,10 @@ export class App {
     this.agent.start();
     this.ensureAccount();
     this.seedDefaultBot();
+    // 上次退出或崩溃时没处理完的消息：渠道开始收新消息之前取走标记，渠道起来后告诉用户
+    const interrupted = takeInterrupted(this.store);
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
+    if (interrupted.length) void this.tellInterrupted(interrupted);
     if (!this.opts.noWeb) this.web = await startWebServer(this);
     if (this.magpie) {
       // 启动时和之后每小时核对一次启用的模型（新上架的加入，下架的移出）
@@ -442,7 +446,34 @@ export class App {
     }
   }
 
+  /**
+   * 重启前没处理完的消息：在原会话里说一次「没处理完，请重新发送」，不自动重发。网页对话记进会话历史；
+   * 微信用存下的 context_token、占回复配额，飞书发到原单聊。现在发不出去的，等那个会话的下一条消息时先说。
+   */
+  async tellInterrupted(list: Interrupted[]): Promise<void> {
+    for (const it of list) {
+      const conv = this.store.getConversation(it.conversationId);
+      if (!conv) continue;
+      const text = interruptedText(it.preview);
+      const ch = this.channels.get(conv.botId);
+      let sent = false;
+      try {
+        if (conv.channel === "web") {
+          this.store.addMessage(conv.id, "assistant", text);
+          sent = true;
+        } else if (conv.channel === "weixin" && ch?.weixin) sent = await ch.weixin.notify(conv.peerId, text);
+        else if (conv.channel === "feishu" && ch?.feishu) sent = await ch.feishu.notify(conv.peerId, text);
+      } catch (e) {
+        log.warn("restart notice failed", { conversationId: conv.id, message: (e as Error).message.slice(0, 200) });
+      }
+      if (!sent) deferNotice(this.store, conv.id, text);
+      log.info("message interrupted by the last exit", { conversationId: conv.id, since: it.at, told: sent ? "now" : "with the next message" });
+    }
+  }
+
   async stop(): Promise<void> {
+    // 先告诉运行时：之后因为退出而失败的回合不回复、不改用纯对话，留给下次启动提醒
+    this.runtime.shutdown();
     this.offPwsh?.();
     if (this.accountTimer) clearInterval(this.accountTimer);
     if (this.picksTimer) clearInterval(this.picksTimer);

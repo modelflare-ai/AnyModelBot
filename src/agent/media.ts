@@ -1,7 +1,8 @@
 /**
  * 生图 / 生视频：代理的 media_models / media_docs / generate_image / generate_video 工具经内部 bridge 调到这里，
  * 由宿主带着该机器人用的 Key 直连 Modelflare（代理子进程拿不到任何密钥），结果存进机器人工作区的 media/，
- * 再由代理用 present 交付到聊天。每次生成前都由 AgentManager 向用户确认这次用哪个模型（manager.ts mediaOp）。
+ * 再由代理用 present 交付到聊天。生成前要不要先问用户由 AgentManager 决定（manager.ts mediaAsk）：模型不是默认的、
+ * 预计花费超过上限、要求不明确或机器人设成每次都问时才问。
  * - 模型取自 GET /v1/models?scope=authorized&kind=image|video（这把 Key 真正能用的）；参数范围、是否必须带参考素材、
  *   参考价、推荐顺序取自公开价格目录 /api/pricing。
  * - 每个模型的请求格式都不一样，以 docs.modelflare.dev 上该模型的文档为准：代理先用 media_docs 读文档，按文档写
@@ -48,7 +49,18 @@ export interface MediaModel {
   requiresReference: boolean;
   /** 一句参考价，如 "$0.03/张"、"$0.09/秒（720p）" */
   price: string;
+  /** 单价（美元，已按分组倍率折算），估算花费用；按 token 计费或目录里没有价格时为空 */
+  cost?: UnitPrice;
   priority: number;
+}
+
+/** 单价：每张 / 每次 / 每秒（视频按分辨率，default 是目录里的默认分辨率） */
+export interface UnitPrice {
+  per: "image" | "call" | "second";
+  usd: number;
+  /** 每秒价格，按分辨率 */
+  byResolution?: Record<string, number>;
+  resolution?: string;
 }
 
 /** 一次生成要确认的内容 */
@@ -66,6 +78,8 @@ export interface MediaPlan {
   custom: boolean;
   /** 给用户看的说明：提示词摘要、参数、参考素材 */
   summary: string;
+  /** 预计花费（美元）；算不出来（按 token 计费、目录里没有价格、视频不知道多长）时为空 */
+  estimate?: number;
 }
 
 interface CatalogEntry {
@@ -121,9 +135,9 @@ export function pickDefault(list: MediaModel[], configured: string): MediaModel 
   return list.find((m) => m.id === configured) ?? list.find((m) => !m.requiresReference) ?? list[0];
 }
 
-/** 一句参考价；复杂计费（按 token）只说明计费方式 */
-export function priceNote(e: CatalogEntry | undefined, catalog: Catalog): string {
-  if (!e) return "";
+/** 单价（按分组倍率折算）；按 token 计费或没有价格时为空 */
+export function unitPrice(e: CatalogEntry | undefined, catalog: Catalog): UnitPrice | undefined {
+  if (!e) return undefined;
   const ratios = (e.enable_groups ?? [])
     .filter((g) => !catalog.usable_group || g in catalog.usable_group)
     .map((g) => catalog.group_ratio?.[g])
@@ -132,12 +146,53 @@ export function priceNote(e: CatalogEntry | undefined, catalog: Catalog): string
   const perSecond = Object.entries(e.video_resolution_price ?? {}).filter(([, p]) => typeof p === "number" && p > 0);
   if (perSecond.length) {
     const want = String(e.media_options?.video?.default_resolution ?? "");
-    const [res, p] = perSecond.find(([r]) => r === want) ?? perSecond.sort((a, b) => a[1] - b[1])[0];
-    return `$${num(p * factor)}/秒（${res}）`;
+    const [res, p] = perSecond.find(([r]) => r === want) ?? [...perSecond].sort((a, b) => a[1] - b[1])[0];
+    return { per: "second", usd: p * factor, resolution: res, byResolution: Object.fromEntries(perSecond.map(([r, x]) => [r, x * factor])) };
   }
-  if (e.quota_type === 1 && typeof e.model_price === "number" && e.model_price > 0) return `$${num(e.model_price * factor)}/${e.billing_unit === "per_call" ? "次" : "张"}`;
-  if (e.billing_unit === "token") return "按 token 计费";
+  if (e.quota_type === 1 && typeof e.model_price === "number" && e.model_price > 0) return { per: e.billing_unit === "per_call" ? "call" : "image", usd: e.model_price * factor };
+  return undefined;
+}
+
+/** 一句参考价；复杂计费（按 token）只说明计费方式 */
+export function priceNote(e: CatalogEntry | undefined, catalog: Catalog): string {
+  const p = unitPrice(e, catalog);
+  if (p) return `$${num(p.usd)}/${p.per === "second" ? `秒（${p.resolution}）` : p.per === "call" ? "次" : "张"}`;
+  if (e?.billing_unit === "token") return "按 token 计费";
   return "";
+}
+
+/** 请求里要的时长、分辨率、张数（body 里的常见写法，或不带 body 时的 seconds 参数） */
+export function requested(body: Record<string, unknown> | undefined, args: Record<string, unknown>): { seconds?: number; resolution?: string; count?: number } {
+  const out: { seconds?: number; resolution?: string; count?: number } = {};
+  const walk = (v: unknown, depth: number) => {
+    if (!v || typeof v !== "object" || depth > 6) return;
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      const n = Number(x);
+      if ((k === "seconds" || k === "duration") && n > 0) out.seconds ??= n;
+      else if (k === "resolution" && typeof x === "string") out.resolution ??= x;
+      else if (["n", "count", "numberOfImages", "number_of_images", "num_images", "sampleCount", "candidateCount"].includes(k) && n > 0) out.count ??= n;
+      else walk(x, depth + 1);
+    }
+  };
+  walk(body, 0);
+  if (out.seconds === undefined && Number(args.seconds) > 0) out.seconds = Number(args.seconds);
+  return out;
+}
+
+/**
+ * 这次生成的预计花费（美元）：图片按张数（默认 1 张），视频按秒数和分辨率；没写时长时按模型支持的最长时长算（宁可多问）。
+ * 算不出来时为空。
+ */
+export function estimateUsd(model: MediaModel, body: Record<string, unknown> | undefined, args: Record<string, unknown>): number | undefined {
+  const p = model.cost;
+  if (!p) return undefined;
+  const r = requested(body, args);
+  if (p.per !== "second") return p.usd * (r.count ?? 1);
+  const listed = Array.isArray(model.options?.seconds) ? (model.options!.seconds as unknown[]).map(Number).filter((n) => n > 0) : [];
+  const seconds = r.seconds ?? (listed.length ? Math.max(...listed) : undefined);
+  if (!seconds) return undefined;
+  const perSecond = (r.resolution && p.byResolution?.[r.resolution]) || p.usd;
+  return perSecond * seconds;
 }
 
 /** 一行参数范围：尺寸、比例、分辨率、时长、参考素材 */
@@ -269,6 +324,7 @@ export class MediaService {
         options,
         requiresReference: options?.requires_reference === true,
         price: priceNote(e, catalog),
+        cost: unitPrice(e, catalog),
         priority: typeof e?.display_priority === "number" ? e.display_priority : 1e9,
       });
     }
@@ -298,7 +354,7 @@ export class MediaService {
       const lines = list.map((m) => `- ${m.id}${m === def ? "（默认）" : ""}${[m.price, optionsNote(m)].filter(Boolean).map((s) => ` — ${s}`).join("")}`);
       blocks.push(`可用的${name}模型（按推荐顺序）：\n${lines.join("\n")}`);
     }
-    blocks.push("生成前会由程序向用户确认这次用哪个模型。要用参考图、比例、分辨率、时长等参数时，先用 media_docs 读该模型的文档，按文档写 body。");
+    blocks.push("用默认模型、花费不高时直接生成；模型不是默认的（用户点名的除外）、预计花费较高或机器人设成每次都问时，程序会先问用户。要用参考图、比例、分辨率、时长等参数时，先用 media_docs 读该模型的文档，按文档写 body。");
     return blocks.join("\n\n");
   }
 
@@ -336,7 +392,7 @@ export class MediaService {
     const candidates = [def, ...all].filter((m, i, a) => m !== model && a.indexOf(m) === i && (hasRefs || !m.requiresReference)).slice(0, 3);
     const params = describeBody(body) || [typeof args.size === "string" ? args.size : "", Number(args.seconds) > 0 ? `${args.seconds} 秒` : ""].filter(Boolean).join(" · ");
     const summary = [`提示词：${prompt.length > 120 ? `${prompt.slice(0, 120)}…` : prompt}`, params && `参数：${params}`, model.price && `参考价：${model.price}`].filter(Boolean).join("\n");
-    return { kind, model, default: def, candidates, all, custom: !!body, summary };
+    return { kind, model, default: def, candidates, all, custom: !!body, summary, estimate: estimateUsd(model, body, args) };
   }
 
   /** 用确定下来的模型生成，返回给模型的一段文字 */

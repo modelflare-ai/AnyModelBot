@@ -13,6 +13,7 @@ import { cuaConfig, cuaMcpEnv, discoverAppsCached, type CuaApp } from "./cua-dri
 import { pwshPatchLines, pwshProbe } from "./pwsh.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 import { acceptsImages } from "../llm/client.js";
+import { CUA_SKILL, MEDIA_SKILL, agentPersona, botPrompt } from "./prompts/index.js";
 
 const log = logger("agent.host");
 
@@ -413,6 +414,10 @@ export class AgentHost {
   private get pidFile(): string {
     return path.join(this.home, "amb-host.pid");
   }
+  /** 机器人段（amb-prompt 插件现读）：在数据目录里、DSH 主目录之外，代理的文件工具读不到也改不了 */
+  get promptFile(): string {
+    return path.join(this.o.dataDir, "dsh", ".prompts", `${this.o.botId}.md`);
+  }
   get pid(): number | undefined {
     return this.harness?.client?.child?.pid;
   }
@@ -455,6 +460,7 @@ export class AgentHost {
     const plugin = path.join(this.o.runtimeDir, "plugins", "amb-bridge.mjs");
     const memory = path.join(this.o.runtimeDir, "plugins", "amb-memory.mjs");
     this.writeMediaSkill();
+    const cuOn = !!this.computerUseActive();
     const text = [
       "# 由 anymodel bot 每次启动生成；请勿手改。",
       "- id: llm-pi-ai",
@@ -478,9 +484,17 @@ export class AgentHost {
       ...wire.model,
       // Windows：命令用检测到的 PowerShell 7（DSH 自己只看 Program Files\PowerShell\7 和 PATH，找不到就退回 5.1）
       ...pwshPatchLines(pwshPath),
+      // 人设：个人助手（替换 DSH 的 coding agent 人设），不要 "powered by DeepSeek Harness" 那句身份
+      "- id: system-prompt",
+      "  config:",
+      `    personaPrefix: ${yamlStr(agentPersona({ computerUse: cuOn }))}`,
+      "    includeHarnessIdentity: false",
       "- insert:",
       "    - id: amb-bridge",
       `      name: ${yamlStr(plugin)}`,
+      // 机器人段（聊天规则、记忆说明、名字与人设）：每次模型请求从 AMB_PROMPT_FILE 现读
+      "    - id: amb-prompt",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-prompt.mjs"))}`,
       // 长期记忆工具（remember/forget/recall，经 bridge 由宿主读写）+ 上下文管家的原地压缩钩子
       // 已有会话也跟随机器人的权限预设（DSH 默认只对新会话生效）
       "    - id: amb-permission",
@@ -672,6 +686,7 @@ exec "$REAL" "$@"
       AMB_BRIDGE_URL: this.o.bridge.url,
       AMB_BRIDGE_TOKEN: this.o.bridge.token,
       AMB_BOT_ID: this.o.botId,
+      AMB_PROMPT_FILE: this.promptFile,
     };
     // 时区：本进程设了 TZ 才传下去；没设就不设，子进程用系统时区（各平台都是，Windows 上 TZ 也只认 POSIX 写法）
     if (process.env.TZ) env.TZ = process.env.TZ;
@@ -731,8 +746,32 @@ exec "$REAL" "$@"
     }
   }
 
+  /** 上次写进 promptFile 的内容（没变就不写） */
+  private promptText: string | undefined;
+
+  /**
+   * 把机器人段写进 promptFile（原子替换）。每个回合开始前（ensure）都调一次：改了人设、名字，
+   * 下一次模型请求就用上，不用 /new、不用重启代理进程；没变就不写，系统提示词也就保持不变（前缀缓存）。
+   */
+  syncPrompt(force = false): void {
+    const bot = this.o.store.getBot(this.o.botId);
+    const text = botPrompt({ name: bot?.name ?? "", persona: bot?.systemPrompt ?? "", memory: this.settings().memory.enabled });
+    if (!force && text === this.promptText) return;
+    try {
+      fs.mkdirSync(path.dirname(this.promptFile), { recursive: true, mode: 0o700 });
+      const tmp = `${this.promptFile}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, text, { mode: 0o600 });
+      fs.renameSync(tmp, this.promptFile);
+      this.promptText = text;
+    } catch (e) {
+      this.promptText = undefined;
+      log.warn("bot prompt write failed", { bot: this.o.botId, message: (e as Error).message.slice(0, 200) });
+    }
+  }
+
   async ensure(model: string): Promise<SdkHarness> {
     if (this.stopped) throw new Error("agent host stopped");
+    this.syncPrompt();
     // 连续启动失败后不再每条消息都重试一遍（每次都要等满初始化超时）：直到手动重启或冷却结束
     if (!this.harness && !this.starting && this.state === "error" && Date.now() < this.retryAfter) {
       throw new Error(`代理进程启动失败，${Math.ceil((this.retryAfter - Date.now()) / 60_000)} 分钟后再试（或在 设置 → 故障排查 里重启代理进程）：${this.lastError}`);
@@ -823,6 +862,7 @@ exec "$REAL" "$@"
       const api: AgentApi = fb ? "openai-completions" : chosen;
       this.fallback = fb;
       const patch = this.writePatch(model, apps, pwshPath, modelLimits(model, known), api, info?.reasoning);
+      this.syncPrompt(true);
       this.pwshPath = pwshPath;
       this.sig = this.settingsSig(pwshPath);
       const timeoutMs = this.initTimeoutMs();
@@ -1153,54 +1193,3 @@ exec "$REAL" "$@"
     this.state = "stopped";
   }
 }
-
-/** Cua Driver 后端的技能说明（由 anymodel bot 编写；工具来自 trycua/cua 的 cua-driver，MIT）。 */
-const CUA_SKILL = `---
-name: computer-use
-description: Operate native desktop apps on this computer (read windows, click, type, press keys, scroll, drag) through the bundled Cua Driver. Use when the user asks you to do something in a GUI application on their computer.
----
-
-# Computer Use (Cua Driver)
-
-Tools are named \`mcp__computer-use__<tool>\`. Actions run automatically; no approval is needed unless this bot is set to ask before input actions (then wait for the user's answer).
-
-## Loop
-1. Find the target: \`list_windows\` (or \`list_apps\`), or start one with \`launch_app\`.
-2. Read it narrowly: \`get_window_state({pid, window_id, query:"<what you need>"})\`. Rows look like \`[N] role "label"\`; the element token for row N is \`<snapshot_id>:N\` (e.g. "s0000002a:11"), never a bare number.
-3. Act with the token on the same window: \`click\`, \`type_text\`, \`set_value\`, \`press_key\`, \`hotkey\`, \`scroll\`, \`drag\`, \`invoke_menu\`. Prefer \`run_steps({steps:[{tool,args},...], observe:{}})\` to act and see what changed in one call.
-4. Verify at checkpoints with \`verify_state\` or a targeted \`get_window_state\` (use \`since:"latest"\` for just the changes). Use pixel coordinates only for surfaces missing from the accessibility tree, from a fresh screenshot of the same window.
-
-## Rules
-- Screenshots are for you to look at. Do not send them to the user unless they ask; if they do, save the image into the workspace and present that file.
-- Only apps installed on this computer are in scope; if a call says the app or resource is outside the capability manifest, tell the user instead of looking for a workaround.
-- Do not type passwords, payment details or other secrets unless the user explicitly gave them for this task. Do not confirm purchases, deletions or messages to other people without the user asking for exactly that.
-- On Linux, reading window contents needs AT-SPI; on Wayland only the foreground window can be driven. On macOS the app needs Accessibility and Screen Recording permission; if \`check_permissions\` reports them missing, tell the user how to grant them.
-`;
-
-
-/** 生图 / 生视频的技能说明（由 anymodel bot 编写；不含 Key、不让代理自己调接口，参数格式以 Modelflare 文档为准）。 */
-const MEDIA_SKILL = `---
-name: media
-description: Generate or edit images and generate videos with Modelflare image and video models through the media_models, media_docs, generate_image and generate_video tools. Use when the user asks to draw, create, edit or restyle a picture, animate an image, or make a video.
----
-
-# Images and videos (Modelflare)
-
-You have no Modelflare key and must not call the API yourself (no curl, no scripts): the tools call it with this bot's key. Every generation costs the user money, so the user confirms the model before anything is generated.
-
-## Steps
-1. \`media_models\` (kind \`image\` or \`video\`) lists the models this bot may use, the default one, their parameter ranges and reference prices. Use the default unless the user named a model or the request needs something the default cannot do (a reference image, a ratio or length it does not support).
-2. Plain text-to-image or text-to-video with default settings: call \`generate_image\` / \`generate_video\` with a detailed \`prompt\` only.
-3. Anything else (ratio, resolution, size, length, quality, audio, reference images, first/last frames, editing an image): call \`media_docs\` for the chosen model, then pass \`body\` in exactly the format its page shows, without \`model\`. Every family is different (for example Seedance uses \`content[]\`, Kling \`contents\` and \`settings\`, Wan \`input\` and \`parameters\`, Gemini \`contents[].parts[]\` with \`generationConfig\`), so never reuse field names from another model's page. For OpenAI Images models whose page sends references to \`/v1/images/edits\`, also pass \`endpoint: "edits"\`. Keep \`prompt\` the same as the prompt inside \`body\`: the user sees \`prompt\` in the confirmation.
-4. Reference media: a file in the workspace is written as \`"workspace:media/x.png"\` (sent as a data URL) or \`"workspace-base64:media/x.png"\` (raw Base64, e.g. Gemini \`inline_data.data\`), up to 20 MB each. A public https URL can be used as is. Models marked 必须带参考素材 (image-to-video, reference-to-video) only work with references; many models accept reference videos only as public URLs, see the docs. Images and files the user sends in chat are saved in the workspace under \`inbox/\`, and the message shows where (for example \`[图片 inbox/20261031-143012-ab12cd.jpg]\`), so write such an image as \`"workspace:inbox/20261031-143012-ab12cd.jpg"\`. If you have no file or link for a reference, ask the user for one.
-5. The tool result says what happened:
-   - Generated: the file is under \`media/\`; deliver it with \`present\`.
-   - The user picked another model while you had passed a \`body\`: read that model's page with \`media_docs\`, rewrite \`body\` for it and call again with \`model\` set to it. That call is not confirmed again.
-   - The user answered something else: adjust as they said and call again (they will be asked again).
-   - Cancelled or not confirmed in time: nothing was generated or charged; do not retry on your own.
-6. Videos take minutes and cost much more than images: only make a video when the user asks for one, and do not generate extra variants unless asked.
-
-## Errors
-- 这把 Key 不能用这个模型 (model_not_found): this account cannot use that model; pick another one from \`media_models\`.
-- Any other 4xx names the problem: fix the body according to the model's page instead of sending the same request again. If the balance is empty, tell the user to top up on Modelflare.
-`;

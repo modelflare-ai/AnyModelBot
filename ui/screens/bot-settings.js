@@ -154,7 +154,7 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
           onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.stopPropagation(); setName(bot.name); requestAnimationFrame(() => e.target.blur()); } }} />
       </label>
       <label class="set-field" id="bot-prompt">
-        <span class="k">人设 / 系统提示词<span class="hint">离开输入框时保存</span></span>
+        <span class="k">人设 / 系统提示词<span class="hint">离开输入框时保存，下一条消息起生效</span></span>
         <textarea class="field" ref=${promptRef} placeholder="例如：你是一个乐于助人的中文助手，回答简洁准确。" value=${prompt}
           onInput=${(e) => setPrompt(e.target.value)} onBlur=${() => prompt !== (bot.systemPrompt || "") && putBot({ systemPrompt: prompt })} />
       </label>
@@ -216,6 +216,15 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
           <${Row} id="computer-approval" name="审批" sub=${s.computerUse.approval === "auto" ? "所有操作自动执行" : "点击、输入等改变界面的操作先问我；读取界面仍自动"} off=${!s.computerUse.enabled}>
             <${Seg} label="电脑操作审批" value=${s.computerUse.approval} disabled=${!s.computerUse.enabled} onChange=${(v) => put({ computerUse: { approval: v } })}
               options=${[["auto", "自动执行"], ["ask-input", "改变界面前先问我"]]} />
+          <//>
+        </div>
+
+        <div class="list-head">生图 / 生视频</div>
+        <div class="list">
+          <${Row} id="media-confirm" name="生成前确认"
+            sub=${s.media.confirm === "always" ? "每次生成前都问我用哪个模型" : "默认模型能用、花费不高时直接生成；换模型、预计超过 $0.5 或要求不明确时先问我"}>
+            <${Seg} label="生成前确认" value=${s.media.confirm} onChange=${(v) => put({ media: { confirm: v } })}
+              options=${[["auto", "需要时再问"], ["always", "每次都问"]]} />
           <//>
         </div>
       `}

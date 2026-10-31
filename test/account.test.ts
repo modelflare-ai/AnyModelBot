@@ -12,8 +12,9 @@ import { discover, startLogin, pkcePair } from "../src/account/oauth.js";
 import { AccountManager, summarizeUsage, type AccountHooks } from "../src/account/manager.js";
 import { AccountVault } from "../src/account/vault.js";
 import { loadModelInfo, referencePrice } from "../src/account/model-info.js";
-import { MediaService, docSection } from "../src/agent/media.js";
-import { AgentManager } from "../src/agent/manager.js";
+import { MediaService, docSection, estimateUsd, type MediaModel } from "../src/agent/media.js";
+import { AgentManager, MEDIA_ASK_USD, mediaAsk } from "../src/agent/manager.js";
+import { normalizeSettings } from "../src/agent/settings.js";
 import { locateDshRuntime } from "../src/agent/host.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
 import { Store } from "../src/store/db.js";
@@ -404,9 +405,23 @@ describe("生图 / 生视频", () => {
       expect(plan.summary).toContain("1 个参考素材");
       expect(plan.summary).toContain("参考价：$0.05/秒（720p）");
       expect(await media.listText("b1", "video")).toMatch(/- b-t2v（默认） — \$0\.05\/秒（720p） — 时长 4–10 秒/);
+      // 预计花费：按秒数和分辨率；没写时长按最长的算；没有价格的算不出来
+      expect(plan.estimate).toBeCloseTo(0.5);
+      expect((await media.prepare("b1", "video", { prompt: "海浪", body: { duration: 4, resolution: "1080p" } })).estimate).toBeCloseTo(0.4);
+      expect((await media.prepare("b1", "video", { prompt: "海浪" })).estimate).toBeCloseTo(0.5);
+      expect((await media.prepare("b1", "video", { prompt: "海浪", seconds: 4 })).estimate).toBeCloseTo(0.2);
+      expect((await media.prepare("b1", "video", { prompt: "海浪", model: "c-pro" })).estimate).toBeUndefined();
     } finally {
       await srv.close();
     }
+  });
+
+  it("预计花费：图片按张数，按次计费的按次数", () => {
+    const img: MediaModel = { id: "i", kind: "image", route: "images", requiresReference: false, price: "$0.04/张", cost: { per: "image", usd: 0.04 }, priority: 1 };
+    expect(estimateUsd(img, undefined, {})).toBeCloseTo(0.04);
+    expect(estimateUsd(img, { n: 4 }, {})).toBeCloseTo(0.16);
+    expect(estimateUsd(img, { generationConfig: { candidateCount: 2 } }, {})).toBeCloseTo(0.08);
+    expect(estimateUsd({ ...img, cost: undefined }, undefined, {})).toBeUndefined();
   });
 
   it("文档：从全文里取出该模型那一节", () => {
@@ -447,13 +462,41 @@ describe("amb-media 插件与 bridge", () => {
     }
   });
 
-  it("每次生成前都向用户确认模型：确认、换模型、按新模型文档重写后免确认、取消、回复别的话", async () => {
+  it("什么时候先问：每次都问 > 代理说要问 > 花费超过上限（视频算不出也算）> 不是默认模型（用户点名的除外）", () => {
+    const M1 = { id: "m1" } as MediaModel;
+    const M2 = { id: "m2" } as MediaModel;
+    const plan = (o: { model?: MediaModel; estimate?: number; kind?: "image" | "video" } = {}) => ({ kind: o.kind ?? ("image" as const), model: o.model ?? M1, default: M1, estimate: o.estimate });
+    expect(mediaAsk(plan({ estimate: 0.04 }), undefined, "auto")).toBeUndefined();
+    expect(mediaAsk(plan({ estimate: 0.04 }), undefined, "always")).toBe("always");
+    expect(mediaAsk(plan({ estimate: 0.04 }), true, "auto")).toBe("agent");
+    expect(mediaAsk(plan({ estimate: 0.04 }), "true", "auto")).toBe("agent");
+    expect(mediaAsk(plan({ estimate: MEDIA_ASK_USD }), undefined, "auto")).toBeUndefined();
+    expect(mediaAsk(plan({ estimate: MEDIA_ASK_USD + 0.01 }), false, "auto")).toBe("cost");
+    // 图片算不出花费不问（便宜），视频算不出就问
+    expect(mediaAsk(plan({}), undefined, "auto")).toBeUndefined();
+    expect(mediaAsk(plan({ kind: "video" }), undefined, "auto")).toBe("cost");
+    expect(mediaAsk(plan({ kind: "video", estimate: 0.3 }), undefined, "auto")).toBeUndefined();
+    expect(mediaAsk(plan({ model: M2, estimate: 0.04 }), undefined, "auto")).toBe("model");
+    expect(mediaAsk(plan({ model: M2, estimate: 0.04 }), false, "auto")).toBeUndefined();
+  });
+
+  it("默认模型、花费不高直接生成；换模型、花费高、代理要问、设成每次都问时先问；换模型后按新文档重写的那一次免确认", async () => {
     const store = new Store(":memory:");
+    store.createBot({ id: "b1", name: "b1" });
     const M1 = { id: "m1", kind: "image", price: "$0.03/张" };
     const M2 = { id: "m2", kind: "image", price: "" };
     const ran: string[] = [];
     const media = {
-      prepare: async (_b: string, op: string, args: any) => ({ kind: op, model: args.model === "m2" ? M2 : M1, default: M1, candidates: [M2], all: [M1, M2], custom: !!args.body, summary: "提示词：猫" }),
+      prepare: async (_b: string, op: string, args: any) => ({
+        kind: op,
+        model: args.model === "m2" ? M2 : M1,
+        default: M1,
+        candidates: [M2],
+        all: [M1, M2],
+        custom: !!args.body,
+        summary: "提示词：猫",
+        estimate: 0.03 * (args.body?.n ?? 1),
+      }),
       execute: async (_b: string, model: { id: string }) => (ran.push(model.id), `done ${model.id}`),
     } as unknown as MediaService;
     const mgr = new AgentManager({ store, dataDir: fs.mkdtempSync(path.join(os.tmpdir(), "amb-mgr-")), runtimeDir: undefined, upstream: () => ({ baseUrl: "", apiKey: "" }), enabled: false, media });
@@ -480,27 +523,40 @@ describe("amb-media 插件与 bridge", () => {
       throw new Error("没有等到确认");
     };
     try {
-      let [r, q] = await Promise.all([call({ prompt: "猫" }), answer({ selected: ["m1"] })]);
-      expect(q.question).toBe("这次用 m1 生成图片吗？");
-      expect(q.options.map((o: any) => o.label)).toEqual(["m1", "m2", "取消"]);
-      expect(q.options[0].description).toBe("默认 · $0.03/张");
-      expect(r).toEqual({ text: "done m1" });
+      // 默认模型、花费不高：不问，直接生成
+      expect(await call({ prompt: "猫" })).toEqual({ text: "done m1" });
+      expect(mgr.approvals.pending("c1", "question")).toEqual([]);
+      // 用户点名了别的模型（confirm: false）：也不问
+      expect(await call({ prompt: "猫", model: "m2", confirm: false })).toEqual({ text: "done m2" });
 
-      [r] = await Promise.all([call({ prompt: "猫" }), answer({ selected: ["m2"] })]);
+      // 代理自己换了模型：问，并说明默认是哪个
+      let [r, q] = await Promise.all([call({ prompt: "猫", model: "m2" }), answer({ selected: ["m2"] })]);
+      expect(q.question).toBe("这次用 m2 生成图片吗？");
+      expect(q.detail).toContain("不是默认模型（默认是 m1）");
+      expect(q.options.map((o: any) => o.label)).toEqual(["m2", "m2", "取消"]);
       expect(r).toEqual({ text: "done m2" });
 
-      // 请求体是按 m1 的文档写的：换成 m2 时先让代理按 m2 的文档重写，重写后的那一次不再确认
-      [r] = await Promise.all([call({ prompt: "猫", body: { a: 1 } }), answer({ custom: "用 M2" })]);
+      // 花费超过上限：就算 confirm: false 也问；附上预计花费
+      [r, q] = await Promise.all([call({ prompt: "猫", body: { n: 30 }, confirm: false }), answer({ selected: ["取消"] })]);
+      expect(q.detail).toContain(`预计花费约 $0.9，超过 $${MEDIA_ASK_USD}`);
+      expect(r.text).toMatch(/取消/);
+
+      // 要求不明确（confirm: true）：问；请求体按 m1 的文档写的，换成 m2 时先让代理按 m2 的文档重写，重写后的那一次不再确认
+      [r, q] = await Promise.all([call({ prompt: "猫", body: { a: 1 }, confirm: true }), answer({ custom: "用 M2" })]);
+      expect(q.options[0]).toEqual({ label: "m1", description: "默认 · $0.03/张" });
       expect(r.text).toMatch(/media_docs 查 m2/);
       expect(await call({ prompt: "猫", model: "m2", body: { b: 1 } })).toEqual({ text: "done m2" });
 
-      [r] = await Promise.all([call({ prompt: "猫" }), answer({ selected: ["取消"] })]);
-      expect(r.text).toMatch(/取消/);
-      [r] = await Promise.all([call({ prompt: "猫" }), answer({ custom: "好的" })]);
+      [r] = await Promise.all([call({ prompt: "猫", confirm: true }), answer({ custom: "好的" })]);
       expect(r).toEqual({ text: "done m1" });
-      [r] = await Promise.all([call({ prompt: "猫" }), answer({ custom: "换成竖屏的" })]);
+      [r] = await Promise.all([call({ prompt: "猫", confirm: true }), answer({ custom: "换成竖屏的" })]);
       expect(r.text).toMatch(/「换成竖屏的」/);
-      expect(ran).toEqual(["m1", "m2", "m2", "m1"]);
+
+      // 机器人设成每次都问
+      store.updateBot("b1", { settings: normalizeSettings({ media: { confirm: "always" } }) });
+      [r] = await Promise.all([call({ prompt: "猫" }), answer({ selected: ["m1"] })]);
+      expect(r).toEqual({ text: "done m1" });
+      expect(ran).toEqual(["m1", "m2", "m2", "m2", "m1", "m1"]);
     } finally {
       await mgr.bridge.stop();
       store.close();

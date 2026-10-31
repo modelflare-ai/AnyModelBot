@@ -10,7 +10,7 @@ import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
-import { DEFAULT_SETTINGS, type BotSettings } from "./settings.js";
+import { DEFAULT_SETTINGS, type BotSettings, type MediaConfirm } from "./settings.js";
 import {
   HANDOFF_SYSTEM,
   REVIEW_SYSTEM,
@@ -76,6 +76,24 @@ export interface TurnProgress {
 
 /** 生成确认里"取消"那一项 */
 const CANCEL = "取消";
+
+/** 预计花费超过它（美元）就先问用户 */
+export const MEDIA_ASK_USD = 0.5;
+
+/** 为什么要先问：机器人设成每次都问 / 代理说要问 / 花费 / 模型不是默认的 */
+export type MediaAskReason = "always" | "agent" | "cost" | "model";
+
+/**
+ * 生成前要不要先问用户；不用问时为空。confirm 是代理传的：true = 要求不明确，要问；false = 用户点名了这个模型。
+ * 花费超过上限（视频算不出花费也算）和"每次都问"不看 confirm。
+ */
+export function mediaAsk(plan: Pick<MediaPlan, "kind" | "model" | "default" | "estimate">, confirm: unknown, setting: MediaConfirm): MediaAskReason | undefined {
+  if (setting === "always") return "always";
+  if (confirm === true || confirm === "true") return "agent";
+  if (plan.estimate !== undefined ? plan.estimate > MEDIA_ASK_USD : plan.kind === "video") return "cost";
+  if (plan.model.id !== plan.default.id && confirm !== false && confirm !== "false") return "model";
+  return undefined;
+}
 
 /**
  * 记下正在运行的工具调用（"session:callId"，本会话的 session 记为空）：tool/call 加入、tool/result 移除；
@@ -503,7 +521,7 @@ export class AgentManager {
 
   /**
    * 生图 / 生视频：只在该机器人有回合进行中时受理（工具调用只会发生在回合里）。
-   * models / docs 直接回答；image / video 每次都先向用户确认这次用哪个模型，确认后才花钱。
+   * models / docs 直接回答；image / video 用默认模型、花费不高时直接生成，需要时（mediaAsk）先问用户用哪个模型。
    */
   private async mediaOp(b: any): Promise<{ text?: string; error?: string }> {
     const botId = String(b?.botId ?? "");
@@ -518,16 +536,17 @@ export class AgentManager {
       const plan = await media.prepare(botId, op, args);
       const sessionId = String(b?.sessionId ?? "");
       const conv = this.resolveConversation(botId, sessionId);
-      if (!conv) return { error: "找不到这次对话，没法向用户确认，没有生成" };
       const tool = plan.kind === "image" ? "generate_image" : "generate_video";
       let model = plan.model;
-      const grant = this.mediaGrants.get(conv);
+      const grant = conv ? this.mediaGrants.get(conv) : undefined;
+      const why = mediaAsk(plan, args.confirm, this.settings(botId).media.confirm);
       if (grant?.kind === plan.kind && grant.model === model.id && Date.now() - grant.at < (this.o.approvalTtlMs ?? APPROVAL_TTL_MS)) {
         this.mediaGrants.delete(conv);
-      } else {
-        const r = await this.confirmMedia(botId, conv, sessionId, plan, tool);
+      } else if (why) {
+        if (!conv) return { error: "找不到这次对话，没法向用户确认，没有生成" };
+        const r = await this.confirmMedia(botId, conv, sessionId, plan, tool, why);
         if (r.cancel) return { text: "用户取消了这次生成（或没有及时确认），没有生成文件，也没有扣费。不要自行重试；需要的话问用户想怎么改。" };
-        if (r.reply !== undefined) return { text: `用户没有确认，而是回复：「${r.reply}」。按用户的意思调整后再调用 ${tool}（会再次确认）。` };
+        if (r.reply !== undefined) return { text: `用户没有确认，而是回复：「${r.reply}」。按用户的意思调整后再调用 ${tool}。` };
         if (r.model && r.model.id !== model.id) {
           if (plan.custom) {
             // 请求体是按原模型的文档写的，换了模型就得按新模型的文档重写；重写后的那一次不再确认
@@ -564,14 +583,17 @@ export class AgentManager {
   }
 
   /** 生成前的确认：问用户这次用哪个模型（本次的、默认的和几个推荐的，或回复别的模型名），等到回答、取消或过期 */
-  private async confirmMedia(botId: string, conv: string, sessionId: string, plan: MediaPlan, tool: string): Promise<{ model?: MediaModel; cancel?: boolean; reply?: string }> {
+  private async confirmMedia(botId: string, conv: string, sessionId: string, plan: MediaPlan, tool: string, why: MediaAskReason): Promise<{ model?: MediaModel; cancel?: boolean; reply?: string }> {
     const name = plan.kind === "image" ? "图片" : "视频";
     const opt = (m: MediaModel, tag = "") => ({ label: m.id, description: [tag, m.price].filter(Boolean).join(" · ") || undefined });
+    // 为什么问：花费高、不是默认模型时说一句（每次都问、代理要问的不用解释）
+    const reason =
+      why === "cost" ? (plan.estimate !== undefined ? `预计花费约 $${Math.round(plan.estimate * 100) / 100}，超过 $${MEDIA_ASK_USD}` : "这次的花费估算不出来") : why === "model" ? `不是默认模型（默认是 ${plan.default.id}）` : "";
     const q: QuestionItem = {
       id: "model",
       header: `生成${name}`,
       question: `这次用 ${plan.model.id} 生成${name}吗？`,
-      detail: `${plan.summary}\n也可以直接回复其他模型名。`,
+      detail: `${plan.summary}${reason ? `\n${reason}` : ""}\n也可以直接回复其他模型名。`,
       options: [opt(plan.model, plan.model === plan.default ? "默认" : "机器人选的"), ...plan.candidates.map((m) => opt(m, m === plan.default ? "默认" : "")), { label: CANCEL, description: "这次不生成" }],
     };
     const row = this.approvals.create({ kind: "question", botId, conversationId: conv, sessionId, tool, detail: q.question, reason: "", payload: JSON.stringify([q]) });

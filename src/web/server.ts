@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { appVersion, type App } from "../app.js";
 import type { InboundEvent, OutboundOp, ReplySession } from "../core/types.js";
+import { eventText } from "../core/types.js";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { logFilePath, logger, mask, readLogTail, registerSecret } from "../log.js";
 import { diagnosticsReport, safeStatus, testAgent, testModel } from "../diagnostics.js";
@@ -13,6 +14,7 @@ import { ApiError } from "../account/client.js";
 import { OAuthError } from "../account/oauth.js";
 import { normalizeLine } from "../modelflare.js";
 import { SseReply } from "./sse-reply.js";
+import { LiveTurns, type LiveTurn } from "./live.js";
 import { connectionFromPids } from "../agent/peer-guard.js";
 import type { ApprovalRow } from "../store/db.js";
 import { normalizeSettings } from "../agent/settings.js";
@@ -170,6 +172,40 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
 
   let boundPort = 0;
   const allowedHosts = () => new Set([`127.0.0.1:${boundPort}`, `localhost:${boundPort}`, `[::1]:${boundPort}`]);
+
+  // —— 网页控制台进行中的消息：切走再切回、刷新后能接上，停止按钮不依赖发消息的那个请求 ——
+  const live = new LiveTurns();
+  function startLive(botId: string, text: string): LiveTurn {
+    const convId = consoleConvId(botId);
+    const last = app.store.getConversation(convId) ? (app.store.listMessages(convId, 1).at(-1)?.id ?? 0) : 0;
+    return live.start(convId, botId, text, last);
+  }
+  /** 排进会话队列交给运行时；结束时先移出登记，再通知发消息的请求和所有接上的界面。不抛错 */
+  async function runLive(t: LiveTurn, ev: InboundEvent, out: ReplySession = t): Promise<void> {
+    let err: Error | undefined;
+    await app.queue.run(`web:${t.botId}:console`, async () => {
+      try {
+        await app.runtime.handle(ev, out, { signal: t.abort.signal });
+      } catch (e) {
+        err = e as Error;
+      }
+    });
+    if (err) {
+      log.warn("web chat failed", { message: err.message.slice(0, 300) });
+      live.end(t, "error", { message: err.message });
+    } else live.end(t, "done", { conversationId: t.conversationId });
+  }
+
+  /** 停止会话里在处理的消息：网页的（含排队的）和其它渠道的都停 */
+  function stopConversation(convId: string): boolean {
+    const n = live.stop(convId);
+    return app.runtime.stop(convId) || n > 0;
+  }
+  /** 网页里发的 /stop 连排在后面的网页消息一起停；其余同 interceptReply */
+  function interceptWeb(ev: InboundEvent): { handled: boolean; ack?: string } {
+    if (eventText(ev).trim().toLowerCase() === "/stop") live.stop(consoleConvId(ev.botId));
+    return app.runtime.interceptReply(ev);
+  }
 
   function authorized(req: http.IncomingMessage, url: URL, res: http.ServerResponse): boolean {
     // 代理沙箱可访问回环网络：拒绝一切来自 DSH 子进程及其工具进程的请求（防止自行批准/读取配置）
@@ -363,7 +399,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       app.desktop.openInBrowser();
       return send(res, 200, { ok: true });
     }
-    if (p === "/agent" && m === "GET") return send(res, 200, app.agent.status());
+    // busy：有消息在处理的机器人（纯对话、排队、代理还在启动都算），侧栏的"正在工作"
+    if (p === "/agent" && m === "GET") return send(res, 200, { ...app.agent.status(), busy: [...new Set([...live.bots(), ...app.runtime.busyBots()])] });
     // —— Windows：没有 PowerShell 7 时建议安装（对话空状态、设置 → 常规、故障排查）——
     if (seg[0] === "pwsh") {
       const view = (st: PwshStatus) => ({ ...st, dismissed: cfg.ui.pwshHintDismissed });
@@ -454,8 +491,9 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         const t = app.agent.turnsInProgress.get(decodeURIComponent(seg[1]));
         return send(res, 200, { turn: t ? { since: t.since, lastProgress: t.lastProgress, steps: t.activity.steps } : null });
       }
+      // 停止：网页消息（排队的也算）、纯对话、还在等代理启动的、代理回合，都在这里停
       if (seg.length === 3 && seg[2] === "stop" && m === "POST") {
-        return send(res, 200, { stopped: app.agent.stopTurn(decodeURIComponent(seg[1])) });
+        return send(res, 200, { stopped: stopConversation(decodeURIComponent(seg[1])) });
       }
     }
     if (seg[0] === "bots") {
@@ -597,12 +635,27 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       }
       if (sub === "chat" && m === "GET") {
         const conv = app.store.getConversation(consoleConvId(id));
+        // 进行中的消息由 live 显示（用户消息、到目前为止的回复与步骤）；它开始之后存下的消息先不列，免得重复
+        const turns = live.list(consoleConvId(id));
+        const cut = turns[0]?.afterMessageId ?? Infinity;
         return send(res, 200, {
           conversationId: consoleConvId(id),
           model: conv?.model ?? "",
-          messages: conv ? app.store.listMessages(conv.id, 200) : [],
+          messages: conv ? app.store.listMessages(conv.id, 200).filter((x) => x.id <= cut) : [],
           pending: app.store.listApprovals({ status: "pending", conversationId: consoleConvId(id), limit: 50 }).map(publicApproval),
+          live: turns.map((t) => t.snapshot()),
         });
+      }
+      // 接上进行中的消息（切走再切回、刷新后）：先发 snapshot，再转发之后的事件（同 chat/stream），最后 done / error。
+      // turn 不给就接正在处理的那条；已经结束了直接 done
+      if (sub === "chat/live" && m === "GET") {
+        const t = live.get(consoleConvId(id), url.searchParams.get("turn"));
+        const out = new SseReply(res);
+        if (!t) return out.end("done", { conversationId: consoleConvId(id), ended: true });
+        out.send("snapshot", t.snapshot());
+        const off = t.subscribe((e, d) => (e === "done" || e === "error" ? out.end(e, d) : out.send(e, d)));
+        res.on("close", off);
+        return;
       }
       if (sub === "chat/model" && m === "PUT") {
         const b = await readJson(req);
@@ -615,36 +668,33 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         const text = String(b.text ?? "").trim();
         if (!text) throw new HttpError(400, "内容为空");
         const ev = webEvent(id, text);
-        const intercepted = app.runtime.interceptReply(ev);
+        const intercepted = interceptWeb(ev);
         if (intercepted.handled) return send(res, 200, { reply: intercepted.ack ?? "", prompts: [] });
         const out = new CollectReply();
-        await app.queue.run(`web:${id}:console`, () => app.runtime.handle(ev, out));
+        const t = startLive(id, text);
+        await runLive(t, ev, { apply: async (op) => (await t.apply(op), await out.apply(op)) });
         return send(res, 200, { reply: out.text, prompts: out.prompts, files: out.files, conversationId: consoleConvId(id) });
       }
+      // 断开连接（切走、刷新、关窗口）不再中止这条消息：回合照常跑完，界面回来时经 chat/live 接上；停止走 /conversations/:id/stop
       if (sub === "chat/stream" && m === "POST") {
         const b = await readJson(req);
         const text = String(b.text ?? "").trim();
         if (!text) throw new HttpError(400, "内容为空");
         const ev = webEvent(id, text);
         const out = new SseReply(res);
-        const ac = new AbortController();
-        res.on("close", () => {
-          if (!res.writableEnded) ac.abort();
-        });
         try {
-          const intercepted = app.runtime.interceptReply(ev);
+          const intercepted = interceptWeb(ev);
           if (intercepted.handled) {
             if (intercepted.ack) out.send("text", { text: intercepted.ack, final: true, ack: true });
             return out.end("done", { conversationId: consoleConvId(id) });
           }
-          await app.queue.run(`web:${id}:console`, async () => {
-            if (!ac.signal.aborted) await app.runtime.handle(ev, out, { signal: ac.signal });
-          });
-          out.end("done", { conversationId: consoleConvId(id) });
         } catch (e) {
-          log.warn("web chat failed", { message: (e as Error).message.slice(0, 300) });
-          out.end("error", { message: (e as Error).message });
+          return out.end("error", { message: (e as Error).message });
         }
+        const t = startLive(id, text);
+        const off = t.subscribe((e, d) => (e === "done" || e === "error" ? out.end(e, d) : out.send(e, d)));
+        res.on("close", off);
+        await runLive(t, ev);
         return;
       }
     }

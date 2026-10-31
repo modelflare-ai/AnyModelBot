@@ -203,27 +203,33 @@ function App() {
   }, [connected]);
   useEffect(pollSide, [pollSide]);
   useInterval(pollSide, 6000, connected);
-  useInterval(
+  // 服务端的"正在工作"：代理回合，以及任何渠道正在处理（含排队、等代理启动、纯对话）的消息
+  const pollWorking = useCallback(
     () =>
       api("/agent")
         .then((a) => {
           const map = {};
           for (const [id, h] of Object.entries(a.hosts || {})) map[id] = Number(h.activeTurns || 0) > 0;
+          for (const id of a.busy || []) map[id] = true;
           setAgentWorking(map);
         })
         .catch(() => {}),
-    3000,
-    connected,
+    [],
   );
+  useInterval(pollWorking, 3000, connected);
   const working = useMemo(() => {
     const m = { ...agentWorking };
     for (const [k, v] of Object.entries(localWorking)) if (v) m[k] = true;
     return m;
   }, [agentWorking, localWorking]);
+  const wantWorking = useRef({});
   const onWorking = useCallback((id, on) => {
-    setLocalWorking((w) => (w[id] === on ? w : { ...w, [id]: on }));
-    if (!on) setTimeout(pollSide, 300);
-  }, [pollSide]);
+    wantWorking.current[id] = on;
+    if (on) return setLocalWorking((w) => (w[id] ? w : { ...w, [id]: true }));
+    // 切走时消息可能还在服务端处理：先问一次服务端，再去掉本页的标记，侧栏不闪（期间又开始了就不去掉）
+    pollWorking().finally(() => !wantWorking.current[id] && setLocalWorking((w) => (w[id] ? { ...w, [id]: false } : w)));
+    setTimeout(pollSide, 300);
+  }, [pollSide, pollWorking]);
 
   const openSettings = (tab = route.view === "settings" ? route.tab : "general", row = "") => {
     reloadStatus();

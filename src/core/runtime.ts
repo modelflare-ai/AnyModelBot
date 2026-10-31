@@ -4,7 +4,8 @@ import path from "node:path";
 import type { InboundEvent, ReplySession } from "./types.js";
 import { eventText } from "./types.js";
 import { acceptsImages, type ModelClient, type ChatMessage } from "../llm/client.js";
-import type { TurnImage } from "../agent/host.js";
+import { TurnStopped, type TurnImage } from "../agent/host.js";
+import { describeStep, fmtSecs, type ActivityStep } from "../agent/activity.js";
 import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
@@ -79,7 +80,8 @@ const HELP = [
   "/model <编号或模型名> — 切换当前会话的模型",
   "/reset — 清空当前会话的上下文（代理模式下同时开启新的代理会话；长期记忆保留）",
   "/new — 开始新的一段对话：旧对话归档并生成交接便条，长期记忆保留",
-  "/status — 查看当前会话使用的模型",
+  "/status — 查看当前模型、代理状态和正在处理的消息走到了哪一步",
+  "/stop — 中止正在处理的消息（代理模式下会重启代理进程）",
   "/help — 显示本帮助",
 ].join("\n");
 
@@ -178,7 +180,10 @@ export class BotRuntime {
     }
   }
 
-  /** 渠道在进入每会话串行队列之前调用：处理审批回复（y 1234 / n 1234）与提问回答。 */
+  /**
+   * 渠道在进入每会话串行队列之前调用：处理审批回复（y 1234 / n 1234）、提问回答和 /status /help /stop。
+   * handled=false 但带 ack：前一条还在处理，渠道先把 ack 发出去，消息照常入队。
+   */
   interceptReply(ev: InboundEvent): { handled: boolean; ack?: string } {
     const text = eventText(ev);
     const convId = `${ev.botId}:${ev.channel}:${ev.conversation.id}`;
@@ -189,8 +194,23 @@ export class BotRuntime {
       if (bot) return { handled: true, ack: cmd === "/help" ? HELP : this.statusText(bot.id, convId, this.opts.store.getConversation(convId)?.model ?? "", bot.defaultModel) };
     }
     const agent = this.opts.agent;
+    // /stop 必须插队：它要停的正是排在前面、卡住的那个回合
+    if (cmd === "/stop") {
+      const t = agent?.turnsInProgress.get(convId);
+      if (!t || !agent?.stopTurn(convId)) return { handled: true, ack: "当前没有正在处理的消息。" };
+      return { handled: true, ack: `正在中止上一条消息（已处理 ${fmtSecs(Date.now() - t.since)}）…` };
+    }
     if (!agent) return { handled: false };
-    return agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`);
+    const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`);
+    if (r.handled) return r;
+    // 前一条还在处理：说一声这条排在后面、怎么中止（每个回合只说一次），消息照常入队
+    const t = agent.turnsInProgress.get(convId);
+    if (t && !t.queuedNotice) {
+      t.queuedNotice = true;
+      const last = t.activity.last;
+      return { handled: false, ack: `上一条消息还在处理（已 ${fmtSecs(Date.now() - t.since)}${last ? `，现在：${clipLine(describeStep(last))}` : ""}），这条会排在它后面。发送 /stop 可以中止。` };
+    }
+    return r;
   }
 
   /** /status 的内容：只读本地状态，立即返回 */
@@ -205,7 +225,7 @@ export class BotRuntime {
     // Windows：代理执行命令用的 PowerShell；没有 7 时建议安装
     const ps = a?.available ? pwshStatusLine(pwshProbe.snapshot()) : "";
     const turn = a?.turnsInProgress.get(convId);
-    const busy = turn ? [`本会话上一条消息还在处理（已 ${Math.round((Date.now() - turn.since) / 1000)} 秒），新消息会排在它后面`] : [];
+    const busy = turn ? [busyLine(turn.since, turn.lastProgress, turn.activity.steps)] : [];
     return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
   }
 
@@ -233,6 +253,12 @@ export class BotRuntime {
   private async handleAgent(agent: AgentManager, botId: string, convId: string, text: string, model: string, systemPrompt: string, out: ReplySession, images: TurnImage[] = []): Promise<boolean | "starting"> {
     const { store } = this.opts;
     let visible = false;
+    // 活动记录：网页对话实时显示（其它渠道忽略这个操作），回合结束后随回复存下来，信息面板里能看
+    const steps = new Map<string, ActivityStep>();
+    const onStep = (step: ActivityStep) => {
+      steps.set(step.id, step);
+      void out.apply({ type: "activity", step });
+    };
     const unbind = agent.approvals.bindSink(convId, async (row) => {
       visible = true;
       await out.apply(interactiveOp(row));
@@ -278,6 +304,7 @@ export class BotRuntime {
         text: input,
         model,
         ...(images.length ? { images } : {}),
+        onStep,
         observer: {
           // 工具调用不进入聊天：只用于判断代理已开始工作（不再回退到纯对话），正在输入状态由渠道维持
           onProgress: () => {
@@ -287,7 +314,7 @@ export class BotRuntime {
       }).finally(() => clearInterval(startup));
       store.addMessage(convId, "user", text);
       const finalText = r.text.trim() || "（已完成，没有文字回复）";
-      store.addMessage(convId, "assistant", finalText);
+      store.addMessage(convId, "assistant", finalText, [...steps.values()]);
       await out.apply({ type: "stream.finish", text: finalText });
       for (const f of r.files ?? []) {
         try {
@@ -300,12 +327,14 @@ export class BotRuntime {
     } catch (e) {
       const err = e as Error;
       log.warn("agent turn failed", { message: err.message.slice(0, 300) });
-      if (!visible && agent.host(botId).state !== "running") {
+      if (!(err instanceof TurnStopped) && !visible && agent.host(botId).state !== "running") {
         log.warn("agent host unavailable, falling back to plain chat");
         return false;
       }
+      const msg = turnFailedText(err, [...steps.values()]);
       store.addMessage(convId, "user", text);
-      await out.apply({ type: "stream.finish", text: `⚠️ 代理执行失败：${err.message.slice(0, 300)}` });
+      store.addMessage(convId, "assistant", msg, [...steps.values()]);
+      await out.apply({ type: "stream.finish", text: msg });
       return true;
     } finally {
       clearInterval(startup);
@@ -413,4 +442,31 @@ export function interactiveOp(row: ApprovalRow) {
     code: row.code,
     buttons: single?.options?.length && !single.multiSelect ? single.options.map((o, i) => ({ label: o.label, value: { amb: "question", id: row.id, option: String(i + 1) }, style: "default" as const })) : undefined,
   };
+}
+
+const clipLine = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+/** /status 里"上一条还在处理"那一行：处理了多久、现在在做什么、多久没动了 */
+export function busyLine(since: number, lastProgress: number, steps: ActivityStep[]): string {
+  const now = Date.now();
+  const last = steps.at(-1);
+  const parts = [`已 ${fmtSecs(now - since)}`];
+  if (steps.length) parts.push(`${steps.length} 步`);
+  if (!lastProgress) parts.push("还在等代理进程接手");
+  else if (last) parts.push(`现在：${clipLine(describeStep(last))}`);
+  if (lastProgress && now - lastProgress >= 60_000) parts.push(`${fmtSecs(now - lastProgress)}没有新进展`);
+  return `本会话上一条消息还在处理（${parts.join("，")}），新消息会排在它后面。发送 /stop 可以中止`;
+}
+
+/** 代理回合失败时给用户的话：中止（/stop、没进展、超时）各说清原因和下一步，进程被重启的另说 */
+export function turnFailedText(err: Error, steps: ActivityStep[]): string {
+  const last = steps.filter((s) => s.kind !== "error").at(-1);
+  const where = last ? `${last.cut || last.status === "running" ? "卡在" : "最后一步"}：${clipLine(describeStep(last))}。` : "";
+  if (err instanceof TurnStopped) {
+    if (err.reason === "user") return `已中止（处理了 ${fmtSecs(err.ms)}）。代理进程已重启，可以继续发消息。`;
+    if (err.reason === "idle") return `⚠️ 代理 ${fmtSecs(err.ms)}没有任何进展，已自动中止并重启代理进程。${where}可以重新发送，或用 /model 换个模型试试。`;
+    return `⚠️ 这条消息处理超过了 ${fmtSecs(err.ms)}的上限，已中止并重启代理进程。${where}可以把任务拆小一点再发。`;
+  }
+  if (/runtime (closed|exited)/i.test(err.message)) return "⚠️ 代理进程重启了（可能是同一机器人的另一个会话中止了卡住的消息），这条消息没有处理完，请重新发送。";
+  return `⚠️ 代理执行失败：${err.message.slice(0, 300)}`;
 }

@@ -3,7 +3,8 @@ import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
-import { AgentHost, callDetail, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { AgentHost, TurnStopped, callDetail, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { ActivityLog, type ActivityStep } from "./activity.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
@@ -30,6 +31,8 @@ export interface AgentManagerOptions {
   upstream: () => { baseUrl: string; apiKey: string };
   enabled: boolean;
   turnTimeoutMs?: number;
+  /** 代理已经在处理、却这么久没有任何进展（模型不回、工具不动、只在重试）就中止；等用户批准/回答不算 */
+  idleTimeoutMs?: number;
   approvalTtlMs?: number;
   /** 后台小模型调用（管家判定、交接便条、记忆整理）；缺省则这些功能静默跳过。botId 用来把请求记到该机器人的 Key 上 */
   complete?: (botId: string, model: string, system: string, user: string) => Promise<string>;
@@ -39,6 +42,18 @@ export interface AgentManagerOptions {
   media?: MediaService;
   /** 需要让用户看到的提示（代理进程起不来等） */
   onNotice?: (text: string) => void;
+}
+
+/** 一个进行中的回合（/status、/stop、排队提示、信息面板和故障排查用） */
+export interface TurnProgress {
+  botId: string;
+  since: number;
+  /** 最近一次有进展的时间；0 = 消息还没交给代理（在等进程、等会话） */
+  lastProgress: number;
+  activity: ActivityLog;
+  abort: AbortController;
+  /** 已经提示过"后来的消息排在它后面" */
+  queuedNotice?: boolean;
 }
 
 /** 生成确认里"取消"那一项 */
@@ -163,17 +178,59 @@ export class AgentManager {
     void h.ensure(model).catch(() => undefined);
   }
 
-  /** 会话 → 正在进行的回合开始时间（/status 与故障排查用：后来的消息排在它后面） */
-  readonly turnsInProgress = new Map<string, { botId: string; since: number }>();
+  /** 会话 → 正在进行的回合（后来的消息排在它后面） */
+  readonly turnsInProgress = new Map<string, TurnProgress>();
 
-  async runTurn(botId: string, input: TurnInput) {
+  /** onStep：活动记录里每新增或更新一步就回调一次（网页对话实时显示、回合结束后存进消息） */
+  async runTurn(botId: string, input: TurnInput & { onStep?: (step: ActivityStep) => void }) {
     const conv = input.conversationId;
-    this.turnsInProgress.set(conv, { botId, since: Date.now() });
+    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model), abort: new AbortController() };
+    this.turnsInProgress.set(conv, t);
+    // 看门狗：代理已经在处理，却长时间没有进展（模型不回、工具不动、只在重试），又不是在等用户批准或回答 → 中止
+    const idleMs = this.o.idleTimeoutMs ?? 10 * 60_000;
+    const watchdog = setInterval(() => {
+      if (!t.lastProgress || t.abort.signal.aborted) return;
+      if (this.approvals.pending(conv).length) t.lastProgress = Date.now();
+      else if (Date.now() - t.lastProgress > idleMs) {
+        log.warn("agent turn idle, stopping", { bot: botId, conversationId: conv, idleMs, lastStep: t.activity.last });
+        this.halt(conv, t, new TurnStopped("idle", idleMs));
+      }
+    }, Math.max(250, Math.min(15_000, idleMs / 4)));
+    const observer: TurnObserver = {
+      ...input.observer,
+      onStart: () => {
+        t.lastProgress = Date.now();
+        input.observer?.onStart?.();
+      },
+      onEvent: (type, data, time) => {
+        if (t.activity.apply(type, data, time)) t.lastProgress = Date.now();
+        input.observer?.onEvent?.(type, data, time);
+      },
+    };
     try {
-      return await this.runTurnInner(botId, input);
+      return await this.runTurnInner(botId, { ...input, observer, signal: t.abort.signal });
+    } catch (e) {
+      if (e instanceof TurnStopped && e.reason === "timeout") t.activity.end("超过单回合上限");
+      throw e;
     } finally {
+      clearInterval(watchdog);
       this.turnsInProgress.delete(conv);
     }
+  }
+
+  /** /stop、信息面板的"中止"：返回有没有正在处理的回合 */
+  stopTurn(conversationId: string): boolean {
+    const t = this.turnsInProgress.get(conversationId);
+    if (!t) return false;
+    if (!t.abort.signal.aborted) this.halt(conversationId, t, new TurnStopped("user", Date.now() - t.since));
+    return true;
+  }
+
+  private halt(conv: string, t: TurnProgress, why: TurnStopped): void {
+    t.activity.end(why.reason === "user" ? "用户中止" : why.reason === "idle" ? "长时间没有进展，自动中止" : "超过单回合上限");
+    t.abort.abort(why);
+    // 这一轮还在等的批准 / 回答随之作废（代理进程会被重启，没人再等它们）
+    for (const r of this.approvals.pending(conv)) this.approvals.cancel(r.id, "stopped");
   }
 
   private async runTurnInner(botId: string, input: TurnInput) {
@@ -537,13 +594,19 @@ export class AgentManager {
   }
 
   /** 故障排查：运行时位置 + 每个已创建的代理进程的详细状态（stderr 尾部、最近一次退出）+ 进行中的回合 */
-  diagnostics(): { enabled: boolean; available: boolean; runtimeDir?: string; hosts: Record<string, Record<string, unknown>>; turns: Array<{ conversationId: string; botId: string; forMs: number }> } {
+  diagnostics(): { enabled: boolean; available: boolean; runtimeDir?: string; hosts: Record<string, Record<string, unknown>>; turns: Array<{ conversationId: string; botId: string; forMs: number; idleMs?: number; lastStep?: ActivityStep }> } {
     return {
       enabled: this.o.enabled,
       available: this.available,
       runtimeDir: this.o.runtimeDir,
       hosts: Object.fromEntries([...this.hosts].map(([id, h]) => [id, h.diagnostics()])),
-      turns: [...this.turnsInProgress].map(([conversationId, t]) => ({ conversationId, botId: t.botId, forMs: Date.now() - t.since })),
+      turns: [...this.turnsInProgress].map(([conversationId, t]) => ({
+        conversationId,
+        botId: t.botId,
+        forMs: Date.now() - t.since,
+        idleMs: t.lastProgress ? Date.now() - t.lastProgress : undefined,
+        lastStep: t.activity.last,
+      })),
     };
   }
 

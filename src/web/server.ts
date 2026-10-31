@@ -445,6 +445,18 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         if (!conv) throw new HttpError(404, "会话不存在");
         return send(res, 200, { conversation: conv, messages: app.store.listMessages(conv.id) });
       }
+      // 一条回复的代理活动记录（展开时才取）
+      if (seg.length === 5 && seg[2] === "messages" && seg[4] === "activity" && m === "GET") {
+        return send(res, 200, { steps: app.store.getActivity(decodeURIComponent(seg[1]), Number(seg[3])) });
+      }
+      // 正在处理的回合：处理了多久、最近一次进展、到目前为止的步骤（信息面板轮询）
+      if (seg.length === 3 && seg[2] === "turn" && m === "GET") {
+        const t = app.agent.turnsInProgress.get(decodeURIComponent(seg[1]));
+        return send(res, 200, { turn: t ? { since: t.since, lastProgress: t.lastProgress, steps: t.activity.steps } : null });
+      }
+      if (seg.length === 3 && seg[2] === "stop" && m === "POST") {
+        return send(res, 200, { stopped: app.agent.stopTurn(decodeURIComponent(seg[1])) });
+      }
     }
     if (seg[0] === "bots") {
       if (seg.length === 1) {

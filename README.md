@@ -87,7 +87,9 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 - 调用归因：经 Modelflare 的请求都带 `X-Modelflare-Skill: anymodel-bot/<版本>`，链接都带 `utm_source=anymodelbot`。
 - 线路：默认国际线路 `https://modelflare.dev/v1`；中国大陆可在「高级」或 设置 → Modelflare → 线路 选「中国大陆优化」（`https://origin.modelflare.dev/v1`）。线路由你选定，不自动切换。
 - 设置 → Modelflare：账户、余额与充值、余额提醒、用量、通知、邀请；连接状态（只显示 Key 尾号）；未登录时可更换密钥或断开（机器人与会话保留，断开后回到首次连接页）；默认模型、刷新模型列表。
-- 对话中输入框右侧的模型按钮可为当前会话切换模型（也可设为机器人默认）；`/model`、`/reset`、`/new`、`/status`、`/help` 照常可用。
+- 对话中输入框右侧的模型按钮可为当前会话切换模型（也可设为机器人默认）；`/model`、`/reset`、`/new`、`/status`、`/stop`、`/help` 照常可用。
+- 处理过程：代理回合的每一步（模型请求及用时与 tokens、工具调用及参数与输出、重试、子代理）折叠在回复上方的"用时"一行里，点开查看；微信 / 飞书会话在信息面板 → 最近会话里看，正在处理的那一轮实时显示并可中止。
+- 卡住的消息：`/stop`（任何渠道）或信息面板里的「中止」立即结束正在处理的回合；代理 10 分钟没有任何进展（模型不回、工具不动、只在重试；等你批准或回答不算）会自动中止，单回合最长 30 分钟（`AMB_AGENT_IDLE_TIMEOUT_MS`、`AMB_AGENT_TURN_TIMEOUT_MS` 可调）。DSH 没有中断单个回合的接口，中止时会重启该机器人的代理进程。前一条还在处理时发来的新消息会先收到一句提示；`/status` 显示它走到了哪一步、多久没有进展。
 - 内置网关：magpie 以 `--gateway` 模式运行，使用本程序数据目录内独立的 HOME/配置目录；**不读取**你电脑上已有的 Claude/Codex 等订阅凭据，**不改写**任何 agent 配置，关闭自动更新与账户发现。它只供本进程内部调用，界面不再反代它的页面或 `/v1`。
 - API Key 只保存在内置网关的隔离配置中，不经过命令行参数、不写日志，前端只拿到尾号。
 - 开发/测试：设置 `AMB_MAGPIE_BASE_URL` 可直接使用一个 OpenAI 兼容端点（不启动内置网关，界面视为已连接，账户功能不可用）；`AMB_MODELFLARE_BASE_URL` 可把 Modelflare 基址指向本地 mock，`AMB_MODELFLARE_ISSUER` 把登录与账户接口指向本地 mock。

@@ -2,6 +2,8 @@
  * 统一消息/事件模型：渠道把平台消息归一化成 InboundEvent，
  * 运行时只产出 OutboundOp，由渠道按自身能力（ChannelCapabilities）落地或降级。
  */
+import type { ActivityStep } from "../agent/activity.js";
+
 export type ChannelId = "feishu" | "weixin" | "web";
 
 export type Part =
@@ -44,6 +46,8 @@ export type OutboundOp =
   | { type: "stream.update"; text: string }
   | { type: "stream.finish"; text: string }
   | { type: "text"; text: string }
+  /** 代理回合的一步（新增或更新，按 id）：只有网页对话显示，其它渠道忽略 */
+  | { type: "activity"; step: ActivityStep }
   /** 代理交付的本地文件（present）：微信走 CDN 媒体消息，飞书上传文件/图片，网页列出文件名 */
   | { type: "file"; path: string; name: string }
   /**

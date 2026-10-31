@@ -156,6 +156,7 @@ export class App {
       upstream,
       enabled: config.agent.mode === "dsh" && !opts.models,
       turnTimeoutMs: config.agent.turnTimeoutMs,
+      idleTimeoutMs: config.agent.idleTimeoutMs,
       approvalTtlMs: config.agent.approvalTtlMs,
       // 后台小任务（管家判定/交接/记忆整理）直接走 magpie，不经代理子进程
       complete: (botId, model, system, user) =>

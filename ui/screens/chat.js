@@ -6,6 +6,7 @@ import { BotAvatar } from "../components/avatar.js";
 import { Markdown, Linkified } from "../components/markdown.js";
 import { ModelPicker, shortModel, sameModel } from "../components/model-picker.js";
 import { PwshHint } from "../components/pwsh-hint.js";
+import { ActivityLine, currentStep, upsertStep } from "../components/activity.js";
 import { api, streamChat } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
 import { fmtSep, fmtClock, fmtDur } from "../lib/format.js";
@@ -14,7 +15,8 @@ const COMMANDS = [
   ["/model", "列出或切换模型"],
   ["/new", "开始新的一段对话（旧对话归档并留交接便条）"],
   ["/reset", "清空本会话上下文"],
-  ["/status", "查看当前模型与运行方式"],
+  ["/status", "查看当前模型、运行方式和处理进度"],
+  ["/stop", "中止正在处理的消息"],
   ["/help", "显示全部命令"],
 ];
 // 文件权限（输入框左下角，参考 Codex 的权限胶囊）：机器人设置里的同一项
@@ -31,11 +33,12 @@ const isError = (t) => typeof t === "string" && t.startsWith("⚠️");
 const errText = (t) => t.replace(/^⚠️\s*/, "");
 const isAuthError = (t) => /HTTP 401\b|\b401\b.*(key|密钥|unauthor)/i.test(t);
 
+// steps：代理回合的活动记录有几步（展开时按 mid 取）
 function toItems(messages) {
   return messages.map((m) =>
     m.role === "assistant" && isError(m.content)
-      ? { kind: "error", id: "m" + m.id, text: errText(m.content), at: m.createdAt }
-      : { kind: "msg", id: "m" + m.id, role: m.role === "user" ? "user" : "assistant", text: m.content, at: m.createdAt },
+      ? { kind: "error", id: "m" + m.id, mid: m.id, text: errText(m.content), at: m.createdAt, steps: m.steps }
+      : { kind: "msg", id: "m" + m.id, mid: m.id, role: m.role === "user" ? "user" : "assistant", text: m.content, at: m.createdAt, steps: m.steps },
   );
 }
 
@@ -144,8 +147,11 @@ function FileCard({ name }) {
   </div>`;
 }
 
-/** 回复上方的工作状态：没出字时"思考中"，出字后"正在回复 N 秒"，结束后"用时 N 秒"（短于 3 秒不显示） */
-function WorkLine({ live, text, startedAt, workedMs }) {
+/**
+ * 回复上方的工作状态：没出字时"思考中 · 正在做的那一步"，出字后"正在回复 N 秒"，结束后"用时 N 秒"（短于 3 秒且没有步骤时不显示）。
+ * 代理回合有步骤时这一行可以展开成处理过程（默认折叠）；历史消息只知道步数，展开时用 load 取。
+ */
+function WorkLine({ live, text, startedAt, workedMs, steps, count, load }) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (!live) return;
@@ -153,9 +159,12 @@ function WorkLine({ live, text, startedAt, workedMs }) {
     return () => clearInterval(t);
   }, [live]);
   const ms = live ? Date.now() - startedAt : workedMs;
-  if (!live && !(ms >= 3000)) return null;
-  const label = live ? (text ? `正在回复 ${fmtDur(ms)}` : ms >= 3000 ? `思考中 ${fmtDur(ms)}` : "思考中") : `用时 ${fmtDur(ms)}`;
-  return html`<div class=${`work-line${live ? " live" : ""}`} aria-live="off"><span class=${live ? "shimmer" : ""}>${label}</span></div>`;
+  if (!live && !(ms >= 3000) && !steps?.length && !count) return null;
+  const cur = live && !text ? currentStep(steps) : "";
+  const label = live
+    ? `${text ? `正在回复 ${fmtDur(ms)}` : ms >= 3000 ? `思考中 ${fmtDur(ms)}` : "思考中"}${cur ? ` · ${cur}` : ""}`
+    : ms >= 3000 ? `用时 ${fmtDur(ms)}` : "处理过程";
+  return html`<${ActivityLine} label=${label} live=${live} steps=${steps} count=${count} load=${load} />`;
 }
 
 /** 消息下方的操作：复制 + 时刻（悬停时出现，最后一条回复常显） */
@@ -192,11 +201,13 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const ctrl = useRef(null);
   const mounted = useRef(true);
   const lastUser = useRef("");
+  const convId = useRef("");
 
   const load = useCallback(async () => {
     try {
       const d = await api(`/bots/${encodeURIComponent(bot.id)}/chat`);
       if (!mounted.current) return;
+      convId.current = d.conversationId || "";
       setConvModel(d.model || "");
       const list = toItems(d.messages || []);
       for (const a of d.pending || []) list.push({ kind: "prompt", id: "p" + a.id, requestId: a.id, prompt: "" });
@@ -272,6 +283,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
             finalText = d.text;
             patchLive(liveId, (it) => ({ ...it, text: d.text }));
           },
+          activity: (d) => patchLive(liveId, (it) => ({ ...it, activity: upsertStep(it.activity, d) })),
           prompt: (d) => mounted.current && setItems((l) => {
             const i = l.findIndex((x) => x.id === liveId);
             const card = { kind: "prompt", id: uid(), requestId: d.requestId, prompt: d.prompt };
@@ -296,17 +308,21 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       const out = [];
       for (const it of l || []) {
         if (it.id !== liveId) out.push(it);
-        else if (isError(finalText)) out.push({ kind: "error", id: liveId, text: errText(finalText), retry: t.startsWith("/") ? undefined : t, at: it.at });
-        else if (finalText) out.push({ ...it, text: finalText, live: false, workedMs: Date.now() - it.startedAt });
+        else if (isError(finalText)) out.push({ kind: "error", id: liveId, text: errText(finalText), retry: t.startsWith("/") ? undefined : t, at: it.at, activity: it.activity, workedMs: Date.now() - it.startedAt });
+        else if (finalText || it.activity?.length) out.push({ ...it, text: finalText, live: false, workedMs: Date.now() - it.startedAt });
       }
       return isReset && !isError(finalText) ? out.filter((x) => x.id === liveId) : out;
     });
     if (/^\/model\s+\S/i.test(t)) load();
   };
 
+  // 停止：代理回合在服务端中止（会重启代理进程），回复流照常收到"已中止"再结束；纯对话直接断开请求
   const stop = () => {
-    ctrl.current?.abort();
+    const agentTurn = (items || []).some((x) => x.live && x.activity?.length);
+    if (convId.current) api(`/conversations/${encodeURIComponent(convId.current)}/stop`, { method: "POST" }).catch(() => {});
+    if (!agentTurn) ctrl.current?.abort();
   };
+  const loadActivity = (mid) => () => api(`/conversations/${encodeURIComponent(convId.current)}/messages/${mid}/activity`).then((d) => d.steps);
 
   // —— 斜杠命令菜单 ——
   const slashQuery = /^\/\S*$/.test(text) && !slashOff ? text.toLowerCase() : null;
@@ -415,7 +431,8 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
         out.push(html`<div class=${`${cls}${it.id === lastAi ? " last" : ""}`} key=${it.id}>
           ${it.role === "user"
             ? html`<div class="msg"><${Linkified} text=${it.text} /></div><${MsgActions} text=${it.text} at=${it.at} />`
-            : html`${(it.live || it.workedMs) && html`<${WorkLine} live=${it.live} text=${it.text} startedAt=${it.startedAt} workedMs=${it.workedMs} />`}
+            : html`${(it.live || it.workedMs || it.steps) && html`<${WorkLine} live=${it.live} text=${it.text} startedAt=${it.startedAt} workedMs=${it.workedMs}
+                steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}
               ${it.text && html`<div class="msg"><${Markdown} text=${it.text} /></div>`}
               ${!it.live && html`<${MsgActions} text=${it.text} at=${it.at} />`}`}
         </div>`);
@@ -424,7 +441,10 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       } else if (it.kind === "file") {
         out.push(html`<div class=${cls} key=${it.id}><${FileCard} name=${it.name} /></div>`);
       } else if (it.kind === "error") {
-        out.push(html`<div class=${cls} key=${it.id}><${ErrorNotice} text=${it.text} onRetry=${it.retry ? () => send(it.retry) : undefined} onFixKey=${() => onOpenSettings("modelflare", "connection")} /></div>`);
+        out.push(html`<div class=${cls} key=${it.id}>
+          ${(it.activity?.length || it.steps) && html`<${WorkLine} workedMs=${it.workedMs} steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}
+          <${ErrorNotice} text=${it.text} onRetry=${it.retry ? () => send(it.retry) : undefined} onFixKey=${() => onOpenSettings("modelflare", "connection")} />
+        </div>`);
       }
       prev = it;
     }

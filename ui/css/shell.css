@@ -195,6 +195,12 @@ button.thread:active { background: var(--side-press); }
 .transcript-msg.user .bubble { background: var(--bubble-user); }
 .transcript-msg .hint { margin-top: var(--space-0-5); }
 .transcript-msg.user .hint { text-align: right; }
+/* 回复的处理过程和正在处理的那一轮：占满预览宽度，展开的步骤才放得下命令和输出 */
+.transcript-msg:has(> .activity) { justify-self: stretch; max-width: none; }
+.transcript-msg:has(> .activity) .bubble { justify-self: start; max-width: 85%; }
+.transcript-msg { display: grid; }
+.transcript-turn { display: grid; gap: var(--space-1); }
+.transcript .work-line { font-size: var(--fs-sm); }
 
 .panel-scrim { display: none; }
 /* narrow window: the panel floats over the chat as a glass drawer over a scrim */

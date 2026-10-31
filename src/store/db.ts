@@ -41,6 +41,8 @@ export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
   createdAt: number;
+  /** 代理回合的活动记录有几步（内容按需用 getActivity 取） */
+  steps?: number;
 }
 
 export interface WeixinAccount {
@@ -130,6 +132,8 @@ CREATE TABLE IF NOT EXISTS agent_segments (
 const COLUMNS: Array<[string, string, string]> = [
   ["bots", "settings", "TEXT NOT NULL DEFAULT '{}'"],
   ["conversations", "kind", "TEXT NOT NULL DEFAULT 'dm'"],
+  // 代理回合的活动记录（JSON 数组，见 agent/activity.ts）；只在助手消息上
+  ["messages", "activity", "TEXT NOT NULL DEFAULT ''"],
 ];
 
 export class Store {
@@ -294,17 +298,19 @@ export class Store {
   }
 
   // ---------- messages ----------
-  addMessage(conversationId: string, role: Message["role"], content: string): number {
+  addMessage(conversationId: string, role: Message["role"], content: string, activity?: unknown[]): number {
     const now = Date.now();
     const res = this.db
-      .prepare("INSERT INTO messages(conversation_id, role, content, created_at) VALUES(?, ?, ?, ?)")
-      .run(conversationId, role, content, now);
+      .prepare("INSERT INTO messages(conversation_id, role, content, created_at, activity) VALUES(?, ?, ?, ?, ?)")
+      .run(conversationId, role, content, now, activity?.length ? JSON.stringify(activity) : "");
     this.db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, conversationId);
     return Number(res.lastInsertRowid);
   }
   listMessages(conversationId: string, limit = 500): Message[] {
     const rows = this.db
-      .prepare("SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id ASC")
+      .prepare(
+        "SELECT * FROM (SELECT id, conversation_id, role, content, created_at, CASE WHEN json_valid(activity) THEN json_array_length(activity) ELSE 0 END AS steps FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+      )
       .all(conversationId, limit) as Row[];
     return rows.map((r) => ({
       id: Number(r.id),
@@ -312,7 +318,17 @@ export class Store {
       role: String(r.role) as Message["role"],
       content: String(r.content),
       createdAt: Number(r.created_at),
+      ...(Number(r.steps) ? { steps: Number(r.steps) } : {}),
     }));
+  }
+  /** 一条消息的活动记录（没有则为空数组） */
+  getActivity(conversationId: string, messageId: number): unknown[] {
+    const r = this.db.prepare("SELECT activity FROM messages WHERE id = ? AND conversation_id = ?").get(messageId, conversationId) as Row | undefined;
+    try {
+      return r?.activity ? (JSON.parse(String(r.activity)) as unknown[]) : [];
+    } catch {
+      return [];
+    }
   }
   clearMessages(conversationId: string): void {
     this.db.prepare("DELETE FROM messages WHERE conversation_id = ?").run(conversationId);

@@ -193,6 +193,17 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
   <img src="docs/assets/features/agent-files.gif" alt="A bot tidies a messy folder: it lists the files, proposes a plan, and an approval card asks before moving files outside its workspace" width="100%">
 </p>
 
+## ⏳ Works in the background, and comes to you only when needed
+
+- **Background tasks.** For work that takes a while (research, a report, sorting files), or when you say "do it in the background", the bot starts a background task and you keep chatting. The result comes back to the conversation that asked for it.
+- **Follow-ups.** Quote the result in WeChat, or reply to it in Feishu, to keep talking to that task.
+- **Rules.** "Every morning at 8, check X's price and tell me if it drops below 200" becomes a rule. A new rule observes first: it records what it would have said, and sends nothing and changes no files. Once it looks right, switch it to act. Fixed reminders act straight away.
+- **Needs you.** Everything any bot is waiting on you for, an answer, an approval or a retry, sits in one sidebar row that is only there when something needs you. The info panel's Tasks group lists the bot's tasks and rules, with every step visible.
+- **Quiet by default.** Only results, decisions and failures are pushed, never progress. Quiet hours are 22:00 to 08:00, and unprompted messages are capped per day (3 on WeChat, 5 on Feishu), with the rest merged into one.
+- **Budgets.** Every task and rule has a budget (1 US dollar per task; 0.10 per rule run and 3 a month), and work stops and asks when it runs out. Change them in the task details and the rule editor.
+- **Pause anytime.** One switch in bot settings › Proactive messages pauses background work; chat carries on.
+- **Cleans up after itself.** Tasks and run logs are kept for 30 days. A task folder unused for 30 days is deleted, and you are told first in Needs you, with the option to keep it. Run logs export as Markdown.
+
 ## 🖥️ Operates your computer, and makes images and video
 
 - **Computer use** is powered by the bundled [Cua Driver](https://github.com/trycua/cua). By default, actions run automatically. Switch a bot to *ask before changing the screen* and every click and keystroke waits for you. Reading the screen never needs approval. On macOS, computer use is a Beta feature.
@@ -308,7 +319,7 @@ Modelflare keeps request logs; its [Trust Center](https://modelflare.dev/trust?u
 
 Directions we are exploring. They are not promises, and the order is not a schedule.
 
-- [ ] **Scheduled tasks**: let a bot run work on a timer.
+- [x] **Scheduled tasks**: let a bot run work on a timer (shipped as rules, above).
 - [ ] **Group chats**: Feishu bots handle one-to-one chats today.
 - [ ] **English interface**: the app UI is Simplified Chinese today.
 - [ ] **macOS computer use**: verify direct mode on more real machines and move it out of Beta.

@@ -330,6 +330,22 @@ button.thread:active { background: var(--side-press); }
 .rule-days { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .rule-days .chip { height: var(--ctl-sm); padding: 0 var(--space-2-5); }
 .rule-days .chip.on { background: var(--pill-press); color: var(--fg); font-weight: var(--fw-medium); }
+.rule-form label.rule-budget { display: flex; align-items: center; gap: var(--space-1-5); font-weight: var(--fw-regular); }
+.rule-budget .num { color: var(--muted); }
+.rule-budget .field { width: 88px; --field-h: var(--ctl-md); }
+
+/* 任务（components/tasks.js，3f）：「任务」组里一个任务一行，点开是同一块里的详情（和规则一样）；结束了的收在最后一行
+   「已结束 3」里，点开才列出来。详情里每次运行是一行折叠的处理过程，不画分隔线、不再铺底 */
+.task-row .dot { flex: none; }
+.task-row > .text { flex: none; }
+.task-ended { width: 100%; text-align: left; }
+.task-ended .name { color: var(--muted); font-weight: var(--fw-regular); }
+.task-ended .chev { flex: none; color: var(--muted); transition: transform var(--t-fast); }
+.task-ended.open .chev { transform: rotate(90deg); }
+.row-edit .task-detail { margin-top: 0; }
+.row-edit .task-detail .act-list, .need-detail .task-detail .act-list { background: none; padding: 0; margin-bottom: 0; }
+/* 导出是下载链接，长得和文字按钮一样 */
+a.text { display: inline-flex; align-items: center; text-decoration: none; }
 
 .panel-scrim { display: none; }
 /* narrow window: the panel floats over the chat as a glass drawer over a scrim */

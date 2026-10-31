@@ -1,6 +1,6 @@
 # Background tasks and proactive rules (Phase 3 design)
 
-Status: **3a–3e are built**: tasks, questions and needs-you, delivery, rules with observe mode, and cost controls (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`, `test/cost.*`). 3f is still design. Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
+Status: **3a–3f are built**: tasks, questions and needs-you, delivery, rules with observe mode, cost controls, and the tasks view with retention, cleanup and Markdown export (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`, `ui/components/tasks.js`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`, `test/cost.*`, `test/retention.*`, `test/tasks-view.*`). Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
 Feasibility evidence is in [Appendix A](#appendix-a-feasibility-answers-with-evidence). The spike that produced it is `scripts/spikes/p3-tasks/`.
 
 ## Summary
@@ -379,7 +379,7 @@ Each rule has a run log, newest first, with one line per run: time, mode, outcom
 - 前天 08:00 · 失败：页面打不开（已重试 3 次） · 约 $0.01
 - 10/27 08:00 · 跳过：电脑没开
 
-Expanding a row shows the Report (summary, message, would-do), the steps, the rule version it ran under and the permission it had. The log is kept for 90 days and is exportable as Markdown.
+Expanding a row shows the Report (summary, message, would-do), the steps, the rule version it ran under and the permission it had. The log is kept for 30 days (decision 9) and is exportable as Markdown.
 
 ### Calm defaults
 
@@ -495,6 +495,13 @@ GPU 价格调研                                          [停止]
 
 **Bot info panel:** a "任务" group (a `.list`) after 渠道 and 待审批, with open tasks and rules in one compact row each. It is absent when the bot has neither.
 
+**As built (3f).** The full tasks view is the info panel's 任务 group, not a new main-pane screen with a sidebar button:
+
+- The panel is already the place for "this bot" (channels, approvals, memory, conversations), bot settings' rules row already points there (「N 条，在信息面板的「任务」里」), and the cross-bot question "does anything need me?" is the needs-you page. A main-pane page would add a permanent sidebar control that shows nothing when healthy.
+- Order: working and needs-you tasks (`GET /tasks?bot=&group=working,needs`), then rules, then one quiet row 「已结束 3」 that folds the ended tasks of the last 30 days (`group=ended`). The group is absent when the bot has no task or rule.
+- A row opens in place, as rules already do (one `--well`, no lines between the detail's rows): 来自 (channel, time and the user's words; it opens that conversation), 最新进展, 预算 (约 $0.08 / $1.00 with 改), 文件夹 (path, size, 打开 on the desktop), 清理 (only when a date is set, with 保留), then each run as a folded 处理过程, and 停止 / 导出 / 删除. The chat chip and needs-you show the same detail. The command palette has 「任务和规则」.
+- Rule detail is as in 3d, plus 导出 next to 编辑 and 删除. The rule editor has 每次 / 每月 budgets for checks.
+
 ## 7. Permissions
 
 | Work | Sandbox | Approvals | Denied tools (only those registered) |
@@ -554,6 +561,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   report TEXT NOT NULL DEFAULT '',        -- latest Report JSON
   ended_at INTEGER NOT NULL DEFAULT 0, end_reason TEXT NOT NULL DEFAULT '', -- done|stopped|archived
   stopped_by TEXT NOT NULL DEFAULT '',
+  cleanup_at INTEGER NOT NULL DEFAULT 0,  -- 3f: when the folder is due for cleanup (the user was told); 0 = none
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS tasks_open ON tasks(bot_id, ended_at);
 
@@ -629,11 +637,12 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 
 | Route | Does |
 | --- | --- |
-| `GET /tasks?bot=&group=working\|needs\|ended` | List with stage, cost and the latest line |
+| `GET /tasks?bot=&group=working\|needs\|ended` | List with stage, cost and the latest line; several groups separated by commas; archived tasks are never listed |
 | `POST /tasks` `{botId, conversationId?, text, budgetUsd?}` | New task from the desktop |
-| `GET /tasks/:id` | Detail: origin, Report, runs (without steps), inputs, delivery state |
+| `GET /tasks/:id` | Detail: the task view, runs (without steps), origin (channel, time, words), folder and session sizes |
 | `GET /tasks/:id/runs/:run/activity` | Steps of one run |
-| `POST /tasks/:id/stop` · `/retry` · `/continue {text}` · `/budget {addUsd}` · `/archive` | Person actions |
+| `POST /tasks/:id/stop` · `/retry` · `/continue {text}` · `/budget {addUsd}` or `{budgetUsd}` · `/keep` · `/open` (desktop) · `DELETE /tasks/:id` | Person actions (as built: stop, budget, keep, open and delete; retry and continue go through `/attention`) |
+| `GET /tasks/:id/export` · `GET /rules/:id/export` (`?lang=`) | Markdown download of a task's runs or a rule's run log |
 | `GET /rules?bot=` · `POST /rules {botId, conversationId, text}` (returns a draft: words, schedule, mode) · `PUT /rules/:id` · `DELETE /rules/:id` | Rules |
 | `POST /rules/:id/run` | Run now, in the rule's mode |
 | `GET /rules/:id/runs?before=` | Run log |
@@ -677,7 +686,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | Turn ends without a `task_report` | One nudge; then `failed` (「没有给出结果」) |
 | Task loops without progress | The run's time cap and budget stop it; needs you |
 | Job runs forever | Killed 30 minutes after the turn ended; the session is told at its next turn |
-| Approval or question never answered | Blocking approval: rejected at its TTL; the task fails with 「批准超时」. Task question: stays in needs-you; no reminders; the task is archived after 14 days (Q9) |
+| Approval or question never answered | Blocking approval: rejected at its TTL; the task fails with 「批准超时」. Task question: stays in needs-you; no reminders; the task is archived after 30 idle days and the question withdrawn (decision 9) |
 | Delivery fails (Feishu API, channel logged out) | Retries at 5 s doubling to 300 s; after 3 failures: needs-you `delivery`. Dropped only when the conversation no longer exists |
 | Feishu messages sent while the app is offline | The long connection doesn't re-push them (the SDK reconnects with no position; the platform only re-pushes events it delivered that weren't acked within 3 s). On start and on every reconnect the app reads each Feishu chat active in the last 7 days from history: messages from the last 24 h after the last one it saw, at most 20 per chat, through the normal inbound pipeline and dedupe. Without the history scope it says so once and carries on |
 | WeChat window closed or no quota | Held, piggybacked on the next inbound, shown in needs-you ([WeChat](#wechat-the-hard-constraint)) |
@@ -686,7 +695,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | Two hosts open the same data dir | On desktop, Electron's `requestSingleInstanceLock()` already prevents it. The headless CLI and Docker build need a data-dir lock before the Scheduler starts (a small addition in 3d) |
 | Prompt injection from a web page during a task or rule | Permission caps (observe is read-only; act is capped at workspace), approvals go to needs-you, and denied acting tools. We can't fully prevent network side effects from shell tools, and the UI says so |
 | The DSH child's memory grows with sessions the SDK can't close (one per rule run) | About 0.25–0.45 MB per finished session (measured). After more than 100 task and rule sessions the child is replaced as soon as it is fully idle: no chat turn, run, pending approval, compaction or background job. Nothing is interrupted or recovered |
-| Disk growth (task folders, DSH session JSONL) | Retention: archive done tasks after 30 days, and offer to delete their folders and sessions; sizes are shown in the task detail (Q9) |
+| Disk growth (task folders, DSH session JSONL) | Retention (decision 9, as built in 3f): a task with no run in flight and nothing new for 30 days is archived (hidden, no follow-ups, open questions withdrawn); run logs are pruned after 30 days, keeping each task's latest run and the current month's rule runs. A folder with files gets a needs-you row (「2 个任务文件夹 11月4日 删除」, 保留 / 知道了, never pushed) at 27 idle days and is deleted at 30 days, no sooner than 3 days after the row appeared, together with the task's DSH session directories (`dsh/<bot>/sessions/*/task-<id>[-N]`; the SDK has no delete, so the host removes them, and retries later if the session is still open in the child). Any use of the task, or 保留, restarts the 30 days. Folder and session sizes are in the task detail; deleting a task removes its folder. State is in `tasks.cleanup_at` and `kv`, so it survives restarts and long times off |
 
 ## 12. Testing strategy
 

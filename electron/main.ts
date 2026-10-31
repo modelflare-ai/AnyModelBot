@@ -230,6 +230,7 @@ async function boot(): Promise<void> {
       updateTitleBar();
     },
     openDataDir: () => void shell.openPath(config.dataDir),
+    openPath: (p) => void shell.openPath(p),
     openInBrowser: () => void shell.openExternal(entryUrl),
     openExternal: (url) => {
       if (/^https?:/i.test(url)) void shell.openExternal(url);

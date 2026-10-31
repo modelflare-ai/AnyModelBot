@@ -18,17 +18,18 @@ const log = logger("attention");
 
 /**
  * question / approval：在等你回答、批准（任务预算用完时的「再给 $1 继续？」也是 question）；failed：任务失败了；
- * rule：规则连续失败或本月预算用完（暂停了）；delivery：结果没送到；login：渠道登录过期了；budget：机器人的预算留给聊天，后台工作停着
+ * rule：规则连续失败或本月预算用完（暂停了）；delivery：结果没送到；login：渠道登录过期了；budget：机器人的预算留给聊天，后台工作停着；
+ * cleanup：任务文件夹 30 天没动过，过几天清理（3f）
  */
-export type AttentionKind = "question" | "approval" | "failed" | "rule" | "delivery" | "login" | "budget";
+export type AttentionKind = "question" | "approval" | "failed" | "rule" | "delivery" | "login" | "budget" | "cleanup";
 /**
  * answer、approve、deny、retry（任务再试 / 消息再发）、stop、dismiss（不再提示）、relogin（去重新扫码）、
- * open（打开对话；budget 是打开机器人设置的预算）、continue（加预算接着做：任务 $1，规则每月 $3）
+ * open（打开对话；budget 是打开机器人设置的预算）、continue（加预算接着做：任务 $1，规则每月 $3）、keep（保留要清理的任务文件夹）
  */
-export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open" | "continue";
+export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open" | "continue" | "keep";
 
 export interface AttentionItem {
-  /** 稳定 id：approval:<id>、task:<id>、rule:<id>、delivery:<会话>:held|failed、login:<bot>:<渠道>、reserve:<bot>（预算留给聊天） */
+  /** 稳定 id：approval:<id>、task:<id>、rule:<id>、delivery:<会话>:held|failed、login:<bot>:<渠道>、reserve:<bot>（预算留给聊天）、cleanup:<bot> */
   id: string;
   kind: AttentionKind;
   botId: string;
@@ -55,7 +56,7 @@ export interface AttentionItem {
 export type AttentionSource = () => AttentionItem[];
 
 /** 排序：提问和审批在前（等着的事），再是失败、没送到，最后是系统的（登录、预算）；同一类旧的在前 */
-const ORDER: Record<AttentionKind, number> = { question: 0, approval: 0, failed: 1, rule: 1, delivery: 2, login: 3, budget: 3 };
+const ORDER: Record<AttentionKind, number> = { question: 0, approval: 0, failed: 1, rule: 1, delivery: 2, login: 3, budget: 3, cleanup: 3 };
 
 const NOTIFIED = "attention:notified";
 

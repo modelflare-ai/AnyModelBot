@@ -52,4 +52,8 @@ export default {
   weixinNote: "WeChat lets the bot message you only within 24 hours of your last message. Otherwise it arrives with your next message and shows on the desktop.",
   create: "Create",
   gone: "This rule was deleted",
+  export: "Export",
+  budget: "Budget",
+  perRun: "Per run",
+  perMonth: "Per month",
 };

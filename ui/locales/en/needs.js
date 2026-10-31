@@ -17,4 +17,5 @@ export default {
   dismiss: "Don't show again",
   continue: "Continue",
   raiseBudget: "Change budget",
+  keep: "Keep",
 };

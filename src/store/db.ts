@@ -244,6 +244,8 @@ export interface TaskRow {
   stoppedBy: string;
   /** 结果不受免打扰和每天上限限制（用户说了做完马上告诉他） */
   anytime: boolean;
+  /** 3f：文件夹定在什么时候清理（30 天没动、在「需要你」里告诉过用户之后）；0 = 没定 */
+  cleanupAt: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -373,6 +375,7 @@ const TASK_COLS: Record<string, string> = {
   endedAt: "ended_at",
   endReason: "end_reason",
   stoppedBy: "stopped_by",
+  cleanupAt: "cleanup_at",
   updatedAt: "updated_at",
 };
 const RUN_COLS: Record<string, string> = {
@@ -527,6 +530,8 @@ const COLUMNS: Array<[string, string, string]> = [
   // 规则的预算（3e）：每次运行、每月
   ["rules", "run_budget_usd", "REAL NOT NULL DEFAULT 0.1"],
   ["rules", "month_budget_usd", "REAL NOT NULL DEFAULT 3"],
+  // 保留与清理（3f）：任务文件夹定在什么时候清理
+  ["tasks", "cleanup_at", "INTEGER NOT NULL DEFAULT 0"],
 ];
 
 export class Store {
@@ -735,6 +740,11 @@ export class Store {
   lastUserMessageAt(conversationId: string): number {
     const r = this.db.prepare("SELECT MAX(created_at) AS at FROM messages WHERE conversation_id = ? AND role = 'user'").get(conversationId) as Row;
     return Number(r?.at ?? 0) || 0;
+  }
+  /** 一条消息（任务详情里的「来自」：请求那条用户消息） */
+  getMessage(id: number): Message | undefined {
+    const r = this.db.prepare("SELECT id, conversation_id, role, content, created_at FROM messages WHERE id = ?").get(id) as Row | undefined;
+    return r ? { id: Number(r.id), conversationId: String(r.conversation_id), role: String(r.role) as Message["role"], content: String(r.content), createdAt: Number(r.created_at) } : undefined;
   }
   listMessages(conversationId: string, limit = 500): Message[] {
     const rows = this.db
@@ -1203,11 +1213,12 @@ export class Store {
       endReason: String(r.end_reason),
       stoppedBy: String(r.stopped_by),
       anytime: Number(r.anytime ?? 0) === 1,
+      cleanupAt: Number(r.cleanup_at ?? 0),
       createdAt: Number(r.created_at),
       updatedAt: Number(r.updated_at),
     };
   }
-  insertTask(t: Omit<TaskRow, "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy" | "anytime"> & { anytime?: boolean }): TaskRow {
+  insertTask(t: Omit<TaskRow, "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy" | "anytime" | "cleanupAt"> & { anytime?: boolean }): TaskRow {
     this.db
       .prepare(
         `INSERT INTO tasks(id, bot_id, conversation_id, origin_message_id, origin_ref, title, brief, session_id, folder, model, permission, budget_usd, anytime, created_at, updated_at)
@@ -1225,16 +1236,16 @@ export class Store {
     const r = this.db.prepare("SELECT * FROM tasks WHERE session_id = ?").get(sessionId) as Row | undefined;
     return r ? this.toTask(r) : undefined;
   }
-  updateTask(id: string, patch: Partial<Pick<TaskRow, "originRef" | "title" | "sessionId" | "model" | "budgetUsd" | "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy" | "updatedAt">>): void {
+  updateTask(id: string, patch: Partial<Pick<TaskRow, "originRef" | "title" | "sessionId" | "model" | "budgetUsd" | "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy" | "cleanupAt" | "updatedAt">>): void {
     updateRow(this.db, "tasks", TASK_COLS, id, patch);
   }
   /** 任务又花了一点（每次模型请求的估算加上去） */
   addTaskSpent(id: string, usd: number): void {
     if (usd > 0) this.db.prepare("UPDATE tasks SET spent_usd = spent_usd + ? WHERE id = ?").run(usd, id);
   }
-  /** open：还没结束（停止、归档）的；since：之后更新过的 */
-  listTasks(opts: { botId?: string; conversationId?: string; open?: boolean; since?: number; limit?: number } = {}): TaskRow[] {
-    const where: string[] = [];
+  /** open：还没结束（停止、归档）的；since：之后更新过的；归档了的（3f：30 天没动）不列，除非 archived */
+  listTasks(opts: { botId?: string; conversationId?: string; open?: boolean; since?: number; limit?: number; archived?: boolean } = {}): TaskRow[] {
+    const where: string[] = opts.archived ? [] : ["end_reason != 'archived'"];
     const args: Array<string | number> = [];
     if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
     if (opts.conversationId) (where.push("conversation_id = ?"), args.push(opts.conversationId));
@@ -1441,6 +1452,34 @@ export class Store {
     this.db.prepare("DELETE FROM run_inputs WHERE rule_id = ?").run(id);
     this.db.prepare("DELETE FROM runs WHERE rule_id = ?").run(id);
     this.db.prepare("DELETE FROM rules WHERE id = ?").run(id);
+  }
+
+  /** 删掉任务和它的运行记录、输入（3f：界面里的删除；文件夹由任务服务删） */
+  deleteTask(id: string): void {
+    this.db.prepare("DELETE FROM run_inputs WHERE task_id = ?").run(id);
+    this.db.prepare("DELETE FROM runs WHERE task_id = ?").run(id);
+    this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
+  }
+  /** 归档的任务不会再跑：它的输入（交过的、没交的）都不要了 */
+  deleteTaskInputs(taskId: string): void {
+    this.db.prepare("DELETE FROM run_inputs WHERE task_id = ?").run(taskId);
+  }
+  /**
+   * 清理旧的运行记录（3f，决定 9：留 30 天）：before 之前结束的 run 删掉，连同它们的输入；每个任务最近的那个 run 留着
+   * （任务的阶段看它）。会话收下过的任务输入也只留到 before。返回删了几个 run
+   */
+  pruneRuns(before: number): number {
+    const n = Number(
+      this.db
+        .prepare(
+          `DELETE FROM runs WHERE state = 'ended' AND MAX(queued_at, ended_at) < ? AND (rule_id != '' OR (task_id != '' AND id != (
+             SELECT r2.id FROM runs r2 WHERE r2.task_id = runs.task_id ORDER BY r2.queued_at DESC, r2.rowid DESC LIMIT 1)))`,
+        )
+        .run(before).changes,
+    );
+    this.db.prepare("DELETE FROM run_inputs WHERE task_id = '' AND run_id != '' AND run_id NOT IN (SELECT id FROM runs)").run();
+    this.db.prepare("DELETE FROM run_inputs WHERE task_id != '' AND taken_at > 0 AND created_at < ?").run(before);
+    return n;
   }
 
   /** 任务的会话建过（交出去过输入）：之后要 resume */

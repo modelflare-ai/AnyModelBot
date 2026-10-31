@@ -1,6 +1,7 @@
 // 规则（3d）：信息面板「任务」组里一条规则一行——时间表 · 标题，下面一行是状态和下次运行；观察了 3 次的，行里多一句
 // 「已观察 3 次 · 改为执行？」（只在这里，从不推送）。点开是规则的详情：用户的原话、模式（观察 / 执行 / 关）、立即运行、编辑、删除，
-// 和运行记录（一次一行：时间 · 模式 · 本会发送 / 保持安静 / 失败 / 跳过），每行再点开看报告、步骤、版本和权限。
+// 和运行记录（一次一行：时间 · 模式 · 本会发送 / 保持安静 / 失败 / 跳过），每行再点开看报告、步骤、版本和权限；运行记录可以导出成
+// Markdown（3f）。编辑器里有每次、每月的预算（3f，检查才有）。
 // 健康时不多说话：状态是"点 + 文字"（绿 = 执行中、提醒，灰 = 观察中、关了，红 = 暂停了）。
 import { useEffect, useState } from "preact/hooks";
 import { html, Icon, Button, Seg, Sheet, Spinner } from "./ui.js";
@@ -9,7 +10,7 @@ import { api } from "../lib/api.js";
 import { confirmSheet, failed, toast } from "../lib/store.js";
 import { channelName } from "../lib/access.js";
 import { t, locale } from "../lib/i18n.js";
-import { hasCost, money } from "./tasks.js";
+import { exportUrl, hasCost, money } from "./tasks.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -152,6 +153,7 @@ export function RuleDetail({ rule, runs: given, onChanged }) {
     ${rule.kind === "check" && rule.mode === "observe" && html`<span class="hint">${t("rules.observeHelp")}</span>`}
     <div class="actions">
       <button type="button" class="text" onClick=${() => setEditing(true)}>${t("common.edit")}</button>
+      ${!given && html`<a class="text" href=${exportUrl("rules", rule.id)} download>${t("rules.export")}</a>`}
       <button type="button" class="text danger" disabled=${busy === "del"} onClick=${del}>${t("common.delete")}</button>
     </div>
     <div class="t-label">${t("rules.log")}</div>
@@ -222,6 +224,9 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
   const [conv, setConv] = useState(rule?.conversationId || "");
   const [convs, setConvs] = useState(null);
   const [busy, setBusy] = useState(false);
+  // 预算（3f）：每次、每月（美元）；没改就不发
+  const [runB, setRunB] = useState(String(rule?.runBudgetUsd ?? 0.1));
+  const [monthB, setMonthB] = useState(String(rule?.monthBudgetUsd ?? 3));
   const event = rule && rule.trigger.kind !== "schedule";
   useEffect(() => {
     api(`/conversations?bot=${encodeURIComponent(botId)}`)
@@ -242,6 +247,8 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
         ...(kind === "remind" ? { message: words, ...(rule ? {} : { instruction: words }) } : { instruction: words }),
         ...(event || (rule && JSON.stringify(scheduleOf(f)) === JSON.stringify(scheduleOf(orig))) ? {} : { schedule: scheduleOf(f) }),
         ...(conv ? { conversationId: conv } : {}),
+        ...(kind === "check" && Number(runB) !== (rule?.runBudgetUsd ?? 0.1) ? { runBudgetUsd: Number(runB) } : {}),
+        ...(kind === "check" && Number(monthB) !== (rule?.monthBudgetUsd ?? 3) ? { monthBudgetUsd: Number(monthB) } : {}),
       };
       const d = rule
         ? await api(`/rules/${encodeURIComponent(rule.id)}`, { method: "PUT", body })
@@ -253,8 +260,8 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
     }
     setBusy(false);
   };
-  const ok = title.trim() && words.trim() && conv && (event || f.kind !== "weekly" || f.days.length);
   const remind = kind === "remind";
+  const ok = title.trim() && words.trim() && conv && (event || f.kind !== "weekly" || f.days.length) && (remind || (Number(runB) > 0 && Number(monthB) > 0));
   return html`<${Sheet} title=${rule ? t("rules.editTitle") : t("rules.newTitle")} onClose=${onClose}>
     <div class="rule-form">
       ${!rule && html`<${Seg} label=${t("rules.kind")} options=${[["check", t("rules.kindCheck")], ["remind", t("rules.kindRemind")]]} value=${kind} onChange=${setKind} />`}
@@ -278,6 +285,13 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
         <span class="t-label">${t("rules.to")}</span>
         ${!convs ? html`<${Spinner} />` : convs.length ? html`<${Seg} label=${t("rules.to")} options=${convOptions(convs, conv)} value=${conv} onChange=${setConv} />` : html`<span class="hint">${t("rules.noConvs")}</span>`}
       </div>
+      ${!remind && html`<div class="rule-when">
+        <span class="t-label">${t("rules.budget")}</span>
+        <div class="rule-when-row">
+          <label class="rule-budget">${t("rules.perRun")}<span class="num">$</span><input class="field num" type="number" min="0.01" step="0.05" value=${runB} onInput=${(e) => setRunB(e.target.value)} /></label>
+          <label class="rule-budget">${t("rules.perMonth")}<span class="num">$</span><input class="field num" type="number" min="0.5" step="0.5" value=${monthB} onInput=${(e) => setMonthB(e.target.value)} /></label>
+        </div>
+      </div>`}
       ${channel === "weixin" && html`<p class="hint">${t("rules.weixinNote")}</p>`}
     </div>
     <div class="actions">

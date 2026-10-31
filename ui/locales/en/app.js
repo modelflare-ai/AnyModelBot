@@ -9,6 +9,8 @@ export default {
   cmd: {
     needs: "Needs you ({count})",
     needsKeys: "needs attention to-do",
+    tasks: "Tasks and rules",
+    tasksKeys: "tasks rules background jobs",
     settings: "Open Settings",
     settingsKeys: "settings preferences options",
     newBot: "New bot",

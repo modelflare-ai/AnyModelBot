@@ -16,6 +16,7 @@ import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.j
 import { acceptsImages } from "../llm/client.js";
 import { CUA_SKILL, MEDIA_SKILL, TASK_RULES, agentPersona, botPrompt } from "./prompts/index.js";
 import { t, t as tr } from "../i18n/index.js";
+import { dirBytes, taskSessionDirs } from "../tasks/retention.js";
 
 const log = logger("agent.host");
 
@@ -1682,6 +1683,29 @@ exec "$REAL" "$@"
     if (!this.control.connected) return false;
     const r = await this.control.send<{ accepted?: boolean }>("steer", { sessionId, id, text, images: [] }, 15_000);
     return !!r.accepted;
+  }
+
+  /** 任务的会话在 DSH 里的记录（DSH_HOME/sessions 下，见 tasks/retention.ts）占多大 */
+  taskSessionBytes(taskId: string): number {
+    return taskSessionDirs(this.home, taskId).reduce((n, d) => n + dirBytes(d), 0);
+  }
+
+  /**
+   * 删掉任务会话在 DSH 里的记录（3f：归档、删除任务时）。SDK 没有删会话的接口，直接删目录；会话还开在当前子进程里的不删
+   * （DSH 可能还拿着它的文件），返回 false，等子进程换过之后再删。
+   */
+  removeTaskSessions(taskId: string): boolean {
+    const name = `task-${taskId}`;
+    if ([...this.opened].some((id) => id === name || id.startsWith(name + "-"))) return false;
+    for (const dir of taskSessionDirs(this.home, taskId)) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch (e) {
+        log.warn("removing a task's session files failed", { task: taskId, message: (e as Error).message.slice(0, 200) });
+        return false;
+      }
+    }
+    return true;
   }
 
   /** 停掉任务会话（amb-tasks：取消这一轮、子代理和它的所有后台命令，之后的工具调用一律拒绝） */

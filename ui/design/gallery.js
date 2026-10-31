@@ -6,7 +6,7 @@ import { BotAvatar, AvatarPicker, AppMark, BOT_CHARS, CHAR_KEYS, MAIN_CHAR } fro
 import { TEMPLATES } from "../screens/new-bot.js";
 import { NeedItem, NeedsRow } from "../screens/needs-you.js";
 import { RuleRow, RuleDetail } from "../components/rules.js";
-import { PausedLine } from "../components/tasks.js";
+import { PausedLine, TaskGroup, TaskRow } from "../components/tasks.js";
 import { Markdown } from "../components/markdown.js";
 import { useStore, toast, saved, failed, confirmSheet } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
@@ -630,6 +630,19 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <//>
       <//>
 
+      <${Section} id="tasks" title="任务" lead="信息面板的「任务」组就是一个机器人的全部任务和规则：进行中、等你的在前，规则其次，结束了的收在最后一行里，点开才列出来（留 30 天）。一个任务一行，点开是同一块里的详情：来自、最新进展、预算（可以改）、文件夹（大小、打开）、要清理时的日期和保留、每次运行折叠的处理过程。什么都没有时整组不画。">
+        <${Demo} title="「任务」组" note="TaskGroup：进行中 / 等你回答 / 规则 / 已结束 1（点开列出结束了的，那个文件夹 3 天后清理）">
+          ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
+            <${TaskGroup} botId="b" tasks=${TASKS} rules=${[RULES[0]]} ended=${ENDED} details=${{ t1: TASK_DETAIL, t2: ASK_DETAIL, t3: ENDED_DETAIL }} />
+          </div>`}
+        <//>
+        <${Demo} title="详情" note="TaskRow 展开：来自 · 最新进展 · 预算 约 $0.08 / $1.00（改） · 文件夹 2.3 MB（打开） · 第 1 次 · 开始 · 停止 / 导出">
+          ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
+            <div class="list"><${TaskRow} task=${TASKS[0]} open data=${TASK_DETAIL} onToggle=${() => {}} onOpenConv=${() => {}} /></div>
+          </div>`}
+        <//>
+      <//>
+
       <${Section} id="custom" title="定制" lead="不改组件源码：在上下文里覆盖组件变量；需要一块不同主题的区域时，加 data-theme。">
         <${Demo} title="覆盖组件变量" code=${`.notice .btn { --btn-h: var(--ctl-sm); --btn-px: var(--space-2-5); }      /* 上下文覆盖 */
 <button class="btn" style="--btn-bg: var(--green-soft); --btn-fg: var(--green)">…</button>
@@ -662,7 +675,41 @@ const NEEDS = [
   { id: "rb", kind: "rule", botName: "小蓝", subject: "规则「看 X 价格」", status: "本月预算用完", line: "已用约 $3.00，下月自动恢复。再给 $3 继续？", since: Date.now() - 2 * 3600_000, severity: "warn", actions: ["continue"] },
   { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
   { id: "rs", kind: "budget", botName: "小蓝", subject: "后台工作已停", status: "", line: "机器人预算只剩约 $1.80（共 $10），留给聊天", since: Date.now() - 4 * 3600_000, severity: "warn", actions: ["open"] },
+  { id: "c", kind: "cleanup", botName: "小蓝", subject: "2 个任务文件夹 11月4日 删除", status: "", line: "整理下载目录和旧照片归档 · 30 天没动过", since: Date.now() - 5 * 3600_000, severity: "warn", actions: ["keep", "dismiss"] },
 ];
+
+/** 任务的样例（单人：自己的机器人小蓝）：在调研的、等你回答的、昨天做完的（文件夹 3 天后清理） */
+const ago = (min) => Date.now() - min * 60_000;
+const task = (o) => ({ botId: "b", conversationId: "b:weixin:me", channel: "weixin", latest: "", runs: 1, spentUsd: 0, budgetUsd: 1, cleanupAt: 0, endedAt: 0, ...o });
+const TASKS = [
+  task({ id: "t1", title: "GPU 价格调研", stage: { key: "working", label: "进行中", group: "working" }, createdAt: ago(12), updatedAt: ago(1), spentUsd: 0.08, latest: "已比较 3 家，正在核对 B 云的包年价", folder: "tasks/gpu-prices-3f2a1c" }),
+  task({ id: "t2", title: "季度报告 PPT", stage: { key: "needs-you/answer", label: "等你回答", group: "needs" }, createdAt: ago(50), updatedAt: ago(5), spentUsd: 0.21, folder: "tasks/task-8c0d42" }),
+];
+const ENDED = [
+  task({ id: "t3", title: "整理下载目录", stage: { key: "ready", label: "已完成", group: "ended" }, createdAt: ago(27 * 1440), endedAt: ago(27 * 1440 - 20), updatedAt: ago(27 * 1440 - 20), spentUsd: 0.02, latest: "按类型分到 6 个文件夹，重复的 14 个放进了 duplicates", folder: "tasks/downloads-9b1e07", cleanupAt: Date.now() + 3 * 86_400_000 }),
+];
+const step = (id, title, summary) => ({ id, kind: "tool", title, summary, status: "ok", at: 0 });
+const TASK_DETAIL = {
+  task: TASKS[0],
+  origin: { channel: "weixin", at: ago(12), text: "帮我调研一下三家云的 GPU 价格，A100 包月的，好了告诉我" },
+  sizes: { folder: 2_400_000, sessions: 1_100_000 },
+  canOpen: true,
+  runs: [{ id: "r1", cause: "launch", state: "running", outcome: "", queuedAt: ago(12), startedAt: ago(12), endedAt: 0, steps: 3, stepList: [step("s1", "web_fetch", "x-cloud.example/pricing"), step("s2", "web_fetch", "b-cloud.example/gpu"), step("s3", "write", "prices.md")] }],
+};
+const ASK_DETAIL = {
+  task: TASKS[1],
+  origin: { channel: "weixin", at: ago(50), text: "后台帮我把季度数据做成 PPT" },
+  sizes: { folder: 5_600_000, sessions: 900_000 },
+  canOpen: true,
+  runs: [{ id: "r3", cause: "launch", state: "ended", outcome: "needs_you", queuedAt: ago(50), startedAt: ago(50), endedAt: ago(5), steps: 0 }],
+};
+const ENDED_DETAIL = {
+  task: ENDED[0],
+  origin: { channel: "weixin", at: ago(27 * 1440 + 10), text: "把下载目录整理一下" },
+  sizes: { folder: 820_000, sessions: 300_000 },
+  canOpen: true,
+  runs: [{ id: "r2", cause: "launch", state: "ended", outcome: "done", queuedAt: ago(27 * 1440 + 10), startedAt: ago(27 * 1440 + 10), endedAt: ago(27 * 1440 - 20), steps: 0 }],
+};
 
 /** 规则的样例（单人：自己的机器人小蓝）：每天 8 点看 X 价格（观察了 3 次）、每周的 issue 周报、暂停了的巡检、一次性的提醒 */
 const at = (days, h, m = 0) => {

@@ -17,4 +17,5 @@ export default {
   dismiss: "不再提示",
   continue: "继续",
   raiseBudget: "调整预算",
+  keep: "保留",
 };

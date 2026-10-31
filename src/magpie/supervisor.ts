@@ -94,6 +94,8 @@ export class MagpieSupervisor {
   private keys!: Keys;
   private readonly root: string;
   private restartTimer: NodeJS.Timeout | undefined;
+  /** 正在进行的那一次拉起（同一时间只有一次） */
+  private spawning: Promise<void> | undefined;
   private logTail: string[] = [];
   /** 当前（或最近一次）magpie 子进程 */
   pid: number | undefined;
@@ -237,10 +239,32 @@ export class MagpieSupervisor {
         this.saveKeys();
       } else log.warn("gateway-key add failed (loopback still works)", { stderr: r.stderr.slice(0, 200) });
     }
-    await this.spawnOnce();
+    await this.launch();
   }
 
-  private async spawnOnce(): Promise<void> {
+  /**
+   * 拉起一次，起不来（启动中退出、健康检查超时）就安排下一次。重启只在这里和运行中退出时安排：
+   * 两处都安排的话，每失败一次就多出一条重启链。
+   */
+  private async launch(): Promise<void> {
+    try {
+      await this.spawnOnce();
+    } catch (e) {
+      this.scheduleRestart();
+      throw e;
+    }
+  }
+
+  /** 同一时间只拉起一个（并发调用共用这一次），否则后起的会顶掉 this.child，先起的那个就没人管了 */
+  private spawnOnce(): Promise<void> {
+    this.spawning ??= this.spawnChild().finally(() => (this.spawning = undefined));
+    return this.spawning;
+  }
+
+  private async spawnChild(): Promise<void> {
+    if (this.stopping) return;
+    // 还管着一个旧进程（不该发生）：先结束它，不留没人管的实例
+    if (this.child) this.child.kill("SIGKILL");
     this.state = this.restarts ? "restarting" : "starting";
     const args = ["web", "--addr", `127.0.0.1:${this.webPort}`, "--no-open", "--gateway"];
     // windowsHide：magpie 是控制台程序，Electron 是 GUI 程序；不加的话 Windows 上每次启动都会弹出一个黑色控制台窗口
@@ -269,10 +293,12 @@ export class MagpieSupervisor {
       }
       this.lastError = `magpie exited (code=${code}, signal=${signal})`;
       log.warn(this.lastError);
-      this.scheduleRestart();
+      // 启动中退出由 launch 安排重启；这里只管运行中崩溃
+      if (this.state === "running") this.scheduleRestart();
     });
     try {
       await this.waitHealthy(this.opts.healthTimeoutMs ?? 20_000);
+      if (this.child !== child) throw new Error("magpie exited during startup: " + this.recentLog.slice(-3).join(" | "));
       this.state = "running";
       log.info(`magpie running: gateway 127.0.0.1:${this.gatewayPort}, web 127.0.0.1:${this.webPort}`);
     } catch (e) {
@@ -283,15 +309,15 @@ export class MagpieSupervisor {
   }
 
   private scheduleRestart(): void {
+    // 已经排着一次（或已停止）：不再多排
+    if (this.stopping || this.restartTimer) return;
     this.restarts++;
     const delay = Math.min(30_000, 500 * 2 ** Math.min(this.restarts, 6));
     this.state = "restarting";
     this.restartTimer = setTimeout(() => {
       this.restartTimer = undefined;
-      this.spawnOnce().catch((e) => {
-        log.error("magpie restart failed", { message: (e as Error).message });
-        if (!this.stopping) this.scheduleRestart();
-      });
+      if (this.stopping) return;
+      this.launch().catch((e) => log.error("magpie restart failed", { message: (e as Error).message }));
     }, delay);
   }
 
@@ -363,9 +389,11 @@ export class MagpieSupervisor {
 
   async stop(): Promise<void> {
     this.stopping = true;
-    if (this.restartTimer) clearTimeout(this.restartTimer);
+    clearTimeout(this.restartTimer);
+    this.restartTimer = undefined;
     const child = this.child;
     if (!child) {
+      await this.spawning?.catch(() => undefined);
       this.state = "stopped";
       return;
     }
@@ -377,6 +405,8 @@ export class MagpieSupervisor {
       });
       child.kill(process.platform === "win32" ? undefined : "SIGTERM");
     });
+    // 正在拉起的那一次随子进程结束而失败；等它收尾，之后的 start() 不会接上它
+    await this.spawning?.catch(() => undefined);
     this.child = undefined;
     this.state = "stopped";
   }
@@ -439,6 +469,33 @@ export class MagpieSupervisor {
     if (!chat) return;
     const want = modelflareApiBases(chat);
     if (p?.responses !== want.responses || p?.anthropic !== want.anthropic) await this.saveProvider(id, want);
+  }
+
+  /**
+   * 服务端压缩的前提：provider 开启 nativeCompaction 后，网关对带 compaction 项的请求只直传（不转成 Chat 协议），
+   * 上游拒绝时原样回报错；关着时网关会悄悄删掉压缩项再重试，之前的上下文就丢了。对不带压缩项的请求没有影响。
+   */
+  nativeCompaction(id: string): boolean {
+    return this.readProviderRaw(id)?.nativeCompaction === true;
+  }
+
+  private nativeSaving = new Map<string, Promise<void>>();
+  private nativeFailedAt = new Map<string, number>();
+  /** 打开 nativeCompaction；保存失败后 10 分钟内不再试（失败时抛错一次） */
+  async ensureNativeCompaction(id: string): Promise<void> {
+    if (this.nativeCompaction(id) || Date.now() - (this.nativeFailedAt.get(id) ?? 0) < 10 * 60_000) return;
+    let p = this.nativeSaving.get(id);
+    if (!p) {
+      p = this.saveProvider(id, { nativeCompaction: true })
+        .then(() => void this.nativeFailedAt.delete(id))
+        .catch((e) => {
+          this.nativeFailedAt.set(id, Date.now());
+          throw e;
+        })
+        .finally(() => this.nativeSaving.delete(id));
+      this.nativeSaving.set(id, p);
+    }
+    await p;
   }
 
   /** 断开 Modelflare：删除共用连接和所有机器人自己的 provider */

@@ -14,6 +14,7 @@
 <p align="center"><b>Your own AI bot, on your own computer. Any model, pay per use.</b></p>
 
 <p align="center">
+  <a href="https://anymodel.bot/">Website</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">Download</a> |
   <a href="./README.md">简体中文</a> |
   English |
@@ -136,10 +137,10 @@ The app UI is currently in Simplified Chinese.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/chat-dark.webp">
-  <img src="docs/assets/screenshots/chat-light.webp" alt="Chat screen: a streaming reply with Markdown and a code block, the model button in the composer, and the bot list on the left" width="100%">
+  <img src="docs/assets/screenshots/chat-light.webp" alt="Chat screen: a reply with a Markdown list and a code block, the model button in the composer, and the bot list on the left" width="100%">
 </picture>
 
-<p align="center"><i>Chat with a bot. Replies stream in, and the composer shows which model it is using.</i></p>
+<p align="center"><i>Chat with a bot. Replies render Markdown and code, and the composer shows which model it is using.</i></p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/agent-dark.webp">
@@ -164,7 +165,7 @@ The app UI is currently in Simplified Chinese.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/modelflare-dark.webp">
-  <img src="docs/assets/screenshots/modelflare-light.webp" alt="Settings, Modelflare tab: connected account, wallet balance, daily usage and the default model" width="100%">
+  <img src="docs/assets/screenshots/modelflare-light.webp" alt="Settings, Modelflare tab with the usage dialog open: daily usage for the last 7 days, the default model row below, and the balance on the account button" width="100%">
 </picture>
 
 <p align="center"><i>Your Modelflare account inside the app: balance, usage and defaults.</i></p>
@@ -203,7 +204,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 </p>
 
 <p align="center">
-  <img src="docs/assets/features/media-generation.gif" alt="A bot proposes an image generation with model and prompt, the user confirms, and the finished image appears in the chat" width="100%">
+  <img src="docs/assets/features/media-generation.gif" alt="A bot asks which model to use for an image, the user confirms, and the finished image arrives in the chat as a file and opens in a viewer" width="100%">
 </p>
 
 ## 🌐 Any model, through Modelflare
@@ -234,7 +235,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 </p>
 
 <p align="center">
-  <img src="docs/assets/features/channels-wechat.gif" alt="Scanning a QR code to connect WeChat, sending a question from the phone, and watching the bot answer on the phone and in the desktop app" width="100%">
+  <img src="docs/assets/features/channels-wechat.gif" alt="Scanning a QR code to connect WeChat, sending a question from the phone, and the bot answering on the phone while the conversation shows up under Recent sessions in the desktop app" width="100%">
 </p>
 
 ## 🔒 Local-first, and easy on the eyes

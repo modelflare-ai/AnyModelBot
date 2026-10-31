@@ -1,0 +1,174 @@
+/* 录制舞台的样式：所有应用外的窗口都是中性的深色示意窗，不照抄任何系统或第三方产品。 */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+body { font: 14px/1.5 "Noto Sans SC", system-ui, sans-serif; color: #e8e8e6; -webkit-font-smoothing: antialiased; }
+#screen { position: absolute; inset: 0; overflow: hidden; }
+.wallpaper { position: absolute; inset: 0; background: radial-gradient(120% 90% at 20% 10%, #2b3445 0%, #1a2030 45%, #12151d 100%); }
+.blackout { position: absolute; inset: 0; background: #000; }
+
+/* —— 假鼠标：默认箭头，按下时缩一点并出一圈淡环 —— */
+#cursor { position: fixed; left: 0; top: 0; z-index: 2147483647; pointer-events: none; transform-origin: 2px 2px; opacity: 0; transition: opacity .15s; will-change: transform; }
+#cursor.on { opacity: 1; }
+#cursor svg { display: block; filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .45)); transition: transform .08s ease-out; transform-origin: 2px 2px; }
+#cursor.down svg { transform: scale(.86); }
+#cursor .ring { position: absolute; left: -12px; top: -12px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .85); opacity: 0; transform: scale(.4); }
+#cursor.click .ring { animation: ring .42s ease-out; }
+@keyframes ring { 0% { opacity: .9; transform: scale(.4); } 100% { opacity: 0; transform: scale(1.25); } }
+/* 手机上的点按：一个淡淡的圆点 */
+#touch { position: fixed; z-index: 2147483646; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(255, 255, 255, .38); pointer-events: none; opacity: 0; transform: scale(.6); }
+#touch.tap { animation: tap .5s ease-out; }
+@keyframes tap { 0% { opacity: .9; transform: scale(.6); } 60% { opacity: .55; transform: scale(1); } 100% { opacity: 0; transform: scale(1.1); } }
+
+/* —— 窗口 —— */
+.win { position: absolute; display: flex; flex-direction: column; background: #1c1d20; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .09), 0 18px 50px rgba(0, 0, 0, .55), 0 4px 14px rgba(0, 0, 0, .35); }
+.win.enter { animation: win-in .22s cubic-bezier(.2, .8, .2, 1); }
+.win.leave { animation: win-out .18s ease-in forwards; }
+@keyframes win-in { from { opacity: 0; transform: scale(.97) translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes win-out { to { opacity: 0; transform: scale(.98); } }
+.win.plain { border-radius: 0; box-shadow: none; }
+.titlebar { flex: none; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 0 0 12px; background: #26272b; color: #cfcfcc; font-size: 13px; user-select: none; }
+.titlebar img { width: 16px; height: 16px; border-radius: 4px; }
+.titlebar .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.titlebar .wb { width: 44px; height: 34px; display: grid; place-items: center; color: #9a9a96; }
+.titlebar .wb svg { width: 10px; height: 10px; }
+.win-body { position: relative; flex: 1; min-height: 0; }
+.win iframe { display: block; border: 0; background: #0c0c0c; }
+
+/* —— 浏览器（授权页）：中性的地址栏 + 一张授权卡片 —— */
+.browser { background: #141518; }
+.browser .tabs { height: 38px; display: flex; align-items: flex-end; gap: 6px; padding: 0 10px; background: #1f2024; }
+.browser .tab { height: 30px; min-width: 220px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 8px 8px 0 0; background: #2a2b30; color: #d6d6d2; font-size: 12.5px; }
+.browser .tab i { width: 12px; height: 12px; border-radius: 3px; background: #d7ff00; }
+.browser .bar { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #2a2b30; border-bottom: 1px solid #111; }
+.browser .nav { display: flex; gap: 14px; color: #77777a; font-size: 15px; padding: 0 4px; }
+.browser .addr { flex: 1; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 15px; background: #18191c; color: #a8a8a4; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.browser .addr b { color: #ecece8; font-weight: 500; }
+.browser .addr svg { flex: none; }
+.browser .page { position: relative; flex: 1; display: grid; place-items: center; background: #101113; }
+.browser .page.loading > * { opacity: 0; }
+.auth-card { width: 440px; padding: 34px 36px 30px; border-radius: 16px; background: #1b1c1f; box-shadow: 0 0 0 1px rgba(255, 255, 255, .07); text-align: center; transition: opacity .2s; }
+.auth-card .marks { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 20px; }
+.auth-card .marks img { width: 52px; height: 52px; }
+.auth-card .marks .mf { width: 52px; height: 52px; border-radius: 14px; background: #2a2b2f; display: grid; place-items: center; font-weight: 700; font-size: 22px; color: #f0f0ec; }
+.auth-card .marks .dots { color: #66665f; letter-spacing: 3px; }
+.auth-card h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; color: #f2f2ee; }
+.auth-card .who { color: #9c9c97; font-size: 13.5px; margin-bottom: 18px; }
+.auth-card ul { list-style: none; margin: 0 0 24px; padding: 14px 16px; border-radius: 10px; background: #151618; text-align: left; color: #c9c9c4; font-size: 13.5px; }
+.auth-card li { display: flex; gap: 10px; align-items: baseline; }
+.auth-card li + li { margin-top: 8px; }
+.auth-card li::before { content: ""; flex: none; width: 6px; height: 6px; margin-top: 8px; border-radius: 50%; background: #d7ff00; }
+.auth-card .btns { display: grid; gap: 10px; }
+.btn-s { height: 40px; border: 0; border-radius: 10px; font: inherit; font-size: 14.5px; font-weight: 600; cursor: default; }
+.btn-s.primary { background: #d7ff00; color: #161a00; }
+.btn-s.primary:hover { background: #e3ff4d; }
+.btn-s.ghost { background: transparent; color: #a3a39e; font-weight: 500; }
+.auth-done { position: absolute; display: grid; justify-items: center; gap: 10px; text-align: center; opacity: 0; transition: opacity .2s; }
+.auth-done .ok { width: 54px; height: 54px; border-radius: 50%; background: rgba(215, 255, 0, .14); display: grid; place-items: center; }
+.auth-done h2 { margin: 6px 0 0; font-size: 20px; font-weight: 600; color: #f2f2ee; }
+.auth-done p { margin: 0; color: #9c9c97; }
+.browser.done .auth-card { opacity: 0; }
+.browser.done .auth-done { opacity: 1; }
+
+/* —— 文件窗口（下载文件夹）—— */
+.explorer .body { display: flex; flex: 1; min-height: 0; background: #1a1b1e; }
+.explorer .tool { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: #202125; border-bottom: 1px solid #111; color: #a4a4a0; font-size: 13px; }
+.explorer .crumb { flex: 1; height: 28px; display: flex; align-items: center; padding: 0 12px; border-radius: 6px; background: #17181b; color: #cfcfca; }
+.explorer nav { width: 180px; padding: 12px 8px; border-right: 1px solid #111; color: #b5b5b0; font-size: 13.5px; }
+.explorer nav div { height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 6px; }
+.explorer nav div.on { background: #2a2b30; color: #f0f0ec; }
+.explorer nav i { width: 14px; height: 11px; border-radius: 2px; background: #6b7280; }
+.explorer .list { flex: 1; padding: 8px 10px; font-size: 13.5px; }
+.explorer .head, .explorer .item { display: grid; grid-template-columns: 1fr 150px 100px 80px; align-items: center; gap: 10px; height: 34px; padding: 0 10px; }
+.explorer .head { color: #85857f; font-size: 12.5px; border-bottom: 1px solid #26272b; }
+.explorer .item { border-radius: 6px; color: #e2e2de; }
+.explorer .item:hover { background: #26272c; }
+.explorer .item.sel { background: #2e3240; }
+.explorer .item .n { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.explorer .item img { width: 20px; height: 20px; }
+.explorer .item span:not(.n) { color: #9a9a95; font-size: 12.5px; }
+
+/* —— 安装向导 —— */
+.installer .head { height: 86px; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; background: #232428; border-bottom: 1px solid #111; }
+.installer .head b { display: block; font-size: 16px; font-weight: 600; color: #f0f0ec; }
+.installer .head span { font-size: 13px; color: #9a9a95; }
+.installer .head img { width: 46px; height: 46px; }
+.installer .pg { flex: 1; padding: 26px 30px; font-size: 14px; color: #d4d4cf; display: none; }
+.installer .pg.on { display: block; }
+.installer .radio { display: flex; align-items: center; gap: 10px; margin: 14px 0 0 6px; }
+.installer .radio i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #77777a; }
+.installer .radio.on i { border-color: #d7ff00; box-shadow: inset 0 0 0 3px #1c1d20; background: #d7ff00; }
+.installer .path { display: flex; gap: 10px; margin-top: 18px; }
+.installer .path div { flex: 1; height: 32px; display: flex; align-items: center; padding: 0 10px; border-radius: 6px; background: #141517; border: 1px solid #34353a; font-size: 13px; color: #d8d8d3; white-space: nowrap; overflow: hidden; }
+.installer .path span { height: 32px; display: grid; place-items: center; padding: 0 14px; border-radius: 6px; background: #2c2d32; font-size: 13px; }
+.installer .hint { margin-top: 14px; color: #8e8e89; font-size: 12.5px; }
+.installer .prog { height: 10px; margin-top: 22px; border-radius: 5px; background: #141517; overflow: hidden; box-shadow: inset 0 0 0 1px #34353a; }
+.installer .prog i { display: block; height: 100%; width: 0; background: #d7ff00; border-radius: 5px; }
+.installer .file { margin-top: 10px; color: #8e8e89; font-size: 12.5px; font-family: "DejaVu Sans Mono", monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.installer .check { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
+.installer .check i { width: 16px; height: 16px; border-radius: 4px; background: #d7ff00; display: grid; place-items: center; }
+.installer .foot { height: 58px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 0 20px; background: #202125; border-top: 1px solid #111; }
+.installer .foot .b { min-width: 96px; height: 32px; display: grid; place-items: center; padding: 0 16px; border-radius: 6px; background: #2c2d32; font-size: 13.5px; color: #e0e0dc; }
+.installer .foot .b.dis { color: #5f5f5b; }
+.installer .foot .b.primary { background: #d7ff00; color: #161a00; font-weight: 600; }
+.installer .foot .b.primary:hover { background: #e3ff4d; }
+
+/* —— 桌面图标 —— */
+.icon { position: absolute; width: 96px; display: grid; justify-items: center; gap: 6px; padding: 8px 4px; border-radius: 8px; color: #f2f2ee; font-size: 13px; text-align: center; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
+.icon.enter { animation: win-in .3s cubic-bezier(.2, .8, .2, 1); }
+.icon .folder { width: 52px; height: 42px; border-radius: 5px; background: linear-gradient(#e9c46a, #d4a73c); position: relative; }
+.icon .folder::before { content: ""; position: absolute; left: 0; top: -6px; width: 22px; height: 10px; border-radius: 4px 4px 0 0; background: #d4a73c; }
+.icon .doc { width: 40px; height: 50px; border-radius: 4px; background: #f4f4f0; position: relative; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+.icon .doc::after { content: ""; position: absolute; left: 8px; right: 8px; top: 14px; height: 18px; background: repeating-linear-gradient(#a7a7a2 0 2px, transparent 2px 6px); }
+
+/* —— 文本编辑器（记事本）—— */
+.notepad .menu { height: 30px; display: flex; gap: 18px; align-items: center; padding: 0 14px; background: #202125; color: #b8b8b3; font-size: 13px; border-bottom: 1px solid #111; }
+.notepad .text { flex: 1; padding: 14px 16px; background: #161719; color: #ecece8; font: 18px/1.6 "DejaVu Sans Mono", "Noto Sans SC", monospace; white-space: pre-wrap; }
+.notepad .caret { display: inline-block; width: 2px; height: 1.15em; margin-left: 1px; vertical-align: -.2em; background: #ecece8; }
+.notepad .status { height: 28px; display: flex; gap: 22px; align-items: center; justify-content: flex-end; padding: 0 14px; background: #202125; color: #8e8e89; font-size: 12px; border-top: 1px solid #111; }
+.notepad .dlg { position: absolute; left: 50%; top: 46%; width: 400px; transform: translate(-50%, -50%); border-radius: 10px; background: #26272b; box-shadow: 0 0 0 1px rgba(255, 255, 255, .1), 0 18px 40px rgba(0, 0, 0, .6); overflow: hidden; }
+.notepad .dlg .dh { height: 34px; display: flex; align-items: center; padding: 0 14px; background: #2e2f34; font-size: 13px; color: #d0d0cb; }
+.notepad .dlg .db { padding: 16px 18px 6px; display: grid; gap: 12px; font-size: 13.5px; color: #c9c9c4; }
+.notepad .dlg .row2 { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 10px; }
+.notepad .dlg .fld { height: 30px; display: flex; align-items: center; padding: 0 10px; border-radius: 6px; background: #17181b; border: 1px solid #3a3b40; color: #ecece8; }
+.notepad .dlg .df { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 18px 16px; }
+.notepad .dlg .df span { min-width: 80px; height: 30px; display: grid; place-items: center; border-radius: 6px; background: #34353a; font-size: 13px; }
+.notepad .dlg .df span.primary { background: #d7ff00; color: #161a00; font-weight: 600; }
+
+/* —— 看图窗口（示意）—— */
+.viewer .img { flex: 1; display: grid; place-items: center; background: #111214; }
+.viewer .img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.viewer .vbar { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; background: #202125; color: #8e8e89; font-size: 12.5px; border-top: 1px solid #111; }
+
+/* —— 手机聊天（通用示意，不仿任何即时通讯产品）—— */
+.phone-area { position: absolute; background: #000; display: grid; place-items: center; }
+.phone { position: relative; width: 372px; height: 808px; border-radius: 52px; background: #0b0b0c; box-shadow: 0 0 0 2px #2c2c2f, 0 0 0 9px #141416; padding: 14px; }
+.phone .scr { position: relative; height: 100%; border-radius: 40px; overflow: hidden; background: #121316; display: flex; flex-direction: column; }
+.phone .sb { height: 44px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 6px 28px 0 30px; font-size: 15px; font-weight: 600; color: #f2f2ee; }
+.phone .sb .ic { display: flex; gap: 6px; align-items: center; }
+.phone .sb .ic i { display: block; background: #f2f2ee; border-radius: 2px; }
+.phone .hd { height: 52px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid #222327; color: #f2f2ee; }
+.phone .hd .back { width: 10px; height: 10px; border-left: 2.5px solid #d6d6d2; border-bottom: 2.5px solid #d6d6d2; transform: rotate(45deg); margin-right: 6px; }
+.phone .hd b { flex: 1; text-align: center; font-size: 17px; font-weight: 600; margin-right: 22px; }
+.phone .msgs { flex: 1; min-height: 0; padding: 14px 12px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+.phone .stamp { align-self: center; padding: 2px 10px; border-radius: 6px; color: #8a8a86; font-size: 12.5px; }
+.phone .m { display: flex; gap: 9px; align-items: flex-start; animation: pop .22s ease-out; }
+.phone .m.me { flex-direction: row-reverse; }
+.phone .m .av { flex: none; width: 38px; height: 38px; border-radius: 8px; background: #3a3b40; display: grid; place-items: center; }
+.phone .m .av::before { content: ""; width: 16px; height: 16px; border-radius: 50%; background: #6f7076; box-shadow: 0 13px 0 4px #6f7076; transform: translateY(-4px); }
+.phone .m .av { overflow: hidden; }
+.phone .m .bb { max-width: 238px; padding: 9px 13px; border-radius: 12px; background: #26272c; color: #ecece8; font-size: 16px; line-height: 1.5; }
+.phone .m.me .bb { background: #3a6ff0; color: #fff; }
+@keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.phone .typing { align-self: flex-start; margin-left: 47px; padding: 10px 14px; border-radius: 12px; background: #26272c; display: flex; gap: 5px; }
+.phone .typing i { width: 7px; height: 7px; border-radius: 50%; background: #8a8a86; animation: dot 1s infinite; }
+.phone .typing i:nth-child(2) { animation-delay: .15s; }
+.phone .typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes dot { 0%, 60%, 100% { opacity: .35; } 30% { opacity: 1; } }
+.phone .in { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 12px 30px; background: #18191c; border-top: 1px solid #222327; }
+.phone .in .f { flex: 1; min-height: 40px; display: flex; align-items: center; padding: 0 12px; border-radius: 10px; background: #26272c; color: #ecece8; font-size: 16px; }
+.phone .in .f.ph { color: #77777a; }
+.phone .in .f .caret { display: inline-block; width: 2px; height: 20px; margin-left: 1px; background: #3a6ff0; }
+.phone .in .send { width: 62px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: #2f3036; color: #77777a; font-size: 15px; font-weight: 600; }
+.phone .in .send.on { background: #3a6ff0; color: #fff; }
+.phone .hb { position: absolute; left: 50%; bottom: 9px; width: 130px; height: 5px; margin-left: -65px; border-radius: 3px; background: #e8e8e6; }

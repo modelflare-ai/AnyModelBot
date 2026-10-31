@@ -84,7 +84,8 @@ export class AgentManager {
   private decisions = new Map<string, { promise: Promise<boolean>; resolve: (v: boolean) => void }>();
   /** 会话 → 下一回合开始前要等的事（判定、压缩完成） */
   private gates = new Map<string, Promise<unknown>>();
-  private compactDone = new Map<string, (v: unknown) => void>();
+  /** DSH session → 进行中的原地压缩；插件回报、超时、会话被重置或换段、代理进程退出时结束 */
+  private compactDone = new Map<string, { botId: string; conv: string; resolve: (v: unknown) => void }>();
   private judgedAt = new Map<string, number>();
   private reviewTimers = new Map<string, NodeJS.Timeout>();
   /** 会话 → 用户在生成确认里换了模型、代理要按新模型文档重写请求：重写后的那一次免确认 */
@@ -135,6 +136,10 @@ export class AgentManager {
         onNotice: this.o.onNotice,
         media: !!this.o.media,
         contextWindow: this.o.contextWindow,
+      });
+      // 代理进程退出（/stop、看门狗、换模型或设置、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它
+      h.on((e) => {
+        if (e.type === "exit") this.endCompaction((c) => c.botId === botId);
       });
       this.hosts.set(botId, h);
     }
@@ -253,7 +258,7 @@ export class AgentManager {
       return r;
     } finally {
       set.delete(conv);
-      if (r) this.afterTurn(botId, conv, r.sessionId, input.model, r.usage, d.resolve);
+      if (r) this.afterTurn(botId, conv, r.sessionId, input.model, r.usage, d);
       else d.resolve(false);
     }
   }
@@ -304,12 +309,12 @@ export class AgentManager {
   }
 
   /** 回合结束：上下文管家判定 + 安排记忆整理。不抛错。 */
-  private afterTurn(botId: string, conv: string, sessionId: string, model: string, usage: TurnUsage, decide: (compact: boolean) => void): void {
+  private afterTurn(botId: string, conv: string, sessionId: string, model: string, usage: TurnUsage, d: { promise: Promise<boolean>; resolve: (v: boolean) => void }): void {
     const st = this.settings(botId);
     if (st.memory.enabled && st.memory.review && this.o.complete) this.scheduleReview(botId, conv, model);
     const lines = linesFor(usage.window, usage.maxTokens);
     if (!st.steward.enabled || !this.o.complete || !shouldJudge(usage.tokens, lines, this.judgedAt.get(sessionId))) {
-      decide(false);
+      d.resolve(false);
       return;
     }
     this.judgedAt.set(sessionId, usage.tokens);
@@ -324,16 +329,24 @@ export class AgentManager {
       }
       // 过了硬线还判不出来时换段（DS-Bot 的做法：判不出 = switch）
       if (action === "compact") {
+        // 插件等判定已经超时（120 秒）走了：没人会去压缩，不设闸门，下一回合再判
+        if (this.decisions.get(conv) !== d) {
+          this.judgedAt.delete(sessionId);
+          this.note(conv, "compact-skipped", "判定太慢，插件没等到");
+          return;
+        }
         const done = deferred<unknown>();
-        this.compactDone.set(sessionId, done.resolve);
+        this.compactDone.set(sessionId, { botId, conv, resolve: done.resolve });
         this.gates.set(conv, done.promise);
         this.note(conv, "compact", `tokens=${usage.tokens}/${lines.usable}`);
-        decide(true);
+        d.resolve(true);
+        // 插件迟迟不回报也只等 200 秒：闸门不能比这次压缩活得久
         await withTimeout(done.promise, 200_000, undefined);
-        this.compactDone.delete(sessionId);
+        this.endCompaction((_, sid) => sid === sessionId);
+        if (this.gates.get(conv) === done.promise) this.gates.delete(conv);
         return;
       }
-      decide(false);
+      d.resolve(false);
       if (action === undefined && usage.tokens < lines.hard) return;
       await this.switchSegment(botId, conv, sessionId, model, action ?? "fallback");
     })();
@@ -360,6 +373,17 @@ export class AgentManager {
     this.o.store.setKV(`seed:${conv}`, handoff);
     this.judgedAt.delete(sessionId);
     this.note(conv, "switch", reason);
+    // 旧段上还没回报的压缩（/new 不等闸门）不用再等
+    this.endCompaction((c) => c.conv === conv);
+  }
+
+  /** 结束匹配的原地压缩：等着它的回合随即放行，闸门随之清掉 */
+  private endCompaction(match: (c: { botId: string; conv: string }, sessionId: string) => boolean): void {
+    for (const [sid, c] of this.compactDone) {
+      if (!match(c, sid)) continue;
+      this.compactDone.delete(sid);
+      c.resolve(true);
+    }
   }
 
   private scheduleReview(botId: string, conv: string, model: string): void {
@@ -547,13 +571,15 @@ export class AgentManager {
   /** 插件 → 宿主：代理空闲时取管家判定（phase=idle），压缩完成后回报（phase=done）。 */
   private async stewardCall(b: any): Promise<Record<string, unknown>> {
     const sessionId = String(b?.sessionId ?? "");
-    const conv = this.o.store.conversationForSession(sessionId);
-    if (!conv || this.o.store.getAgentSession(conv) !== sessionId) return { compact: false };
     if (b?.phase === "done") {
-      this.note(conv, "compact-result", String(b?.result ?? ""));
-      this.compactDone.get(sessionId)?.(true);
+      // 按 session 结束：会话可能已被 /reset、/new 换掉，闸门也得放开
+      const c = this.compactDone.get(sessionId)?.conv ?? this.o.store.conversationForSession(sessionId);
+      if (c) this.note(c, "compact-result", String(b?.result ?? ""));
+      this.endCompaction((_, sid) => sid === sessionId);
       return { ok: true };
     }
+    const conv = this.o.store.conversationForSession(sessionId);
+    if (!conv || this.o.store.getAgentSession(conv) !== sessionId) return { compact: false };
     const d = this.decisions.get(conv);
     if (!d) return { compact: false };
     const compact = await withTimeout(d.promise, 120_000, false);
@@ -562,6 +588,8 @@ export class AgentManager {
   }
 
   resetConversation(conversationId: string): void {
+    // 会话换掉了：它上面还没回报的压缩不用再等
+    this.endCompaction((c) => c.conv === conversationId);
     this.o.store.clearAgentSession(conversationId);
     this.o.store.setKV(`seed:${conversationId}`, "");
     this.mediaGrants.delete(conversationId);

@@ -8,3 +8,4 @@ data
 .git
 vendor/deepseek-harness
 vendor/magpie/.git
+docs

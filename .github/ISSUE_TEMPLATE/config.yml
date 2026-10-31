@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 提问与想法 · Questions and ideas
+    url: https://github.com/modelflare-ai/AnyModelBot/discussions
+    about: 使用问题、想法和交流请到 Discussions。Usage questions, ideas and show-and-tell go to Discussions.
+  - name: 安全问题 · Security vulnerability
+    url: https://github.com/modelflare-ai/AnyModelBot/security/advisories/new
+    about: 请私下报告，不要公开提 issue。Report privately; do not open a public issue.

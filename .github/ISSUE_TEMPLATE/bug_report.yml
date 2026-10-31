@@ -1,0 +1,87 @@
+name: 🐞 Bug 报告 · Bug report
+description: 应用出错或行为不符合预期。Something is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢反馈！提交前请先搜索已有 issue。安全问题请看 [SECURITY.md](https://github.com/modelflare-ai/AnyModelBot/blob/master/SECURITY.md)，不要在这里公开。
+        Thanks for the report! Please search existing issues first. For security problems, see [SECURITY.md](https://github.com/modelflare-ai/AnyModelBot/blob/master/SECURITY.md) instead of posting here.
+  - type: input
+    id: version
+    attributes:
+      label: 版本 · Version
+      description: 设置 → 关于。Settings → About.
+      placeholder: "0.1.13"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 系统与架构 · OS and architecture
+      options:
+        - Windows x64
+        - Windows arm64
+        - macOS Apple silicon
+        - macOS Intel
+        - Linux x64
+        - Linux arm64
+        - Docker
+        - 其他 · Other
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: 运行方式 · How you run it
+      options:
+        - 桌面版 · Desktop app
+        - 命令行 · Command line (npm start)
+        - Docker
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及的部分 · Area
+      multiple: true
+      options:
+        - 对话 · Chat
+        - 代理 / 文件 / 命令 · Agent, files, commands
+        - 电脑操作 · Computer use
+        - 生图 / 生视频 · Image / video generation
+        - 记忆 · Memory
+        - 微信 · WeChat
+        - 飞书 · Feishu
+        - Modelflare 登录 / 余额 / 模型 · Modelflare sign-in, balance, models
+        - 安装 / 更新 · Install / update
+        - 其他 · Other
+  - type: input
+    id: model
+    attributes:
+      label: 模型 ID · Model ID
+      description: 和某个模型有关时填写。If the problem involves a specific model.
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 · Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果与实际结果 · Expected vs. actual
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断信息 · Diagnostics
+      description: |
+        设置 → 故障排查 →「复制诊断信息」后粘贴到这里（密钥和令牌已替换成 ***）。日志在数据目录的 logs/app.log。
+        Settings → Troubleshooting → "Copy diagnostics", then paste here (keys and tokens are replaced with ***). Logs are in logs/app.log in the data directory.
+      render: text

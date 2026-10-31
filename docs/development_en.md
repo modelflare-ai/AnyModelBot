@@ -1,0 +1,168 @@
+# Development guide
+
+[简体中文](./development.md) | English
+
+This guide is for people who want to run AnyModelBot from source, package it, or contribute. If you only want to use the app, download an installer from [Releases](https://github.com/modelflare-ai/AnyModelBot/releases); see the [README](../README_en.md#-download).
+
+- A bot = persona + default model + channels (Feishu / WeChat). Scope: personal, single user; each bot maps to one Feishu app.
+- Models come from [Modelflare](https://modelflare.dev): on first launch you sign in to (or sign up for) a Modelflare account and the models are listed automatically; you can also paste an API key. Requests go through the bundled [magpie](https://github.com/yetone/magpie) gateway.
+- Three ways to run, one codebase: **desktop app (Electron)**, **command line `npm start`**, **Docker**.
+
+## Repository layout
+
+```
+src/
+  core/          shared message types, session queue and dedup, runtime (/model /reset, streaming)
+  agent/         agent mode: DSH host and bridge, approvals, permission presets, memory and context steward, image / video generation, computer use, Windows PowerShell
+  llm/           OpenAI-compatible client (model access interface)
+  magpie/        magpie supervisor: isolated directories, free port, generated secret, health checks, crash restart, clean exit
+  channels/      feishu/ (long connection + CardKit)  weixin/ (iLink; MIT notice in LICENSE.openclaw-weixin)
+  store/         SQLite (node:sqlite, no native build)
+  account/       Modelflare account: PKCE loopback sign-in, token rotation, balance and reminders, per-bot budget keys, model capabilities and reference prices
+  web/           console server (JSON API + streaming chat over SSE)
+  cli/           init first-run wizard, weixin-login
+  modelflare.ts  Modelflare routes, key validation (GET /v1/models), model routing and attribution
+  diagnostics.ts troubleshooting: probes, log tail, redacted diagnostics report
+  main.ts        command-line entry point
+electron/        desktop main process (launcher + tray)
+ui/              console UI (Preact + htm, no build step)
+  design/        design system: tokens/, base/, components/, bot characters bots/
+  css/ lib/ components/ screens/ assets/ main.js
+dsh-runtime/     dependency manifest for the DSH agent runtime and AnyModelBot plugins (plugins/)
+scripts/         setup / build-magpie / fetch-cua-driver / prepare-dsh / bundle-dsh / electron-smoke / check-readme and more
+vendor/          git submodules: magpie (compiled at build time), deepseek-harness, kimi-computer-use
+docs/            development guide, privacy notes, README assets (docs/assets/)
+```
+
+## Run from source (command line)
+
+Requires Node.js 22.13+ and Go 1.26.8+ (to compile magpie from source).
+
+```bash
+npm install
+npm run setup        # fetch the vendor/magpie submodule and compile it into build/bin/
+npm run init         # optional: first-run setup in the terminal (sign in to Modelflare or paste an API key, Feishu credentials)
+npm start            # start everything: gateway + bots + console at http://127.0.0.1:3600/
+```
+
+Data lives in `./data` by default (change it with `AMB_DATA_DIR`). Other environment variables are listed in `.env.example`.
+
+## Desktop app (Electron)
+
+```bash
+npm run electron:dev     # run in development mode
+npm run electron:smoke   # smoke test (uses xvfb-run automatically on headless Linux)
+npm run dist             # package for the current platform (magpie ships in resources/magpie/)
+npm run dist:linux | dist:mac | dist:win
+npm run test:dsh-bundle  # real DSH integration test under Electron against the packed build/dsh (run prepare:dsh + bundle:dsh first)
+```
+
+- DSH agent runtime: `scripts/prepare-dsh.mjs` installs `dsh-runtime/` for the target platform, and `scripts/bundle-dsh.mjs` packs it into `resources/dsh/dsh.asar` (all JavaScript, one file) plus `resources/dsh/node_modules/` (native packages only, about 55 files). The Electron main process and `ELECTRON_RUN_AS_NODE` child processes read the asar directly, with no extraction on first launch, so the installer only unpacks a few hundred files (on Windows, extraction and per-file antivirus scans are the main cause of slow installs). Development still uses `dsh-runtime/` directly.
+- PowerShell for agent commands on Windows: inside the sandbox, Windows PowerShell 5.1 takes 20–30 seconds per command and PowerShell 7 about 1 second. The app picks, in order: a working PowerShell 7 already on the system (tried once in the background the way DSH runs it; nothing is downloaded) → the app's private PowerShell 7 → Windows PowerShell 5.1. When no working 7 exists and agent mode is on, the app downloads the official PowerShell 7.6.9 (LTS) zip in the background into `%LOCALAPPDATA%\AnyModelBot\pwsh\`: no admin rights, no registry writes, no PATH changes, and your own PowerShell is untouched. The version and the SHA256 of the x64 / arm64 zips are pinned in `src/agent/pwsh-private.ts` (bump them with `node scripts/pwsh-hashes.mjs <version>`). After download the hash is checked, after extraction Microsoft's Authenticode signature is checked, and it is only used after a DSH-style trial run (version, read/write a temp file, launch an external program) passes; failed or half-finished installs are never used and are cleaned up on the next launch. While installing, the chat screen and Settings → General show progress, and so does `/status`; commands keep using 5.1 until it is ready, and idle agent processes switch over in the background without restarting the app. If the agent cannot start it at runtime (removed or quarantined by antivirus, blocked by policy), the app falls back to the previous option and says why; Settings → Troubleshooting can install, reinstall or revert to the system default. Nothing is downloaded on systems older than Windows 10 1607 / Server 2016. The desktop app downloads through the system proxy (Chromium network stack); the command-line build uses Node's fetch (newer Node versions honour `HTTPS_PROXY` when `NODE_USE_ENV_PROXY=1`). `AMB_PWSH_MIRROR` switches to a mirror prefix (hash and signature are still checked), and `AMB_PWSH_AUTO_INSTALL=0` turns automatic installation off.
+- Data directory: `<userData>/data` (macOS `~/Library/Application Support/anymodel bot/data`, Windows `%APPDATA%\anymodel bot\data`, Linux `~/.config/anymodel bot/data`). Logs are in `logs/app.log` inside the data directory.
+- Single instance; closing the window hides to the tray by default (Settings → General can make it quit instead). Tray menu: Open / Open in browser / Launch at login (macOS, Windows) / Open data folder / Quit.
+- On macOS the window has no title bar and the traffic lights sit at the top of the sidebar; minimum window width is 860.
+- The console listens on 127.0.0.1 only and generates a random access token on every launch, so other local programs cannot call the management API directly.
+- On quit, channels stop first, then magpie. If a previous run was killed and left a magpie process behind, the next launch cleans it up (Linux/macOS).
+
+Releases: bump `version` in `package.json`, commit, and push a `v<version>` tag. `.github/workflows/release.yml` builds on each of the six OS / architecture runners and publishes the installers plus `SHA256SUMS` to a GitHub Release. The repository secrets needed for signing and notarization are described in the comment at the top of that file.
+
+## Docker
+
+```bash
+git submodule update --init --depth 1 vendor/magpie
+docker build -t anymodel-bot .
+docker run -d --name amb -p 3600:3600 -v amb-data:/data anymodel-bot
+docker exec amb cat /data/ui-token     # open http://<host>:3600/?token=<token>
+```
+
+Inside the container the console listens on 0.0.0.0, so token access is enforced. Do not expose port 3600 directly to the internet. WeChat QR sign-in is in the chat screen's info panel (click the bot name at the top) → Channels.
+
+## Models (Modelflare)
+
+- First launch shows a single button, "Sign in / Sign up for Modelflare": sign in in your system browser (you can sign up on the spot) and click Continue to authorize. Back in the app, a dedicated API key is issued for this computer and connected → pick a default model → start chatting. Docker and remote deployments cannot receive the browser callback, so their first-run screen asks for an API key instead (validated with `GET https://modelflare.dev/v1/models`).
+- Sign-in method: OIDC authorization code + PKCE (RFC 7636), as a native app per RFC 8252. The app is a public client (`client_id` is `anymodel-bot`; it has and needs no client secret), and the authorization result is delivered to a temporary port on `127.0.0.1`. You can revoke access at any time under "Authorized apps" on your Modelflare profile page; the app notices and returns to the sign-in screen.
+- The account credential (refresh token) is stored in `modelflare-account.json` in the data directory (mode 600); the desktop app encrypts it with the system keychain (Electron safeStorage). The UI only receives the account name. "Sign out" revokes this computer's authorization, and Modelflare deletes the keys it issued for it and its bots at sign-in.
+- Balance: the bottom-left of the sidebar and Settings → Modelflare show the wallet balance (with only an API key, it reads `/v1/dashboard/billing/credit_grants`). "Top up" opens the Modelflare website, and the balance refreshes when you return to the window. When the balance drops below the reminder threshold (1 US dollar by default; adjustable or off), the app reminds you once, and can also have a bot message you on WeChat / Feishu.
+- When signed in, Settings → Modelflare also shows usage per day and per model, notifications from Modelflare, and your invite link.
+- Bot budgets (requires sign-in): Bot settings → Budget. When enabled, the bot uses its own key (a separate provider in the gateway) capped at the dollar amount you set; when disabled it goes back to the shared key.
+- Image / video generation: in agent mode, bots get four tools — `media_models` (available models, defaults, parameter ranges, reference prices), `media_docs` (reads the model's request format live from docs.modelflare.dev), `generate_image` and `generate_video` — plus a bundled media skill. Parameter formats differ per model, so the bot writes the request body from the docs; reference images in the workspace are written as `workspace:path`. The key never leaves the app: the app calls Modelflare with the bot's key, saves results in the bot workspace's `media/`, and delivers them to the chat.
+- Confirmation before generation: before every image or video generation, the chat asks which model to use (with prompt, parameters and reference price). You can confirm, switch models or cancel — reply with a number or model name on WeChat, or click on Feishu / the web console. With no answer within 10 minutes, nothing is generated.
+- Default image / video models: chosen together with the default text model during first-run setup, changeable later in Settings → Modelflare. "Auto" uses the first model in the recommended order that needs no reference material.
+- The model picker shows context length, vision / tools / reasoning capabilities, and starting reference prices per million input / output tokens (from the public price catalog; your bill is authoritative).
+- Attribution: requests through Modelflare carry `X-Modelflare-Skill: anymodel-bot/<version>`, and links carry `utm_source=anymodelbot`.
+- Routes: the international route `https://modelflare.dev/v1` is the default; in mainland China you can pick "Optimized for mainland China" (`https://origin.modelflare.dev/v1`) under Advanced or Settings → Modelflare → Route. You choose the route; it never switches automatically.
+- Settings → Modelflare: account, balance and top-up, balance reminder, usage, notifications, invites; connection status (only the key's last characters are shown); when not signed in you can replace the key or disconnect (bots and sessions are kept; disconnecting returns to the first-connection screen); default model, refresh model list.
+- The model button to the right of the composer switches the model for the current session (or sets it as the bot default); `/model`, `/reset`, `/new`, `/status`, `/stop` and `/help` all work.
+- Activity: every step of an agent turn (model requests with timing and tokens, tool calls with arguments and output, retries, sub-agents) is folded into the "time" line above the reply; click to expand. For WeChat / Feishu sessions, see info panel → Recent sessions, where the turn in progress is shown live and can be aborted.
+- Stuck messages: `/stop` (any channel) or "Abort" in the info panel ends the current turn immediately. A turn with no progress for 10 minutes (no model reply, no tool activity, only retries; waiting for your approval or answer does not count) is aborted automatically, and a single turn is capped at 30 minutes (`AMB_AGENT_IDLE_TIMEOUT_MS`, `AMB_AGENT_TURN_TIMEOUT_MS`). DSH has no API to interrupt a single turn, so aborting restarts that bot's agent process. A new message that arrives while the previous one is still being handled gets a short notice first; `/status` shows which step it reached and how long since the last progress. In the web chat, switching to another bot or reloading the window does not interrupt a message in progress; when you return it picks up where it was (your message, the reply so far and the activity). The stop button also works while queued, while the agent is starting and while waiting for approval, and for plain chat too.
+- Agent API: the agent picks the API from what the Modelflare public catalog says the model supports — models with the Responses API (GPT-5.4 and later, Grok 4.5 and later, DeepSeek V4, GLM-5, Kimi K3 and others) use `/v1/responses` (reasoning models default to medium effort; encrypted reasoning is replayed with history); models without Responses but with Anthropic Messages (Claude) use `/v1/messages`; all other models, the case where the catalog is unavailable (offline, the mainland China route) and external endpoints use Chat Completions. The API is chosen when the agent process starts (shown as `api` in the agent status under Troubleshooting); `AMB_AGENT_API=chat` forces Chat Completions everywhere (for troubleshooting). Plain chat (non-agent) still uses Chat Completions. Safety net: when the upstream rejects a model's Responses / Messages request (HTTP 400/404/405/415/422 or "unsupported parameter / endpoint"; rate limits, balance, permissions, upstream outages and context overflows do not count), that model switches to Chat Completions for 24 hours (recorded in `dsh/api-fallback.json` in the data directory, with a warning in the log, and the agent status shows `openai-completions (fallback: reason)`). If the turn has not called any tool yet, the agent redoes it on Chat automatically and the user still gets a reply; if it already called tools, the error is reported and the next turn uses Chat.
+- Built-in gateway: magpie runs in `--gateway` mode with its own HOME / config directory inside the app's data directory. It **does not read** existing Claude / Codex subscription credentials on your computer, **does not rewrite** any agent configuration, and has auto-update and account discovery turned off. It is only called from inside the app process; the console no longer proxies its pages or `/v1`.
+- The API key is stored only in the gateway's isolated configuration — never on a command line, never in logs — and the front end only receives its last characters.
+- Development / testing: `AMB_MAGPIE_BASE_URL` points the app at any OpenAI-compatible endpoint (the gateway is not started, the UI treats itself as connected, and account features are unavailable); `AMB_MODELFLARE_BASE_URL` points the Modelflare base URL at a local mock, and `AMB_MODELFLARE_ISSUER` points sign-in and account APIs at a local mock.
+
+## Interface
+
+- Sidebar: bot list (avatar + name + latest message), ＋ New, right-click to rename / delete; the account button at the bottom-left opens Settings (`⌘/Ctrl+,`).
+- Chat screen: the floating bot-name pill at the top opens the info panel (`⌘/Ctrl+⇧+I`: channels, pending approvals, memory, recent sessions; ⚙ opens bot settings). Replies stream in (Markdown, one-click copy for code blocks) and can be stopped at any time (`Esc`). Approvals and questions appear as cards in the chat. Scrolling up is never yanked back to the bottom.
+- Command palette `⌘/Ctrl+K`; appearance (system / light / dark) is in Settings → General.
+- Visuals: neutrals and components are adapted from magpie's UI (MIT); the accent is Modelflare's fluorescent yellow-green `#d7ff00`. The design system is described in `ui/design/README.md`.
+
+## File permissions
+
+In agent mode each bot has a file permission preset. Switch it with the permission pill at the bottom-left of the composer or in Bot settings → Permissions; `/status` shows the current preset:
+
+- **Workspace write** (default): commands run in a sandbox and can only change this bot's workspace; anything outside asks you in the chat first.
+- **Read-only**: no file changes; commands run in a read-only sandbox.
+- **Full access**: for users who understand the risk and find approvals too frequent. Commands run **without a sandbox**, directly as your user, and out-of-bounds actions no longer ask — it can read and change any file on your computer, including AnyModelBot's own data directory (database, channel tokens, keys). Only **recursive deletes** still ask first (same approval flow: reply with a number on WeChat, cards on Feishu / web): `rm -r` / `-rf` / `--recursive` (including inside `sudo`, `xargs`, `sh -c`), `find -delete`, `git clean`, `rsync --delete`, PowerShell `Remove-Item` / `rm` / `del` / `rd` / `rmdir` with `-Recurse` (and abbreviations), cmd `rd /s`, `del /s`, `robocopy /MIR`, plus common forms such as Python `shutil.rmtree` and Node `fs.rm(…, { recursive })`; script files named in the command are checked too. Choosing it shows a confirmation first, and the permission pill and settings page mark it in red.
+  - This is a guard against accidental deletion, not a security boundary: it inspects the command text, so commands assembled at runtime (`eval "$(…)"`, `curl … | sh`) and build scripts such as `make clean` or `npm run clean` are invisible to it; when in doubt it asks. Only enable it when you trust the current model and task.
+
+## Computer use
+
+Each bot can turn computer use on or off, choose a backend and an approval mode in Bot settings (⚙ in the info panel) → Computer use; `/status` and the settings page show the current backend, whether it is available, and why not.
+
+- **Backends**
+  - **Cua Driver (default, all three desktop platforms)**: the official prebuilt [cua-driver](https://github.com/trycua/cua/tree/main/libs/cua-driver) 0.37.0 (MIT) ships with the installer; `scripts/fetch-cua-driver.mjs` downloads it per platform / architecture at build time and verifies its SHA256. It runs as the built-in MCP server `cua-driver mcp`, always with `CUA_DRIVER_PERMISSION_MODE=bounded` plus a capability manifest, and **never** with `--dangerously-bypass-approvals`. The child process environment is scrubbed (no secrets passed), telemetry is off, and `run_script` is disabled. Only the 24 tools it needs are exposed (read windows / screenshots, launch apps, click, type, press keys, key combos, scroll, drag, set values, menus, and so on); everything else (scripts, killing processes, clipboard, browser injection, recording, updates, …) is invisible to the model and refused. The manifest lists the GUI apps installed on the machine (Linux reads .desktop files, macOS reads /Applications, Windows reads the Start menu) and allows full-screen input; it is valid for at most 24 hours and the driver restarts before it expires.
+  - **Codex Computer Use bridge (optional, macOS only)**: kimi-computer-use. Requires OpenAI Codex Computer Use to be installed locally; falls back to Cua Driver when unavailable.
+- **Approvals**: by default all computer-use actions (read, screenshot, click, type, key press, scroll, drag, set value) **run automatically without approval**. Optionally, "ask me before actions that change the screen, such as clicks and typing" (reading the screen stays automatic). On upgrade, existing bots (including the default bot) are migrated to automatic. Bots with the read-only preset only get read tools.
+- **Platform notes**
+  - macOS: grant the app Accessibility and Screen Recording in System Settings → Privacy & Security; the driver runs in `--direct` mode (not yet verified on real machines).
+  - Linux: on X11 the UI is read through AT-SPI (requires at-spi2-core and apps with accessibility enabled); Wayland is degraded — only the foreground window of XWayland apps can be operated, and the UI says so. Unavailable without a graphical session (DISPLAY / WAYLAND_DISPLAY).
+  - Windows: must run in the interactive desktop session of a signed-in user (non-interactive sessions of services / scheduled tasks are not supported).
+- Screenshots are only sent to (vision-capable) models. They are not forwarded to WeChat / Feishu chats, and are only sent as files when the user asks.
+- Not bundled: cua-perception, OmniParser (AGPL) and any Cua Spaces (FSL) components.
+
+## Feishu app setup
+
+1. Open the [Feishu Open Platform](https://open.feishu.cn/app) → create a custom enterprise app and add the Bot capability.
+2. Under Permissions, enable:
+   - `im:message.p2p_msg:readonly` (read one-to-one messages users send to the bot)
+   - `im:message:send_as_bot` (send messages as the app)
+   - `cardkit:card:write` (create and update cards, used for streaming replies)
+3. First enter the App ID / App Secret in this app's info panel → Channels → Feishu and save (the long connection must be online before the next step can be saved).
+4. Events & callbacks → subscription mode: "**Receive events through persistent connection**", and add the event `im.message.receive_v1`.
+5. Publish a version, add yourself to the availability scope, then message the bot one-to-one in Feishu.
+
+Note: only one-to-one (p2p) chats are handled for now; group messages are ignored.
+
+## WeChat (iLink)
+
+- Info panel → Channels → WeChat → "Scan to sign in", scan the QR code with WeChat and confirm; or run `npm run weixin:login` (the QR code is shown in the terminal and saved as a PNG in the data directory).
+- Sign-in state, sync cursor and context_token are kept in the data directory and resume after a restart.
+- Platform limits: after each user message, at most 10 replies can be sent within 24 hours; replies are sent in one go once generation finishes and are split above 4000 characters; "typing…" is shown while generating.
+- Images, files, videos: whatever the user sends (or quotes) is downloaded from the WeChat CDN and decrypted (up to 50 MB each). In agent mode it is saved in the bot workspace's `inbox/` and the message names the path, so the agent can read it, process it or use it as a reference image for generation. Vision-capable models (Claude, GPT-5/6, Gemini, Grok 4, Kimi K3, Muse Spark and others) also receive the image itself; other models only get the path. On Linux the agent does not receive images directly yet (sharp crashes under Electron) and only gets the path. Files the bot delivers (present) go back to WeChat as images or files.
+- When the session expires (error code -14), the channel pauses and the UI says so; scan again to resume.
+
+## Development and tests
+
+```bash
+npm run typecheck
+npm test            # unit tests + offline end-to-end (mock Feishu / iLink / Modelflare, including streaming and stop) + gateway integration tests (requires a compiled magpie)
+npm run docs:check  # README self-check: assets present and within size, zh/en structure parity, relative links and anchors, banned wording, alt text
+```
+
+The README asset list and recording spec are in [docs/assets/README.md](./assets/README.md).
+
+## License
+
+MIT, see `LICENSE`. Third-party components (magpie MIT — including the adapted UI styles, Tencent openclaw-weixin MIT, and others) are listed in `THIRD_PARTY_NOTICES.md` and in Settings → About.

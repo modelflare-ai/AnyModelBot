@@ -1,7 +1,7 @@
 // 设置 → 故障排查：状态（网关、代理进程、版本、目录）、测试模型（经内置网关 vs 直连端点）、测试代理（逐段定位卡在哪）、
 // 重启代理进程、最近日志、复制诊断信息。所有内容由后端脱敏，界面不再拼接任何密钥。
 import { useEffect, useRef, useState } from "preact/hooks";
-import { html, Button, CopyButton, Icon, Skeleton } from "../components/ui.js";
+import { html, Button, CopyButton, Icon, Menu, Skeleton } from "../components/ui.js";
 import { api } from "../lib/api.js";
 import { failed, toast } from "../lib/store.js";
 import { PWSH_INSTALL_URL, PWSH_WINGET, installPwsh, pwshInstalling, pwshProgress, recheckPwsh, setPwshMode } from "../lib/pwsh.js";
@@ -49,57 +49,55 @@ const PS_SOURCE = { "program-files": "安装目录", path: "PATH", preview: "预
 const fmtTime = (t) => (t ? new Date(t).toLocaleString() : "");
 
 /**
- * PowerShell（只在 Windows 上）：代理用的是哪个；下面一行是应用内置的 PowerShell 7（状态、安装进度、安装 / 重新安装 / 改回系统默认）；
- * 没有 7 又没法自己装时再多一行手动安装命令
+ * PowerShell（只在 Windows 上，其他平台整行不出现）：一行说清代理现在用哪个、装没装好；
+ * 最多一个主按钮（安装 / 重新安装），其余（重新检测、改回系统默认、手动安装）收在"⋯"菜单里
  */
 function PwshRows({ ps, busy, onRecheck, onInstall, onMode }) {
+  const more = useRef(null);
+  const [menu, setMenu] = useState(false);
   if (!ps || !ps.applicable) return null;
   const p = ps.private;
+  const inst = p?.install || {};
   const installing = pwshInstalling(ps);
-  const [text, kind] = ps.checking ? ["检测中", ""] : !ps.missing ? [ps.version || "7", "ok"] : installing ? ["安装中", "warn"] : ps.found && ps.version ? [ps.version, "warn"] : ["未安装", "warn"];
-  const fb = ps.fallback ? `${fmtTime(ps.fallback.at)} ${ps.fallback.from} 起不来（${ps.fallback.reason}），已自动换掉` : "";
+  const system = ps.mode === "system";
+  const failed = !!p && !installing && (p.bad || inst.state === "failed");
+  const fb = ps.fallback ? `之前用的 ${ps.fallback.from} 起不来（${ps.fallback.reason}），已自动换掉` : "";
+  const [text, kind] = ps.checking
+    ? ["检测中", ""]
+    : !ps.missing
+      ? [ps.version || "7", "ok"]
+      : installing
+        ? [pwshProgress(inst), "warn"]
+        : failed
+          ? [p.bad ? "用不了" : "没装上", "err"]
+          : ["未安装", "warn"];
   const sub = ps.checking
     ? "正在找 PowerShell 7"
     : !ps.missing
-      ? join(ps.path, PS_SOURCE[ps.source], "代理用它执行命令", fb)
-      : join(
-          ps.systemIssue ? `${ps.path} 用不了：${ps.systemIssue}` : ps.found && `${ps.path} 版本较旧`,
-          "代理执行命令用的是系统自带的 Windows PowerShell 5.1，每条可能要二三十秒",
-          installing ? "装好 PowerShell 7 后自动换用" : "装上 PowerShell 7，命令执行快得多，也更稳定",
-        );
-  // 内置副本
-  let row = null;
-  if (p) {
-    const inst = p.install || {};
-    const system = ps.mode === "system";
-    const [pt, pk] = !p.supported ? ["装不了", ""] : installing ? [pwshProgress(inst), "warn"] : system ? ["未使用", ""] : p.ready ? ["已就绪", "ok"] : p.bad ? ["用不了", "err"] : inst.state === "failed" ? ["没装上", "err"] : p.installed ? ["已安装", "warn"] : ["未安装", ""];
-    const psub = !p.supported
-      ? p.reason
-      : join(
-          installing ? "正在下载、核对哈希与微软签名、试运行，不需要管理员权限" : "",
-          !installing && p.ready && `${p.version}${p.arch ? ` ${p.arch}` : ""} · 已核对微软签名，试运行通过（${p.test ? `${p.test.ms} ms，${fmtTime(p.test.at)}` : ""}）`,
-          !installing && p.bad && `用不了：${p.bad.reason}`,
-          !installing && !p.bad && inst.state === "failed" && `没装上：${inst.error || "未知原因"}`,
-          !installing && !p.installed && inst.state !== "failed" && (system ? "已改回系统默认，不用应用内置的 PowerShell 7" : ps.autoInstall ? "系统里没有能用的 PowerShell 7 时自动安装" : `${p.version}，点"安装"下载（约 110 MB）`),
-          p.installed && system && "已改回系统默认，不用它",
-          p.dir,
-        );
-    const b = (what, label, fn, cls = "text") => html`<button type="button" class=${cls} disabled=${!!busy || installing} aria-busy=${busy === what || undefined} onClick=${fn}>${busy === what ? `${label}…` : label}</button>`;
-    row = html`<${Row} compact id="pwsh-private" name="应用内置的 PowerShell 7" sub=${psub}>
-      <span class="ts-state"><span class=${`dot ${pk}`}></span>${pt}</span>
-      ${p.supported && !installing && (system ? (p.ready ? b("pwsh-auto", "改用它", () => onMode("auto")) : b("pwsh-install", "安装", () => onInstall(false))) : !p.installed ? b("pwsh-install", "安装", () => onInstall(false)) : b("pwsh-install", "重新安装", () => onInstall(true)))}
-      ${p.supported && !installing && !system && (p.installed || p.ready) && b("pwsh-system", "改回系统默认", () => onMode("system"))}
-    <//>`;
-  }
+      ? join(`代理用它执行命令（${PS_SOURCE[ps.source] || ps.source}）`, fb)
+      : installing
+        ? "正在为代理安装 PowerShell 7，不需要管理员权限；装好前命令照常用 Windows PowerShell 5.1"
+        : failed
+          ? join(p.bad ? `应用内置的 PowerShell 7 用不了：${p.bad.reason}` : `没装上：${inst.error || "未知原因"}`, "代理先用 Windows PowerShell 5.1")
+          : p && !p.supported
+            ? join(p.reason, "代理在用 Windows PowerShell 5.1，每条命令可能要二三十秒")
+            : "代理在用 Windows PowerShell 5.1，每条命令可能要二三十秒；装上 PowerShell 7 快得多";
+  // 主按钮：只在需要用户动手时出现
+  const primary = !ps.checking && ps.missing && !installing && p?.supported ? (failed ? ["重新安装", () => onInstall(true)] : !system ? ["安装", () => onInstall(false)] : null) : null;
+  const items = [
+    { label: "重新检测", onSelect: onRecheck },
+    ...(p?.supported && !installing && p.installed && !failed ? [{ label: "重新安装应用内置的 PowerShell 7", onSelect: () => onInstall(true) }] : []),
+    ...(p?.supported && !installing && (p.installed || p.ready) && !system ? [{ label: "改回系统默认", note: "不用应用内置的 PowerShell 7", onSelect: () => onMode("system") }] : []),
+    ...(p?.supported && system ? [{ label: "改用应用内置的 PowerShell 7", onSelect: () => onMode("auto") }] : []),
+    ...(ps.missing && !installing && (!p?.supported || failed || system) ? [{ sep: true }, { label: "自己安装 PowerShell 7…", note: PWSH_WINGET, onSelect: () => window.open(PWSH_INSTALL_URL, "_blank", "noopener") }] : []),
+  ];
+  const dis = !!busy || installing;
   return html`<${Row} id="pwsh" name="PowerShell" sub=${sub}>
-      <span class="ts-state"><span class=${`dot ${kind}`}></span>${text}</span>
-      <button type="button" class="text" disabled=${!!busy} aria-busy=${busy === "pwsh" || undefined} onClick=${onRecheck}>${busy === "pwsh" ? "检测中…" : "重新检测"}</button>
-    <//>
-    ${row}
-    ${ps.missing && !installing && (!p || !p.supported || ps.mode === "system" || p.bad || p.install?.state === "failed") && html`<${Row} compact id="pwsh-manual" name="自己安装 PowerShell 7" sub=${PWSH_WINGET} mono>
-      <${CopyButton} text=${PWSH_WINGET} label="复制安装命令" />
-      <a class="btn sm" href=${PWSH_INSTALL_URL} target="_blank" rel="noopener noreferrer">下载安装 ↗</a>
-    <//>`}`;
+    <span class="ts-state"><span class=${`dot ${kind}`}></span>${text}</span>
+    ${primary && html`<button type="button" class="text" disabled=${dis} aria-busy=${busy === "pwsh-install" || undefined} onClick=${primary[1]}>${busy === "pwsh-install" ? `${primary[0]}…` : primary[0]}</button>`}
+    <button type="button" class="icon-btn" ref=${more} title="更多" aria-label="PowerShell 的更多操作" aria-haspopup="menu" aria-expanded=${menu} disabled=${dis} onClick=${() => setMenu(!menu)}><${Icon} name="more" size=${14} /></button>
+    ${menu && html`<${Menu} anchor=${more.current} align="right" width=${300} label="PowerShell" items=${items} onClose=${() => setMenu(false)} />`}
+  <//>`;
 }
 
 function ProbeRow({ name, p }) {

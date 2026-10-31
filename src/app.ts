@@ -37,6 +37,7 @@ import { AccountManager } from "./account/manager.js";
 import { AccountVault, type SecretBox } from "./account/vault.js";
 import { loadModelInfo, type ModelInfo } from "./account/model-info.js";
 import { MediaService, pickDefault } from "./agent/media.js";
+import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
 
 const log = logger("app");
@@ -165,6 +166,14 @@ export class App {
         const bare = bareModel(model);
         return (info[bare] ?? info[bare.split("/").pop() ?? bare])?.context;
       },
+      // 服务端压缩：价格目录列出压缩端点只是提示，bridge 用之前会探测
+      serverCompaction: {
+        listed: async (model) => {
+          const info = await this.modelInfoFor(model);
+          return info?.endpoints ? info.endpoints.includes(COMPACT_ENDPOINT) : undefined;
+        },
+        endpoint: (model) => this.compactEndpoint(model),
+      },
       // 后台小任务（管家判定/交接/记忆整理）直接走 magpie，不经代理子进程
       complete: (botId, model, system, user) =>
         this.models.streamChat(
@@ -210,6 +219,35 @@ export class App {
     }
   }
 
+  /** 某个模型（网关里的名字也行）的 Modelflare 模型资料 */
+  private async modelInfoFor(model: string): Promise<ModelInfo | undefined> {
+    const info = await this.modelInfo();
+    const bare = bareModel(model);
+    return info[bare] ?? info[bare.split("/").pop() ?? bare];
+  }
+
+  /**
+   * 服务端压缩直连的端点：内置网关不转发 /v1/responses/compact（回 404），压缩请求直接发给模型所在的 Modelflare 连接
+   * （同一把 Key）。压缩后的请求仍经网关；网关要先开启 nativeCompaction，带压缩项的请求被拒时才会原样报错，
+   * 而不是悄悄删掉压缩项重试（那样会丢掉之前的上下文）。外部端点模式直接用那个端点。
+   */
+  private compactEndpoint(model: string): CompactEndpoint | undefined {
+    if (!this.magpie) {
+      const baseUrl = this.config.magpie.externalBaseUrl.replace(/\/+$/, "");
+      return baseUrl ? { baseUrl, apiKey: this.config.magpie.externalApiKey, model } : undefined;
+    }
+    // 网关里的模型名是 <provider id>/<上游模型名>；provider 必须正好是它（upstreamEndpoint 找不到时会退回共用连接）
+    const i = model.indexOf("/");
+    const id = i > 0 ? model.slice(0, i) : "";
+    const up = id ? this.magpie.upstreamEndpoint(id) : undefined;
+    if (!up || up.id !== id) return undefined;
+    if (!this.magpie.nativeCompaction(up.id)) {
+      void this.magpie.ensureNativeCompaction(up.id).catch((e) => log.warn("turning on native compaction failed", { provider: up.id, message: (e as Error).message }));
+      return undefined;
+    }
+    return { baseUrl: up.baseUrl, apiKey: up.apiKey, model: model.slice(i + 1), headers: this.requestHeaders() };
+  }
+
   /** 每个经 Modelflare 的请求都带的请求头（调用归因） */
   requestHeaders(): Record<string, string> {
     return skillHeader(appVersion());
@@ -240,6 +278,7 @@ export class App {
       if (!key) continue;
       try {
         await magpie.ensureModelflareApis(id);
+        if (serverCompactionEnabled()) await magpie.ensureNativeCompaction(id).catch((e) => log.warn("turning on native compaction failed", { provider: id, message: (e as Error).message }));
         const r = await verifyModelflareKey(baseUrl, key, { line: this.config.modelflare.line });
         if (r.ok) await magpie.setModelPicks(id, r.chatModels);
       } catch (e) {

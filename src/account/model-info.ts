@@ -12,6 +12,8 @@ export interface ModelInfo {
   tools?: boolean;
   reasoning?: boolean;
   price?: { input?: number; output?: number; perCall?: number };
+  /** 价格目录的 supported_endpoint_types（openai、openai-response、openai-response-compact…） */
+  endpoints?: string[];
 }
 
 interface Profile {
@@ -33,6 +35,7 @@ export interface PricingEntry {
   billing_mode?: string;
   pricing_rules?: unknown;
   sale_price_multiplier?: number;
+  supported_endpoint_types?: string[];
 }
 
 export interface PricingCatalog {
@@ -93,6 +96,7 @@ export async function loadModelInfo(o: {
   for (const entry of catalog?.data ?? []) {
     const price = referencePrice(entry, catalog!);
     if (price) out[entry.model_name] = { ...out[entry.model_name], price };
+    if (Array.isArray(entry.supported_endpoint_types)) out[entry.model_name] = { ...out[entry.model_name], endpoints: entry.supported_endpoint_types.map(String) };
     // 没有 Key（拿不到 model-profiles）时，上下文长度用公开目录里的
     if (Number(entry.context_window) > 0 && !out[entry.model_name]?.context) out[entry.model_name] = { ...out[entry.model_name], context: Number(entry.context_window) };
   }

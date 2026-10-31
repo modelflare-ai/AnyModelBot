@@ -20,7 +20,8 @@ import ui from "./ui.js";
 import guide from "./guide.js";
 import activity from "./activity.js";
 import tasks from "./tasks.js";
+import needs from "./needs.js";
 import access from "./access.js";
 import perms from "./perms.js";
 
-export default { common, app, time, settings, account, pwsh, chat, info, markdown, notify, troubleshoot, onboarding, newBot, botSettings, sidebar, avatar, models, ui, guide, activity, perms, access, tasks };
+export default { common, app, time, settings, account, pwsh, chat, info, markdown, notify, troubleshoot, onboarding, newBot, botSettings, sidebar, avatar, models, ui, guide, activity, perms, access, tasks, needs };

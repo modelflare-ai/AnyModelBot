@@ -95,7 +95,7 @@ export function PromptCard({ requestId, fallback }) {
   };
   if (row.kind === "approval") {
     return html`<div class=${`card${pending ? "" : " done"}`}>
-      <div class="meta"><span>${t("chat.approval.needed", { code: html`<span class="num">${row.code}</span>` })}</span>${!pending && html`<${Badge} s=${row.status} />`}</div>
+      <div class="meta"><span>${t(row.taskTitle ? "chat.approval.neededTask" : "chat.approval.needed", { title: row.taskTitle, code: html`<span class="num">${row.code}</span>` })}</span>${!pending && html`<${Badge} s=${row.status} />`}</div>
       <div class="q">${row.reason || t("chat.approval.fallbackReason")}</div>
       ${(row.tool || row.detail) && html`<div class="cmd">${row.tool}${row.detail ? "  " + row.detail : ""}</div>`}
       ${pending && html`<div class="actions">
@@ -132,6 +132,7 @@ export function PromptCard({ requestId, fallback }) {
   const sendAll = () =>
     submit(qs.map((q, i) => ({ id: q.id, selected: picked[q.id] || [], ...(i === qs.length - 1 && custom.trim() ? { custom: custom.trim() } : {}) })));
   return html`<div class=${`card${pending ? "" : " done"}`}>
+    ${row.taskTitle && html`<div class="meta"><span>${t("chat.question.taskAsks", { title: row.taskTitle })}</span></div>`}
     ${qs.map((q) => html`<div class="q-block">
       <div class="q">${q.question}</div>
       ${q.detail && html`<div class="q-detail">${q.detail}</div>`}

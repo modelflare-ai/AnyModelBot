@@ -9,7 +9,7 @@ import { ServerCompaction, type CompactEndpoint, type CompactionEvent } from "./
 import { ActivityLog, promotedJob, type ActivityStep } from "./activity.js";
 import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
-import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
+import { APPROVAL_TTL_MS, ApprovalCenter, TASK_APPROVAL_TTL_MS, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import type { TaskHost, TaskService } from "../tasks/service.js";
 import { DEFAULT_SETTINGS, type BotSettings, type MediaConfirm } from "./settings.js";
@@ -317,7 +317,7 @@ export class AgentManager {
     const idleMs = this.o.idleTimeoutMs ?? 10 * 60_000;
     const watchdog = setInterval(() => {
       if (!t.lastProgress || t.abort.signal.aborted) return;
-      if (this.approvals.pending(conv).length || t.tools.size || t.jobs.size || t.media) t.lastProgress = Date.now();
+      if (this.approvals.pendingChat(conv).length || t.tools.size || t.jobs.size || t.media) t.lastProgress = Date.now();
       else if (Date.now() - t.lastProgress > idleMs) {
         log.warn("agent turn idle, stopping", { bot: botId, conversationId: conv, idleMs, lastStep: t.activity.last });
         this.halt(conv, t, new TurnStopped("idle", idleMs));
@@ -351,7 +351,7 @@ export class AgentManager {
     } catch (e) {
       if (e instanceof TurnStopped && e.reason === "timeout") {
         t.activity.end("超过单回合上限");
-        for (const r of this.approvals.pending(conv)) this.approvals.cancel(r.id, "stopped");
+        for (const r of this.approvals.pendingChat(conv)) this.approvals.cancel(r.id, "stopped");
       }
       throw e;
     } finally {
@@ -393,7 +393,7 @@ export class AgentManager {
     t.activity.end(why.reason === "user" ? "用户中止" : why.reason === "idle" ? "长时间没有进展，自动中止" : "超过单回合上限");
     t.abort.abort(why);
     // 这一轮还在等的批准 / 回答随之作废（回合被中止，没人再等它们）
-    for (const r of this.approvals.pending(conv)) this.approvals.cancel(r.id, "stopped");
+    for (const r of this.approvals.pendingChat(conv)) this.approvals.cancel(r.id, "stopped");
   }
 
   /** 跟踪代理自己醒来的一轮：不用等管家闸门（代理已经在跑），结束后同样交给管家判定 */
@@ -811,7 +811,7 @@ export class AgentManager {
     this.o.store.clearAgentSession(conversationId);
     this.o.store.setKV(`seed:${conversationId}`, "");
     this.mediaGrants.delete(conversationId);
-    for (const r of this.approvals.pending(conversationId)) this.approvals.cancel(r.id, "reset");
+    for (const r of this.approvals.pendingChat(conversationId)) this.approvals.cancel(r.id, "reset");
   }
 
   async stopBot(botId: string): Promise<void> {
@@ -912,12 +912,17 @@ export class AgentManager {
     };
   }
 
+  /** 任务会话或它的子代理属于哪个任务（审批落到请求这个任务的会话，"需要你"里也认得它） */
+  private taskOf(botId: string, sessionId: string) {
+    return this.tasks?.taskOfSession(sessionId, this.hosts.get(botId)?.taskRootOf(sessionId));
+  }
+
   private resolveConversation(botId: string, sessionId: string): string {
     const c = this.o.store.conversationForSession(sessionId);
     if (c) return c;
-    // 后台任务会话：落到请求它的会话（3b 再把审批推给用户）
-    const task = this.tasks?.conversationOf(sessionId);
-    if (task) return task;
+    // 后台任务会话（和它的子代理）：落到请求它的会话
+    const task = this.taskOf(botId, sessionId);
+    if (task) return task.conversationId;
     const active = [...(this.activeConvs.get(botId) ?? [])];
     return active.length === 1 ? active[0] : "";
   }
@@ -927,9 +932,12 @@ export class AgentManager {
     if (!this.hosts.has(botId)) throw new Error("unknown bot");
     const sessionId = String(b?.sessionId ?? "");
     const conversationId = this.resolveConversation(botId, sessionId);
+    // 后台任务里来的：记下是哪个任务、哪个 run，由任务服务推给用户；没人在旁边看，等 12 小时
+    const t = this.o.store.conversationForSession(sessionId) ? undefined : this.taskOf(botId, sessionId);
+    const task = t ? { taskId: t.taskId, runId: t.runId, ttlMs: TASK_APPROVAL_TTL_MS } : {};
     if (b?.kind === "question") {
       const qs = (Array.isArray(b.questions) ? b.questions : []) as QuestionItem[];
-      const row = this.approvals.create({ kind: "question", botId, conversationId, sessionId, tool: "ask_user_question", detail: qs.map((q) => q.question).join(" / "), reason: "", payload: JSON.stringify(qs) });
+      const row = this.approvals.create({ kind: "question", botId, conversationId, sessionId, tool: "ask_user_question", detail: qs.map((q) => q.question).join(" / "), reason: "", payload: JSON.stringify(qs), ...task });
       return { id: row.id };
     }
     const host = this.hosts.get(botId)!;
@@ -948,6 +956,7 @@ export class AgentManager {
       tool,
       detail: call ? callDetail(call.name, call.args) : "",
       reason: String(b?.reason ?? ""),
+      ...task,
     });
     return { id: row.id };
   }

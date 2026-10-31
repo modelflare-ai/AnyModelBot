@@ -126,8 +126,10 @@ const RULES: [rule: string, part: string, says: string[], gone?: string[]][] = [
   ["生视频工具：默认模型、花费不高直接生成", "tool generate_video", ["generates right away", "\"confirm\""], ["Before anything is generated the user is asked"]],
   // —— 后台任务（3a）——
   ["聊天代理：长活或用户说后台做才开任务，能马上答的不开；开了只说一句，不自己做", "tool task_start", ["more than a few minutes or many steps", "后台做", "not for what you can answer now", "前台做", "in one sentence", "do not do the work yourself"]],
-  ["用户提到某个任务时把话转给它", "tool task_message", ["when they refer to it", "next step", "resumes"]],
-  ["任务规则优先于聊天规则；不问用户，自己决定并说明", "task", ["优先于上面的聊天规则", "不要问用户", "在结果里说明"], ["ask_user_question"]],
+  ["用户提到某个任务、回答它的问题时把话转给它", "tool task_message", ["when they refer to it", "answer its question", "next step", "resumes"]],
+  // —— 任务的提问（3b）：先自己定，非用户定不可才问，一次一个，问完结束这一轮 ——
+  ["任务规则优先于聊天规则；能自己定的自己定并说明，非用户定不可才问", "task", ["优先于上面的聊天规则", "选一个合理的做法", "在结果里说明", "非用户定不可", "needs_you", "一个问题", "结束这一轮"], ["ask_user_question"]],
+  ["task_report：needs_you 带一个问题，回答是下一条消息；问完结束这一轮", "tool task_report", ["needs_you", "only the user can decide", "their answer is your next message", "After done, failed or needs_you, end your turn"]],
   ["任务：外部动作前后记日志（重启后靠它不重复做）", "task", [".task/journal.md"]],
   ["任务：做完或做不下去才说话，一句话，结果和在哪里；中途不汇报", "task", ["task_report", "done 或 failed", "不超过 300 字", "在哪里", "中途不用汇报", "不会发给用户"]],
   ["task_report：done / failed 的那句话是用户收到的，progress 不发；报完结束这一轮", "tool task_report", ["one line the user receives", "at most 300 characters", "never sent", "end your turn"]],
@@ -173,8 +175,11 @@ describe.skipIf(!runtime)("提示词约定", () => {
     expect(prompt + tools, `${prompt} characters of prompt and ${tools} of tools`).toBeLessThanOrEqual(BUDGET);
   });
 
-  /** 任务会话在聊天会话之外多出来的：任务规则段 + task_report（去掉的工具不算）。基线 1,255（规则 363 + task_report 892），上限高约 5%。 */
-  const TASK_BUDGET = 1_320;
+  /**
+   * 任务会话在聊天会话之外多出来的：任务规则段 + task_report（去掉的工具不算）。上限高约 5%。
+   * 3a 基线 1,255（规则 363 + task_report 892）；3b 加上提问（needs_you、question、options 和怎么问的那条规则）后 1,533（规则 399 + task_report 1,134）。
+   */
+  const TASK_BUDGET = 1_610;
   it("任务会话多出来的提示词和工具不超过字符数上限", async () => {
     const { task } = await loadPlugins();
     const extra = TASK_RULES.length + JSON.stringify(task.tools).length;

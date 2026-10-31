@@ -7,6 +7,8 @@ export default {
     empty: "No matching commands",
   },
   cmd: {
+    needs: "Needs you ({count})",
+    needsKeys: "needs attention to-do",
     settings: "Open Settings",
     settingsKeys: "settings preferences options",
     newBot: "New bot",

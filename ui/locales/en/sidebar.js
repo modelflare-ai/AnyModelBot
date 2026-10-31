@@ -26,6 +26,7 @@ export default {
   workingNow: "Working…",
   noChats: "No conversations yet",
   pending: { one: "{count} pending approval", other: "{count} pending approvals" },
+  needs: { one: "{count} thing needs you", other: "{count} things need you" },
   moreFor: "More actions for {name}",
   actionsFor: "Actions for {name}",
   menu: {

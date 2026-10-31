@@ -10,7 +10,7 @@ import { describeStep, fmtSecs, type ActivityStep } from "../agent/activity.js";
 import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
-import { promptText, type QuestionItem } from "../agent/approvals.js";
+import { promptButtons, promptText } from "../agent/approvals.js";
 import { segmentInput, type ChatPlace } from "../agent/prompts/index.js";
 import { clearInflight, markInflight, takeNotice } from "./recovery.js";
 import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
@@ -117,6 +117,8 @@ interface Inflight {
   release?: () => void;
   /** 用户消息已经存进历史（交给代理时就存，保证插进来的消息排在它后面） */
   userStored?: boolean;
+  /** 并进了进行中的回合：那一轮的回复也是它的回复 */
+  steered?: boolean;
 }
 
 /** 回合还没交给代理（或纯对话还没出字）就被停止时的回复 */
@@ -264,6 +266,21 @@ export class BotRuntime {
     };
   }
 
+  /**
+   * 这一轮的回复（和交付的文件）已经交给渠道：清掉重启标记，不等收尾。微信、飞书的回复这时已经落进出站队列，重启后会补发；
+   * 之后还有关"正在输入"（微信要一次网络请求）、让出会话，在那之间退出或崩溃，下次启动不该再说"没处理完，请重新发送"。
+   * 并进这一轮的消息随它一起答完了；会话里还有排着、没答的消息时标记留着。
+   */
+  private answered(convId: string, run: Inflight): void {
+    if (run.interrupted) return;
+    for (const x of this.inflight.get(convId) ?? []) if (x !== run && !x.steered) return;
+    try {
+      clearInflight(this.opts.store, convId);
+    } catch {
+      /* 退出时数据库可能已经关了 */
+    }
+  }
+
   private async handleMessage(ev: InboundEvent, out: ReplySession, bot: NonNullable<ReturnType<Store["getBot"]>>, convId: string, run: Inflight, prior: Promise<void> | undefined): Promise<void> {
     const { store } = this.opts;
     const signal = run.abort.signal;
@@ -368,6 +385,7 @@ export class BotRuntime {
       const msg = acc ? `${acc}\n\n${t("runtime.interrupted", { error: err.message })}` : t("runtime.modelFailed", { model, error: err.message });
       await out.apply({ type: "stream.finish", text: msg });
     } finally {
+      this.answered(conv.id, run);
       await out.apply({ type: "typing", on: false });
     }
   }
@@ -408,7 +426,9 @@ export class BotRuntime {
       return { handled: true, ack: `正在中止上一条消息（已处理 ${fmtSecs(Date.now() - since)}）…` };
     }
     if (!agent) return { handled: false };
-    const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`);
+    // 审批、提问的回复；后台任务的只认引用、编号开头，或它是机器人最后一条消息时的选项编号（见 ApprovalCenter.handleReply）
+    const { quote, plain } = quoteOf(ev);
+    const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`, { ...tasks?.replyContext(convId), ...(quote ? { quote, plain } : {}) });
     if (r.handled) return r;
     // 前一条还在处理：能并入进行中的代理回合时由 handle 并入并回一句；不能时说一声这条排在后面、怎么中止（每个回合只说一次），消息照常入队
     const t = agent.turnsInProgress.get(convId);
@@ -471,8 +491,8 @@ export class BotRuntime {
       return agent.approvals.decide(row.id, allow, by) ? { toast: t(allow ? "runtime.approvedOnce" : "runtime.rejected", { code: row.code }), ok: true } : { toast: t("runtime.expired"), ok: false };
     }
     if (value.amb === "question") {
-      const r = agent.approvals.handleReply(row.conversationId, String(value.option ?? ""), by);
-      return r.handled ? { toast: t("runtime.submitted"), ok: true } : { toast: t("runtime.submitFailed"), ok: false };
+      // 回答按钮所在的这一个提问（会话里可能同时有几个）
+      return agent.approvals.answerText(row.id, String(value.option ?? ""), by) ? { toast: t("runtime.submitted"), ok: true } : { toast: t("runtime.submitFailed"), ok: false };
     }
     return { toast: t("runtime.unknownAction"), ok: false };
   }
@@ -533,6 +553,7 @@ export class BotRuntime {
       inflight.userStored = true;
       store.addMessage(convId, "assistant", msg);
       await out.apply({ type: "stream.finish", text: msg });
+      this.answered(convId, inflight);
       return true;
     };
     const stopped = new Promise<"stopped">((r) => (signal.aborted ? r("stopped") : signal.addEventListener("abort", () => r("stopped"), { once: true })));
@@ -597,6 +618,7 @@ export class BotRuntime {
           log.warn("deliver file failed", { name: path.basename(f), message: (e as Error).message.slice(0, 200) });
         }
       }
+      this.answered(convId, inflight);
       return true;
     } catch (e) {
       const err = e as Error;
@@ -615,6 +637,7 @@ export class BotRuntime {
       inflight.userStored = true;
       store.addMessage(convId, "assistant", msg, [...steps.values()]);
       await out.apply({ type: "stream.finish", text: msg });
+      this.answered(convId, inflight);
       return true;
     } finally {
       clearInterval(startup);
@@ -637,6 +660,7 @@ export class BotRuntime {
     log.info("message steered into the running turn", { bot: botId, conversationId: convId });
     this.opts.store.addMessage(convId, "user", text);
     t.userStored = true;
+    t.steered = true;
     t.release?.();
     await out.apply({ type: "text", text: STEER_ACK, ack: true });
     return true;
@@ -696,6 +720,7 @@ export class BotRuntime {
         const msg = turnFailedText(e as Error, [...steps.values()]);
         store.addMessage(convId, "assistant", msg, [...steps.values()]);
         await out.apply({ type: "stream.finish", text: msg });
+        this.answered(convId, t);
         return;
       }
       const finalText = res.text.trim() || "（后台任务已结束，没有文字回复）";
@@ -708,6 +733,7 @@ export class BotRuntime {
           log.warn("deliver file failed", { name: path.basename(f), message: (e as Error).message.slice(0, 200) });
         }
       }
+      this.answered(convId, t);
     } finally {
       t.abort.signal.removeEventListener("abort", halt);
       unbind();
@@ -789,34 +815,21 @@ export function firstInput(agent: AgentManager, botId: string, convId: string, t
 
 /** 审批/提问 → 出站交互操作（文本渠道用 prompt；卡片渠道用 buttons）。 */
 export function interactiveOp(row: ApprovalRow) {
-  if (row.kind === "approval") {
-    return {
-      type: "interactive" as const,
-      kind: "approval" as const,
-      prompt: promptText(row),
-      requestId: row.id,
-      code: row.code,
-      buttons: [
-        { label: t("runtime.allowOnce"), value: { amb: "approval", id: row.id, decision: "allow" }, style: "primary" as const },
-        { label: t("runtime.deny"), value: { amb: "approval", id: row.id, decision: "deny" }, style: "danger" as const },
-      ],
-    };
-  }
-  let qs: QuestionItem[] = [];
-  try {
-    qs = JSON.parse(row.payload);
-  } catch {
-    /* ignore */
-  }
-  const single = qs.length === 1 ? qs[0] : undefined;
   return {
     type: "interactive" as const,
-    kind: "ask_user" as const,
+    kind: row.kind === "approval" ? ("approval" as const) : ("ask_user" as const),
     prompt: promptText(row),
     requestId: row.id,
     code: row.code,
-    buttons: single?.options?.length && !single.multiSelect ? single.options.map((o, i) => ({ label: o.label, value: { amb: "question", id: row.id, option: String(i + 1) }, style: "default" as const })) : undefined,
+    buttons: promptButtons(row),
   };
+}
+
+/** 消息里引用的那段（微信的引用）和用户自己写的（去掉引用） */
+export function quoteOf(ev: InboundEvent): { quote: string; plain: string } {
+  const quote = ev.parts.map((p) => (p.type === "quote" ? p.text : "")).filter(Boolean).join("\n");
+  const plain = eventText({ ...ev, parts: ev.parts.filter((p) => p.type !== "quote") });
+  return { quote, plain };
 }
 
 const clipLine = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…" : s);

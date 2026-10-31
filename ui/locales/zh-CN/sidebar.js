@@ -28,6 +28,7 @@ export default {
   workingNow: "正在工作…",
   noChats: "还没有对话",
   pending: "{count} 个待审批",
+  needs: "{count} 件事需要你",
   moreFor: "{name} 的更多操作",
   actionsFor: "{name} 的操作",
   menu: {

@@ -1526,6 +1526,12 @@ exec "$REAL" "$@"
         if (n.params.status === "running") this.taskBusy.add(root);
         else if (n.params.status === "idle") this.taskBusy.delete(root);
       }
+      // 任务会话（和它的子代理）的工具调用也记下：它们要批准时，审批里显示这条命令
+      const ev = n.method === "session.event" ? n.params?.event : undefined;
+      if (ev?.type === "tool/call" && ev.data?.callId) {
+        this.calls.set(String(ev.data.callId), { name: String(ev.data.name), args: String(ev.data.arguments ?? ""), at: Date.now() });
+        if (this.calls.size > 500) this.calls.delete(this.calls.keys().next().value!);
+      }
       this.o.onTaskEvent?.(root, n);
       return;
     }
@@ -1560,6 +1566,11 @@ exec "$REAL" "$@"
     } catch (e) {
       log.warn("wake handler failed", { message: (e as Error).message });
     }
+  }
+
+  /** 这个会话是不是任务会话或它的子代理：是就给出任务会话 id（子代理里的审批也算这个任务的） */
+  taskRootOf(sessionId: string): string | undefined {
+    return this.taskRoot({ method: "session.event", params: { sessionId } } as SdkNotification);
   }
 
   /** 通知属于哪个任务会话（task-* 本身，或它的子代理）；不属于任务就是 undefined */

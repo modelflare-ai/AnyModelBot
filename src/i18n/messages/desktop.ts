@@ -12,6 +12,7 @@ export const zh = {
   logDisabled: "（未启用）",
   bootFailed: "{product} 启动失败",
   uiNotStarted: "管理界面未启动",
+  trayNeeds: "需要你（{count}）",
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
@@ -25,4 +26,5 @@ export const en: Catalog<typeof zh> = {
   logDisabled: "(disabled)",
   bootFailed: "{product} couldn't start",
   uiNotStarted: "The local interface didn't start",
+  trayNeeds: "Needs you ({count})",
 };

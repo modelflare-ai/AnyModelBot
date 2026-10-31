@@ -16,7 +16,7 @@ import { normalizeLine } from "../modelflare.js";
 import { SseReply } from "./sse-reply.js";
 import { LiveTurns, type LiveTurn } from "./live.js";
 import { connectionFromPids } from "../agent/peer-guard.js";
-import type { ApprovalRow } from "../store/db.js";
+import type { ApprovalRow, Store } from "../store/db.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
 import { pwshProbe, type PwshMode, type PwshStatus } from "../agent/pwsh.js";
@@ -131,7 +131,8 @@ function webEvent(botId: string, text: string): InboundEvent {
 }
 const consoleConvId = (botId: string) => `${botId}:web:console`;
 
-function publicApproval(r: ApprovalRow) {
+/** 审批 / 提问给界面的字段；后台任务的带上任务名（卡片上「GPU 价格调研」想问你） */
+function publicApproval(r: ApprovalRow, store?: Store) {
   const { payload, result, ...rest } = r;
   let questions: unknown = undefined;
   if (r.kind === "question") {
@@ -141,7 +142,8 @@ function publicApproval(r: ApprovalRow) {
       questions = [];
     }
   }
-  return { ...rest, questions };
+  const taskTitle = r.taskId ? store?.getTask(r.taskId)?.title : undefined;
+  return { ...rest, questions, ...(taskTitle ? { taskTitle } : {}) };
 }
 
 /** 允许名单 / 使用请求：界面要的字段（平台 id 只给末尾几位，界面不需要完整的） */
@@ -444,7 +446,34 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     }
     // busy：有消息在处理的机器人（纯对话、排队、代理还在启动都算），侧栏的"正在工作"
     // background：每个机器人正在进行的后台任务数
-    if (p === "/agent" && m === "GET") return send(res, 200, { ...app.agent.status(), busy: [...new Set([...live.bots(), ...app.runtime.busyBots()])], background: app.tasks.background() });
+    // attention："需要你"的件数（侧栏那一行，没有就是 0）；needs：每个机器人几件、最早那件（机器人行的第二行）
+    if (p === "/agent" && m === "GET") {
+      const items = app.attention.list();
+      return send(res, 200, { ...app.agent.status(), busy: [...new Set([...live.bots(), ...app.runtime.busyBots()])], background: app.tasks.background(), attention: items.length, needs: app.attention.byBot(items) });
+    }
+    // —— 需要你（3b）：所有机器人里在等人的事，和对它们的操作 ——
+    if (seg[0] === "attention") {
+      if (seg.length === 1 && m === "GET") return send(res, 200, { items: app.attention.list() });
+      const id = decodeURIComponent(seg[1] ?? "");
+      const action = seg[2] ?? "";
+      if (seg.length !== 3 || m !== "POST") throw new HttpError(404, "not found");
+      const item = app.attention.list().find((x) => x.id === id);
+      if (!item) throw new HttpError(409, "已经处理过了");
+      if (!(item.actions as string[]).includes(action)) throw new HttpError(400, "不支持这个操作");
+      const b = await readJson(req);
+      let ok = false;
+      if (action === "approve" || action === "deny") ok = app.agent.approvals.decide(item.approvalId!, action === "approve", "web");
+      else if (action === "answer") {
+        ok = Array.isArray(b.answers)
+          ? app.agent.approvals.answer(item.approvalId!, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
+          : app.agent.approvals.answerText(item.approvalId!, String(b.text ?? ""), "web");
+      } else if (action === "retry") ok = !(await app.tasks.retry(item.taskId!)).error;
+      else if (action === "stop") ok = await app.tasks.stopTask(item.taskId!, "web");
+      else if (action === "seen") ok = app.tasks.seenDelivery(item.taskId!);
+      if (!ok) throw new HttpError(409, "没能完成，可能已经处理过了");
+      app.attention.kick();
+      return send(res, 200, { ok: true, items: app.attention.list() });
+    }
     // —— 后台任务（3a：列表、详情、一个 run 的步骤、停止）——
     if (seg[0] === "tasks") {
       if (seg.length === 1 && m === "GET") {
@@ -583,25 +612,25 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     if (seg[0] === "approvals") {
       if (seg.length === 1 && m === "GET") {
         const status = url.searchParams.get("status") || undefined;
-        return send(res, 200, { approvals: app.store.listApprovals({ status: status as any, botId: url.searchParams.get("bot") || undefined, limit: 100 }).map(publicApproval) });
+        return send(res, 200, { approvals: app.store.listApprovals({ status: status as any, botId: url.searchParams.get("bot") || undefined, limit: 100 }).map((r) => publicApproval(r, app.store)) });
       }
       const row = seg[1] ? app.store.getApproval(decodeURIComponent(seg[1])) : undefined;
       if (!row) throw new HttpError(404, t("web.requestNotFound"));
-      if (seg.length === 2 && m === "GET") return send(res, 200, { approval: publicApproval(row) });
+      if (seg.length === 2 && m === "GET") return send(res, 200, { approval: publicApproval(row, app.store) });
       if (seg.length === 3 && m === "POST" && (seg[2] === "approve" || seg[2] === "deny")) {
         if (row.kind !== "approval") throw new HttpError(400, t("web.notApproval"));
         const ok = app.agent.approvals.decide(row.id, seg[2] === "approve", "web");
         if (!ok) throw new HttpError(409, t("web.requestDone"));
-        return send(res, 200, { approval: publicApproval(app.store.getApproval(row.id)!) });
+        return send(res, 200, { approval: publicApproval(app.store.getApproval(row.id)!, app.store) });
       }
       if (seg.length === 3 && m === "POST" && seg[2] === "answer") {
         if (row.kind !== "question" || row.status !== "pending") throw new HttpError(409, t("web.requestDone"));
         const b = await readJson(req);
         const ok = Array.isArray(b.answers)
           ? app.agent.approvals.answer(row.id, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
-          : app.agent.approvals.handleReply(row.conversationId, String(b.text ?? ""), "web").handled;
+          : app.agent.approvals.answerText(row.id, String(b.text ?? ""), "web");
         if (!ok) throw new HttpError(409, t("web.submitFailed"));
-        return send(res, 200, { approval: publicApproval(app.store.getApproval(row.id)!) });
+        return send(res, 200, { approval: publicApproval(app.store.getApproval(row.id)!, app.store) });
       }
     }
     if (seg[0] === "conversations") {
@@ -814,7 +843,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           conversationId: consoleConvId(id),
           model: conv?.model ?? "",
           messages: conv ? app.store.listMessages(conv.id, 200).filter((x) => x.id <= cut) : [],
-          pending: app.store.listApprovals({ status: "pending", conversationId: consoleConvId(id), limit: 50 }).map(publicApproval),
+          pending: app.store.listApprovals({ status: "pending", conversationId: consoleConvId(id), limit: 50 }).map((r) => publicApproval(r, app.store)),
           live: turns.map((t) => t.snapshot()),
         });
       }

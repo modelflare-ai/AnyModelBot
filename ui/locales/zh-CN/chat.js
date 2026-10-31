@@ -26,11 +26,13 @@ export default {
   },
   approval: {
     needed: "需要你的批准 · {code}",
+    neededTask: "「{title}」需要你的批准 · {code}",
     fallbackReason: "机器人想执行一个超出工作区的操作",
     allowOnce: "允许（仅本次）",
     deny: "拒绝",
   },
   question: {
+    taskAsks: "「{title}」想问你",
     otherOptional: "其他回答（可选）",
     yourAnswer: "输入你的回答",
     orOther: "或者输入其他回答",

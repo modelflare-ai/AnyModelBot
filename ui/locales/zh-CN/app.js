@@ -7,6 +7,8 @@ export default {
     empty: "没有匹配的命令",
   },
   cmd: {
+    needs: "需要你（{count}）",
+    needsKeys: "needs attention 需要你 待办",
     settings: "打开设置",
     settingsKeys: "settings preferences 设置 偏好",
     newBot: "新建机器人",

@@ -25,12 +25,14 @@ export default {
     more: "More permission settings…",
   },
   approval: {
+    neededTask: "\"{title}\" needs your approval · {code}",
     needed: "Needs your approval · {code}",
     fallbackReason: "The bot wants to do something outside its workspace",
     allowOnce: "Allow once",
     deny: "Deny",
   },
   question: {
+    taskAsks: "\"{title}\" asks",
     otherOptional: "Something else (optional)",
     yourAnswer: "Type your answer",
     orOther: "Or type a different answer",

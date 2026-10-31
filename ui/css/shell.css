@@ -155,6 +155,20 @@ button.thread:active { background: var(--side-press); }
 .thread-item:hover > .thread-more, .thread-more:focus-visible, .thread-more[aria-expanded="true"] { opacity: 1; }
 .thread-item:is(:hover, :has(> .thread-more:focus-visible), :has(> .thread-more[aria-expanded="true"])) .when { opacity: 0; }
 .thread-skel { flex: 1; display: grid; gap: var(--space-1-5); }
+/* 「需要你」（screens/needs-you.js）：机器人列表上方一行，只在有事时出现。黄点在头像那一列的中线上，
+   文字和机器人名对齐，件数和机器人行的计数在同一条竖线上；选中时和机器人行一样是浮起的玻璃片 */
+.needs-row {
+  --focus-offset: -2px;
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; height: var(--ctl-xl); padding: 0 var(--side-row-px);
+  border-radius: var(--r-xl); text-align: left; font-size: var(--fs-lg); font-weight: var(--fw-medium); color: var(--fg);
+  transition: background var(--t-fast), box-shadow var(--t-fast);
+}
+.needs-row:hover { background: var(--side-hover); }
+.needs-row:active { background: var(--side-press); }
+.needs-row.sel, .needs-row.sel:active { background: var(--side-active); box-shadow: var(--shadow-tile); }
+.needs-row .mark { width: 38px; flex: none; display: grid; place-items: center; }   /* 和侧栏头像一样宽 */
+.needs-row .label { flex: 1; min-width: 0; }
+.needs-row .badge.count { --badge-bg: var(--amber-soft); --badge-fg: var(--amber); }
 .thread .field { --field-h: 30px; }
 /* 侧栏空状态：一句话 + 一个按钮，靠留白成组，不套卡片 */
 .side-empty {

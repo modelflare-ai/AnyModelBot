@@ -13,6 +13,16 @@ export const zh = {
   hintOptions: "（回复编号{multi}，或直接写答案）",
   hintOptionsMulti: "，可多选用逗号分隔",
   hintFree: "（直接回复答案）",
+  replyYesNo: "回复 y {code} 批准，n {code} 拒绝",
+  quoteNeedsAnswer: "引用时写上你的回答",
+  alreadyAnswered: "这个问题已经回答过了",
+  taskApproval: "需批准（任务「{title}」）：{what} — 回复 y {code} / n {code}",
+  taskQuestion: "❓「{title}」想问你：{question}",
+  taskHintOptions: "（回复编号{multi}，或引用这条消息回答）",
+  taskHintMulti: "，可多选",
+  taskHintQuote: "（引用这条消息回答）",
+  allowOnce: "允许（仅本次）",
+  deny: "拒绝",
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
@@ -27,4 +37,14 @@ export const en: Catalog<typeof zh> = {
   hintOptions: "(Reply with an option number{multi}, or type your answer)",
   hintOptionsMulti: " or several separated by commas",
   hintFree: "(Type your answer)",
+  replyYesNo: "Reply y {code} to approve or n {code} to deny",
+  quoteNeedsAnswer: "Write your answer when you quote the message",
+  alreadyAnswered: "This question has already been answered",
+  taskApproval: "Approval needed (task \"{title}\"): {what} — reply y {code} / n {code}",
+  taskQuestion: "❓ \"{title}\" asks: {question}",
+  taskHintOptions: "(reply with a number{multi}, or quote this message to answer)",
+  taskHintMulti: "; you can pick several",
+  taskHintQuote: "(quote this message to answer)",
+  allowOnce: "Allow (once)",
+  deny: "Deny",
 };

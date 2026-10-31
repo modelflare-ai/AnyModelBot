@@ -9,6 +9,7 @@ export const zh = {
   default_bot_name: "我的助手",
   default_bot_prompt: "你是一个乐于助人的中文助手，回答简洁准确。",
   feishu_failed: "机器人「{name}」飞书长连接启动失败：{message}",
+  feishu_history_denied: "机器人「{name}」读不到飞书的历史消息，离线时发来的消息补不上。在飞书开放平台给应用开通 im:message.history:readonly 权限即可。",
   weixin_expired: "机器人「{name}」微信登录已过期，请在信息面板的「渠道」里重新扫码",
   weixin_connected: "机器人「{name}」微信已连接",
   // 收到的消息里图片 / 文件 / 语音的占位（core/types.ts eventText）
@@ -33,6 +34,7 @@ export const en: Catalog<typeof zh> = {
   default_bot_name: "My Assistant",
   default_bot_prompt: "You are a helpful assistant. Answer concisely and accurately.",
   feishu_failed: "Bot \"{name}\": Feishu long connection failed to start: {message}",
+  feishu_history_denied: "Bot \"{name}\" can't read Feishu message history, so messages sent while it was offline can't be caught up. Grant the app the im:message.history:readonly scope in the Feishu Open Platform.",
   weixin_expired: "Bot \"{name}\": WeChat sign-in expired. Scan the QR code again under Channels in the info panel",
   weixin_connected: "Bot \"{name}\": WeChat connected",
   media_image: "Image",

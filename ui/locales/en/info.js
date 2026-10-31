@@ -25,7 +25,7 @@ export default {
     disconnect: "Disconnect",
     disconnectTitle: "Disconnect Feishu?",
     disconnectBody: "This removes the bot's Feishu App ID and App Secret.",
-    setupHint: "In the Feishu Open Platform, enable the Bot capability, set event subscription to “Receive events through long connection”, and subscribe to {event}. Permissions: {p1}, {p2}, {p3}.",
+    setupHint: "In the Feishu Open Platform, enable the Bot capability, set event subscription to “Receive events through long connection”, and subscribe to {event}. Permissions: {p1}, {p2}, {p3}, {p4}.",
   },
   weixin: {
     sub: "Official iLink channel",

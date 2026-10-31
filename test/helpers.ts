@@ -1,7 +1,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { FeishuMessageEvent, FeishuTransport } from "../src/channels/feishu/transport.js";
+import { HistoryDenied, type FeishuMessageEvent, type FeishuTransport } from "../src/channels/feishu/transport.js";
 
 export async function listen(handler: http.RequestListener): Promise<{ url: string; port: number; close: () => Promise<void>; server: http.Server }> {
   const server = http.createServer(handler);
@@ -224,10 +224,30 @@ export class FakeFeishu implements FeishuTransport {
   failCreate = false;
   failFinish = false;
   onMessage: ((ev: FeishuMessageEvent) => void) | undefined;
+  private onState: ((s: "connecting" | "connected" | "error", d?: string) => void) | undefined;
   private n = 0;
-  async start(onMessage: (ev: FeishuMessageEvent) => void, onState: (s: "connecting" | "connected" | "error") => void) {
+  async start(onMessage: (ev: FeishuMessageEvent) => void, onState: (s: "connecting" | "connected" | "error", d?: string) => void) {
     this.onMessage = onMessage;
+    this.onState = onState;
     onState("connected");
+  }
+  /** 断线重连（长连接又连上了） */
+  reconnect() {
+    this.onState?.("connecting", "reconnecting");
+    this.onState?.("connected", "reconnected");
+  }
+  /** 会话历史（离线补消息）：chatId → 消息（senderType 默认 user）；denyHistory 时像没开权限一样抛 HistoryDenied */
+  history = new Map<string, Array<FeishuMessageEvent & { senderType?: string }>>();
+  denyHistory = false;
+  listed: Array<{ chatId: string; since: number; limit: number; chatType: string }> = [];
+  async listMessages(chatId: string, o: { since: number; limit: number; chatType: string }) {
+    this.listed.push({ chatId, ...o });
+    if (this.denyHistory) throw new HistoryDenied("im.message.list denied: code=99991672 msg=Access denied. One of the following scopes is required");
+    return (this.history.get(chatId) ?? [])
+      .filter((m) => (m.senderType ?? "user") === "user" && m.createTime > o.since)
+      .sort((a, b) => a.createTime - b.createTime)
+      .slice(-o.limit)
+      .map(({ senderType: _s, ...m }) => ({ ...m, chatType: o.chatType }));
   }
   async stop() {}
   async createStreamingCard(initial: string) {
@@ -270,7 +290,7 @@ export function feishuEvent(text: string, opts: Partial<FeishuMessageEvent> = {}
     content: opts.content ?? JSON.stringify({ text }),
     senderOpenId: opts.senderOpenId ?? "ou_user1",
     mentions: opts.mentions ?? [],
-    createTime: Date.now(),
+    createTime: opts.createTime ?? Date.now(),
     ...(opts.rootId ? { rootId: opts.rootId } : {}),
     ...(opts.parentId ? { parentId: opts.parentId } : {}),
   };

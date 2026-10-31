@@ -1,13 +1,18 @@
 import type { ChannelCapabilities, ChannelStatus, InboundEvent, Part, ReplySession } from "../../core/types.js";
 import { Dedup, KeyedQueue } from "../../core/queue.js";
 import type { BotRuntime } from "../../core/runtime.js";
-import type { FeishuMessageEvent, FeishuTransport } from "./transport.js";
+import { HistoryDenied, type FeishuMessageEvent, type FeishuTransport } from "./transport.js";
 import { FeishuReply, deliverFeishu } from "./card.js";
 import { Outbox, stableId } from "../../core/outbox.js";
 import type { Delivery } from "../../core/delivery.js";
 import type { Store } from "../../store/db.js";
 import { logger } from "../../log.js";
 import { t } from "../../i18n/index.js";
+
+/** 离线补消息：只看这么久之内有过来往的会话、这么久之内发的消息，每个会话最多这么多条 */
+export const CATCH_UP_ACTIVE_MS = 7 * 86400_000;
+export const CATCH_UP_WINDOW_MS = 24 * 3600_000;
+export const CATCH_UP_MAX = 20;
 
 export const FEISHU_CAPS: ChannelCapabilities = {
   streaming: true,
@@ -62,7 +67,11 @@ export class FeishuChannel {
   readonly outbox: Outbox;
   /** 主动消息的送达规则（App 设）：对方发消息时，排着的主动消息先发，合成一条摘要 */
   delivery: Delivery | undefined;
+  /** 读不了历史消息（离线时漏掉的补不上）：App 显示一条提示；直到读得了之前只提示一次 */
+  onHistoryDenied: (() => void) | undefined;
   private unregister: (() => void) | undefined;
+  /** 正在补离线时漏掉的消息 */
+  private catching: Promise<number> | undefined;
 
   constructor(
     private botId: string,
@@ -71,7 +80,7 @@ export class FeishuChannel {
     private queue: KeyedQueue,
     private throttleMs = 400,
     outbox?: Outbox,
-    store?: Store,
+    private store?: Store,
   ) {
     if (outbox) this.outbox = outbox;
     else {
@@ -89,6 +98,8 @@ export class FeishuChannel {
       (state, detail) => {
         this.status = { state, detail, since: Date.now() };
         this.log.info(`bot ${this.botId} ws ${state}`, detail ? { detail } : undefined);
+        // 连上（启动、断线重连）：长连接不补推离线时的事件，自己去会话历史里补
+        if (state === "connected") void this.catchUp().catch((e) => this.log.warn("feishu catch-up failed", { message: (e as Error).message.slice(0, 200) }));
       },
       (a) => this.runtime.cardAction(this.botId, a.value, `feishu:${a.operatorOpenId}`),
     );
@@ -101,10 +112,11 @@ export class FeishuChannel {
     this.status = { state: "disabled", since: Date.now() };
   }
 
-  /** 同步返回（ack），处理放入每会话串行队列。 */
-  onMessage(ev: FeishuMessageEvent): void {
-    if (!ev.messageId || !this.dedup.firstSeen(ev.messageId)) return;
-    if (ev.chatType !== "p2p") return; // P1：仅单聊
+  /** 同步返回（ack），处理放入每会话串行队列。返回这条是不是第一次见到 */
+  onMessage(ev: FeishuMessageEvent): boolean {
+    if (!ev.messageId || !this.dedup.firstSeen(ev.messageId)) return false;
+    this.markSeen(ev);
+    if (ev.chatType !== "p2p") return true; // P1：仅单聊
     const inbound: InboundEvent = {
       id: ev.messageId,
       channel: "feishu",
@@ -129,7 +141,7 @@ export class FeishuChannel {
       this.pending.add(p);
       void p.finally(() => this.pending.delete(p));
     }
-    if (intercepted.handled) return;
+    if (intercepted.handled) return true;
     const p = this.queue.run(`feishu:${this.botId}:${ev.chatId}`, async () => {
       const reply = new FeishuReply(this.transport, ev.messageId, this.throttleMs, { outbox: this.outbox, botId: this.botId, chatId: ev.chatId, key: ev.messageId });
       try {
@@ -141,6 +153,75 @@ export class FeishuChannel {
     });
     this.pending.add(p);
     void p.finally(() => this.pending.delete(p));
+    return true;
+  }
+
+  /** 这个会话见到的最后一条消息（离线补消息从它之后开始；存在 KV 里，重启也在） */
+  private seenKey(chatId: string): string {
+    return `feishu-seen:${this.botId}:${chatId}`;
+  }
+  private seen(chatId: string): { at: number; id: string } | undefined {
+    try {
+      const v = JSON.parse(this.store?.getKV(this.seenKey(chatId)) || "null");
+      return v && Number(v.at) > 0 ? { at: Number(v.at), id: String(v.id ?? "") } : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  private markSeen(ev: FeishuMessageEvent): void {
+    if (!this.store || !ev.chatId || !(ev.createTime > 0)) return;
+    if ((this.seen(ev.chatId)?.at ?? 0) > ev.createTime) return;
+    this.store.setKV(this.seenKey(ev.chatId), JSON.stringify({ at: ev.createTime, id: ev.messageId }));
+  }
+
+  /**
+   * 补离线时漏掉的消息（启动、断线重连时）：飞书长连接不补推离线时发来的事件，从会话历史里取回来，和收到的一样走一遍
+   * （去重、准入、群里只认 @ 机器人的规则都照旧）。只看 7 天内有过来往的飞书会话，只取 24 小时内、见到的最后一条之后的，
+   * 每个会话最多 20 条。没有读历史消息的权限：记一次日志、提示一次，渠道照常。返回补了几条
+   */
+  catchUp(now = Date.now()): Promise<number> {
+    this.catching ??= this.catchUpOnce(now).finally(() => (this.catching = undefined));
+    return this.catching;
+  }
+
+  private async catchUpOnce(now: number): Promise<number> {
+    const store = this.store;
+    const list = this.transport.listMessages?.bind(this.transport);
+    if (!store || !list) return 0;
+    let fed = 0;
+    const convs = store.listConversations(this.botId).filter((c) => c.channel === "feishu" && c.updatedAt >= now - CATCH_UP_ACTIVE_MS);
+    for (const c of convs) {
+      // 见到的最后一条之后；还没记过（升级前的会话）就从最后一次来往之后
+      const seen = this.seen(c.peerId);
+      const since = Math.max(seen?.at ?? c.updatedAt, now - CATCH_UP_WINDOW_MS);
+      let missed: FeishuMessageEvent[];
+      try {
+        missed = await list(c.peerId, { since, limit: CATCH_UP_MAX, chatType: c.kind === "group" ? "group" : "p2p" });
+      } catch (e) {
+        if (e instanceof HistoryDenied) {
+          this.historyDenied(e.message);
+          return fed;
+        }
+        this.log.warn("feishu catch-up: could not read the chat history", { bot: this.botId, message: (e as Error).message.slice(0, 200) });
+        continue;
+      }
+      store.deleteKV(this.deniedKey);
+      for (const ev of missed.slice(-CATCH_UP_MAX)) if (ev.messageId !== seen?.id && this.onMessage({ ...ev, chatId: ev.chatId || c.peerId })) fed++;
+    }
+    if (fed) this.log.info("caught up on feishu messages sent while offline", { bot: this.botId, count: fed });
+    return fed;
+  }
+
+  private get deniedKey(): string {
+    return `feishu-history-denied:${this.botId}`;
+  }
+
+  /** 读不了历史消息：日志和提示各一次（读得了之后再没权限会再提示） */
+  private historyDenied(detail: string): void {
+    if (this.store?.getKV(this.deniedKey)) return;
+    this.store?.setKV(this.deniedKey, String(Date.now()));
+    this.log.warn("feishu catch-up: the app may not read chat history; messages sent while offline are not caught up", { bot: this.botId, detail: detail.slice(0, 200) });
+    this.onHistoryDenied?.();
   }
 
   /**

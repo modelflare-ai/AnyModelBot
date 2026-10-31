@@ -70,7 +70,7 @@ function FeishuRow({ bot, st, owner, reload }) {
         ${bot.feishuAppId && html`<button type="button" class="text danger" onClick=${clear}>${t("info.feishu.disconnect")}</button>`}
       </div>
       ${bot.feishuAppId && owner === null && html`<p class="hint">${t("info.feishu.bindHint")}</p>`}
-      <p class="hint">${t("info.feishu.setupHint", { event: html`<code>im.message.receive_v1</code>`, p1: html`<code>im:message.p2p_msg:readonly</code>`, p2: html`<code>im:message:send_as_bot</code>`, p3: html`<code>cardkit:card:write</code>` })}</p>
+      <p class="hint">${t("info.feishu.setupHint", { event: html`<code>im.message.receive_v1</code>`, p1: html`<code>im:message.p2p_msg:readonly</code>`, p2: html`<code>im:message:send_as_bot</code>`, p3: html`<code>cardkit:card:write</code>`, p4: html`<code>im:message.history:readonly</code>` })}</p>
     </div>`}`;
 }
 

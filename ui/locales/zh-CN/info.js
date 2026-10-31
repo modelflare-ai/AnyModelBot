@@ -28,7 +28,7 @@ export default {
     disconnectTitle: "断开飞书？",
     disconnectBody: "会清除这个机器人的飞书 App ID 与 App Secret。",
     /** {event} {p1} {p2} {p3} 是 <code> 包着的事件名 / 权限名 */
-    setupHint: "在飞书开放平台启用「机器人」，事件订阅选「使用长连接接收事件」并订阅 {event}；权限：{p1}、{p2}、{p3}。",
+    setupHint: "在飞书开放平台启用「机器人」，事件订阅选「使用长连接接收事件」并订阅 {event}；权限：{p1}、{p2}、{p3}、{p4}。",
   },
   weixin: {
     sub: "iLink 官方通道",

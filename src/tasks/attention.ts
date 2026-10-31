@@ -11,7 +11,7 @@ import type { ApprovalRow, Store } from "../store/db.js";
 import { questionsOf, type QuestionItem } from "../agent/approvals.js";
 import type { AttentionItem as DeliveryItem } from "../core/delivery.js";
 import { logger } from "../log.js";
-import { t } from "../i18n/index.js";
+import { t as tr } from "../i18n/index.js";
 
 const log = logger("attention");
 
@@ -167,7 +167,7 @@ export class Attention {
   }
 }
 
-const CHANNEL: Record<string, string> = { weixin: "微信", feishu: "飞书", web: "对话" };
+const channelLabel = (c: string) => (c === "weixin" ? tr("tasks.chWeixin") : c === "feishu" ? tr("tasks.chFeishu") : c === "web" ? tr("tasks.chWeb") : undefined);
 
 /**
  * 审批中心那一份：还在等的提问和审批（聊天回合里的、后台任务的）。任务的以任务名为题，聊天里的以渠道为题：
@@ -185,8 +185,8 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       kind: r.kind,
       botId: r.botId,
       botName: store.getBot(r.botId)?.name ?? r.botId,
-      subject: task?.title ?? (rule ? t("rules.subject", { title: rule.title }) : (CHANNEL[channel] ?? "对话")),
-      status: r.kind === "approval" ? "等你批准" : "等你回答",
+      subject: task?.title ?? (rule ? tr("rules.subject", { title: rule.title }) : (channelLabel(channel) ?? tr("tasks.chWeb"))),
+      status: r.kind === "approval" ? tr("tasks.stageApproval") : tr("tasks.stageAnswer"),
       line: line.length > 300 ? line.slice(0, 299) + "…" : line,
       since: r.createdAt,
       severity: "warn",
@@ -237,10 +237,10 @@ export function botLine(it: AttentionItem): string {
 /** 系统通知：标题「小蓝 需要你」，正文「GPU 价格调研：报告用中文还是英文？」（设计第 6 节） */
 export function notificationOf(it: AttentionItem): { title: string; body: string } {
   const body = it.line ? `${it.subject}：${it.line}` : botLine(it);
-  return { title: `${it.botName} 需要你`, body: body.length > 120 ? body.slice(0, 119) + "…" : body };
+  return { title: tr("tasks.notifyTitle", { name: it.botName }), body: body.length > 120 ? body.slice(0, 119) + "…" : body };
 }
 
 /** 托盘：有事时提示文字带上件数，没事时只有应用名（健康时什么都不加） */
 export function trayTitle(product: string, n: number): string {
-  return n > 0 ? `${product} · ${n} 件事需要你` : product;
+  return n > 0 ? tr("tasks.trayTitle", { product, count: n }) : product;
 }

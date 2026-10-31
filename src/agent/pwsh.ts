@@ -33,7 +33,7 @@ import {
   type PrivatePwshStatus,
   type Runner,
 } from "./pwsh-private.js";
-import { t, type MessageKey } from "../i18n/index.js";
+import { t, type MessageKey, t as tr } from "../i18n/index.js";
 
 const log = logger("pwsh");
 const W = path.win32;
@@ -201,8 +201,8 @@ export function shellStartFailure(text: string, exe: string): string | undefined
 /** 拉不起来的原因，说给用户听：Win32 错误码 / Node 的 spawn 错误码 → 一句话 */
 export function startFailureReason(line: string): string {
   const code = /\(win32\s+(\d+)\)/i.exec(line)?.[1] ?? /\b(ENOENT|EACCES|EPERM|UNKNOWN|EINVAL)\b/i.exec(line)?.[1]?.toUpperCase();
-  const missing = "找不到 pwsh.exe（可能被杀毒软件删除或隔离）";
-  const denied = "没有权限运行它（可能被安全软件拦截）";
+  const missing = tr("pwsh.whyMissing");
+  const denied = tr("pwsh.whyDenied");
   const why: Record<string, string> = {
     "2": missing,
     "3": missing,
@@ -210,14 +210,14 @@ export function startFailureReason(line: string): string {
     "5": denied,
     EACCES: denied,
     EPERM: denied,
-    "225": "被杀毒软件拦截",
-    "1260": "被系统策略禁止运行（AppLocker / 软件限制策略）",
-    "4551": "被 Windows Defender 应用程序控制拦截",
-    "193": "文件损坏，或不是这台电脑能运行的程序",
-    "216": "文件损坏，或不是这台电脑能运行的程序",
-    "1392": "文件已损坏",
+    "225": tr("pwsh.whyAntivirus"),
+    "1260": tr("pwsh.whyPolicy"),
+    "4551": tr("pwsh.whyWdac"),
+    "193": tr("pwsh.whyBadExe"),
+    "216": tr("pwsh.whyBadExe"),
+    "1392": tr("pwsh.whyCorrupt"),
   };
-  return `${(code && why[code]) || "拉不起来"}（${code ? (/^\d+$/.test(code) ? `Win32 ${code}` : code) : line.slice(0, 120)}）`;
+  return tr("pwsh.whyLine", { why: (code && why[code]) || tr("pwsh.whyCantStart"), detail: code ? (/^\d+$/.test(code) ? `Win32 ${code}` : code) : line.slice(0, 120) });
 }
 
 /** 弱信号：.NET 宿主起不来、沙箱 runner 拉它时出了别的错。重新试运行一次，没通过才退回 */
@@ -363,9 +363,9 @@ export class PwshProbe {
     const c = this.sys?.c;
     if (!c) return undefined;
     const bad = this.sysBad.get(dirKey(c.path));
-    if (bad) return `代理拉不起它：${bad.reason}`;
+    if (bad) return tr("pwsh.agentCantStart", { reason: bad.reason });
     const t = this.sysTests.get(dirKey(c.path));
-    if (t && t !== "pending" && !t.ok && !t.timedOut) return `试运行没通过：${t.error}`;
+    if (t && t !== "pending" && !t.ok && !t.timedOut) return tr("pwsh.testFailed", { error: t.error });
     return undefined;
   }
 
@@ -437,11 +437,11 @@ export class PwshProbe {
     this.lastInstall = p.state;
     if (was !== p.state && INSTALLING.includes(was)) {
       if (p.state === "done")
-        this.emit({ kind: "install", notice: { level: "info", text: `已为代理装好 PowerShell ${this.priv.pin.version}（应用内置，不影响你自己的 PowerShell），代理执行命令会快很多。` } });
+        this.emit({ kind: "install", notice: { level: "info", text: tr("pwsh.noticeInstalled", { version: this.priv.pin.version }) } });
       if (p.state === "failed")
         this.emit({
           kind: "install",
-          notice: { level: "warn", text: `为代理安装 PowerShell 7 没有成功：${p.error ?? "未知原因"}。代理照常用 Windows PowerShell 5.1 执行命令；可在 设置 → 故障排查 里重试。` },
+          notice: { level: "warn", text: tr("pwsh.noticeInstallFailed", { error: p.error ?? tr("pwsh.unknownReason") }) },
         });
     }
     this.update();
@@ -460,8 +460,8 @@ export class PwshProbe {
       log.info("PowerShell launch test", { path: c.path, ok: t.ok, ms: t.ms, version: t.version, error: t.error });
       if (!t.ok && !t.timedOut && this.sys?.c?.path === c.path) {
         const to = this.choose().path;
-        this.fallback = { from: c.path, reason: `试运行没通过：${t.error}`, to, at: Date.now() };
-        this.update({ level: "warn", text: `系统里的 PowerShell（${c.path}）试运行没通过：${t.error}。代理改用${describe(to, this.priv.exe)}执行命令。` });
+        this.fallback = { from: c.path, reason: tr("pwsh.testFailed", { error: t.error }), to, at: Date.now() };
+        this.update({ level: "warn", text: tr("pwsh.noticeSystemTestFailed", { path: c.path, error: t.error, to: describe(to, this.priv.exe) }) });
         this.maybeAutoInstall("system test failed");
       } else this.update();
     });
@@ -512,7 +512,7 @@ export class PwshProbe {
     this.suspected.set(k, Date.now());
     const t = await launchTest(exe, this.d.run ?? runProcess, { timeoutMs: 60_000, env: this.env });
     log.info("PowerShell re-test after a suspicious tool result", { path: exe, ok: t.ok, error: t.error });
-    if (!t.ok && !t.timedOut) this.markBroken(exe, `试运行没通过：${t.error}`);
+    if (!t.ok && !t.timedOut) this.markBroken(exe, tr("pwsh.testFailed", { error: t.error }));
   }
 
   /** 代理拉不起 exe：标记为坏，退回下一个（空闲时重启代理进程），告诉用户；必要时自动安装内置副本 */
@@ -522,7 +522,7 @@ export class PwshProbe {
       if (!this.priv.ready) return;
       this.quiet = true;
       try {
-        this.priv.markBad(`代理拉不起它：${reason}`);
+        this.priv.markBad(tr("pwsh.agentCantStart", { reason }));
       } finally {
         this.quiet = false;
       }
@@ -538,7 +538,7 @@ export class PwshProbe {
     log.warn("the agent could not start its PowerShell; falling back", { from: exe, to, reason });
     this.update({
       level: "warn",
-      text: `代理用的 PowerShell 起不来（${exe}：${reason.slice(0, 160)}），已自动改用${describe(to, this.priv.exe)}，代理空闲时生效。可在 设置 → 故障排查 里重新安装或重新检测。`,
+      text: tr("pwsh.noticeFellBack", { exe, reason: reason.slice(0, 160), to: describe(to, this.priv.exe) }),
     });
     this.maybeAutoInstall("broken");
   }
@@ -568,8 +568,8 @@ function forcedStatus(kind: string, version: string): PwshStatus {
 
 /** 给用户看的名字 */
 function describe(p: string | undefined, privateExe: string | undefined): string {
-  if (!p || /\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i.test(p)) return "系统自带的 Windows PowerShell 5.1";
-  if (privateExe && dirKey(p) === dirKey(privateExe)) return "应用内置的 PowerShell 7";
+  if (!p || /\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i.test(p)) return tr("pwsh.descSystem51");
+  if (privateExe && dirKey(p) === dirKey(privateExe)) return tr("pwsh.descPrivate7");
   return ` ${p} `;
 }
 

@@ -14,7 +14,7 @@ import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import type { TaskHost, TaskService } from "../tasks/service.js";
 import { RULE_APPROVAL_TTL_MS } from "../tasks/rules.js";
 import { DEFAULT_SETTINGS, type BotSettings, type MediaConfirm } from "./settings.js";
-import { t, tl } from "../i18n/index.js";
+import { t, tl, t as tr } from "../i18n/index.js";
 import {
   HANDOFF_SYSTEM,
   REVIEW_SYSTEM,
@@ -355,7 +355,7 @@ export class AgentManager {
       return r;
     } catch (e) {
       if (e instanceof TurnStopped && e.reason === "timeout") {
-        t.activity.end("超过单回合上限");
+        t.activity.end(tr("agent.endTurnLimit"));
         for (const r of this.approvals.pendingChat(conv)) this.approvals.cancel(r.id, "stopped");
       }
       throw e;
@@ -395,7 +395,7 @@ export class AgentManager {
   }
 
   private halt(conv: string, t: TurnProgress, why: TurnStopped): void {
-    t.activity.end(why.reason === "user" ? "用户中止" : why.reason === "idle" ? "长时间没有进展，自动中止" : "超过单回合上限");
+    t.activity.end(tr(why.reason === "user" ? "agent.endUser" : why.reason === "idle" ? "agent.endIdle" : "agent.endTurnLimit"));
     t.abort.abort(why);
     // 这一轮还在等的批准 / 回答随之作废（回合被中止，没人再等它们）
     for (const r of this.approvals.pendingChat(conv)) this.approvals.cancel(r.id, "stopped");
@@ -683,7 +683,7 @@ export class AgentManager {
     const files = text.match(/media\/[\w.-]+/g) ?? ["media/"];
     log.warn("media finished after its turn ended", { bot: botId, files });
     const name = this.o.store.getBot(botId)?.name ?? botId;
-    this.o.onNotice?.(`机器人「${name}」生成的${kind === "image" ? "图片" : "视频"}已保存在它的工作区（${files.join("、")}），但请求它的那条消息已经中止，没有发到聊天里。需要的话在对话里让机器人把它发出来。`);
+    this.o.onNotice?.(tr("agent.mediaSavedNotDelivered", { name, kind: tr(kind === "image" ? "agent.kindImage" : "agent.kindVideo"), files: files.join(tr("agent.mediaListSep")) }));
   }
 
   /** 生成前的确认：问用户这次用哪个模型（本次的、默认的和几个推荐的，或回复别的模型名），等到回答、取消或过期 */
@@ -908,7 +908,7 @@ export class AgentManager {
       settings: (botId) => this.settings(botId),
       memoryPrefix: (botId, conv) => this.memoryPrefix(botId, conv),
       prompt: (botId, o) => {
-        if (!this.available) return Promise.reject(new Error("代理模式不可用"));
+        if (!this.available) return Promise.reject(new Error(tr("agent.agentModeUnavailable")));
         return this.host(botId).promptTask(o);
       },
       steer: (botId, sessionId, id, text) => this.hosts.get(botId)?.steerTask(sessionId, id, text) ?? Promise.resolve(false),

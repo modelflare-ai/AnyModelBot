@@ -1,0 +1,46 @@
+// cli：zh 与 en 的键必须一一对应（en 的类型由 zh 推出，少一个多一个都过不了类型检查）。
+import type { Catalog } from "../types.js";
+
+export const zh = {
+  entered: "（已输入）",
+  done: "完成。运行 npm start 启动；微信请在管理界面的信息面板「渠道」里扫码，或运行 npm run weixin:login。",
+  title: "anymodel bot 首次设置（数据目录：{dir}）",
+  noMagpie: "找不到 magpie 可执行文件，请先运行：npm run setup",
+  alreadyConnected: "Modelflare 已连接（尾号 {tail}{account}），保留现有连接。",
+  accountSuffix: "，账户 {name}",
+  signedIn: "已登录",
+  askHow: "连接 Modelflare：回车 = 登录账户（在这台电脑的浏览器里完成），输入 key = 粘贴 API Key，输入 skip = 稍后在界面里连接：",
+  askLine: "线路：回车 = 国际（modelflare.dev），输入 cn = 中国大陆优化（origin.modelflare.dev）：",
+  tryCn: "（可重试并选择 cn 线路）",
+  connected: "✓ 已连接 Modelflare，找到 {count} 个模型",
+  askFeishuId: "飞书 App ID（cli_xxx，留空跳过）：",
+  askFeishuSecret: "飞书 App Secret：",
+  savedToBot: "✓ 已保存到机器人「{name}」",
+  openLink: "在这台电脑的浏览器里打开下面的链接，登录（或注册）Modelflare 并点「继续」授权：",
+  signedInConnected: "✓ 已登录 {name}，本机 Key 已连接，找到 {count} 个模型",
+  loginIncomplete: "登录没有完成",
+  setupFailed: "设置失败：",
+  weixinConnected: "✓ 微信已连接，运行 npm start 开始收发消息（若已在运行，请重启或在界面中重新启用微信渠道）。",
+} satisfies Catalog;
+
+export const en: Catalog<typeof zh> = {
+  entered: "(entered)",
+  done: "Done. Run npm start to launch. For WeChat, scan the QR code under Channels in the console's info panel, or run npm run weixin:login.",
+  title: "anymodel bot first-run setup (data directory: {dir})",
+  noMagpie: "magpie executable not found; run npm run setup first",
+  alreadyConnected: "Modelflare is already connected (key ending {tail}{account}); keeping the existing connection.",
+  accountSuffix: ", account {name}",
+  signedIn: "signed in",
+  askHow: "Connect Modelflare: Enter = sign in (in this computer's browser), key = paste an API key, skip = connect later in the console: ",
+  askLine: "Route: Enter = international (modelflare.dev), cn = optimized for mainland China (origin.modelflare.dev): ",
+  tryCn: " (you can retry and choose the cn route)",
+  connected: "✓ Connected to Modelflare, found {count} models",
+  askFeishuId: "Feishu App ID (cli_xxx, leave empty to skip): ",
+  askFeishuSecret: "Feishu App Secret: ",
+  savedToBot: "✓ Saved to the bot \"{name}\"",
+  openLink: "Open the link below in this computer's browser, sign in to (or sign up for) Modelflare and click Continue to authorize:",
+  signedInConnected: "✓ Signed in to {name}; this computer's key is connected, found {count} models",
+  loginIncomplete: "Sign-in didn't finish",
+  setupFailed: "Setup failed:",
+  weixinConnected: "✓ WeChat connected. Run npm start to send and receive messages (if it's already running, restart it or re-enable the WeChat channel in the console).",
+};

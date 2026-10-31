@@ -13,21 +13,22 @@ import type { InboundEvent } from "./types.js";
 import { eventText } from "./types.js";
 import type { AccessEntry, Store } from "../store/db.js";
 import { logger } from "../log.js";
+import { t as tr } from "../i18n/index.js";
 
 const log = logger("access");
 
 /** 陌生人收到的那一句 */
-export const REFUSAL_TEXT = "你还没有被允许使用这个机器人，已通知主人。主人同意后就可以直接对话了。";
+export const refusalText = () => tr("access.refusal");
 /** 同一个陌生人多久最多回一次 */
 export const REFUSE_EVERY_MS = 3600_000;
 /** 每个机器人每小时最多给主人发几条使用请求通知（其余只在应用里显示） */
 export const NOTICE_LIMIT = 3;
 const NOTICE_WINDOW_MS = 3600_000;
-export const APPROVED_TEXT = "主人已经同意了，现在可以直接和我对话。";
+export const approvedText = () => tr("access.approved");
 
 export type AccessChannel = "weixin" | "feishu";
 export const ACCESS_CHANNELS: AccessChannel[] = ["weixin", "feishu"];
-const CHANNEL_LABEL: Record<string, string> = { weixin: "微信", feishu: "飞书", web: "网页" };
+const channelLabel = (c: string) => (c === "weixin" ? tr("access.chWeixin") : c === "feishu" ? tr("access.chFeishu") : c === "web" ? tr("access.chWeb") : c);
 
 /** 主动发一条通知（App 经渠道和出站队列发）；发不出去（对方 24 小时内没说过话、渠道没开）返回 false */
 export type Notify = (to: { botId: string; channel: string; peerId: string }, text: string, id: string) => boolean;
@@ -51,7 +52,7 @@ export function peerName(e: Pick<AccessEntry, "peerId" | "senderId" | "name">): 
 }
 
 export function whoText(e: Pick<AccessEntry, "channel" | "peerId" | "senderId" | "name">): string {
-  return `${CHANNEL_LABEL[e.channel] ?? e.channel}用户 ${peerName(e)}`;
+  return tr("access.who", { channel: channelLabel(e.channel), name: peerName(e) });
 }
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
@@ -128,7 +129,7 @@ export class AccessControl {
     }
     if (e.repliedAt && now - e.repliedAt < REFUSE_EVERY_MS) return { ok: false };
     this.store.updateAccess(e.id, { repliedAt: now });
-    return { ok: false, reply: REFUSAL_TEXT };
+    return { ok: false, reply: refusalText() };
   }
 
   /**
@@ -170,8 +171,8 @@ export class AccessControl {
       return;
     }
     const bot = this.store.getBot(e.botId);
-    const said = e.text ? `：「${clip(e.text, 60)}」` : "";
-    const text = `有人想使用机器人「${bot?.name ?? e.botId}」——${whoText(e)}${said}\n回复「同意 ${e.code}」允许，「拒绝 ${e.code}」拒绝；也可以在 AnyModelBot 的信息面板里处理。`;
+    const said = e.text ? tr("access.said", { text: clip(e.text, 60) }) : "";
+    const text = tr("access.ownerNotice", { bot: bot?.name ?? e.botId, who: whoText(e), said, code: e.code });
     let sent = false;
     for (const ch of ACCESS_CHANNELS) {
       const o = this.owner(e.botId, ch);
@@ -201,7 +202,7 @@ export class AccessControl {
     if (!e) return { handled: false };
     const allow = !/^(拒绝|不同意|n|no)$/i.test(m[1]);
     this.decide(e.id, allow, `${ev.channel}:${ev.sender.id}`);
-    return { handled: true, ack: allow ? `✅ 已允许「${whoText(e)}」使用这个机器人` : `❌ 已拒绝「${whoText(e)}」` };
+    return { handled: true, ack: tr(allow ? "access.allowedAck" : "access.deniedAck", { who: whoText(e) }) };
   }
 
   /** 允许或拒绝一个请求（被拒绝的也可以改成允许）；允许时告诉对方一声 */
@@ -211,7 +212,7 @@ export class AccessControl {
     const now = this.now();
     this.store.updateAccess(id, { status: allow ? "allowed" : "denied", code: "", decidedAt: now, decidedBy: by, updatedAt: now });
     log.info(`access ${allow ? "allowed" : "denied"}`, { bot: e.botId, channel: e.channel, peer: shortPeer(e.peerId), by });
-    if (allow) this.opts.notify?.({ botId: e.botId, channel: e.channel, peerId: e.peerId }, APPROVED_TEXT, `access:${id}:approved:${now}`);
+    if (allow) this.opts.notify?.({ botId: e.botId, channel: e.channel, peerId: e.peerId }, approvedText(), `access:${id}:approved:${now}`);
     return this.store.getAccessById(id);
   }
 
@@ -282,8 +283,8 @@ export class AccessControl {
   policyLine(botId: string): string {
     const v = this.view(botId);
     const allowed = v.entries.filter((e) => e.status === "allowed").length;
-    const owners = ACCESS_CHANNELS.map((ch) => `${CHANNEL_LABEL[ch]}主人${v.owners[ch] ? ` ${shortPeer(v.owners[ch]!.peerId)}` : "未设置"}`).join("，");
-    const req = v.requests.length ? `；${v.requests.length} 个使用请求待处理（回复「同意 编号」或在应用的信息面板里处理）` : "";
-    return `谁能使用：只有主人和允许名单里的人（${owners}；已允许 ${allowed} 人）${req}`;
+    const owners = ACCESS_CHANNELS.map((ch) => tr("access.ownerOf", { channel: channelLabel(ch), who: v.owners[ch] ? ` ${shortPeer(v.owners[ch]!.peerId)}` : tr("access.notSet") })).join(tr("access.listSep"));
+    const req = v.requests.length ? tr("access.pendingRequests", { count: v.requests.length }) : "";
+    return tr("access.policy", { owners, allowed, req });
   }
 }

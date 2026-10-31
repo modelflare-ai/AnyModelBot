@@ -10,7 +10,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { App } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { APPROVED_TEXT, REFUSAL_TEXT } from "../src/core/access.js";
+import { approvedText, refusalText } from "../src/core/access.js";
 import { FakeFeishu, feishuEvent, mockIlink, mockOpenAI, until } from "./helpers.js";
 
 let llm: Awaited<ReturnType<typeof mockOpenAI>>;
@@ -81,7 +81,7 @@ describe("微信：只有主人和允许的人", () => {
     const ownerMsgs = to(OWNER).length;
     ilink.push("zhang@im.wechat", "我是张三，想借用一下");
     await until(() => to("zhang@im.wechat").length >= 1 && to(OWNER).length > ownerMsgs, 8000);
-    expect(to("zhang@im.wechat")).toEqual([REFUSAL_TEXT]);
+    expect(to("zhang@im.wechat")).toEqual([refusalText()]);
     const notice = to(OWNER).at(-1)!;
     expect(notice).toContain("我是张三");
     code = /同意 (\d{4})/.exec(notice)![1];
@@ -102,7 +102,7 @@ describe("微信：只有主人和允许的人", () => {
     await until(() => to(OWNER).at(-1)!.startsWith("✅"), 8000);
     expect(to(OWNER).at(-1)).toMatch(/^✅ 已允许「微信用户 .+」使用这个机器人$/);
     await until(() => to("zhang@im.wechat").length >= 2, 8000);
-    expect(to("zhang@im.wechat")[1]).toBe(APPROVED_TEXT);
+    expect(to("zhang@im.wechat")[1]).toBe(approvedText());
     ilink.push("zhang@im.wechat", "现在呢");
     await until(() => to("zhang@im.wechat").length >= 3, 8000);
     expect(to("zhang@im.wechat")[2]).toBe("[mock-a] 你说：现在呢");
@@ -122,14 +122,14 @@ describe("微信：只有主人和允许的人", () => {
     expect((await api(`/bots/default/access/${wang.id}/approve`, { method: "POST", body: {} })).json.entry.status).toBe("allowed");
     expect((await api(`/bots/default/access/${wang.id}/approve`, { method: "POST", body: {} })).status).toBe(409);
     await until(() => to("wang@im.wechat").length >= 2, 8000);
-    expect(to("wang@im.wechat")).toEqual([REFUSAL_TEXT, APPROVED_TEXT]);
+    expect(to("wang@im.wechat")).toEqual([refusalText(), approvedText()]);
 
     const calls = llm.calls.length;
     ilink.push("li@im.wechat", "再试试");
     ilink.push("wang@im.wechat", "我能用了吗");
     await until(() => to("wang@im.wechat").length >= 3, 8000);
     await app.channels.get("default")!.weixin!.idle();
-    expect(to("li@im.wechat")).toEqual([REFUSAL_TEXT]);
+    expect(to("li@im.wechat")).toEqual([refusalText()]);
     expect(llm.calls.length).toBe(calls + 1);
 
     expect((await api(`/bots/default/access/${wang.id}`, { method: "DELETE" })).status).toBe(200);
@@ -137,7 +137,7 @@ describe("微信：只有主人和允许的人", () => {
     await until(async () => (await api("/bots/default/access")).json.requests.length === 1, 8000);
     await app.channels.get("default")!.weixin!.idle();
     expect(to("wang@im.wechat")).toHaveLength(4);
-    expect(to("wang@im.wechat")[3]).toBe(REFUSAL_TEXT);
+    expect(to("wang@im.wechat")[3]).toBe(refusalText());
     expect(llm.calls.length).toBe(calls + 1);
   });
 
@@ -176,7 +176,7 @@ describe("飞书：第一个发消息的人成为主人", () => {
     const ownerWx = to(OWNER).length;
     feishu.onMessage!(feishuEvent("借用一下", { chatId: "oc_colleague", senderOpenId: "ou_colleague" }));
     await ch.idle();
-    expect(feishu.texts.at(-1)).toBe(REFUSAL_TEXT);
+    expect(feishu.texts.at(-1)).toBe(refusalText());
     const notice = feishu.notices.at(-1)!;
     expect(notice.chatId).toBe("oc_boss");
     const code = /同意 (\d{4})/.exec(notice.text)![1];
@@ -185,7 +185,7 @@ describe("飞书：第一个发消息的人成为主人", () => {
     feishu.onMessage!(feishuEvent(`允许 ${code}`, { chatId: "oc_boss", senderOpenId: "ou_boss" }));
     await ch.idle();
     expect(feishu.texts.at(-1)).toMatch(/^✅ 已允许「飞书用户 .+」使用这个机器人$/);
-    expect(feishu.notices.at(-1)).toMatchObject({ chatId: "oc_colleague", text: APPROVED_TEXT });
+    expect(feishu.notices.at(-1)).toMatchObject({ chatId: "oc_colleague", text: approvedText() });
     feishu.onMessage!(feishuEvent("谢谢", { chatId: "oc_colleague", senderOpenId: "ou_colleague" }));
     await ch.idle();
     expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：谢谢");
@@ -203,7 +203,7 @@ describe("飞书：第一个发消息的人成为主人", () => {
     // 原来的主人要重新申请；被允许的同事照常能用
     feishu.onMessage!(feishuEvent("我还是主人吗", { chatId: "oc_boss", senderOpenId: "ou_boss" }));
     await ch.idle();
-    expect(feishu.texts.at(-1)).toBe(REFUSAL_TEXT);
+    expect(feishu.texts.at(-1)).toBe(refusalText());
     feishu.onMessage!(feishuEvent("我还能用吗", { chatId: "oc_colleague", senderOpenId: "ou_colleague" }));
     await ch.idle();
     expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：我还能用吗");

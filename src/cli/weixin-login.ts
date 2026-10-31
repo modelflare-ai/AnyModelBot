@@ -3,12 +3,13 @@ import path from "node:path";
 import { loadConfig } from "../config.js";
 import { Store } from "../store/db.js";
 import { WeixinLogin } from "../channels/weixin/login.js";
+import { t as tr } from "../i18n/index.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const store = new Store(path.join(config.dataDir, "anymodel.db"));
   const botId = process.argv[2] || store.listBots()[0]?.id || "default";
-  if (!store.getBot(botId)) store.createBot({ id: botId, name: "我的助手", weixinEnabled: true });
+  if (!store.getBot(botId)) store.createBot({ id: botId, name: tr("app.default_bot_name"), weixinEnabled: true });
   const login = new WeixinLogin({
     apiBaseUrl: config.weixin.apiBaseUrl,
     pngPath: path.join(config.dataDir, "weixin", `${botId}-login-qr.png`),
@@ -20,7 +21,7 @@ async function main(): Promise<void> {
   store.saveWeixinAccount({ botId, botToken: res.botToken, ilinkBotId: res.ilinkBotId, baseUrl: res.baseUrl, ownerUserId: res.userId });
   store.updateBot(botId, { weixinEnabled: true });
   store.close();
-  console.log("✓ 微信已连接，运行 npm start 开始收发消息（若已在运行，请重启或在界面中重新启用微信渠道）。");
+  console.log(tr("cli.weixinConnected"));
 }
 
 main().catch((e) => {

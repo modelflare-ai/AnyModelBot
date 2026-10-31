@@ -15,7 +15,7 @@ import { pwshPatchLines, pwshProbe } from "./pwsh.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 import { acceptsImages } from "../llm/client.js";
 import { CUA_SKILL, MEDIA_SKILL, TASK_RULES, agentPersona, botPrompt } from "./prompts/index.js";
-import { t } from "../i18n/index.js";
+import { t, t as tr } from "../i18n/index.js";
 
 const log = logger("agent.host");
 
@@ -1192,7 +1192,7 @@ exec "$REAL" "$@"
       return h;
     } catch (e) {
       clearInterval(watchdog);
-      this.control.close("代理进程启动失败");
+      this.control.close(tr("agent.closeStartFailed"));
       this.emit({ type: "failed", message: (e as Error).message });
       this.initFailures++;
       this.onFailure(e as Error);
@@ -1229,7 +1229,7 @@ exec "$REAL" "$@"
 
   /** 子进程没了：醒着的那几轮随之失败 */
   private endWakes(): void {
-    for (const w of this.wakes.values()) w.end(new Error("代理进程已退出"));
+    for (const w of this.wakes.values()) w.end(new Error(tr("agent.processExited")));
     this.wakes.clear();
   }
 
@@ -1239,7 +1239,7 @@ exec "$REAL" "$@"
     this.opened.clear();
     this.taskSessions.clear();
     this.taskBusy.clear();
-    this.control.close("代理进程已重启");
+    this.control.close(tr("agent.processRestarted"));
     this.endWakes();
     if (!h) return;
     try {
@@ -1367,13 +1367,13 @@ exec "$REAL" "$@"
     if (input.signal?.aborted) throw stopReason(input.signal);
     if (!(await this.useRoute(s.id, route))) {
       // 指令通道不通、或补不进这个模型：没有别的回合在跑时，带上这个模型重启子进程；忙的时候不能让这个会话悄悄用错模型
-      if (this.active > 0 || this.taskBusy.size > 0) throw new Error(`暂时无法切换到模型 ${input.model}（代理进程正忙，没能在运行中加上这个模型），请稍后再试`);
+      if (this.active > 0 || this.taskBusy.size > 0) throw new Error(tr("agent.cantSwitchBusy", { model: input.model }));
       log.warn("restarting dsh to use a model it could not add at runtime", { bot: this.o.botId, model: input.model });
       this.known.add(input.model);
       await this.closeHarness();
       this.state = "stopped";
       s = await this.sessionFor(await this.ensure(input.model), input.conversationId);
-      if (!(await this.useRoute(s.id, route))) throw new Error(`代理进程无法使用模型 ${input.model}`);
+      if (!(await this.useRoute(s.id, route))) throw new Error(tr("agent.cantUseModel", { model: input.model }));
     }
     // 代理自己醒着的一轮（后台命令结束）还没完：等它完了再发这条（它的回复由跟踪它的那一轮发出）
     const woke = this.wakes.get(s.id);
@@ -1391,7 +1391,7 @@ exec "$REAL" "$@"
     const images = this.imageInput ? (input.images ?? []) : [];
     // 这一轮：用的接口、上游拒绝过本机器人的哪些模型请求
     const api = route.api;
-    const tr = this.tracker(s.id, route, input.observer, accept);
+    const trk = this.tracker(s.id, route, input.observer, accept);
     const rejections: Rejection[] = [];
     const offRejection =
       this.o.bridge.onRejection?.((r) => {
@@ -1400,10 +1400,10 @@ exec "$REAL" "$@"
     try {
       const prompt = images.length ? [{ type: "text", text: input.text }, ...images.map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType }))] : input.text;
       input.observer?.onStart?.();
-      const run = s.run(prompt, { onNotification: tr.onNotification });
+      const run = s.run(prompt, { onNotification: trk.onNotification });
       const r = await this.awaitTurn(turn, run, input.signal);
       this.failures = 0;
-      const { turnError, toolCalls, presented, answers, usage } = tr.st;
+      const { turnError, toolCalls, presented, answers, usage } = trk.st;
       const rejected = turnError !== undefined && api !== "openai-completions" ? shapeRejection(rejections, turnError) : undefined;
       if (rejected) this.rememberFallback(input.model, api, rejected);
       if (!r.finalResponse && turnError) {
@@ -1592,7 +1592,7 @@ exec "$REAL" "$@"
    * 在新的子进程里先 resume（失败抛 ResumeFailed）。任务用它自己的模型（按会话选，和聊天一样不用重启）。
    */
   async promptTask(o: { sessionId: string; folder: string; model: string; text: string; resume: boolean }): Promise<string> {
-    if (!o.model) throw new Error("没有可用的模型");
+    if (!o.model) throw new Error(tr("agent.noModelAvailable"));
     const route = await this.routeFor(o.model);
     const h = await this.ensure(o.model);
     this.taskSessions.add(o.sessionId);
@@ -1609,7 +1609,7 @@ exec "$REAL" "$@"
       }
       this.opened.add(o.sessionId);
     }
-    if (!(await this.useRoute(o.sessionId, route))) throw new Error(`代理进程无法使用模型 ${o.model}`);
+    if (!(await this.useRoute(o.sessionId, route))) throw new Error(tr("agent.cantUseModel", { model: o.model }));
     this.known.add(o.model);
     return await h.client.prompt(o.sessionId, [{ type: "text", text: o.text }]);
   }
@@ -1664,12 +1664,12 @@ exec "$REAL" "$@"
     this.active++;
     const turn: HostTurn = { sessionId: w.sessionId, model: input.model, accepted: Promise.resolve(), finishing: false, stopping: false, wake: true };
     this.turns.set(input.conversationId, turn);
-    const tr = this.tracker(w.sessionId, route, input.observer);
+    const trk = this.tracker(w.sessionId, route, input.observer);
     try {
       input.observer?.onStart?.();
-      w.attach(tr.onNotification);
+      w.attach(trk.onNotification);
       await this.awaitTurn(turn, w.done, input.signal);
-      const { turnError, answers, presented, usage } = tr.st;
+      const { turnError, answers, presented, usage } = trk.st;
       if (!answers.length && turnError) throw new Error(turnError);
       return { text: answers.join("\n\n"), sessionId: w.sessionId, files: deliverables(this.workspace, presented), usage };
     } catch (e) {

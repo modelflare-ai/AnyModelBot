@@ -82,7 +82,7 @@ export function storeInbound(workspace: string, ev: InboundEvent, now = new Date
       p.path = `inbox/${name}`;
     } catch (e) {
       log.warn("save inbound media failed", { type: p.type, message: (e as Error).message.slice(0, 200) });
-      p.error = "保存到工作区失败";
+      p.error = t("runtime.saveFailed");
     }
   }
 }
@@ -127,10 +127,11 @@ interface Inflight {
 }
 
 /** 回合还没交给代理（或纯对话还没出字）就被停止时的回复 */
-export const stoppedText = (ms: number) => `已中止（处理了 ${fmtSecs(ms)}）。`;
+export const stoppedText = (ms: number) => t("runtime.stopped", { d: fmtSecs(ms) });
 
 /** 新消息并进了正在进行的代理回合：先回这一句，回复在那一轮结束时一起给 */
-export const STEER_ACK = "收到，这条会并入正在进行的处理，稍后一起回复。";
+/** 处理中又发来一句、并进正在进行的回合时回的那句（按当前语言） */
+export const steerAck = () => t("runtime.steerAck");
 
 /**
  * 不是回复某条消息、而是主动发到会话里（代理自己醒来的一轮：后台命令结束）：渠道给出这个会话的出站会话。
@@ -394,7 +395,7 @@ export class BotRuntime {
       const err = e as Error & { status?: number };
       if (signal.aborted) {
         // 停止：已生成的部分保留，末尾注明；还没出字就只说已中止
-        const msg = acc ? `${acc}\n\n（已中止）` : stoppedText(Date.now() - run.since);
+        const msg = acc ? `${acc}\n\n${t("runtime.stoppedMark")}` : stoppedText(Date.now() - run.since);
         store.addMessage(conv.id, "assistant", msg);
         await out.apply({ type: "stream.finish", text: msg });
         return;
@@ -429,19 +430,19 @@ export class BotRuntime {
     const agent = this.opts.agent;
     const tasks = agent?.tasks;
     // 后台任务：/tasks 列出，/stop 编号 停止一个（只读本地状态、不碰聊天回合，不进会话队列）
-    if (cmd === "/tasks") return { handled: true, ack: tasks ? tasks.listText(convId) : "后台任务只在代理模式下可用。" };
+    if (cmd === "/tasks") return { handled: true, ack: tasks ? tasks.listText(convId) : t("runtime.tasksAgentOnly") };
     const stopTask = /^\/stop\s+(\d{1,2})$/.exec(cmd);
-    if (stopTask) return { handled: true, ack: tasks ? tasks.stopByIndex(convId, Number(stopTask[1]), `${ev.channel}:${ev.sender.id}`) : "后台任务只在代理模式下可用。" };
+    if (stopTask) return { handled: true, ack: tasks ? tasks.stopByIndex(convId, Number(stopTask[1]), `${ev.channel}:${ev.sender.id}`) : t("runtime.tasksAgentOnly") };
     // /stop 必须插队：它要停的正是排在前面、卡住的那个回合（纯对话、代理还在启动时也算）
     if (cmd === "/stop") {
       const since = this.busySince(convId) ?? agent?.turnsInProgress.get(convId)?.since;
       if (since === undefined || !this.stop(convId)) {
         // 没有在处理的消息，但有后台任务在跑：说一声怎么停它（/stop 不停后台任务）
         const working = tasks?.working(convId) ?? [];
-        const hint = working.length ? `\n后台任务在进行：${working.map((t, i) => `${i + 1}. ${t.title}`).join("；")}。发 /stop 编号 可停止。` : "";
-        return { handled: true, ack: `当前没有正在处理的消息。${hint}` };
+        const hint = working.length ? t("runtime.stopHint", { list: working.map((x, i) => `${i + 1}. ${x.title}`).join(t("runtime.listSepStrong")) }) : "";
+        return { handled: true, ack: t("runtime.nothingToStop", { hint }) };
       }
-      return { handled: true, ack: `正在中止上一条消息（已处理 ${fmtSecs(Date.now() - since)}）…` };
+      return { handled: true, ack: t("runtime.stoppingPrev", { d: fmtSecs(Date.now() - since) }) };
     }
     if (!agent) return { handled: false };
     // 审批、提问的回复；后台任务的只认引用、编号开头，或它是机器人最后一条消息时的选项编号（见 ApprovalCenter.handleReply）
@@ -449,11 +450,11 @@ export class BotRuntime {
     const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`, { ...tasks?.replyContext(convId), ...(quote ? { quote, plain } : {}) });
     if (r.handled) return r;
     // 前一条还在处理：能并入进行中的代理回合时由 handle 并入并回一句；不能时说一声这条排在后面、怎么中止（每个回合只说一次），消息照常入队
-    const t = agent.turnsInProgress.get(convId);
-    if (t && !t.queuedNotice && !agent.canSteer(convId)) {
-      t.queuedNotice = true;
-      const last = t.activity.last;
-      return { handled: false, ack: `上一条消息还在处理（已 ${fmtSecs(Date.now() - t.since)}${last ? `，现在：${clipLine(describeStep(last))}` : ""}），这条会排在它后面。发送 /stop 可以中止。` };
+    const cur = agent.turnsInProgress.get(convId);
+    if (cur && !cur.queuedNotice && !agent.canSteer(convId)) {
+      cur.queuedNotice = true;
+      const last = cur.activity.last;
+      return { handled: false, ack: t("runtime.queuedBehind", { d: fmtSecs(Date.now() - cur.since), now: last ? t("runtime.nowDoing", { step: clipLine(describeStep(last)) }) : "" }) };
     }
     return r;
   }
@@ -690,7 +691,7 @@ export class BotRuntime {
     t.userStored = true;
     t.steered = true;
     t.release?.();
-    await out.apply({ type: "text", text: STEER_ACK, ack: true });
+    await out.apply({ type: "text", text: steerAck(), ack: true });
     return true;
   }
 
@@ -715,15 +716,15 @@ export class BotRuntime {
     const r = (this.repliers.get(`${botId}:${conv.channel}`) ?? this.repliers.get(`*:${conv.channel}`))?.(conv, handle, `wake:${wakeId}`);
     if (!r) log.warn("no way to reply in this conversation; the wake-up reply is only kept in its history", { bot: botId, conversationId: convId, channel: conv.channel });
     const out: ReplySession = r?.out ?? { apply: async () => undefined };
-    const t: Inflight = { botId, since: Date.now(), abort: new AbortController(), userStored: true };
-    const done = this.enter(convId, t);
+    const fl: Inflight = { botId, since: Date.now(), abort: new AbortController(), userStored: true };
+    const done = this.enter(convId, fl);
     // 重启标记：这一轮没做完应用就退出或崩溃了，下次启动告诉用户（说的是让命令跑起来的那条消息）
     const asked = store.listMessages(convId, 20).filter((m) => m.role === "user").at(-1)?.content;
-    markInflight(store, convId, asked || "后台命令的结果");
+    markInflight(store, convId, asked || t("runtime.jobResult"));
     const steps = new Map<string, ActivityStep>();
     const unbind = agent.approvals.bindSink(convId, async (row) => void (await out.apply(interactiveOp(row))));
     const halt = () => agent.stopTurn(convId);
-    t.abort.signal.addEventListener("abort", halt, { once: true });
+    fl.abort.signal.addEventListener("abort", halt, { once: true });
     try {
       const model = conv.model || bot.defaultModel || this.opts.defaultModel();
       const routed = model && this.opts.route ? this.opts.route(botId, model) : model;
@@ -742,16 +743,16 @@ export class BotRuntime {
       } catch (e) {
         // 应用正在退出时代理进程被关掉：不回复，重启标记留着
         if (this.closing) {
-          t.interrupted = true;
+          fl.interrupted = true;
           return;
         }
         const msg = turnFailedText(e as Error, [...steps.values()]);
         store.addMessage(convId, "assistant", msg, [...steps.values()]);
         await out.apply({ type: "stream.finish", text: msg });
-        this.answered(convId, t);
+        this.answered(convId, fl);
         return;
       }
-      const finalText = res.text.trim() || "（后台任务已结束，没有文字回复）";
+      const finalText = res.text.trim() || t("runtime.jobDoneNoText");
       store.addMessage(convId, "assistant", finalText, [...steps.values()]);
       await out.apply({ type: "stream.finish", text: finalText });
       for (const f of res.files ?? []) {
@@ -761,13 +762,13 @@ export class BotRuntime {
           log.warn("deliver file failed", { name: path.basename(f), message: (e as Error).message.slice(0, 200) });
         }
       }
-      this.answered(convId, t);
+      this.answered(convId, fl);
     } finally {
-      t.abort.signal.removeEventListener("abort", halt);
+      fl.abort.signal.removeEventListener("abort", halt);
       unbind();
       await out.apply({ type: "typing", on: false }).catch(() => undefined);
       done.leave();
-      if (!this.inflight.get(convId)?.size && !t.interrupted) {
+      if (!this.inflight.get(convId)?.size && !fl.interrupted) {
         try {
           clearInflight(store, convId);
         } catch {
@@ -866,25 +867,25 @@ const clipLine = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + "…
 export function busyLine(since: number, lastProgress: number, steps: ActivityStep[], steer = false): string {
   const now = Date.now();
   const last = steps.at(-1);
-  const parts = [`已 ${fmtSecs(now - since)}`];
-  if (steps.length) parts.push(`${steps.length} 步`);
-  if (!lastProgress) parts.push("还在等代理进程接手");
-  else if (last) parts.push(`现在：${clipLine(describeStep(last))}`);
-  if (lastProgress && now - lastProgress >= 60_000) parts.push(`${fmtSecs(now - lastProgress)}没有新进展`);
-  return `本会话上一条消息还在处理（${parts.join("，")}），${steer ? "新消息会并入正在进行的处理" : "新消息会排在它后面"}。发送 /stop 可以中止`;
+  const parts = [t("runtime.busyFor", { d: fmtSecs(now - since) })];
+  if (steps.length) parts.push(t("runtime.busySteps", { count: steps.length }));
+  if (!lastProgress) parts.push(t("runtime.busyWaitingAgent"));
+  else if (last) parts.push(t("runtime.busyNow", { step: clipLine(describeStep(last)) }));
+  if (lastProgress && now - lastProgress >= 60_000) parts.push(t("runtime.busyIdle", { d: fmtSecs(now - lastProgress) }));
+  return t(steer ? "runtime.busySteer" : "runtime.busyQueue", { parts: parts.join(t("runtime.listSep")) });
 }
 
 /** 代理回合失败时给用户的话：中止（/stop、没进展、超时）各说清原因和下一步，进程被重启的另说 */
 export function turnFailedText(err: Error, steps: ActivityStep[]): string {
   const last = steps.filter((s) => s.kind !== "error").at(-1);
-  const where = last ? `${last.cut || last.status === "running" ? "卡在" : "最后一步"}：${clipLine(describeStep(last))}。` : "";
+  const where = last ? t(last.cut || last.status === "running" ? "runtime.stuckAt" : "runtime.lastStep", { step: clipLine(describeStep(last)) }) : "";
   if (err instanceof TurnStopped) {
     // 只中止了这个会话；宽限期内没停下才重启了代理进程（同一机器人的其它会话也被打断）
-    const restart = err.restarted ? "并重启代理进程" : "";
-    if (err.reason === "user") return `已中止（处理了 ${fmtSecs(err.ms)}）。${err.restarted ? "代理进程已重启，" : ""}可以继续发消息。`;
-    if (err.reason === "idle") return `⚠️ 代理 ${fmtSecs(err.ms)}没有任何进展，已自动中止${restart}。${where}可以重新发送，或用 /model 换个模型试试。`;
-    return `⚠️ 这条消息处理超过了 ${fmtSecs(err.ms)}的上限，已中止${restart}。${where}可以把任务拆小一点再发。`;
+    const restart = err.restarted ? t("runtime.andRestarted") : "";
+    if (err.reason === "user") return t("runtime.stoppedByUser", { d: fmtSecs(err.ms), restarted: err.restarted ? t("runtime.restartedNote") : "" });
+    if (err.reason === "idle") return t("runtime.stoppedIdle", { d: fmtSecs(err.ms), restart, where });
+    return t("runtime.stoppedLimit", { d: fmtSecs(err.ms), restart, where });
   }
-  if (/runtime (closed|exited)/i.test(err.message)) return "⚠️ 代理进程重启了（可能是同一机器人的另一个会话中止了卡住的消息），这条消息没有处理完，请重新发送。";
-  return `⚠️ 代理执行失败：${err.message.slice(0, 300)}`;
+  if (/runtime (closed|exited)/i.test(err.message)) return t("runtime.runtimeRestarted");
+  return t("runtime.agentFailed", { error: err.message.slice(0, 300) });
 }

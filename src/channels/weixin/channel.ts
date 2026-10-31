@@ -10,7 +10,7 @@ import { StreamingMarkdownFilter } from "./markdown-filter.js";
 import { WeixinQuota } from "./quota.js";
 import type { Delivery } from "../../core/delivery.js";
 import { logger } from "../../log.js";
-import { t } from "../../i18n/index.js";
+import { t, t as tr, tl } from "../../i18n/index.js";
 
 export const WEIXIN_CAPS: ChannelCapabilities = {
   streaming: false,
@@ -76,7 +76,7 @@ function mediaItems(items: MessageItem[] | undefined): MessageItem[] {
 
 const deliverLog = logger("weixin.send");
 /** 回复太长、本轮配额不够时，最后一条末尾的说明 */
-const OVER_QUOTA_NOTE = "\n\n…（回复过长，已达到本轮可发送条数上限，请回复任意消息继续）";
+const overQuotaNote = () => "\n\n" + tr("channel.reply_truncated");
 /** 文件临时发不出去（网络、CDN 5xx）时先重试这么多次，再改发一句"发送失败" */
 const MEDIA_RETRIES = 2;
 /** ack、审批提示：过一会儿就没意义了，发不出去不必一直等 */
@@ -100,15 +100,20 @@ function budgetOf(quota: WeixinQuota, userId: string, row: Pick<OutboxRow, "purp
 /** 能不能给这个人发：要有会话凭证、24 小时窗口没过、还有配额；不能就留着（Held），等他下次发消息；返回凭证 */
 function reachable(quota: WeixinQuota, userId: string, row: Pick<OutboxRow, "purpose">): string {
   const peer = quota.peer(userId);
-  if (!peer?.contextToken) throw new Held("对方还没有给机器人发过消息，等他发消息后再发", "no_token");
-  if (!quota.open(userId)) throw new Held("对方超过 24 小时没有发消息，等他下次发消息时再发", "window_closed");
-  if (quota.remaining(userId) <= 0) throw new Held("本轮可发送条数已用完（对方每发一条消息，24 小时内最多回复 10 条），等他下次发消息时再发", "quota");
-  if (budgetOf(quota, userId, row) <= 0) throw new Held("本轮剩下的条数留给后台任务的结果了，等他下次发消息时再发", "quota");
+  if (!peer?.contextToken) throw new Held(tr("channel.heldNoToken"), "no_token");
+  if (!quota.open(userId)) throw new Held(tr("channel.heldWindowClosed"), "window_closed");
+  if (quota.remaining(userId) <= 0) throw new Held(tr("channel.heldQuota"), "quota");
+  if (budgetOf(quota, userId, row) <= 0) throw new Held(tr("channel.heldReserved"), "quota");
   return peer.contextToken;
 }
 
 /** 留着的消息在对方下次发消息时送达，开头加上这句 */
-export const AWAY_PREFIX = "你不在时：";
+/** 合并发出的「你不在时」那条的开头（按当前语言）；去掉它时两种语言的都认 */
+export const awayPrefix = () => tr("channel.awayPrefix");
+const stripAway = (s: string) => {
+  for (const p of [tl("zh-CN", "channel.awayPrefix"), tl("en", "channel.awayPrefix")]) if (s.startsWith(p)) return s.slice(p.length);
+  return s;
+};
 
 /**
  * 对方又发消息了，留着给他的消息怎么发（Outbox.release 的 combine）：相邻的文字合成一条「你不在时：…」（一条微信放得下就合），
@@ -118,7 +123,7 @@ export function combineHeld(rows: OutboxRow[]): HeldGroup[] {
   const groups: HeldGroup[] = [];
   let cur: { rows: OutboxRow[]; texts: string[]; len: number } | undefined;
   const flush = () => {
-    if (cur) groups.push({ rows: cur.rows, body: { text: AWAY_PREFIX + (cur.texts.length > 1 ? "\n" : "") + cur.texts.join("\n\n"), raw: true, away: true } });
+    if (cur) groups.push({ rows: cur.rows, body: { text: awayPrefix() + (cur.texts.length > 1 ? "\n" : "") + cur.texts.join("\n\n"), raw: true, away: true } });
     cur = undefined;
   };
   for (const r of rows) {
@@ -129,9 +134,9 @@ export function combineHeld(rows: OutboxRow[]): HeldGroup[] {
       continue;
     }
     // 已经合成过的（又被留着）不再加前缀；Markdown 先按微信的规则过滤掉，合成的那条原样发
-    const text = r.body.away ? raw.slice(AWAY_PREFIX.length).trim() : r.body.raw ? raw.trim() : filterMarkdown(raw);
+    const text = r.body.away ? stripAway(raw).trim() : r.body.raw ? raw.trim() : filterMarkdown(raw);
     if (cur && cur.len + 2 + text.length > WEIXIN_CAPS.maxTextLength) flush();
-    cur ??= { rows: [], texts: [], len: AWAY_PREFIX.length };
+    cur ??= { rows: [], texts: [], len: awayPrefix().length };
     cur.rows.push(r);
     cur.texts.push(text);
     cur.len += 2 + text.length;
@@ -148,7 +153,7 @@ export async function deliverWeixin(client: IlinkClient, quota: WeixinQuota, row
   const user = row.peerId;
   const token = reachable(quota, user, row);
   if (row.kind === "file") {
-    const name = row.body.name ?? "文件";
+    const name = row.body.name ?? tr("channel.fileFallback");
     if (row.progress === 0) {
       try {
         // 上传失败不占配额
@@ -161,7 +166,7 @@ export async function deliverWeixin(client: IlinkClient, quota: WeixinQuota, row
       }
       progress(1);
     }
-    await client.sendText(user, `⚠️ 文件「${name}」发送失败，可在工作区中查看。`, token, stableId(row.id, 1));
+    await client.sendText(user, tr("channel.file_failed", { name }), token, stableId(row.id, 1));
     quota.tryConsume(user);
     return;
   }
@@ -171,7 +176,8 @@ export async function deliverWeixin(client: IlinkClient, quota: WeixinQuota, row
   const budget = budgetOf(quota, user, row);
   if (rest.length > budget) {
     rest = rest.slice(0, budget);
-    rest[budget - 1] = rest[budget - 1].slice(0, WEIXIN_CAPS.maxTextLength - OVER_QUOTA_NOTE.length) + OVER_QUOTA_NOTE;
+    const note = overQuotaNote();
+    rest[budget - 1] = rest[budget - 1].slice(0, WEIXIN_CAPS.maxTextLength - note.length) + note;
   }
   for (let i = 0; i < rest.length; i++) {
     const n = row.progress + i;
@@ -347,12 +353,12 @@ export class WeixinChannel {
   }
 
   private async deliver(row: OutboxRow, progress: (n: number) => void): Promise<void> {
-    if (!this.client) throw new Later("微信渠道没有运行");
-    if ((this.store.getWeixinAccount(this.botId)?.pausedUntil ?? 0) > Date.now()) throw new Later("微信登录已过期，等重新扫码");
+    if (!this.client) throw new Later(tr("channel.laterNotRunning"));
+    if ((this.store.getWeixinAccount(this.botId)?.pausedUntil ?? 0) > Date.now()) throw new Later(tr("channel.laterExpired"));
     try {
       await deliverWeixin(this.client, this.quota, row, progress);
     } catch (e) {
-      if (e instanceof WeixinApiError && e.sessionExpired) throw new Later("微信登录已过期，等重新扫码");
+      if (e instanceof WeixinApiError && e.sessionExpired) throw new Later(tr("channel.laterExpired"));
       throw e;
     }
   }

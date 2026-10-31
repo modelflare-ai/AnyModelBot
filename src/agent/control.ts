@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { t as tr } from "../i18n/index.js";
 
 /** 发给代理进程里 amb-control 插件的一条指令 */
 export interface ControlCommand {
@@ -29,13 +30,13 @@ export class ControlChannel {
 
   /** 新子进程：换通道 id，旧的指令作废 */
   reset(): string {
-    this.close("代理进程已重启");
+    this.close(tr("agent.processRestarted"));
     this.id = crypto.randomBytes(12).toString("hex");
     return this.id;
   }
 
   /** 子进程没了：等着的指令全部失败 */
-  close(reason = "代理进程已退出"): void {
+  close(reason = tr("agent.processExited")): void {
     this.id = "";
     this.lastSeen = 0;
     this.queue = [];
@@ -117,14 +118,14 @@ export class ControlChannel {
 
   /** 发一条指令，等插件回报；超时或子进程退出时失败 */
   send<T = Record<string, unknown>>(op: string, args: Record<string, unknown>, timeoutMs: number): Promise<T> {
-    if (!this.id) return Promise.reject(new Error("代理进程没有运行"));
+    if (!this.id) return Promise.reject(new Error(tr("agent.processNotRunning")));
     const id = `c${++this.seq}`;
     const cmd: ControlCommand = { ...args, id, op };
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         this.queue = this.queue.filter((c) => c !== cmd);
-        reject(new Error(`代理进程没有响应（${op}）`));
+        reject(new Error(tr("agent.processNoResponse", { op })));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       const w = this.waiter;

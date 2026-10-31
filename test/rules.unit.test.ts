@@ -696,7 +696,7 @@ describe("规则（假宿主、假时钟）", () => {
     expect(host.prompts.at(-1)!.text).toBe(RULE_NUDGE);
     await turn();
     const [run] = runsOf(rule.id);
-    expect(run).toMatchObject({ outcome: "failed", error: "没有给出结果", would: "approval: curl -X POST https://x.example/alert" });
+    expect(run).toMatchObject({ outcome: "failed", error: "no_report", would: "approval: curl -X POST https://x.example/alert" });
     expect(svc.ruleLog(rule.id)[0]).toMatchObject({ line: "失败：没有给出结果", would: "需要批准：curl -X POST https://x.example/alert" });
     // 不能问用户
     await go(at("2026-11-03T08:00"));
@@ -746,7 +746,7 @@ describe("规则（假宿主、假时钟）", () => {
     expect(up.text).toMatch(/^Updated rule 「看 X 价格」: 每天 08:00, 执行中\./);
     const re = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_update", args: { rule: rule.id, instruction: "低于 150 告诉我" } });
     expect(re.text).toContain("its next run only observes");
-    expect(svc.listText(CONV)).toBe("规则：\n1. 每天 08:00 看 X 价格 · 观察中\n发 /stop 编号 可停止。");
+    expect(svc.listText(CONV)).toBe("规则：\n1. 看 X 价格 · 观察中：每天 08:00\n发 /stop 编号 可停止。");
     expect(svc.stopByIndex(CONV, 1, "weixin:owner")).toBe("已关闭规则「看 X 价格」。");
     expect(store.getRule(rule.id)!.mode).toBe("off");
     expect(svc.listText(CONV)).toBe("没有后台任务。");
@@ -799,8 +799,13 @@ describe("规则（假宿主、假时钟）", () => {
       for (const date of ["2026-11-04", "2026-11-05", "2026-11-06"]) await day(date, report("failed", "", {}));
       expect(pushes().find((r) => r.purpose === "failure")!.body.text).toBe("⚠️ Rule “看 X 价格” failed 3 times in a row and is paused: no result");
       expect(svc.ruleAttention()[0]).toMatchObject({ subject: "Rule “看 X 价格”", status: "Failed 3 times in a row, paused", line: "no result" });
-      expect(svc.listText(CONV)).toBe("Rules:\n1. Daily 08:00 看 X 价格 · Paused\nSend /stop <number> to stop one.");
-      expect(host.prompts.at(-1)!.text).toContain("[规则]\n看 X 价格（每天 08:00）");
+      expect(svc.listText(CONV)).toBe("Rules:\n1. 看 X 价格 · Paused: Daily 08:00\nSend /stop <number> to stop one.");
+      // 有任务又有规则：同一种写法、同一种语言，规则接着任务编号
+      expect(svc.create({ botId: "b", conversationId: CONV, title: "GPU prices", brief: "compare" }).task).toBeDefined();
+      await flush();
+      expect(svc.listText(CONV)).toBe("Background tasks:\n1. GPU prices · In progress\nRules:\n2. 看 X 价格 · Paused: Daily 08:00\nSend /stop <number> to stop one.");
+      expect(svc.stopByIndex(CONV, 2, "weixin:owner")).toBe("Rule “看 X 价格” is off.");
+      expect(host.prompts.findLast((x) => x.sessionId.startsWith("rule-"))!.text).toContain("[规则]\n看 X 价格（每天 08:00）");
       const made = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "Weather", instruction: "check the rain every weekday", schedule: "weekdays 07:30" } });
       expect(made.text).toContain("「Rule set: Weather, Weekdays 07:30. It watches quietly for a few days; switch it to act under Tasks.」");
       expect(made.text).toContain("WeChat lets the bot message you only within 24 hours of your last message.");

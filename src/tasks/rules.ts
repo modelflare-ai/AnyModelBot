@@ -109,9 +109,13 @@ export const RUN_ERROR = {
   restart: "restart",
   timeout: "timeout",
   approvalTimeout: "approval_timeout",
+  noReport: "no_report",
+  modelErrors: "model_errors",
+  agentFailed: "agent_failed",
+  agentUnavailable: "agent_unavailable",
 } as const;
 
-/** 原因 → 词条：规则自己的代码，和任务、规则共用的那套 run 写进去的说法（3a） */
+/** 原因 → 词条：规则自己的，和任务共用的那几种（tasks.*，和任务失败时的说法一样） */
 const WHY: Record<string, MessageKey> = {
   app_off: "rules.whyAppOff",
   busy: "rules.whyBusy",
@@ -119,10 +123,10 @@ const WHY: Record<string, MessageKey> = {
   restart: "rules.whyRestart",
   timeout: "rules.whyTimeout",
   approval_timeout: "rules.whyApprovalTimeout",
-  没有给出结果: "rules.whyNoReport",
-  模型一直出错: "rules.whyModelErrors",
-  代理没能启动: "rules.whyAgentFailed",
-  代理不可用: "rules.whyAgentUnavailable",
+  no_report: "tasks.noResult",
+  model_errors: "tasks.modelKeptFailing",
+  agent_failed: "tasks.agentDidntStart",
+  agent_unavailable: "tasks.agentUnavailable",
 };
 
 /** 存下来的原因给人看：认得的翻成当前语言，其余（模型自己说的）原样 */
@@ -163,7 +167,7 @@ function sentKey(row: OutboxRow | undefined): "rules.sent" | "rules.unsent" | "r
  * 失败：…；跳过：电脑没开；中断。
  */
 export function runLine(run: RunRow, kind: RuleRow["kind"], carrier?: OutboxRow, l: Lang = currentLang()): string {
-  if (run.state === "queued") return tl(l, "rules.queued");
+  if (run.state === "queued") return tl(l, "tasks.stageQueued");
   if (run.state !== "ended") return tl(l, "rules.running");
   const r = run.report;
   const msg = oneLine(r?.message ?? "");
@@ -172,13 +176,13 @@ export function runLine(run: RunRow, kind: RuleRow["kind"], carrier?: OutboxRow,
     case "skipped":
       return tl(l, "rules.skipped", { why: errorText(run.error || RUN_ERROR.appOff, l) });
     case "failed":
-      return tl(l, "rules.failed", { why: clip(oneLine(r?.message || errorText(run.error || "没有给出结果", l)), 120) });
+      return tl(l, "rules.failed", { why: clip(oneLine(r?.message || errorText(run.error || RUN_ERROR.noReport, l)), 120) });
     case "interrupted":
       return tl(l, "rules.interrupted");
     case "stopped":
-      return tl(l, "rules.stopped");
+      return tl(l, "tasks.stageStopped");
     case "budget":
-      return tl(l, "rules.budget");
+      return tl(l, "tasks.stageBudget");
     case "done":
       break;
     default:

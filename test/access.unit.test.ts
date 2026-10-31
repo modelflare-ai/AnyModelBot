@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Store } from "../src/store/db.js";
-import { AccessControl, NOTICE_LIMIT, REFUSAL_TEXT, REFUSE_EVERY_MS } from "../src/core/access.js";
+import { AccessControl, NOTICE_LIMIT, refusalText, REFUSE_EVERY_MS } from "../src/core/access.js";
 import { ApprovalCenter } from "../src/agent/approvals.js";
 import type { InboundEvent } from "../src/core/types.js";
 
@@ -39,7 +39,7 @@ describe("AccessControl", () => {
     expect(access.admit(ev("web", "console", "hi"))).toEqual({ ok: true });
     expect(access.admit(ev("feishu", "oc_group", "hi", "group"))).toEqual({ ok: true });
 
-    expect(access.admit(ev("weixin", "stranger@im.wechat", "我是张三，想用一下"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
+    expect(access.admit(ev("weixin", "stranger@im.wechat", "我是张三，想用一下"))).toEqual({ ok: false, reply: refusalText() });
     const req = access.view("b").requests[0];
     expect(req).toMatchObject({ channel: "weixin", peerId: "stranger@im.wechat", status: "pending", text: "我是张三，想用一下", requests: 1 });
     expect(req.code).toMatch(/^\d{4}$/);
@@ -54,7 +54,7 @@ describe("AccessControl", () => {
     expect(sent).toHaveLength(1);
     expect(store.getAccessById(req.id)!.requests).toBe(2);
     tick(REFUSE_EVERY_MS + 1);
-    expect(access.admit(ev("weixin", "stranger@im.wechat", "在吗"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
+    expect(access.admit(ev("weixin", "stranger@im.wechat", "在吗"))).toEqual({ ok: false, reply: refusalText() });
     expect(sent).toHaveLength(1);
   });
 
@@ -93,7 +93,7 @@ describe("AccessControl", () => {
     tick(5 * 3600_000);
     expect(access.admit(ev("weixin", "spam@im.wechat", "hi"))).toEqual({ ok: false });
     expect(access.remove(id)).toBe(true);
-    expect(access.admit(ev("weixin", "spam@im.wechat", "hi again"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
+    expect(access.admit(ev("weixin", "spam@im.wechat", "hi again"))).toEqual({ ok: false, reply: refusalText() });
     expect(access.view("b").requests[0].text).toBe("hi again");
   });
 
@@ -109,7 +109,7 @@ describe("AccessControl", () => {
     expect(access.admit(ev("feishu", "oc_me", "再来一句"))).toEqual({ ok: true });
 
     // 第二个、不同的人：使用请求，飞书主人和微信主人都收到配对码
-    expect(access.admit(ev("feishu", "oc_colleague", "借用一下"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
+    expect(access.admit(ev("feishu", "oc_colleague", "借用一下"))).toEqual({ ok: false, reply: refusalText() });
     const req = access.view("b").requests[0];
     expect(req).toMatchObject({ peerId: "oc_colleague", status: "pending" });
     expect(sent.filter((s) => s.id.startsWith(`access:${req.id}`)).map((s) => [s.channel, s.peerId]).sort()).toEqual([["feishu", "oc_me"], ["weixin", "owner@im.wechat"]]);
@@ -136,7 +136,7 @@ describe("AccessControl", () => {
     // 下一个发消息的人成为主人；原来的主人要重新申请
     expect(access.admit(ev("feishu", "oc_me", "绑定"))).toEqual({ ok: true });
     expect(access.owner("b", "feishu")!.peerId).toBe("oc_me");
-    expect(access.admit(ev("feishu", "oc_wrong", "我还能用吗"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
+    expect(access.admit(ev("feishu", "oc_wrong", "我还能用吗"))).toEqual({ ok: false, reply: refusalText() });
     // 允许名单里的人在没有主人时也会认领（升级前就在用的人多半就是你自己）
     access.resetOwner("b", "feishu");
     access.allow("b", "feishu", "oc_old", "migration");
@@ -151,7 +151,7 @@ describe("AccessControl", () => {
     expect(access.owner("b", "weixin")).toBeUndefined();
     expect(access.admit(ev("weixin", "me@im.wechat", "你好"))).toEqual({ ok: true });
     expect(access.owner("b", "weixin")).toMatchObject({ peerId: "me@im.wechat", via: "first-message" });
-    expect(access.admit(ev("weixin", "other@im.wechat", "hi"))).toEqual({ ok: false, reply: REFUSAL_TEXT });
+    expect(access.admit(ev("weixin", "other@im.wechat", "hi"))).toEqual({ ok: false, reply: refusalText() });
     // 重新扫码拿到了扫码者（App 里登录成功时这样调用）
     access.resetOwner("b", "weixin", { keep: true });
     store.saveWeixinAccount({ botId: "b", botToken: "t", ilinkBotId: "bot@im.bot", baseUrl: "http://x", ownerUserId: "owner@im.wechat" });

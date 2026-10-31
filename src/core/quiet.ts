@@ -3,6 +3,7 @@
  * 跨午夜的时段也行。夏令时切换那天按本地钟面时间对齐。
  */
 
+import { t as tr } from "../i18n/index.js";
 export interface QuietHours {
   enabled: boolean;
   /** "22:00" */
@@ -111,16 +112,15 @@ export function allowedAt(ts: number, q: QuietHours, tz: string): number {
   return quietEnd(ts, q, tz);
 }
 
-const CN_WEEK = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
-/** 给用户看的时间：今天 21:30、今晚 22:00、明早 8:00、明天 15:00、周一 9:00、11月3日 9:00 */
+/** 给用户看的时间（按当前语言）：今天 21:30、今晚 22:00、明早 8:00、明天 15:00、周一 9:00、11月3日 9:00 */
 export function fmtWhen(at: number, now: number, tz: string): string {
   const a = localParts(at, tz);
   const m = Math.floor(a.minute);
   const hm = `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
   const days = Math.round((startOfDay(at, tz) - startOfDay(now, tz)) / (DAY * MIN));
-  if (days <= 0) return `${m >= 18 * 60 ? "今晚" : "今天"} ${hm}`;
-  if (days === 1) return `${m < 12 * 60 ? "明早" : "明天"} ${hm}`;
-  if (days < 7) return `${CN_WEEK[a.weekday]} ${hm}`;
-  return `${a.mo}月${a.d}日 ${hm}`;
+  if (days <= 0) return tr(m >= 18 * 60 ? "delivery.tonight" : "delivery.today", { hm });
+  if (days === 1) return tr(m < 12 * 60 ? "delivery.tomorrowMorning" : "delivery.tomorrow", { hm });
+  if (days < 7) return tr(`delivery.weekday${a.weekday}` as "delivery.weekday0", { hm });
+  return tr("delivery.date", { month: tr(`delivery.month${a.mo}` as "delivery.month1"), d: a.d, hm });
 }

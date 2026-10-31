@@ -16,6 +16,7 @@ import { AgentHost, ResumeFailed } from "../src/agent/host.js";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/agent/settings.js";
 import { NUDGE, TASK_RULES, recoveryNote, taskBrief } from "../src/agent/prompts/index.js";
 import { Outbox } from "../src/core/outbox.js";
+import { Delivery } from "../src/core/delivery.js";
 import { Store } from "../src/store/db.js";
 
 const flush = async (n = 5) => {
@@ -161,7 +162,7 @@ describe("TaskService（假宿主）", () => {
   let ws: string;
   const CONV = "b:weixin:owner";
 
-  const make = () => new TaskService({ store, host, outbox, approvals, defaultModel: () => "mock-model", retryDelaysMs: [5, 5, 5], maxBackground: 4 });
+  const make = () => new TaskService({ store, host, delivery: new Delivery({ store, outbox }), approvals, defaultModel: () => "mock-model", retryDelaysMs: [5, 5, 5], maxBackground: 4 });
   beforeEach(() => {
     ws = fs.mkdtempSync(path.join(os.tmpdir(), "amb-tasks-unit-"));
     store = new Store(":memory:");
@@ -273,7 +274,7 @@ describe("TaskService（假宿主）", () => {
     expect(report(t.sessionId, "needs_you").error).toMatch(/needs a question/);
     expect(report(t.sessionId, "maybe").error).toMatch(/state must be progress, needs_you, done or failed/);
     svc.stop();
-    const bare = new TaskService({ store, host, outbox, defaultModel: () => "m" });
+    const bare = new TaskService({ store, host, delivery: new Delivery({ store, outbox }), defaultModel: () => "m" });
     bare.start();
     const u = bare.create({ botId: "b", conversationId: CONV, title: "U", brief: "" }).task!;
     await flush();
@@ -468,7 +469,7 @@ describe("TaskService（假宿主）", () => {
     expect(approvals.pending(web.id).map((r) => r.taskId)).toEqual([w.id]);
   });
 
-  it("「需要你」里任务的那一份：失败的（重试、停止），没送到的（知道了）；重试开一个 retry run", async () => {
+  it("「需要你」里任务的那一份：失败的（重试、停止）；没送到的不在这里（出站队列那一份）；重试开一个 retry run", async () => {
     const t = start();
     await flush();
     await turn(t.sessionId, () => void report(t.sessionId, "failed", "X 云的价格页要登录"));
@@ -481,9 +482,10 @@ describe("TaskService（假宿主）", () => {
     expect(svc.attention()).toEqual([]);
     await turn(t.sessionId, () => void report(t.sessionId, "done", "好了"));
     store.updateOutbox(store.latestRun(t.id)!.delivery, { status: "gone", error: "窗口关了" });
-    expect(svc.attention().map((x) => [x.kind, x.status, x.line, x.actions])).toEqual([["delivery", "未送达", "好了", ["seen"]]]);
-    expect(svc.seenDelivery(t.id)).toBe(true);
+    expect(svc.get(t.id)!.stage.key).toBe("needs-you/delivery");
     expect(svc.attention()).toEqual([]);
+    // 在「需要你」里点了不再提示（出站队列记作看过）：任务回到已完成
+    store.updateOutbox(store.latestRun(t.id)!.delivery, { seenAt: Date.now() });
     expect(svc.get(t.id)!.stage.key).toBe("ready");
   });
 
@@ -735,6 +737,70 @@ describe("TaskService（假宿主）", () => {
     const run = store.listRuns({ taskId: t.id })[0];
     store.updateOutbox(run.delivery, { status: "gone", error: "对方超过 24 小时没有发消息，微信不再允许回复" });
     expect(svc.get(t.id)!.stage).toMatchObject({ key: "needs-you/delivery", label: "未送达", group: "needs" });
+  });
+
+  it("3c：结果留着等对方在微信里发消息、一直发不出去、合进的摘要留着：未送达；排着等早上的：已完成", async () => {
+    const t = start();
+    await flush();
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "好了"));
+    const id = store.listRuns({ taskId: t.id })[0].delivery;
+    const stage = () => svc.get(t.id)!.stage.key;
+    store.updateOutbox(id, { status: "scheduled", due: Date.now() + 8 * 3600_000 });
+    expect(stage()).toBe("ready");
+    store.updateOutbox(id, { status: "held", reason: "window_closed" });
+    expect(stage()).toBe("needs-you/delivery");
+    store.updateOutbox(id, { status: "pending", attempts: 3 });
+    expect(stage()).toBe("needs-you/delivery");
+    store.insertOutbox({ id: "digest", botId: "b", channel: "weixin", conversationId: CONV, peerId: "owner", kind: "text", body: { text: "2 个后台任务：…" }, replyTo: "", due: 0, createdAt: 0, expiresAt: Date.now() + 3600_000, status: "held" });
+    store.updateOutbox(id, { status: "merged", mergedInto: "digest" });
+    expect(stage()).toBe("needs-you/delivery");
+    store.updateOutbox("digest", { status: "sent" });
+    expect(stage()).toBe("ready");
+  });
+
+  it("3c：进行中的任务给微信留 1 条配额，续期提醒里也算；task_start 的 anytime 让结果不受免打扰限制", async () => {
+    const delivery = new Delivery({ store, outbox });
+    svc.stop();
+    svc = new TaskService({ store, host, delivery, defaultModel: () => "mock-model", retryDelaysMs: [5, 5, 5], maxBackground: 4 });
+    svc.start();
+    const t = start();
+    await flush();
+    const peer = { botId: "b", channel: "weixin", peerId: "owner", conversationId: CONV };
+    expect(delivery.reserved("b", "weixin", "owner")).toBe(1);
+    expect(delivery.upcoming(peer, Date.now())).toEqual([{ label: "GPU 价格调研", kind: "task" }]);
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "好了"));
+    expect(delivery.reserved("b", "weixin", "owner")).toBe(0);
+    store.setAgentSession(CONV, "b", "chat-1");
+    const r = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "start", args: { title: "夜里也要", brief: "做完马上告诉我", anytime: true } });
+    expect(r.error ?? "").toBe("");
+    const night = store.listTasks({ conversationId: CONV }).find((x) => x.title === "夜里也要")!;
+    expect(night.anytime).toBe(true);
+    expect(store.getTask(t.id)!.anytime).toBe(false);
+  });
+
+  it("3b + 3c：任务的提问按主动消息的规则推（免打扰时排到早上）；没回答前给微信多留 1 条配额；在桌面上回答了，排着的那条撤回", async () => {
+    // 主人的时区 23:00，主人 10 分钟内没说过话：在免打扰里
+    const at = Date.UTC(2026, 10, 6, 23, 0);
+    const delivery = new Delivery({ store, outbox, timeZone: "UTC", now: () => at });
+    svc.stop();
+    svc = new TaskService({ store, host, delivery, approvals, defaultModel: () => "mock-model", retryDelaysMs: [5, 5, 5], maxBackground: 4 });
+    svc.start();
+    const t = start();
+    await flush();
+    await ask(t.sessionId);
+    const [row] = asks();
+    expect(row).toMatchObject({ kind: "text", status: "scheduled", purpose: "question", reason: "quiet_hours", due: Date.UTC(2026, 10, 7, 8, 0), subject: "GPU 价格调研", ref: `task:${t.id}` });
+    expect(row.body.raw).toBe(true);
+    // 排着的提问 1 条 + 待答的提问 1 条（任务在等回答，不算进行中）
+    expect(delivery.reserved("b", "weixin", "owner")).toBe(2);
+    const [q] = approvals.pendingForTask(t.id);
+    expect(approvals.answerText(q.id, "2", "web")).toBe(true);
+    await flush();
+    // 早上不会再问一个已经回答了的问题；也不算没送到
+    expect(store.getOutbox(row.id)).toMatchObject({ status: "gone", error: "已回答" });
+    expect(store.getOutbox(row.id)!.seenAt).toBeGreaterThan(0);
+    expect(svc.get(t.id)!.stage.group).toBe("working");
+    expect(delivery.reserved("b", "weixin", "owner")).toBe(1);
   });
 
   it("任务会话里阻塞着的审批：阶段是等你批准", async () => {

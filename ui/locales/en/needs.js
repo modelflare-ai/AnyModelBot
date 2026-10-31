@@ -13,4 +13,5 @@ export default {
   answerPlaceholder: "Your answer",
   send: "Send",
   none: "Nothing needs you right now",
+  dismiss: "Don't show again",
 };

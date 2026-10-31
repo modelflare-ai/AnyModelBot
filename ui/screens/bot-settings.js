@@ -11,6 +11,12 @@ import { channelName, sourceLabel } from "../lib/access.js";
 import { fmtAgo } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 
+/** 免打扰的起止：整点 */
+const HOURS = Array.from({ length: 24 }, (_, h) => {
+  const v = `${String(h).padStart(2, "0")}:00`;
+  return [v, v];
+});
+
 function Row({ id, name, sub, title, children, off }) {
   return html`<div class=${`row${off ? " off" : ""}`} id=${`bot-${id}`} title=${title}>
     <div class="who"><div class="name">${name}</div>${sub && html`<div class="sub">${sub}</div>`}</div>
@@ -271,6 +277,21 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
           <${Row} id="steward" name=${t("botSettings.context.name")} sub=${t("botSettings.context.sub")}>
             <${Switch} label=${t("botSettings.context.label")} value=${s.steward.enabled} onChange=${(v) => put({ steward: { enabled: v } })} />
           <//>
+        </div>
+
+        <div class="list-head">${t("botSettings.proactive.head")}</div>
+        <div class="list">
+          <${Row} id="quiet" name=${t("botSettings.proactive.quiet")} sub=${t("botSettings.proactive.quietSub")}>
+            ${s.quietHours.enabled && html`<${MenuButton} label=${t("botSettings.proactive.quietFrom")} value=${s.quietHours.from} width=${120} options=${HOURS}
+                onChange=${(v) => put({ quietHours: { from: v } })} />
+              <span class="range-dash">–</span>
+              <${MenuButton} label=${t("botSettings.proactive.quietTo")} value=${s.quietHours.to} width=${120} options=${HOURS}
+                onChange=${(v) => put({ quietHours: { to: v } })} />`}
+            <${Switch} label=${t("botSettings.proactive.quiet")} value=${s.quietHours.enabled} onChange=${(v) => put({ quietHours: { enabled: v } })} />
+          <//>
+          ${bot.weixinEnabled && html`<${Row} id="nudge" name=${t("botSettings.proactive.nudge")} sub=${t("botSettings.proactive.nudgeSub")}>
+            <${Switch} label=${t("botSettings.proactive.nudge")} value=${s.nudge} onChange=${(v) => put({ nudge: v })} />
+          <//>`}
         </div>
 
         <div class="list-head">${t("botSettings.computer.head")}</div>

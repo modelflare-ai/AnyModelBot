@@ -13,4 +13,5 @@ export default {
   answerPlaceholder: "你的回答",
   send: "发送",
   none: "没有需要你处理的事",
+  dismiss: "不再提示",
 };

@@ -4,6 +4,7 @@ import type { BotRuntime } from "../../core/runtime.js";
 import type { FeishuMessageEvent, FeishuTransport } from "./transport.js";
 import { FeishuReply, deliverFeishu } from "./card.js";
 import { Outbox, stableId } from "../../core/outbox.js";
+import type { Delivery } from "../../core/delivery.js";
 import type { Store } from "../../store/db.js";
 import { logger } from "../../log.js";
 import { t } from "../../i18n/index.js";
@@ -59,6 +60,8 @@ export class FeishuChannel {
   readonly pending = new Set<Promise<void>>();
   /** 出站队列（App 共用一个；没给时用内存库自己建一个） */
   readonly outbox: Outbox;
+  /** 主动消息的送达规则（App 设）：对方发消息时，排着的主动消息先发，合成一条摘要 */
+  delivery: Delivery | undefined;
   private unregister: (() => void) | undefined;
 
   constructor(
@@ -113,6 +116,9 @@ export class FeishuChannel {
       replyHandle: { messageId: ev.messageId, chatId: ev.chatId },
       receivedAt: Date.now(),
     };
+    // 人在：排着的主动消息（免打扰、每天上限）不用再等，排在这次的回复前面
+    const delivery = this.delivery;
+    if (delivery) this.outbox.release(this.botId, "feishu", ev.chatId, (rows) => delivery.combine(rows));
     // 审批/提问回复在入队前处理（正在进行的回合正等着它）
     // 没处理掉但带 ack 的（前一条还在处理）：先说一声，消息照常入队
     const intercepted = this.runtime.interceptReply(inbound);

@@ -107,4 +107,13 @@ export default {
     auto: "Ask when needed",
     always: "Always ask",
   },
+  proactive: {
+    head: "Proactive messages",
+    quiet: "Do not disturb",
+    quietSub: "Background results wait until it ends",
+    quietFrom: "Do not disturb from",
+    quietTo: "Do not disturb until",
+    nudge: "WeChat renewal reminder",
+    nudgeSub: "When messages are still waiting to be sent, ask you for a reply before the 24-hour window closes",
+  },
 };

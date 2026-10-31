@@ -5,8 +5,9 @@
  *   amb-tasks 插件给这些会话限定工具、加任务规则和 task_report。
  * - run 是一段工作：排队 → 跑（占名额）→ 收尾（会话空了但还有后台命令或子代理：settling，仍占名额）→ 结束。
  *   名额见 slots.ts；聊天从不占名额（人的通道）。
- * - 一轮结束、会话安静下来时按代理最近的 Report 结束这个 run：done / failed 的那一句经出站队列发回请求它的会话
- *   （微信在 24 小时窗口内，飞书回复在请求那条消息下），网页写进会话历史。没有 Report 就提醒一次，还没有就算失败。
+ * - 一轮结束、会话安静下来时按代理最近的 Report 结束这个 run：done / failed 的那一句按主动消息的规则（core/delivery.ts：
+ *   免打扰、合并、每天上限、微信窗口）发回请求它的会话（飞书回复在请求那条消息下），网页写进会话历史。
+ *   没有 Report 就提醒一次，还没有就算失败。进行中的任务给微信留配额，也算续期提醒里"之后还要发的"。
  * - 宿主欠会话的每条输入都落库（交出去时记 DSH 收件 id，会话里出现这条用户消息时记 taken）。应用重启或代理进程退出时，
  *   跑着的 run 记为 interrupted，给任务排一个恢复 run：先交一条恢复说明，没被会话收下的输入再交一次，收下过的不再交。
  * - 停止只停这个任务（指令通道：取消这一轮、停它的后台命令、之后的工具调用一律拒绝），聊天和别的任务照常。
@@ -19,7 +20,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { Outbox } from "../core/outbox.js";
+import { needsPerson, type Delivery } from "../core/delivery.js";
 import { ActivityLog, type ActivityStep } from "../agent/activity.js";
 import { ResumeFailed, deliverables } from "../agent/host.js";
 import { answerLine, promptButtons, questionsOf, taskPromptText, type ApprovalCenter, type ApprovalEvent, type QuestionItem, type ReplyContext } from "../agent/approvals.js";
@@ -80,8 +81,8 @@ export interface TaskNotification {
 export interface TaskServiceOptions {
   store: Store;
   host: TaskHost;
-  /** 微信、飞书的结果经出站队列发（没有就只写进会话历史） */
-  outbox?: Outbox;
+  /** 微信、飞书的结果按主动消息的规则经出站队列发（没有就只写进会话历史）；任务的提问也经它推 */
+  delivery?: Delivery;
   /** 任务的提问、任务会话里的审批（没有就不能问用户） */
   approvals?: TaskApprovals;
   /** 机器人没设模型时用的默认模型 */
@@ -187,7 +188,13 @@ export class TaskService {
   private dropped = new Set<string>();
   private unlisten: (() => void) | undefined;
 
-  constructor(private o: TaskServiceOptions) {}
+  constructor(private o: TaskServiceOptions) {
+    // 进行中的任务：给微信留 1 条配额（聊天回复不会把它挤掉），续期提醒里也算"之后还要发的"
+    o.delivery?.addReserver((p) => this.working(p.conversationId).length);
+    // 推给用户、还没回答的提问（审批）：再留 1 条（设计第 6 节：任务、待答问题各占 1 条，一共最多 3 条）
+    o.delivery?.addReserver((p) => (o.approvals?.pending(p.conversationId).some((r) => r.taskId) ? 1 : 0));
+    o.delivery?.addUpcoming((p) => this.working(p.conversationId).map((t) => ({ label: t.title, kind: "task" as const })));
+  }
 
   private get store(): Store {
     return this.o.store;
@@ -275,7 +282,7 @@ export class TaskService {
   // ---------- 建任务、追加、停止 ----------
 
   /** 新任务（聊天代理的 task_start）：用户原话、说明、最近的对话、附件和记忆快照作为第一条输入，排进队列 */
-  create(o: { botId: string; conversationId: string; title: string; brief: string; budgetUsd?: number }): { task?: TaskRow; error?: string } {
+  create(o: { botId: string; conversationId: string; title: string; brief: string; budgetUsd?: number; anytime?: boolean }): { task?: TaskRow; error?: string } {
     const conv = this.store.getConversation(o.conversationId);
     const bot = this.store.getBot(o.botId);
     if (!conv || !bot) return { error: "conversation not found" };
@@ -308,6 +315,7 @@ export class TaskService {
       model: conv.model || bot.defaultModel || this.o.defaultModel?.() || "",
       permission: st.permission,
       budgetUsd: o.budgetUsd && o.budgetUsd > 0 ? Math.min(o.budgetUsd, 100) : 1,
+      anytime: !!o.anytime,
       createdAt: now,
       updatedAt: now,
     });
@@ -696,9 +704,9 @@ export class TaskService {
   // ---------- 送达 ----------
 
   /**
-   * 把结果（或失败）发回请求它的会话：微信、飞书经出站队列（id 固定：task:<任务>:result|failure:<run>，同一 id 只发一次；
-   * 微信在发送时才查 24 小时窗口和配额），飞书回复在请求那条消息下；网页只写进会话历史。同时写进会话历史，
-   * 给聊天代理留一张便条。交过的 run 不再交（重启后补送也一样）。
+   * 把结果（或失败）发回请求它的会话：微信、飞书按主动消息的规则推送（id 固定：task:<任务>:result|failure:<run>，同一 id 只发一次；
+   * 免打扰时排到早上、几条一起到的合成摘要，微信在发送时才查 24 小时窗口和配额），飞书回复在请求那条消息下；
+   * 网页只写进会话历史。同时写进会话历史，给聊天代理留一张便条。交过的 run 不再交（重启后补送也一样）。
    */
   private deliver(task: TaskRow, runId: string, outcome: "done" | "failed", report: TaskReport | undefined, error: string): void {
     const run = this.store.getRun(runId);
@@ -713,21 +721,31 @@ export class TaskService {
     const msg = oneLine(report?.message ?? "");
     const text = outcome === "done" ? clip(msg, MESSAGE_MAX) || `「${task.title}」做好了。` : `⚠️「${task.title}」没做完：${clip(msg || error || "没有给出结果", MESSAGE_MAX)}`;
     const files = outcome === "done" ? this.files(task, report?.files ?? []) : [];
-    if ((conv.channel === "weixin" || conv.channel === "feishu") && this.o.outbox) this.post(conv, task, id, text, files);
+    if ((conv.channel === "weixin" || conv.channel === "feishu") && this.o.delivery) this.post(conv, task, id, purpose, text, files);
     this.store.addMessage(conv.id, "assistant", files.length && conv.channel === "web" ? `${text}\n\n${files.map((f) => `- ${path.relative(this.o.host.workspace(task.botId), f)}`).join("\n")}` : text);
     this.store.updateRun(runId, { delivery: id });
     this.note(conv.id, outcome === "done" ? `[后台任务「${task.title}」已完成，已把结果发给用户] ${text}` : `[后台任务「${task.title}」失败了，已告诉用户] ${text}`);
   }
 
-  /** 微信、飞书：写进出站队列（同步落库；渠道没上线时等它上线） */
-  private post(conv: Conversation, task: TaskRow, id: string, text: string, files: string[]): void {
-    const outbox = this.o.outbox!;
+  /** 微信、飞书：按主动消息的规则写进出站队列（同步落库；渠道没上线时等它上线） */
+  private post(conv: Conversation, task: TaskRow, id: string, purpose: "result" | "failure", text: string, files: string[]): void {
     const channel = conv.channel as "weixin" | "feishu";
     const replyTo = channel === "feishu" ? task.originRef || replyHandle(this.store, conv.id).messageId || "" : "";
-    const base = { botId: task.botId, channel, peerId: conv.peerId, replyTo };
-    void outbox.send({ ...base, id, kind: channel === "feishu" && !replyTo ? "notice" : "text", body: { text } });
-    if (channel === "feishu" && !replyTo) return;
-    files.forEach((f, i) => void outbox.send({ ...base, id: `${id}:file:${i}`, kind: "file", body: { path: f, name: path.basename(f) } }));
+    const notice = channel === "feishu" && !replyTo;
+    this.o.delivery!.push({
+      id,
+      botId: task.botId,
+      channel,
+      peerId: conv.peerId,
+      purpose,
+      subject: task.title,
+      text,
+      files: notice ? [] : files,
+      replyTo,
+      kind: notice ? "notice" : "text",
+      anytime: task.anytime,
+      ref: `task:${task.id}`,
+    });
   }
 
   /** task_report 里的文件：先按任务文件夹找，再按工作区找；只交工作区里真实存在的文件 */
@@ -792,7 +810,7 @@ export class TaskService {
     const a = (b?.args ?? {}) as Record<string, unknown>;
     switch (String(b?.op ?? "")) {
       case "start": {
-        const r = this.create({ botId, conversationId: conv.id, title: String(a.title ?? ""), brief: String(a.brief ?? ""), budgetUsd: Number(a.budget_usd) || undefined });
+        const r = this.create({ botId, conversationId: conv.id, title: String(a.title ?? ""), brief: String(a.brief ?? ""), budgetUsd: Number(a.budget_usd) || undefined, anytime: a.anytime === true });
         if (!r.task) return { error: r.error };
         return {
           text: `Started background task ${r.task.id} 「${r.task.title}」 in folder ${r.task.folder}. In your reply, tell the user in one sentence what now runs in the background and that they will hear back when it is done; they can keep chatting. Do not do the task yourself.`,
@@ -856,6 +874,8 @@ export class TaskService {
     const task = this.store.getTask(row.taskId);
     if (!task) return;
     if (e.type === "decided" && row.kind === "question" && !row.blocking && row.status === "answered" && task.endReason !== "stopped") this.answered(task, row);
+    // 有了决定（在桌面上回答了、批了，任务停了）：推给用户还没发出去的那条（排到早上、等微信窗口）不用再发了
+    if (e.type === "decided") this.o.delivery?.withdraw(askId(row), `已${row.status === "answered" ? "回答" : "处理"}`);
     this.changed(task.id);
     // 等批准时让出的名额：有了决定，排队的可能要等它了
     if (e.type === "decided" && row.blocking) this.pump();
@@ -872,12 +892,13 @@ export class TaskService {
 
   /**
    * 推给请求它的会话（微信、飞书；网页的提问卡片就在对话里）：一个会话同时只推一个，前一个没回答，后面的只在"需要你"里等，
-   * 微信里光回编号才不会认错。出站 id 固定（askId），同一条只推一次；发不出去（微信窗口关了）由出站队列留着。
+   * 微信里光回编号才不会认错。按主动消息的规则推（core/delivery.ts：免打扰、每天上限；问题不合并）：排着的、留着的都算推了。
+   * 出站 id 固定（askId），同一条只推一次；发不出去（微信窗口关了）由出站队列留着。
    */
   private pushNext(conversationId: string): void {
     const a = this.o.approvals;
-    const outbox = this.o.outbox;
-    if (!a || !outbox || !this.started) return;
+    const delivery = this.o.delivery;
+    if (!a || !delivery || !this.started) return;
     const conv = this.store.getConversation(conversationId);
     if (!conv || (conv.channel !== "weixin" && conv.channel !== "feishu")) return;
     const rows = a.pending(conversationId).filter((r) => r.taskId).sort((x, y) => x.createdAt - y.createdAt);
@@ -887,15 +908,15 @@ export class TaskService {
     const task = row ? this.store.getTask(row.taskId) : undefined;
     if (!row || !task || task.endReason === "stopped") return;
     const text = taskPromptText(row, task.title);
-    const base = { id: askId(row), botId: task.botId, channel: conv.channel as "weixin" | "feishu", peerId: conv.peerId };
-    if (conv.channel === "weixin") void outbox.send({ ...base, kind: "text", body: { text, raw: true } });
+    const base = { id: askId(row), botId: task.botId, channel: conv.channel as "weixin" | "feishu", peerId: conv.peerId, purpose: "question" as const, subject: task.title, text, ref: `task:${task.id}` };
+    if (conv.channel === "weixin") delivery.push({ ...base, raw: true });
     else {
       const replyTo = task.originRef || replyHandle(this.store, conv.id).messageId || "";
       const buttons = promptButtons(row);
       const title = row.kind === "approval" ? `需批准（任务「${task.title}」）` : `「${task.title}」想问你`;
       const body = row.kind === "approval" ? (row.detail ? "`" + row.detail.slice(0, 300) + "`" : row.tool) : (questionsOf(row)[0]?.question ?? row.detail);
-      if (replyTo && buttons) void outbox.send({ ...base, kind: "card", replyTo, body: { text, card: actionCardSpec(title, body, buttons) } });
-      else void outbox.send({ ...base, kind: replyTo ? "text" : "notice", replyTo, body: { text } });
+      if (replyTo && buttons) delivery.push({ ...base, replyTo, card: actionCardSpec(title, body, buttons) });
+      else delivery.push({ ...base, replyTo, kind: replyTo ? "text" : "notice" });
     }
     if (row.kind === "question") this.store.addMessage(conv.id, "assistant", text);
     log.info("pushed a background task's prompt", { task: task.id, kind: row.kind, channel: conv.channel });
@@ -916,16 +937,7 @@ export class TaskService {
     };
   }
 
-  /** 没送到的结果：用户在"需要你"里看过了（知道了），不再算需要他 */
-  seenDelivery(taskId: string): boolean {
-    const run = this.store.latestRun(taskId);
-    if (!run?.delivery || /:(dropped|seen)$/.test(run.delivery)) return false;
-    this.store.updateRun(run.id, { delivery: `${run.delivery}:seen` });
-    this.changed(taskId);
-    return true;
-  }
-
-  /** "需要你"里任务那一份：失败、没送到、预算用完（提问和审批由审批中心那一份给） */
+  /** "需要你"里任务那一份：失败、预算用完（提问和审批由审批中心那一份给，没送到的由出站队列那一份给：core/delivery.ts） */
   attention(): AttentionItem[] {
     const out: AttentionItem[] = [];
     const since = this.now() - 7 * 86400_000;
@@ -933,14 +945,14 @@ export class TaskService {
     for (const t of tasks) {
       const run = this.store.latestRun(t.id);
       const st = this.stage(t, run);
-      if (st.key !== "failed" && st.key !== "needs-you/delivery" && st.key !== "needs-you/budget") continue;
+      if (st.key !== "failed" && st.key !== "needs-you/budget") continue;
       const bot = this.store.getBot(t.botId);
       const conv = this.store.getConversation(t.conversationId);
       const r = run?.report ?? t.report;
       const line = st.key === "failed" ? r?.message || run?.error || "没有给出结果" : r?.message || r?.summary.split("\n")[0] || "";
       out.push({
         id: `task:${t.id}`,
-        kind: st.key === "needs-you/delivery" ? "delivery" : "failed",
+        kind: "failed",
         botId: t.botId,
         botName: bot?.name ?? t.botId,
         subject: t.title,
@@ -948,7 +960,7 @@ export class TaskService {
         line: clip(oneLine(line), 200),
         since: run?.endedAt || t.updatedAt,
         severity: st.key === "failed" ? "err" : "warn",
-        actions: st.key === "needs-you/delivery" ? ["seen"] : ["retry", "stop"],
+        actions: ["retry", "stop"],
         conversationId: t.conversationId,
         channel: conv?.channel ?? "",
         taskId: t.id,
@@ -960,12 +972,13 @@ export class TaskService {
   // ---------- 查看 ----------
 
   private stage(task: TaskRow, run = this.store.latestRun(task.id)): Stage {
-    const delivery = run?.delivery && !/:(dropped|seen)$/.test(run.delivery) ? this.o.store.getOutbox(run.delivery) : undefined;
+    // 结果没送到：留着等对方发消息、一直失败、放弃了（合进摘要的看那一条）；排着等早上的、在「需要你」里不再提示的不算
+    const delivery = run?.delivery && !run.delivery.endsWith(":dropped") ? this.o.store.carrierOutbox(run.delivery) : undefined;
     // 它在等的：任务会话（或子代理）里的审批、它报的提问
     const now = this.now();
     const rows = this.store.listApprovals({ status: "pending", botId: task.botId, limit: 200 }).filter((a) => (a.taskId === task.id || a.sessionId === task.sessionId) && (a.expiresAt === 0 || a.expiresAt > now));
     const waiting = rows.some((a) => a.kind === "approval") ? "approval" : rows.length ? "answer" : undefined;
-    return taskStage({ stopped: task.endReason === "stopped", undelivered: delivery?.status === "gone", waiting, run });
+    return taskStage({ stopped: task.endReason === "stopped", undelivered: needsPerson(delivery), waiting, run });
   }
 
   view(task: TaskRow): TaskView {

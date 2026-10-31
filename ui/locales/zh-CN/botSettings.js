@@ -107,4 +107,13 @@ export default {
     auto: "需要时再问",
     always: "每次都问",
   },
+  proactive: {
+    head: "主动消息",
+    quiet: "免打扰",
+    quietSub: "后台结果留到结束后再发",
+    quietFrom: "免打扰开始",
+    quietTo: "免打扰结束",
+    nudge: "微信续期提醒",
+    nudgeSub: "还有消息要发时，24 小时到期前请你回一句",
+  },
 };

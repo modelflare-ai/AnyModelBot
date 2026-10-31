@@ -8,7 +8,18 @@ export const QUOTA_PER_INBOUND = 10;
 export const QUOTA_WINDOW_MS = 24 * 3600_000;
 
 export class WeixinQuota {
+  /** 现在要给主动消息（任务结果等）留几条：聊天回复只能用 remaining − reserved（core/delivery.ts 设） */
+  reserver: ((userId: string) => number) | undefined;
+
   constructor(private store: Store, private botId: string, private now: () => number = Date.now) {}
+
+  reserved(userId: string): number {
+    try {
+      return Math.max(0, this.reserver?.(userId) ?? 0);
+    } catch {
+      return 0;
+    }
+  }
 
   onInbound(userId: string, contextToken: string): WeixinPeer {
     const peer: WeixinPeer = {

@@ -8,6 +8,7 @@ import { Gone, Held, Later, Outbox, ReplyIds, stableId, type HeldGroup } from ".
 import { IlinkClient, MessageItemType, MessageType, WeixinApiError, hasDownloadableMedia, type InboundMedia, type MessageItem, type WeixinMessage } from "./api.js";
 import { StreamingMarkdownFilter } from "./markdown-filter.js";
 import { WeixinQuota } from "./quota.js";
+import type { Delivery } from "../../core/delivery.js";
 import { logger } from "../../log.js";
 import { t } from "../../i18n/index.js";
 
@@ -88,12 +89,21 @@ function transient(e: unknown): boolean {
   return !(x?.syscall && ["open", "read", "stat", "scandir"].includes(x.syscall));
 }
 
+/**
+ * 这条能用几条配额：主动消息（任务结果、续期提醒…）用全部剩下的；聊天回复要给主动消息留出 reserved 条（core/delivery.ts）
+ */
+function budgetOf(quota: WeixinQuota, userId: string, row: Pick<OutboxRow, "purpose">): number {
+  const left = quota.remaining(userId);
+  return row.purpose ? left : left - quota.reserved(userId);
+}
+
 /** 能不能给这个人发：要有会话凭证、24 小时窗口没过、还有配额；不能就留着（Held），等他下次发消息；返回凭证 */
-function reachable(quota: WeixinQuota, userId: string): string {
+function reachable(quota: WeixinQuota, userId: string, row: Pick<OutboxRow, "purpose">): string {
   const peer = quota.peer(userId);
-  if (!peer?.contextToken) throw new Held("对方还没有给机器人发过消息，等他发消息后再发");
-  if (!quota.open(userId)) throw new Held("对方超过 24 小时没有发消息，等他下次发消息时再发");
-  if (quota.remaining(userId) <= 0) throw new Held("本轮可发送条数已用完（对方每发一条消息，24 小时内最多回复 10 条），等他下次发消息时再发");
+  if (!peer?.contextToken) throw new Held("对方还没有给机器人发过消息，等他发消息后再发", "no_token");
+  if (!quota.open(userId)) throw new Held("对方超过 24 小时没有发消息，等他下次发消息时再发", "window_closed");
+  if (quota.remaining(userId) <= 0) throw new Held("本轮可发送条数已用完（对方每发一条消息，24 小时内最多回复 10 条），等他下次发消息时再发", "quota");
+  if (budgetOf(quota, userId, row) <= 0) throw new Held("本轮剩下的条数留给后台任务的结果了，等他下次发消息时再发", "quota");
   return peer.contextToken;
 }
 
@@ -136,7 +146,7 @@ export function combineHeld(rows: OutboxRow[]): HeldGroup[] {
  */
 export async function deliverWeixin(client: IlinkClient, quota: WeixinQuota, row: OutboxRow, progress: (n: number) => void, retry = true): Promise<void> {
   const user = row.peerId;
-  const token = reachable(quota, user);
+  const token = reachable(quota, user, row);
   if (row.kind === "file") {
     const name = row.body.name ?? "文件";
     if (row.progress === 0) {
@@ -158,7 +168,7 @@ export async function deliverWeixin(client: IlinkClient, quota: WeixinQuota, row
   const text = row.body.text ?? "";
   const chunks = splitText(row.body.raw ? text.trim() : filterMarkdown(text), WEIXIN_CAPS.maxTextLength);
   let rest = chunks.slice(row.progress);
-  const budget = quota.remaining(user);
+  const budget = budgetOf(quota, user, row);
   if (rest.length > budget) {
     rest = rest.slice(0, budget);
     rest[budget - 1] = rest[budget - 1].slice(0, WEIXIN_CAPS.maxTextLength - OVER_QUOTA_NOTE.length) + OVER_QUOTA_NOTE;
@@ -305,9 +315,12 @@ export class WeixinChannel {
     private store: Store,
     private runtime: BotRuntime,
     private queue: KeyedQueue,
-    private opts: { fetchImpl?: typeof fetch; cdnBaseUrl?: string; pollTimeoutMs?: number; retryDelayMs?: number; backoffMs?: number; outbox?: Outbox } = {},
+    private opts: { fetchImpl?: typeof fetch; cdnBaseUrl?: string; pollTimeoutMs?: number; retryDelayMs?: number; backoffMs?: number; outbox?: Outbox; delivery?: Delivery } = {},
   ) {
     this.quota = new WeixinQuota(store, botId);
+    // 聊天回复给主动消息（进行中的任务的结果等）留出配额
+    const delivery = opts.delivery;
+    if (delivery) this.quota.reserver = (userId) => delivery.reserved(botId, "weixin", userId);
     if (opts.outbox) this.outbox = opts.outbox;
     else {
       this.outbox = new Outbox(store);
@@ -435,9 +448,14 @@ export class WeixinChannel {
     const id = String(m.message_id ?? m.client_id ?? `${m.from_user_id}:${m.seq}:${m.create_time_ms}`);
     if (!this.dedup.firstSeen(id)) return;
     const userId = m.from_user_id;
+    const delivery = this.opts.delivery;
+    // 回的是续期提醒（「ok」）：先认出来（之后放出留着的消息，最近发的一条就不是提醒了）
+    const said = weixinParts(m.item_list).map((p) => (p.type === "text" ? p.text : "")).join("").trim();
+    const ack = said ? delivery?.ack(this.botId, "weixin", userId, said) : undefined;
     const peer = this.quota.onInbound(userId, m.context_token ?? "");
-    // 对方又发消息了（24 小时窗口和配额重新开始）：之前留着没发的先发，合成「你不在时：…」，排在这次的回复前面
-    this.outbox.release(this.botId, "weixin", userId, combineHeld);
+    // 对方又发消息了（24 小时窗口和配额重新开始）：之前留着没发的、排着的主动消息先发，合成一条（「你不在时：…」或摘要），排在这次的回复前面
+    const released = this.outbox.release(this.botId, "weixin", userId, (rows) => (delivery ? delivery.combine(rows) : combineHeld(rows)));
+    if (ack) return this.acked(id, userId, peer.contextToken, said, released ? "" : ack);
     const ev: InboundEvent = {
       id,
       channel: "weixin",
@@ -469,6 +487,20 @@ export class WeixinChannel {
         await reply.apply({ type: "text", text: t("channel.handle_failed", { message: (e as Error).message }) }).catch(() => {});
       }
     });
+    this.pending.add(p);
+    void p.finally(() => this.pending.delete(p));
+  }
+
+  /**
+   * 对方回了续期提醒（「ok」）：窗口已经重新开始，不进模型；记进会话历史，回一句（留着的消息刚放出去时它们就是回应，不再多说）
+   */
+  private acked(id: string, userId: string, contextToken: string, said: string, text: string): void {
+    const conv = this.store.ensureConversation(this.botId, "weixin", userId);
+    this.store.addMessage(conv.id, "user", said);
+    if (!text) return;
+    this.store.addMessage(conv.id, "assistant", text);
+    const reply = new WeixinReply(this.client!, userId, contextToken, this.quota, { outbox: this.outbox, botId: this.botId, key: `${id}:ack` });
+    const p = reply.apply({ type: "text", text }).catch((e) => this.log.warn("nudge ack failed", { message: (e as Error).message }));
     this.pending.add(p);
     void p.finally(() => this.pending.delete(p));
   }

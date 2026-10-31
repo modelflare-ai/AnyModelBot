@@ -67,7 +67,8 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin }) {
         <${Button} loading=${busy === "deny"} disabled=${!!busy} onClick=${() => act("deny")}>${t("needs.deny")}<//>`}
       ${item.kind === "failed" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>
         <button type="button" class="text danger" disabled=${!!busy} onClick=${() => act("stop")}>${t("needs.stop")}</button>`}
-      ${item.kind === "delivery" && html`<${Button} loading=${busy === "seen"} disabled=${!!busy} onClick=${() => act("seen")}>${t("needs.seen")}<//>`}
+      ${item.kind === "delivery" && item.actions.includes("retry") && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
+      ${item.kind === "delivery" && item.actions.includes("dismiss") && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.dismiss")}</button>`}
       ${item.kind === "login" && html`<${Button} onClick=${() => onRelogin?.(item.botId)}>${t("needs.relogin")}<//>`}
     </div>
     ${writing && html`<div class="need-reply">

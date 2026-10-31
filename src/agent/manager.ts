@@ -3,8 +3,9 @@ import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { AgentBridge } from "./bridge.js";
 import path from "node:path";
-import { AgentHost, TurnStopped, callDetail, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
+import { AgentHost, TurnStopped, callDetail, type ModelApiInfo, type TurnInput, type TurnObserver, type TurnUsage } from "./host.js";
 import { ActivityLog, type ActivityStep } from "./activity.js";
+import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
@@ -44,6 +45,8 @@ export interface AgentManagerOptions {
   onNotice?: (text: string) => void;
   /** 模型的上下文长度（Modelflare 模型资料），写进 DSH 补丁 */
   contextWindow?: (model: string) => Promise<number | undefined>;
+  /** 模型支持的接口与是否推理（Modelflare 模型资料），DSH 按它选对话接口 */
+  apiInfo?: (model: string) => Promise<ModelApiInfo | undefined>;
 }
 
 /** 一个进行中的回合（/status、/stop、排队提示、信息面板和故障排查用） */
@@ -80,6 +83,8 @@ export class AgentManager {
   /** botId → 正在进行回合的会话（子代理 session 无映射时用来归属审批） */
   private activeConvs = new Map<string, Set<string>>();
   readonly memory: MemoryStore;
+  /** 在 Responses / Anthropic Messages 上被拒过、暂时改走 Chat Completions 的模型（所有机器人共用） */
+  readonly apiFallbacks: ApiFallbacks;
   /** 会话 → 管家判定（是否原地压缩），插件在代理空闲时取 */
   private decisions = new Map<string, { promise: Promise<boolean>; resolve: (v: boolean) => void }>();
   /** 会话 → 下一回合开始前要等的事（判定、压缩完成） */
@@ -104,6 +109,7 @@ export class AgentManager {
       media: (b) => this.mediaOp(b),
     });
     this.memory = new MemoryStore(path.join(o.dataDir, "memory"));
+    this.apiFallbacks = new ApiFallbacks(path.join(o.dataDir, "dsh", "api-fallback.json"));
   }
 
   /** 生图 / 生视频服务；未接内置网关时没有 */
@@ -135,6 +141,8 @@ export class AgentManager {
         onNotice: this.o.onNotice,
         media: !!this.o.media,
         contextWindow: this.o.contextWindow,
+        apiInfo: this.o.apiInfo,
+        apiFallbacks: this.apiFallbacks,
       });
       this.hosts.set(botId, h);
     }
@@ -597,12 +605,20 @@ export class AgentManager {
   }
 
   /** 故障排查：运行时位置 + 每个已创建的代理进程的详细状态（stderr 尾部、最近一次退出）+ 进行中的回合 */
-  diagnostics(): { enabled: boolean; available: boolean; runtimeDir?: string; hosts: Record<string, Record<string, unknown>>; turns: Array<{ conversationId: string; botId: string; forMs: number; idleMs?: number; lastStep?: ActivityStep }> } {
+  diagnostics(): {
+    enabled: boolean;
+    available: boolean;
+    runtimeDir?: string;
+    hosts: Record<string, Record<string, unknown>>;
+    apiFallbacks: Array<ApiFallback & { model: string }>;
+    turns: Array<{ conversationId: string; botId: string; forMs: number; idleMs?: number; lastStep?: ActivityStep }>;
+  } {
     return {
       enabled: this.o.enabled,
       available: this.available,
       runtimeDir: this.o.runtimeDir,
       hosts: Object.fromEntries([...this.hosts].map(([id, h]) => [id, h.diagnostics()])),
+      apiFallbacks: this.apiFallbacks.list(),
       turns: [...this.turnsInProgress].map(([conversationId, t]) => ({
         conversationId,
         botId: t.botId,

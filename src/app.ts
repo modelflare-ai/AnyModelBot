@@ -117,6 +117,7 @@ export class App {
   private accountTimer: NodeJS.Timeout | undefined;
   private picksTimer: NodeJS.Timeout | undefined;
   private modelInfoCache: { at: number; data: Record<string, ModelInfo> } | undefined;
+  private modelInfoLoading: Promise<Record<string, ModelInfo>> | undefined;
 
   constructor(readonly config: AppConfig, readonly opts: AppOptions = {}) {
     // 日志文件：<dataDir>/logs/app.log（打包后的桌面版看不到 stdout，故障排查全靠它）
@@ -160,10 +161,12 @@ export class App {
       idleTimeoutMs: config.agent.idleTimeoutMs,
       approvalTtlMs: config.agent.approvalTtlMs,
       // 上下文长度来自 Modelflare 的模型资料（和模型选择器里显示的一致）；内置兜底表跟不上新模型
-      contextWindow: async (model) => {
-        const info = await this.modelInfo();
-        const bare = bareModel(model);
-        return (info[bare] ?? info[bare.split("/").pop() ?? bare])?.context;
+      contextWindow: async (model) => (await this.infoOf(model))?.context,
+      // 代理的对话接口按 Modelflare 目录选（Responses / Anthropic Messages / Chat）；外部端点只当它会 Chat
+      apiInfo: async (model) => {
+        if (!this.magpie) return undefined;
+        const info = await this.infoOf(model);
+        return info && { endpoints: info.endpoints, reasoning: info.reasoning };
       },
       // 后台小任务（管家判定/交接/记忆整理）直接走 magpie，不经代理子进程
       complete: (botId, model, system, user) =>
@@ -334,15 +337,26 @@ export class App {
   /** 模型选择器里的能力与参考价（缓存一小时） */
   async modelInfo(force = false): Promise<Record<string, ModelInfo>> {
     if (!force && this.modelInfoCache && Date.now() - this.modelInfoCache.at < 3600_000) return this.modelInfoCache.data;
-    const key = this.magpie?.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER) ?? "";
-    const data = await loadModelInfo({
-      baseUrl: modelflareBaseUrl(this.config.modelflare.line),
-      apiKey: key,
-      headers: this.requestHeaders(),
-      pricingUrl: `${modelflareIssuer()}/api/pricing`,
-    });
-    this.modelInfoCache = { at: Date.now(), data };
-    return data;
+    // 同时来的几次（代理启动时上下文长度和接口一起问）共用一次加载
+    this.modelInfoLoading ??= (async () => {
+      const key = this.magpie?.providerKey(this.magpie.modelflareProviderId ?? MODELFLARE_PROVIDER) ?? "";
+      const data = await loadModelInfo({
+        baseUrl: modelflareBaseUrl(this.config.modelflare.line),
+        apiKey: key,
+        headers: this.requestHeaders(),
+        pricingUrl: `${modelflareIssuer()}/api/pricing`,
+      });
+      this.modelInfoCache = { at: Date.now(), data };
+      return data;
+    })().finally(() => (this.modelInfoLoading = undefined));
+    return this.modelInfoLoading;
+  }
+
+  /** 某个模型的资料：去掉内置网关的 provider 前缀，再试最后一段（openai/x → x） */
+  private async infoOf(model: string): Promise<ModelInfo | undefined> {
+    const info = await this.modelInfo();
+    const bare = bareModel(model);
+    return info[bare] ?? info[bare.split("/").pop() ?? bare];
   }
 
   notice(level: "info" | "warn", text: string): void {

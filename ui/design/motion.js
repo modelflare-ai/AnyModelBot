@@ -1,10 +1,14 @@
-// 动效的 JS 一侧：读取 CSS 时长 token、尊重"减少动态效果"、让退场动画播完再卸载。
+// 动效的 JS 一侧：读取 CSS 时长 token、尊重"减少 / 关闭动画"、让退场动画播完再卸载。
 // 时长只在 tokens/motion.css 里定义一次，JS 用 ms("--dur-base") 读，不要再写死毫秒数。
 import { useEffect, useState } from "preact/hooks";
 
 const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-export const reducedMotion = () => mq.matches;
+/** 减少或关闭了动画：<html data-motion>（lib/prefs.js 解析设置 › 外观 › 动画）不是 full；没有这个属性时看系统 */
+export const reducedMotion = () => {
+  const m = document.documentElement.dataset.motion;
+  return m ? m !== "full" : mq.matches;
+};
 
 /** "--dur-base" → 180；token 不存在或不是时长时返回 fallback */
 export function ms(token, fallback = 0) {

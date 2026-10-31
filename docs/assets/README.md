@@ -17,7 +17,8 @@
 | 4 | `brand/wordmark-dark.svg` | SVG（文字转曲线） | viewBox 520×96 | — | — | 12 KB | 脚本 |
 | 5 | `brand/social-preview.png` | PNG | 1280×640 | — | — | 400 KB | 脚本 |
 | 6 | `hero/hero-demo.gif` | GIF | 960×656 | 20 s | 12 | 5 MB | 录制脚本 G1（`_src/record`） |
-| 7 | `modelflare/modelflare-logo.png` | PNG | 512×512（显示 120×120） | — | — | 40 KB | 原样取自 `https://modelflare.dev/logo.png` |
+| 7 | `modelflare/modelflare-logo.png` | PNG | 512×512 | — | — | 40 KB | 原样取自 `https://modelflare.dev/logo.png`；README 现在用下面的横幅，这张留作品牌素材 |
+| 7b | `modelflare/modelflare-banner-{zh,en}.webp` | 静态 WebP（质量 88） | 2080×540（显示为整行宽） | — | — | 150 KB | Modelflare 官方宣传横幅（4160×1080 PNG 缩到一半后转 WebP）；横幅里的活动数字变了就换新图，并同步改两份 README 的 alt 和正文 |
 | 8 | `download/install-windows.gif` | GIF | 960×540 | 12 s | 10 | 2.5 MB | 录制脚本 G2（`_src/record`） |
 | 9–18 | `screenshots/{chat,agent,models,memory,modelflare}-{light,dark}.webp` | 静态 WebP（质量 82） | 1600×1093 | — | — | 300 KB | 录制脚本截图（`_src/record`） |
 | 19–20 | `screenshots/bots-{light,dark}.webp` | 静态 WebP（质量 82） | 1600×480 | — | — | 300 KB | 脚本 |

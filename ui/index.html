@@ -8,15 +8,43 @@
   <link rel="icon" href="/amb/static/assets/favicon-64.png" sizes="64x64" type="image/png" />
   <link rel="apple-touch-icon" href="/amb/static/assets/apple-touch-icon.png" />
   <script>
-    // 首帧前解析主题（data-theme 总是 light/dark，CSS 只定义一份深色变量）与平台
+    // 首帧前解析主题（data-theme 总是 light/dark，CSS 只定义一份深色变量）、界面语言、外观偏好与平台。
+    // 外观偏好的解析规则和 lib/prefs.js 的 apply() 一致，语言的和 lib/i18n.js 一致，改一处要两处一起改。
     (function () {
       var root = document.documentElement;
+      var mq = function (q) { return window.matchMedia(q).matches; };
       var m = "system";
       try { m = localStorage.getItem("amb-theme") || "system"; } catch (_) {}
-      var dark = m === "dark" || (m !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      var dark = m === "dark" || (m !== "light" && mq("(prefers-color-scheme: dark)"));
       root.setAttribute("data-theme", dark ? "dark" : "light");
+      // 语言：本机缓存的偏好（服务端配置为准，启动后 App 再校正），没有时按浏览器首选语言；不支持的语言用英文
+      var norm = function (s) { s = String(s || "").toLowerCase(); return s.indexOf("zh") === 0 ? "zh-CN" : s.indexOf("en") === 0 ? "en" : ""; };
+      var lang = "";
+      try { lang = norm(localStorage.getItem("amb-lang")); } catch (_) {}
+      if (!lang) { var ls = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]; for (var i = 0; i < ls.length && !lang; i++) lang = norm(ls[i]); }
+      root.setAttribute("lang", lang || "en");
+      var p = {};
+      try { p = JSON.parse(localStorage.getItem("amb-prefs") || "{}") || {}; } catch (_) {}
+      var stack = function (s) {
+        return String(s || "").replace(/["'\\;{}<>]/g, "").split(",").map(function (x) { return x.trim(); })
+          .filter(Boolean).map(function (x) { return '"' + x + '"'; }).join(", ");
+      };
+      var font = p.font === "custom" ? stack(p.fontName) : "";
+      var code = stack(p.codeFont);
+      root.setAttribute("data-text", /^(sm|lg|xl)$/.test(p.text) ? p.text : "md");
+      root.setAttribute("data-font", font ? "custom" : p.font === "serif" ? "serif" : "system");
+      if (font) root.style.setProperty("--font", font + ", var(--font-system)");
+      if (code) root.style.setProperty("--code", code + ", var(--code-system)");
+      root.setAttribute("data-width", /^(wide|full)$/.test(p.width) ? p.width : "normal");
+      root.setAttribute("data-code-wrap", p.codeWrap === true ? "on" : "off");
+      root.setAttribute("data-motion", p.motion === "off" ? "off" : p.motion === "on" ? "full" : mq("(prefers-reduced-motion: reduce)") ? "reduce" : "full");
+      root.setAttribute("data-glass", p.glass === "on" || p.glass === "off" ? p.glass : mq("(prefers-reduced-transparency: reduce)") ? "off" : "on");
+      var px = function (v) { return typeof v === "number" && v >= 120 && v <= 1200 ? Math.round(v) + "px" : ""; };
+      if (px(p.sideW)) root.style.setProperty("--side-w-user", px(p.sideW));
+      if (px(p.panelW)) root.style.setProperty("--panel-w-user", px(p.panelW));
       if (/Windows/.test(navigator.userAgent)) root.classList.add("win");
       if (/Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform)) root.classList.add("mac-app");
+      if (/Electron/.test(navigator.userAgent) && /Windows/.test(navigator.userAgent)) root.classList.add("win-app");
     })();
   </script>
   <!-- 设计库（token / 基础 / 组件 / 工具类，见 ui/design/README.md）+ 页面样式（@layer app） -->
@@ -24,6 +52,7 @@
   <link rel="stylesheet" href="/amb/static/css/shell.css" />
   <link rel="stylesheet" href="/amb/static/css/chat.css" />
   <link rel="stylesheet" href="/amb/static/css/settings.css" />
+  <link rel="stylesheet" href="/amb/static/css/guide.css" />
   <script type="importmap">
     { "imports": { "preact": "/amb/vendor/preact.mjs", "preact/hooks": "/amb/vendor/hooks.mjs", "htm": "/amb/vendor/htm.mjs" } }
   </script>

@@ -1,7 +1,7 @@
 // 设计库样例页：token 表直接解析 tokens/*.css（单一来源，不会和代码脱节），组件用真实实现渲染。
 import { render, createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { html, Icon, Button, IconButton, Seg, Switch, MenuButton, Menu, Badge, Notice, Skeleton, Spinner, CopyButton, Toasts, DialogHost } from "../components/ui.js";
+import { html, Icon, ICONS, Button, IconButton, Seg, Switch, MenuButton, Menu, Badge, Notice, Skeleton, Spinner, CopyButton, Toasts, DialogHost, Splitter } from "../components/ui.js";
 import { BotAvatar, AvatarPicker, AppMark, BOT_CHARS, CHAR_KEYS, MAIN_CHAR } from "../components/avatar.js";
 import { TEMPLATES } from "../screens/new-bot.js";
 import { NeedItem, NeedsRow } from "../screens/needs-you.js";
@@ -9,6 +9,7 @@ import { RuleRow, RuleDetail } from "../components/rules.js";
 import { Markdown } from "../components/markdown.js";
 import { useStore, toast, saved, failed, confirmSheet } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
+import "../lib/prefs.js"; // 外观偏好（字体大小、动画、毛玻璃…）在样例页里也生效
 
 const Compare = createContext(false);
 
@@ -276,16 +277,18 @@ function SegState({ st, disabled }) {
   }, []);
   return html`<div ref=${ref}><${Seg} label="示例" value="a" disabled=${disabled} onChange=${noop} options=${[["a", "自动"], ["b", "国际"]]} /></div>`;
 }
-const thread = (c, { working } = {}) => html`<button type="button" class=${`thread ${c}`} style="width: 236px">
+const thread = (c, { working } = {}) => html`<div class=${`thread-item ${c}`} style="width: 236px"><button type="button" class=${`thread ${c}`}>
   <span class="avatar-wrap"><${BotAvatar} id="a1f3c9d2" name="群聊日报" size=${38} working=${working} />${working && html`<span class="working-dot"></span>`}</span>
   <span class="body"><span class="line"><span class="title">群聊日报</span><span class="when num">09:24</span></span>
     <span class="line"><span class="snip">${working ? "正在工作…" : "今日结论：周五前上线"}</span></span></span>
-</button>`;
+</button><button type="button" class="icon-btn thread-more" tabindex="-1" aria-label="更多操作"><${Icon} name="more" size="sm" /></button></div>`;
+/** 分隔条的静态样例：左右两块面板，中间的空隙就是分隔条 */
+const splitStage = (c) => html`<div class="gal-split mini"><div class="gal-split-a"></div><div class=${`splitter ${c}`} aria-hidden="true"></div><div class="gal-split-b"></div></div>`;
 const menuItem = (c, label = "机器人设置") => html`<div class="pop gal-pop-static"><ul>
-  <li class=${c}><span class="v">${label}</span><span class="check"><${Icon} name="check" size=${14} /></span></li></ul></div>`;
+  <li class=${c}><span class="v">${label}</span><span class="check"><${Icon} name="check" size="sm" /></span></li></ul></div>`;
 const composer = (c) => html`<div class=${`composer ${c}`} style="width: 250px"><textarea rows="1" placeholder="发消息，/ 查看命令" tabindex="-1"></textarea>
-  <div class="composer-bar"><button type="button" class="plus" tabindex="-1" aria-label="更多"><${Icon} name="plus" size=${15} stroke=${1.7} /></button><span class="grow"></span>
-    <button type="button" class="send" tabindex="-1" aria-label="发送"><${Icon} name="up" size=${15} stroke=${2} /></button></div></div>`;
+  <div class="composer-bar"><button type="button" class="plus" tabindex="-1" aria-label="更多"><${Icon} name="plus" size="md" /></button><span class="grow"></span>
+    <button type="button" class="send" tabindex="-1" aria-label="发送"><${Icon} name="up" size="md" strong /></button></div></div>`;
 
 const STATE_ROWS = [
   { name: "主按钮", note: ".btn.primary · 加载保持本色只是不可点；禁用退成中性灰", cells: [...basic(btn("primary", "保存")), ["加载", () => html`<${Button} variant="primary" loading>保存<//>`], ["禁用", () => html`<button type="button" class="btn primary" disabled>保存</button>`]] },
@@ -312,27 +315,33 @@ const STATE_ROWS = [
     ["禁用", () => html`<button type="button" class="pick" disabled><span class="v">自动</span><${Icon} name="chevDown" /></button>`]] },
   { name: "菜单项", note: ".pop li · 悬停和键盘指着是同一个 .sel，同一时刻只有一项", cells: [["默认", () => menuItem("")], ["指着", () => menuItem("sel")], ["按下", () => menuItem("sel is-active")],
     ["当前", () => menuItem("cur")], ["危险 · 指着", () => menuItem("danger sel", "删除")], ["禁用", () => menuItem("disabled", "不可用")]] },
-  { name: "侧栏行", note: ".thread · 悬停是更亮的一层玻璃，选中是浮起的玻璃片", ctx: "side", cells: [...basic((c) => thread(c)), ["选中", () => thread("sel")], ["工作中", () => thread("", { working: true })]] },
+  { name: "侧栏行", note: ".thread-item > .thread + .thread-more · 悬停叠一层淡灰并亮出「更多」（时间让位），选中是浮起的白色玻璃片", ctx: "side", cells: [...basic((c) => thread(c)), ["选中", () => thread("sel")], ["工作中", () => thread("", { working: true })]] },
+  { name: "分隔条", note: ".splitter · 平时看不见；指针停住 --dur-intent 后亮起细线，拖动和键盘焦点是 accent", ctx: "side", cells: [
+    ["默认", () => splitStage("")], ["悬停", () => splitStage("is-hover")], ["拖动", () => splitStage("dragging")], ["键盘焦点", () => splitStage("is-focus")]] },
   { name: "设置导航", note: ".nav-item", ctx: "side", cells: [...basic((c) => html`<button type="button" class=${`nav-item ${c}`} style="width: 200px"><${Icon} name="sliders" />常规</button>`),
     ["选中", () => html`<button type="button" class="nav-item sel" style="width: 200px"><${Icon} name="sliders" />常规</button>`]] },
   { name: "侧栏搜索 · 账户", note: ".side-search · .account", ctx: "side", cells: [
-    ["默认", () => html`<label class="side-search" style="width: 200px; margin: 0"><${Icon} name="search" /><input placeholder="搜索" tabindex="-1" /></label>`],
-    ["悬停", () => html`<label class="side-search is-hover" style="width: 200px; margin: 0"><${Icon} name="search" /><input placeholder="搜索" tabindex="-1" /></label>`],
-    ["聚焦", () => html`<label class="side-search is-focus" style="width: 200px; margin: 0"><${Icon} name="search" /><input value="日报" tabindex="-1" /></label>`],
+    ["默认", () => html`<label class="side-search" style="width: 200px; margin: 0"><${Icon} name="search" size="sm" /><input placeholder="搜索" tabindex="-1" /></label>`],
+    ["悬停", () => html`<label class="side-search is-hover" style="width: 200px; margin: 0"><${Icon} name="search" size="sm" /><input placeholder="搜索" tabindex="-1" /></label>`],
+    ["聚焦", () => html`<label class="side-search is-focus" style="width: 200px; margin: 0"><${Icon} name="search" size="sm" /><input value="日报" tabindex="-1" /></label>`],
     ["账户 · 悬停", () => html`<button type="button" class="account is-hover" style="width: 200px"><span class="me">R</span><span class="who">root</span><${Icon} name="gear" /></button>`],
     ["账户 · 打开", () => html`<button type="button" class="account on" style="width: 200px"><span class="me">R</span><span class="who">root</span><${Icon} name="gear" /></button>`]] },
+  { name: "余额不足提示", note: ".low-balance · 一层淡红 + 红点，字用 --fg；悬停、按下淡红加深", ctx: "side", cells: basic((c) => html`<a class=${`low-balance ${c}`} href="#states" style="width: 220px; margin: 0">余额只剩 $0.42，去充值 ↗</a>`) },
+  { name: "选角色", note: ".avatar-opt · 选中比悬停深一级、名字变实，不描边", cells: [
+    ...basic((c) => html`<button type="button" class=${`avatar-opt ${c}`}><${BotAvatar} char="green" size=${36} /><span class="avatar-name">${BOT_CHARS.green.name}</span></button>`),
+    ["选中", () => html`<button type="button" class="avatar-opt on" aria-checked="true" role="radio"><${BotAvatar} char="blue" size=${36} /><span class="avatar-name">${BOT_CHARS.blue.name}</span></button>`]] },
   { name: "发送按钮", note: ".send · 空的时候是中性灰钮，能发了才亮起品牌色；悬停时箭头上提", cells: [
-    ["空", () => html`<button type="button" class="send" disabled aria-label="发送"><${Icon} name="up" size=${15} stroke=${2} /></button>`],
-    ...basic((c) => html`<button type="button" class=${`send ${c}`} aria-label="发送"><${Icon} name="up" size=${15} stroke=${2} /></button>`),
-    ["停止", () => html`<button type="button" class="send stop" aria-label="停止"><${Icon} name="stop" size=${12} /></button>`]] },
+    ["空", () => html`<button type="button" class="send" disabled aria-label="发送"><${Icon} name="up" size="md" strong /></button>`],
+    ...basic((c) => html`<button type="button" class=${`send ${c}`} aria-label="发送"><${Icon} name="up" size="md" strong /></button>`),
+    ["停止", () => html`<button type="button" class="send stop" aria-label="停止"><${Icon} name="stop" size="md" /></button>`]] },
   { name: "对话输入框", note: ".composer · 输入中描边更实、投影更大；拖入文件时 accent 描边 + 一层黄绿", cells: [["默认", () => composer("")], ["悬停", () => composer("is-hover")], ["输入中", () => composer("is-focus")], ["拖入文件", () => composer("drag")]] },
   { name: "输入框工具", note: ".composer .model-chip / .plus · 打开时箭头翻转、加号转成叉", cells: [
     ...basic((c) => html`<div class="composer gal-bare"><button type="button" class=${`model-chip ${c}`}><span class="v">claude-sonnet-5-5</span><${Icon} name="chevDown" /></button></div>`),
     ["打开", () => html`<div class="composer gal-bare"><button type="button" class="model-chip" aria-expanded="true"><span class="v">claude-sonnet-5-5</span><${Icon} name="chevDown" /></button></div>`],
-    ["加号 · 打开", () => html`<div class="composer gal-bare"><button type="button" class="plus" aria-expanded="true" aria-label="更多"><${Icon} name="plus" size=${15} stroke=${1.7} /></button></div>`]] },
+    ["加号 · 打开", () => html`<div class="composer gal-bare"><button type="button" class="plus" aria-expanded="true" aria-label="更多"><${Icon} name="plus" size="md" /></button></div>`]] },
   { name: "模板卡", note: ".tpl · 一块 --well；悬停底色深一级，选中是一层黄绿 + 黄绿图标，不描边", cells: [
-    ...basic((c) => html`<button type="button" class=${`tpl ${c}`} style="width: 190px"><span class="tpl-ic"><${Icon} name="chat" size=${17} /></span><span class="tpl-name">群聊日报</span><span class="tpl-desc">每天整理群消息</span></button>`),
-    ["选中", () => html`<button type="button" class="tpl on" style="width: 190px"><span class="tpl-ic"><${Icon} name="chat" size=${17} /></span><span class="tpl-name">群聊日报</span><span class="tpl-desc">每天整理群消息</span></button>`]] },
+    ...basic((c) => html`<button type="button" class=${`tpl ${c}`} style="width: 190px"><span class="tpl-ic"><${Icon} name="chat" size="lg" /></span><span class="tpl-name">群聊日报</span><span class="tpl-desc">每天整理群消息</span></button>`),
+    ["选中", () => html`<button type="button" class="tpl on" style="width: 190px"><span class="tpl-ic"><${Icon} name="chat" size="lg" /></span><span class="tpl-name">群聊日报</span><span class="tpl-desc">每天整理群消息</span></button>`]] },
   { name: "建议胶囊", note: ".chip", cells: basic((c) => html`<button type="button" class=${`chip ${c}`}>你能帮我做什么？</button>`) },
   { name: "问题选项", note: ".card .opt", cells: [
     ...basic((c) => html`<div class="card gal-bare-card"><button type="button" class=${`opt ${c}`}><span class="letter">A</span><span>国内线路<span class="desc">延迟低</span></span></button></div>`),
@@ -372,7 +381,7 @@ function Gallery() {
   const nav = [
     ["原则", [["principles", "分层与约定"]]],
     ["Token", [["color", "颜色"], ["material", "材质"], ["type", "文字"], ["space", "间距与尺寸"], ["elevation", "投影与层级"], ["motion", "动效"]]],
-    ["组件", [["states", "状态矩阵"], ["buttons", "按钮"], ["inputs", "输入"], ["menus", "菜单与分段"], ["status", "状态与反馈"], ["lists", "列表行"], ["overlays", "对话框与提示"], ["avatars", "头像"]]],
+    ["组件", [["states", "状态矩阵"], ["icons", "图标"], ["buttons", "按钮"], ["inputs", "输入"], ["menus", "菜单与分段"], ["status", "状态与反馈"], ["lists", "列表行"], ["splitter", "分隔条"], ["overlays", "对话框与提示"], ["avatars", "头像"]]],
     ["页面模式", [["patterns", "对话"], ["needs", "需要你"], ["rules", "规则"], ["custom", "定制"]]],
   ];
   return html`<${Compare.Provider} value=${compare}><div class="gal">
@@ -463,16 +472,28 @@ function Gallery() {
           <${Demo} code=${`<div class="anim-rise-in">…</div>        /* 可用 --anim-dur / --anim-ease / --anim-delay 微调 */
 .toast { --rise: 6px; animation: rise-in var(--dur-base) var(--ease-out); }   /* 组件里直接用关键帧 + token */
 const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场动画播完再卸载 */`}>
-            ${() => html`${[["anim-fade-in", "fade-in"], ["anim-rise-in", "rise-in"], ["anim-slide-in", "slide-in"], ["anim-pop-in", "pop-in"], ["anim-sink-out", "sink-out"], ["anim-pop-out", "pop-out"], ["anim-bump", "bump"], ["anim-flash", "flash"]].map(([c, l]) => html`<${Replay} cls=${c} label=${l} />`)}
+            ${() => html`${[["anim-fade-in", "fade-in"], ["anim-rise-in", "rise-in"], ["anim-slide-in", "slide-in"], ["anim-pop-in", "pop-in"], ["anim-scale-in", "scale-in"], ["anim-sink-out", "sink-out"], ["anim-pop-out", "pop-out"], ["anim-bump", "bump"], ["anim-flash", "flash"]].map(([c, l]) => html`<${Replay} cls=${c} label=${l} />`)}
               <div class="gal-anim"><${Spinner} /><span class="t-meta">spin</span></div>
               <div class="gal-anim"><span class="typing"><i></i><i></i><i></i></span><span class="t-meta">breathe（stagger）</span></div>
-              <div class="gal-anim"><span><span class="caret"></span></span><span class="t-meta">blink</span></div>`}
+              <div class="gal-anim"><span><span class="caret"></span></span><span class="t-meta">blink</span></div>
+              <div class="gal-anim"><span class="shimmer">思考中 12 秒</span><span class="t-meta">sheen（文字微光）</span></div>`}
           <//>
         </div>
       <//>
 
       <${Section} id="states" title="状态矩阵" lead="每个可交互组件的全部状态，浅色一行、深色一行，画在它真实所在的表面上（主区或侧栏玻璃）。悬停、按下、键盘焦点是把样式表里的伪类规则复制成 .is-hover / .is-active / .is-focus 静态画出来的，和真实交互用的是同一份样式；把指针移上去也能直接试。">
         ${STATE_ROWS.map((r) => html`<${StateRow} key=${r.name} ...${r} />`)}
+      <//>
+
+      <${Section} id="icons" title="图标" lead="16 格画布的线性图标，五档尺寸 xs 12 · sm 14 · md 16 · lg 20 · xl 24；线宽按显示像素算（--ic-stroke 1.25px），任何尺寸都一样细，实心面上的图标用 strong（1.6px）。默认 sm，顶栏、侧栏和对话输入框用 md。">
+        <${Demo} title="全部图标" note="sm · 14px" code=${`<${"${Icon}"} name="gear" size="sm" />   /* 尺寸只用 xs / sm / md / lg / xl */
+.pick .ic { --ic-size: var(--ic-xs); }   /* 上下文改尺寸只改 --ic-size，线宽自动跟着换算 */`}>
+          ${() => ICONS.map((n) => html`<span class="gal-icon" key=${n} title=${n}><${Icon} name=${n} size="sm" /><span class="t-meta">${n}</span></span>`)}
+        <//>
+        <${Demo} title="五档尺寸" note="同一个图标放大缩小，线宽不变">
+          ${() => html`${["xs", "sm", "md", "lg", "xl"].map((s) => html`<span class="gal-icon" key=${s}><span class="cluster" style="--gap: var(--space-2)"><${Icon} name="gear" size=${s} /><${Icon} name="chat" size=${s} /><${Icon} name="search" size=${s} /></span><span class="t-meta">${s}</span></span>`)}
+            <span class="gal-icon"><button type="button" class="send" tabindex="-1" aria-label="发送"><${Icon} name="up" size="md" strong /></button><span class="t-meta">md strong</span></span>`}
+        <//>
       <//>
 
       <${Section} id="buttons" title="按钮" lead="变体 primary / 默认 / ghost / danger，尺寸 sm / 默认 / lg。图标按钮必须有 label。">
@@ -483,7 +504,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <${Button} icon="plus">带图标<//><${Button} variant="primary" loading>保存中<//><${Button} disabled>禁用<//>`}
         <//>
         <${Demo} title=".icon-btn · .text · CopyButton">
-          ${() => html`<${IconButton} icon="gear" label="设置" /><${IconButton} icon="refresh" label="刷新" on /><${IconButton} icon="close" label="关闭" size="xs" iconSize=${12} />
+          ${() => html`<${IconButton} icon="gear" label="设置" /><${IconButton} icon="refresh" label="刷新" on /><${IconButton} icon="close" label="关闭" size="xs" iconSize="xs" />
             <${CopyButton} text="复制的内容" /><button type="button" class="text">文字按钮</button><button type="button" class="text accent">强调</button><button type="button" class="text danger">危险</button>`}
         <//>
       <//>
@@ -531,6 +552,17 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <//>
       <//>
 
+      <${Section} id="splitter" title="分隔条" lead="两块面板之间的空隙可以拖：侧栏和主区、主区和信息面板。平时看不见，只有指针变成 ↔；停住一会儿空隙中间长出一道细线；拖到离默认宽度 6px 以内会吸附回去，到头了指针换成单向箭头；双击恢复默认。键盘：聚焦后 ← → 调整（Shift 大步）、Home / End 最窄 / 最宽、Enter 恢复默认。宽度存在本机偏好里。">
+        <${Demo} flush title="Splitter" note="拖动中间的空隙试试（这里的宽度不保存）" code=${`<${"${Splitter}"} class="split-side" size="--side-w" label="调整侧栏宽度" value=\${sideW}
+  room=\${() => innerWidth - 另一侧那一列 - mainMin} onCommit=\${(px) => setPrefs({ sideW: px })} />   /* px = 0：回到默认 */
+.app { --side-col: clamp(var(--side-w-min), var(--side-w-user, var(--side-w)), min(var(--side-w-max), var(--side-w-cap))); }
+.app > .split-side { --split-x: calc(var(--side-col) - var(--pane-gap) / 2); }   /* 分隔条在空隙正中 */`}>
+          ${() => html`<div class="gal-split"><div class="gal-split-a"><span class="t-meta">侧栏</span></div>
+            <${Splitter} size="--gal-split-w" label="调整示例侧栏宽度" />
+            <div class="gal-split-b"><span class="t-meta">主区 · 双击空隙恢复默认宽度</span></div></div>`}
+        <//>
+      <//>
+
       <${Section} id="overlays" title="对话框与提示" lead="确认框默认聚焦「取消」；危险操作用 danger。对话框退场有动画（usePresence）。">
         <${Demo} title="confirmSheet · toast">
           ${() => html`<${Button} onClick=${() => confirmSheet({ title: "保存这些更改？", body: "改动会立即生效。" }).then((ok) => ok && saved())}>普通确认<//>
@@ -554,15 +586,16 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
               <div class="msg-actions"><${CopyButton} text=${MD} /><span class="when num">09:26</span></div></div>
             <div class="msg-row user"><div class="msg">再整理成日报</div></div>
             <div class="msg-row assistant"><div class="work-line live"><span class="shimmer">思考中 12 秒</span></div></div>
+            <div class="msg-row assistant live"><div class="work-line live"><span class="shimmer">正在回复 4 秒</span></div><div class="msg"><${Markdown} text="好的，先按群把今天的消息分组，再挑出要你处理的" /></div></div>
             <div class="msg-row assistant"><div class="card"><div class="q-block"><div class="q">要用哪条线路？</div>
               <div class="opts"><button type="button" class="opt picked"><span class="letter">A</span><span>国内线路<span class="desc">延迟低</span></span></button>
               <button type="button" class="opt"><span class="letter">B</span><span>海外线路<span class="desc">模型更全</span></span></button></div></div></div></div>
-            <div class="msg-row assistant"><div class="file-card"><${Icon} name="file" size=${32} stroke=${1.2} /><div class="grow"><div class="fname">report.pdf</div><div class="fsub">已交付到机器人工作区</div></div></div></div>
+            <div class="msg-row assistant"><div class="file-card"><${Icon} name="file" size="xl" /><div class="grow"><div class="fname">report.pdf</div><div class="fsub">已交付到机器人工作区</div></div></div></div>
           </div>
           <div class="composer"><textarea rows="1" placeholder="给「我的助手」发消息，/ 查看命令"></textarea>
-            <div class="composer-bar"><button type="button" class="plus" aria-label="更多"><${Icon} name="plus" size=${15} stroke=${1.7} /></button><span class="grow"></span>
+            <div class="composer-bar"><button type="button" class="plus" aria-label="更多"><${Icon} name="plus" size="md" /></button><span class="grow"></span>
               <button type="button" class="model-chip"><span class="v">claude-sonnet-5-5</span><${Icon} name="chevDown" /></button>
-              <button type="button" class="send" aria-label="发送"><${Icon} name="up" size=${15} stroke=${2} /></button></div></div>
+              <button type="button" class="send" aria-label="发送"><${Icon} name="up" size="md" strong /></button></div></div>
           <div class="chips"><button type="button" class="chip">总结今天的消息</button><button type="button" class="chip">写一封邮件</button></div>`}
         <//>
       <//>

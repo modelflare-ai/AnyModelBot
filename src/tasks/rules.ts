@@ -3,8 +3,10 @@
  *
  * 状态（第一条符合的为准）：暂停了（连续失败 3 次）→ 已暂停；关了 → 已关闭；一次性的跑过了 → 已结束；提醒 → 提醒；
  * 观察中（含改了原话后先观察的那一次）→ 观察中；其余 → 执行中。状态是"点 + 文字"：红 = 暂停，绿 = 执行中、提醒，灰 = 观察、关闭、结束。
+ * 给人看的文字跟着语言（src/i18n 的 rules.*）；跳过、失败的原因存成代码（RUN_ERROR），显示时再翻。
  */
 import type { OutboxRow, RuleMode, RuleRow, RunRow } from "../store/db.js";
+import { lang as currentLang, tl, type Lang, type MessageKey } from "../i18n/index.js";
 import { describe } from "./schedule.js";
 
 /** 连续失败几次自动暂停 */
@@ -52,13 +54,14 @@ export interface RuleState {
   dot: "" | "ok" | "err";
 }
 
-export function ruleState(rule: RuleRow, live = false): RuleState {
-  if (rule.pausedReason) return { key: "paused", label: "已暂停", dot: "err" };
-  if (rule.mode === "off") return { key: "off", label: "已关闭", dot: "" };
-  if (!live && !rule.nextRunAt && rule.trigger.kind === "schedule") return { key: "done", label: "已结束", dot: "" };
-  if (rule.kind === "remind") return { key: "remind", label: "提醒", dot: "ok" };
-  if (runMode(rule) === "observe") return { key: "observe", label: "观察中", dot: "" };
-  return { key: "act", label: "执行中", dot: "ok" };
+export function ruleState(rule: RuleRow, live = false, l: Lang = currentLang()): RuleState {
+  const s = (key: RuleState["key"], label: MessageKey, dot: RuleState["dot"]): RuleState => ({ key, label: tl(l, label), dot });
+  if (rule.pausedReason) return s("paused", "rules.statePaused", "err");
+  if (rule.mode === "off") return s("off", "rules.stateOff", "");
+  if (!live && !rule.nextRunAt && rule.trigger.kind === "schedule") return s("done", "rules.stateDone", "");
+  if (rule.kind === "remind") return s("remind", "rules.stateRemind", "ok");
+  if (runMode(rule) === "observe") return s("observe", "rules.stateObserve", "");
+  return s("act", "rules.stateAct", "ok");
 }
 
 /** 规则在界面上的样子 */
@@ -94,18 +97,64 @@ export interface RuleView {
   live?: { runId: string; state: string; since: number };
 }
 
-export function whenOf(rule: Pick<RuleRow, "trigger">, withZone = false): string {
-  return rule.trigger.kind === "schedule" ? describe(rule.trigger.schedule, withZone) : `事件 ${rule.trigger.source}`;
+export function whenOf(rule: Pick<RuleRow, "trigger">, withZone = false, l: Lang = currentLang()): string {
+  return rule.trigger.kind === "schedule" ? describe(rule.trigger.schedule, withZone, l) : tl(l, "rules.event", { source: rule.trigger.source });
+}
+
+/** 跳过、失败的原因：存进 runs.error 的代码（显示时按语言翻，见 errorText） */
+export const RUN_ERROR = {
+  appOff: "app_off",
+  busy: "busy",
+  overlap: "overlap",
+  restart: "restart",
+  timeout: "timeout",
+  approvalTimeout: "approval_timeout",
+} as const;
+
+/** 原因 → 词条：规则自己的代码，和任务、规则共用的那套 run 写进去的说法（3a） */
+const WHY: Record<string, MessageKey> = {
+  app_off: "rules.whyAppOff",
+  busy: "rules.whyBusy",
+  overlap: "rules.whyOverlap",
+  restart: "rules.whyRestart",
+  timeout: "rules.whyTimeout",
+  approval_timeout: "rules.whyApprovalTimeout",
+  没有给出结果: "rules.whyNoReport",
+  模型一直出错: "rules.whyModelErrors",
+  代理没能启动: "rules.whyAgentFailed",
+  代理不可用: "rules.whyAgentUnavailable",
+};
+
+/** 存下来的原因给人看：认得的翻成当前语言，其余（模型自己说的）原样 */
+export function errorText(error: string, l: Lang = currentLang()): string {
+  const key = WHY[error];
+  return key ? tl(l, key) : error;
+}
+
+/** 观察时要批准、被自动拒绝的事：在 runs.would 里一行一个，带这个前缀（显示时翻成「需要批准：…」） */
+export const WOULD_APPROVAL = "approval: ";
+
+/** runs.would 给人看：需要批准的那几行按语言翻，模型写的原样 */
+export function wouldText(would: string, l: Lang = currentLang()): string {
+  return would
+    .split("\n")
+    .map((x) => (x.startsWith(WOULD_APPROVAL) ? tl(l, "rules.needsApproval", { what: x.slice(WOULD_APPROVAL.length) }) : x))
+    .join("\n");
+}
+
+/** DSH 的沙箱 → 给人看的权限 */
+export function permissionText(p: string, l: Lang = currentLang()): string {
+  return p === "read-only" ? tl(l, "rules.permReadOnly") : p === "workspace-write" ? tl(l, "rules.permWorkspace") : "";
 }
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** 出站队列里那一条的送达状态（合进摘要的看那一条）→ 已发送 / 待发送 / 未送达 */
-function sentWord(row: OutboxRow | undefined): string {
-  if (!row || row.status === "sent" || row.status === "merged") return "已发送";
-  if (row.status === "held" || row.status === "gone" || row.attempts >= 3) return "未送达";
-  return "待发送";
+function sentKey(row: OutboxRow | undefined): "rules.sent" | "rules.unsent" | "rules.pending" {
+  if (!row || row.status === "sent" || row.status === "merged") return "rules.sent";
+  if (row.status === "held" || row.status === "gone" || row.attempts >= 3) return "rules.unsent";
+  return "rules.pending";
 }
 
 /**
@@ -113,37 +162,41 @@ function sentWord(row: OutboxRow | undefined): string {
  * 观察：本会发送：“…” / 本会做：… / 本会保持安静；执行：已发送：“…”（待发送、未送达）/ 保持安静；提醒：已提醒：“…”；
  * 失败：…；跳过：电脑没开；中断。
  */
-export function runLine(run: RunRow, kind: RuleRow["kind"], carrier?: OutboxRow): string {
-  if (run.state === "queued") return "排队中";
-  if (run.state !== "ended") return "正在运行";
+export function runLine(run: RunRow, kind: RuleRow["kind"], carrier?: OutboxRow, l: Lang = currentLang()): string {
+  if (run.state === "queued") return tl(l, "rules.queued");
+  if (run.state !== "ended") return tl(l, "rules.running");
   const r = run.report;
   const msg = oneLine(r?.message ?? "");
   const note = oneLine(r?.summary.split("\n")[0] ?? "");
   switch (run.outcome) {
     case "skipped":
-      return `跳过：${run.error || "电脑没开"}`;
+      return tl(l, "rules.skipped", { why: errorText(run.error || RUN_ERROR.appOff, l) });
     case "failed":
-      return `失败：${clip(oneLine(r?.message || run.error || "没有给出结果"), 120)}`;
+      return tl(l, "rules.failed", { why: clip(oneLine(r?.message || errorText(run.error || "没有给出结果", l)), 120) });
     case "interrupted":
-      return "中断：应用重启了";
+      return tl(l, "rules.interrupted");
     case "stopped":
-      return "已停止";
+      return tl(l, "rules.stopped");
     case "budget":
-      return "预算用完";
+      return tl(l, "rules.budget");
     case "done":
       break;
     default:
       return run.outcome;
   }
-  if (kind === "remind") return `${sentWord(carrier) === "已发送" ? "已提醒" : sentWord(carrier)}：“${clip(msg, 120)}”`;
-  const would = oneLine(run.would || r?.would || "");
-  if (run.mode === "observe") {
-    if (msg) return `本会发送：“${clip(msg, 120)}”`;
-    if (would) return `本会做：${clip(would, 120)}`;
-    return note ? `本会保持安静：${clip(note, 60)}` : "本会保持安静";
+  const text = clip(msg, 120);
+  if (kind === "remind") {
+    const key = sentKey(carrier);
+    return tl(l, key === "rules.sent" ? "rules.reminded" : key, { text });
   }
-  if (msg) return `${sentWord(carrier)}：“${clip(msg, 120)}”`;
-  return note ? `保持安静：${clip(note, 60)}` : "保持安静";
+  const would = oneLine(wouldText(run.would || r?.would || "", l));
+  if (run.mode === "observe") {
+    if (msg) return tl(l, "rules.wouldSend", { text });
+    if (would) return tl(l, "rules.wouldDo", { text: clip(would, 120) });
+    return note ? tl(l, "rules.wouldQuietNote", { note: clip(note, 60) }) : tl(l, "rules.wouldQuiet");
+  }
+  if (msg) return tl(l, sentKey(carrier), { text });
+  return note ? tl(l, "rules.quietNote", { note: clip(note, 60) }) : tl(l, "rules.quiet");
 }
 
 /** 运行记录里的一项（界面展开看报告、步骤、版本和权限） */

@@ -18,6 +18,7 @@ import { isBotProviderModel } from "../modelflare.js";
 import type { ApprovalRow, Conversation } from "../store/db.js";
 import type { AccessControl } from "./access.js";
 import { takeTaskNotes } from "../tasks/service.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("runtime");
 
@@ -101,20 +102,14 @@ export interface RuntimeOptions {
   route?: (botId: string, model: string) => string;
   /** 谁能和机器人对话（主人 + 允许名单）；缺省不限制 */
   access?: AccessControl;
+  /**
+   * 模型请求失败后调用：核对 Key 是否已失效（例如在 Modelflare 控制台被删）并重新签发。
+   * 返回 true = 换了 Key，这条消息自动再试一次（只在还没有任何输出时）。缺省不重试。
+   */
+  recoverKey?: () => Promise<boolean>;
 }
 
-const HELP = [
-  "可用命令：",
-  "/model — 列出可用模型（带编号）",
-  "/model <编号或模型名> — 切换当前会话的模型",
-  "/reset — 清空当前会话的上下文（代理模式下同时开启新的代理会话；长期记忆保留）",
-  "/new — 开始新的一段对话：旧对话归档并生成交接便条，长期记忆保留",
-  "/status — 查看当前模型、代理状态和正在处理的消息走到了哪一步",
-  "/stop — 中止正在处理的消息（只停这个会话，机器人的其它会话照常进行）",
-  "/tasks — 列出这个会话的后台任务和规则",
-  "/stop <编号> — 停止 /tasks 里的一个后台任务或规则",
-  "/help — 显示本帮助",
-].join("\n");
+const help = () => t("runtime.help");
 
 /** 一条正在处理的消息（各渠道都有）：/stop、网页的停止按钮经 abort 中止它 */
 interface Inflight {
@@ -209,8 +204,15 @@ export class BotRuntime {
     const m = convModel || botModel || this.opts.defaultModel();
     if (m) return m;
     const list = await this.listModels();
-    if (!list.length) throw new Error("没有可用模型：请先连接 Modelflare（设置 → Modelflare）");
+    if (!list.length) throw new Error(t("runtime.noModels"));
     return list[0];
+  }
+
+  /** 失败后是否值得重试一次：Key 被换掉了才重试；核对本身出错按不重试处理 */
+  private async keyRecovered(): Promise<boolean> {
+    const recovered = await this.opts.recoverKey?.().catch(() => false);
+    if (recovered) log.info("model key was reissued, retrying the message once");
+    return !!recovered;
   }
 
   /**
@@ -281,9 +283,9 @@ export class BotRuntime {
    * 之后还有关"正在输入"（微信要一次网络请求）、让出会话，在那之间退出或崩溃，下次启动不该再说"没处理完，请重新发送"。
    * 并进这一轮的消息随它一起答完了；会话里还有排着、没答的消息时标记留着。
    */
-  private answered(convId: string, t: Inflight): void {
-    if (t.interrupted) return;
-    for (const x of this.inflight.get(convId) ?? []) if (x !== t && !x.steered) return;
+  private answered(convId: string, run: Inflight): void {
+    if (run.interrupted) return;
+    for (const x of this.inflight.get(convId) ?? []) if (x !== run && !x.steered) return;
     try {
       clearInflight(this.opts.store, convId);
     } catch {
@@ -291,9 +293,9 @@ export class BotRuntime {
     }
   }
 
-  private async handleMessage(ev: InboundEvent, out: ReplySession, bot: NonNullable<ReturnType<Store["getBot"]>>, convId: string, t: Inflight, prior: Promise<void> | undefined): Promise<void> {
+  private async handleMessage(ev: InboundEvent, out: ReplySession, bot: NonNullable<ReturnType<Store["getBot"]>>, convId: string, run: Inflight, prior: Promise<void> | undefined): Promise<void> {
     const { store } = this.opts;
-    const signal = t.abort.signal;
+    const signal = run.abort.signal;
     const agent = this.opts.agent;
     // 代理模式：收到的图片/文件先进工作区，消息里写路径
     if (agent?.available) storeInbound(agent.host(bot.id).workspace, ev);
@@ -307,10 +309,10 @@ export class BotRuntime {
     // 前面还有消息在处理：代理回合进行中就把这条并进去（模型下一步看到，回复一起给），否则排在它们后面。
     // 命令（/model、/reset…）不并入，等前面的处理完
     if (prior) {
-      if (agent?.available && !signal.aborted && !text.startsWith("/") && (await this.steer(agent, bot.id, convId, text, images, out, t))) {
+      if (agent?.available && !signal.aborted && !text.startsWith("/") && (await this.steer(agent, bot.id, convId, text, images, out, run))) {
         await prior;
         // 应用正在退出、它并进的那一轮没做完：重启标记留着（下次启动告诉用户）
-        if (this.closing) t.interrupted = true;
+        if (this.closing) run.interrupted = true;
         return;
       }
       await prior;
@@ -320,9 +322,9 @@ export class BotRuntime {
 
     // 排队时就被停止了：不再处理（命令也不执行），留一句"已中止"
     if (signal.aborted) {
-      const msg = stoppedText(Date.now() - t.since);
+      const msg = stoppedText(Date.now() - run.since);
       if (!text.startsWith("/")) {
-        if (!t.userStored) store.addMessage(conv.id, "user", text);
+        if (!run.userStored) store.addMessage(conv.id, "user", text);
         store.addMessage(conv.id, "assistant", msg);
       }
       await out.apply({ type: "text", text: msg });
@@ -349,19 +351,19 @@ export class BotRuntime {
     let note = "";
     if (agent?.available) {
       const place: ChatPlace = { channel: ev.channel, kind: ev.conversation.kind === "group" ? "group" : "dm" };
-      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, place, out, seen, t);
+      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, place, out, seen, run);
       if (handled === true) return;
       // 应用正在退出：代理进程没了不是该改用纯对话的时候，留给下次启动提醒
       if (this.closing) {
-        t.interrupted = true;
+        run.interrupted = true;
         return;
       }
       // 代理进程还在启动（第一次可能要几分钟）：这条消息先由模型直接回答，不让用户干等
-      if (handled === "starting") note = "（代理还在启动，这条消息先由模型直接回答；启动完成后会自动用回代理。）";
+      if (handled === "starting") note = t("runtime.startingNote");
     }
 
-    if (!t.userStored) store.addMessage(conv.id, "user", text);
-    t.userStored = true;
+    if (!run.userStored) store.addMessage(conv.id, "user", text);
+    run.userStored = true;
     const history = store.contextWindow(conv.id, this.opts.contextMessages, this.opts.contextChars);
     const messages: ChatMessage[] = [];
     if (bot.systemPrompt.trim()) messages.push({ role: "system", content: bot.systemPrompt });
@@ -374,28 +376,34 @@ export class BotRuntime {
     await out.apply({ type: "typing", on: true });
     await out.apply({ type: "stream.start" });
     let acc = "";
-    try {
-      const full = await this.opts.models.streamChat({ model: routed, messages, signal }, (delta) => {
+    const call = () =>
+      this.opts.models.streamChat({ model: routed, messages, signal }, (delta) => {
         acc += delta;
         void out.apply({ type: "stream.update", text: acc });
       });
-      const finalText = full || acc || "（模型没有返回内容）";
+    try {
+      const full = await call().catch(async (e: Error) => {
+        // 一个字都还没出来就失败：Key 若刚被换掉，就用新 Key 再发一次
+        if (acc || signal.aborted || !(await this.keyRecovered())) throw e;
+        return call();
+      });
+      const finalText = full || acc || t("runtime.emptyReply");
       store.addMessage(conv.id, "assistant", finalText);
       await out.apply({ type: "stream.finish", text: note ? `${note}\n\n${finalText}` : finalText });
     } catch (e) {
       const err = e as Error & { status?: number };
       if (signal.aborted) {
         // 停止：已生成的部分保留，末尾注明；还没出字就只说已中止
-        const msg = acc ? `${acc}\n\n（已中止）` : stoppedText(Date.now() - t.since);
+        const msg = acc ? `${acc}\n\n（已中止）` : stoppedText(Date.now() - run.since);
         store.addMessage(conv.id, "assistant", msg);
         await out.apply({ type: "stream.finish", text: msg });
         return;
       }
       log.warn("model call failed", { model, status: err.status, message: err.message });
-      const msg = acc ? `${acc}\n\n⚠️ 生成中断：${err.message}` : `⚠️ 模型调用失败（${model}）：${err.message}`;
+      const msg = acc ? `${acc}\n\n${t("runtime.interrupted", { error: err.message })}` : t("runtime.modelFailed", { model, error: err.message });
       await out.apply({ type: "stream.finish", text: msg });
     } finally {
-      this.answered(conv.id, t);
+      this.answered(conv.id, run);
       await out.apply({ type: "typing", on: false });
     }
   }
@@ -416,7 +424,7 @@ export class BotRuntime {
     const cmd = text.trim().toLowerCase();
     if (cmd === "/status" || cmd === "/help") {
       const bot = this.opts.store.getBot(ev.botId);
-      if (bot) return { handled: true, ack: cmd === "/help" ? HELP : this.statusText(bot.id, convId, this.opts.store.getConversation(convId)?.model ?? "", bot.defaultModel) };
+      if (bot) return { handled: true, ack: cmd === "/help" ? help() : this.statusText(bot.id, convId, this.opts.store.getConversation(convId)?.model ?? "", bot.defaultModel) };
     }
     const agent = this.opts.agent;
     const tasks = agent?.tasks;
@@ -452,15 +460,21 @@ export class BotRuntime {
 
   /** /status 的内容：只读本地状态，立即返回 */
   statusText(botId: string, convId: string, convModel: string, botModel: string): string {
-    const m = convModel || botModel || this.opts.defaultModel() || "（自动：第一个可用模型）";
+    const m = convModel || botModel || this.opts.defaultModel() || t("runtime.autoModel");
     const a = this.opts.agent;
     const perm = a?.available ? a.settings(botId).permission : undefined;
-    const mode = !a?.available ? "纯对话模式" : `代理模式（DeepSeek Harness，${perm === "full" ? "完全权限：不经沙箱" : perm === "readonly" ? "只读沙箱" : "工作区沙箱"}）`;
+    const sandbox = t(perm === "full" ? "runtime.sandboxFull" : perm === "readonly" ? "runtime.sandboxReadonly" : "runtime.sandboxWorkspace");
+    const mode = a?.available ? t("runtime.modeAgent", { sandbox }) : t("runtime.modeChat");
     // 完全权限：每次 /status 都提醒风险
-    const full = perm === "full" ? ["注意：完全权限下命令以你的用户身份直接运行，可以读写你电脑上的任何文件（包括 AnyModelBot 自己的数据）；只有递归删除仍会先问你。在机器人设置里可以改回「工作区可写」。"] : [];
-    const pend = a ? a.approvals.pending(convId).map((r) => `${r.kind === "approval" ? "待批准" : "待回答"} ${r.code}`) : [];
+    const full = perm === "full" ? [t("runtime.fullWarning")] : [];
+    const pend = a ? a.approvals.pending(convId).map((r) => t(r.kind === "approval" ? "runtime.pendingApproval" : "runtime.pendingQuestion", { code: r.code })) : [];
     const cui = a?.available ? a.computerUse(botId) : undefined;
-    const cu = cui ? [`电脑操作：${cui.backend === "codex" ? "Codex 桥" : "Cua Driver"}，${cui.active ? "已启用" : "未启用"}——${cui.reason}`, ...(cui.notice && cui.enabled ? [cui.notice] : [])] : [];
+    const cu = cui
+      ? [
+          t("runtime.cuLine", { backend: cui.backend === "codex" ? t("runtime.cuCodex") : "Cua Driver", state: t(cui.active ? "runtime.cuOn" : "runtime.cuOff"), reason: cui.reason }),
+          ...(cui.notice && cui.enabled ? [cui.notice] : []),
+        ]
+      : [];
     const host = a?.available ? [a.hostSummary(botId)] : [];
     // Windows：代理执行命令用的 PowerShell；没有 7 时建议安装
     const ps = a?.available ? pwshStatusLine(pwshProbe.snapshot()) : "";
@@ -469,25 +483,36 @@ export class BotRuntime {
     const who = this.opts.access ? [this.opts.access.policyLine(botId)] : [];
     // 这个会话有后台任务在进行时说一句（没有就不说）
     const working = a?.tasks?.working(convId) ?? [];
-    const bg = working.length ? [`后台任务：${working.map((t) => `「${t.title}」${t.stage.label}`).join("，")}`] : [];
-    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...who, ...host, ...(ps ? [ps] : []), ...busy, ...bg, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
+    const bg = working.length ? [t("runtime.backgroundTasks", { list: working.map((x) => t("runtime.backgroundTask", { title: x.title, stage: x.stage.label })).join(t("runtime.listSep")) })] : [];
+    return [
+      t("runtime.currentModel", { model: m, suffix: convModel ? t("runtime.convSetting") : "" }),
+      t("runtime.runMode", { mode }),
+      ...full,
+      ...who,
+      ...host,
+      ...(ps ? [ps] : []),
+      ...busy,
+      ...bg,
+      ...cu,
+      ...(pend.length ? [t("runtime.pending", { list: pend.join(t("runtime.listSep")) })] : []),
+    ].join("\n");
   }
 
   /** 卡片按钮回调：批准/拒绝/选择选项。 */
   cardAction(botId: string, value: Record<string, string>, by: string): { toast: string; ok: boolean } {
     const agent = this.opts.agent;
     const row = agent && value?.id ? this.opts.store.getApproval(String(value.id)) : undefined;
-    if (!agent || !row || row.botId !== botId) return { toast: "请求不存在", ok: false };
-    if (row.status !== "pending") return { toast: `请求 ${row.code} 已处理或已过期`, ok: false };
+    if (!agent || !row || row.botId !== botId) return { toast: t("runtime.requestMissing"), ok: false };
+    if (row.status !== "pending") return { toast: t("runtime.requestDone", { code: row.code }), ok: false };
     if (value.amb === "approval") {
       const allow = value.decision === "allow";
-      return agent.approvals.decide(row.id, allow, by) ? { toast: allow ? `已批准 ${row.code}（仅本次）` : `已拒绝 ${row.code}`, ok: true } : { toast: "已过期", ok: false };
+      return agent.approvals.decide(row.id, allow, by) ? { toast: t(allow ? "runtime.approvedOnce" : "runtime.rejected", { code: row.code }), ok: true } : { toast: t("runtime.expired"), ok: false };
     }
     if (value.amb === "question") {
       // 回答按钮所在的这一个提问（会话里可能同时有几个）
-      return agent.approvals.answerText(row.id, String(value.option ?? ""), by) ? { toast: "已提交", ok: true } : { toast: "提交失败", ok: false };
+      return agent.approvals.answerText(row.id, String(value.option ?? ""), by) ? { toast: t("runtime.submitted"), ok: true } : { toast: t("runtime.submitFailed"), ok: false };
     }
-    return { toast: "未知操作", ok: false };
+    return { toast: t("runtime.unknownAction"), ok: false };
   }
 
   /**
@@ -528,11 +553,11 @@ export class BotRuntime {
       const show = () => {
         if (host.state === "running") {
           clearInterval(startup);
-          return void out.apply({ type: "stream.update", text: "代理已就绪，正在处理…" });
+          return void out.apply({ type: "stream.update", text: t("runtime.agentReady") });
         }
         const s = Math.round((Date.now() - since) / 1000);
         const first = (host.diagnostics() as any).firstStart;
-        void out.apply({ type: "stream.update", text: `代理正在启动…${s >= 5 ? `（已 ${s} 秒）` : ""}${first ? "首次启动可能需要几分钟。" : ""}` });
+        void out.apply({ type: "stream.update", text: t("runtime.agentStarting", { elapsed: s >= 5 ? t("runtime.agentStartingElapsed", { s }) : "", first: first ? t("runtime.agentStartingFirst") : "" }) });
       };
       show();
       startup = setInterval(show, 5000);
@@ -573,35 +598,45 @@ export class BotRuntime {
       // 后台任务的结果发出去之后，下一条聊天消息带上那张便条：聊天代理知道发生了什么
       const notes = takeTaskNotes(store, convId);
       const input = notes ? `${notes}\n\n${first}` : first;
-      // runTurn 同步登记回合，之后的停止交给代理（TurnStopped，会重启代理进程）
-      const turn = agent.runTurn(botId, {
-        conversationId: convId,
-        text: input,
-        model,
-        ...(images.length ? { images } : {}),
-        onStep,
-        observer: {
-          // 工具调用不进入聊天：只用于判断代理已开始工作（不再回退到纯对话），正在输入状态由渠道维持
-          onProgress: () => {
-            visible = true;
+      const runOnce = async () => {
+        // runTurn 同步登记回合，之后的停止交给代理（TurnStopped，会重启代理进程）
+        const turn = agent.runTurn(botId, {
+          conversationId: convId,
+          text: input,
+          model,
+          ...(images.length ? { images } : {}),
+          onStep,
+          observer: {
+            // 工具调用不进入聊天：只用于判断代理已开始工作（不再回退到纯对话），正在输入状态由渠道维持
+            onProgress: () => {
+              visible = true;
+            },
+            // 代理收下了这条消息：先存用户消息（之后并进来的消息排在它后面），再让出渠道队列，后来的消息可以并入这一轮
+            onStart: () => {
+              if (!inflight.userStored) store.addMessage(convId, "user", text);
+              inflight.userStored = true;
+              inflight.release?.();
+            },
           },
-          // 代理收下了这条消息：先存用户消息（之后并进来的消息排在它后面），再让出渠道队列，后来的消息可以并入这一轮
-          onStart: () => {
-            if (!inflight.userStored) store.addMessage(convId, "user", text);
-            inflight.userStored = true;
-            inflight.release?.();
-          },
-        },
-      });
-      const halt = () => agent.stopTurn(convId);
-      signal.addEventListener("abort", halt, { once: true });
-      const r = await turn.finally(() => {
-        clearInterval(startup);
-        signal.removeEventListener("abort", halt);
-      });
+        });
+        const halt = () => agent.stopTurn(convId);
+        signal.addEventListener("abort", halt, { once: true });
+        try {
+          return await turn;
+        } finally {
+          signal.removeEventListener("abort", halt);
+        }
+      };
+      const r = await runOnce()
+        .catch(async (e: Error) => {
+          // 还没有任何步骤就失败（没调用工具、没有副作用）：Key 若刚被换掉，就用新 Key 把这一回合再跑一次
+          if (e instanceof TurnStopped || signal.aborted || visible || steps.size || agent.host(botId).state !== "running" || !(await this.keyRecovered())) throw e;
+          return runOnce();
+        })
+        .finally(() => clearInterval(startup));
       if (!inflight.userStored) store.addMessage(convId, "user", text);
       inflight.userStored = true;
-      const finalText = r.text.trim() || "（已完成，没有文字回复）";
+      const finalText = r.text.trim() || t("runtime.doneNoText");
       store.addMessage(convId, "assistant", finalText, [...steps.values()]);
       await out.apply({ type: "stream.finish", text: finalText });
       for (const f of r.files ?? []) {
@@ -749,21 +784,21 @@ export class BotRuntime {
     const arg = rest.join(" ");
     switch (cmd.toLowerCase()) {
       case "/help":
-        return HELP;
+        return help();
       case "/reset":
         this.opts.store.clearMessages(convId);
         this.opts.agent?.resetConversation(convId);
-        return "✅ 已清空本会话上下文";
+        return t("runtime.resetDone");
       case "/new": {
         const a = this.opts.agent;
-        if (!a?.available) return "⚠️ /new 只在代理模式下可用；纯对话模式请用 /reset";
-        if (!this.opts.store.getAgentSession(convId)) return "当前已经是新的一段对话";
+        if (!a?.available) return t("runtime.newAgentOnly");
+        if (!this.opts.store.getAgentSession(convId)) return t("runtime.alreadyNew");
         try {
           await a.newSegment(botId, convId, await this.resolveModel(convModel, botModel));
         } catch (e) {
-          return `⚠️ 开新段失败：${(e as Error).message.slice(0, 200)}`;
+          return t("runtime.newFailed", { error: (e as Error).message.slice(0, 200) });
         }
-        return "✅ 已开始新的一段对话（旧对话已归档并留下交接便条，长期记忆保留）";
+        return t("runtime.newDone");
       }
       case "/status":
         return this.statusText(botId, convId, convModel, botModel);
@@ -772,22 +807,22 @@ export class BotRuntime {
         try {
           list = await this.listModels(true);
         } catch (e) {
-          return `⚠️ 获取模型列表失败：${(e as Error).message}`;
+          return t("runtime.modelListFailed", { error: (e as Error).message });
         }
         if (!arg) {
           const cur = convModel || botModel || this.opts.defaultModel();
-          if (!list.length) return "暂无可用模型：请先连接 Modelflare（设置 → Modelflare）。";
-          return ["可用模型（回复 /model 编号 切换）：", ...list.map((m, i) => `${i + 1}. ${m}${m === cur ? "  ← 当前" : ""}`)].join("\n");
+          if (!list.length) return t("runtime.modelListEmpty");
+          return [t("runtime.modelListHead"), ...list.map((m, i) => `${i + 1}. ${m}${m === cur ? t("runtime.modelCurrent") : ""}`)].join("\n");
         }
         if (arg === "default" || arg === "reset") {
           this.opts.store.setConversationModel(convId, "");
-          return "✅ 已恢复为机器人默认模型";
+          return t("runtime.modelReset");
         }
         const idx = /^\d+$/.test(arg) ? Number(arg) - 1 : -1;
         const target = idx >= 0 ? list[idx] : list.find((m) => m === arg) ?? list.find((m) => m.endsWith("/" + arg) || m.includes(arg));
-        if (!target) return `⚠️ 找不到模型「${arg}」，发送 /model 查看列表`;
+        if (!target) return t("runtime.modelNotFound", { name: arg });
         this.opts.store.setConversationModel(convId, target);
-        return `✅ 本会话已切换到 ${target}`;
+        return t("runtime.modelSwitched", { model: target });
       }
       default:
         return null;

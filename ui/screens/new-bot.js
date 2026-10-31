@@ -5,20 +5,30 @@ import { html, Icon, IconButton, Button, autoGrow } from "../components/ui.js";
 import { BotAvatar, AvatarPicker, MAIN_CHAR } from "../components/avatar.js";
 import { api } from "../lib/api.js";
 import { failed } from "../lib/store.js";
+import { t } from "../lib/i18n.js";
 
+/** 模板。名称、简介和人设在词典 newBot.tpl.<key> 里，读的时候按当前语言翻译（选模板时按当时的语言填进表单） */
+const template = (key, icon, avatar) => ({
+  key,
+  icon,
+  avatar,
+  get name() {
+    return t(`newBot.tpl.${key}.name`);
+  },
+  get desc() {
+    return t(`newBot.tpl.${key}.desc`);
+  },
+  get prompt() {
+    return t(`newBot.tpl.${key}.prompt`);
+  },
+});
 export const TEMPLATES = [
-  { key: "digest", icon: "file", avatar: "green", name: "群聊日报", desc: "把群里的讨论整理成日报：结论、待办和负责人",
-    prompt: "你是群聊日报助手。被要求总结时，把群里的讨论整理成日报：先写三条以内的结论，再列待办（事项、负责人、时间），最后列还没解决的问题。只写群里确实说过的内容，不要编造。" },
-  { key: "support", icon: "chat", avatar: "yellow", name: "客服助手", desc: "按已知资料回答客户问题，拿不准就转人工",
-    prompt: "你是客服助手。用简洁、礼貌的中文回答客户问题，只依据已知的资料作答；资料里没有或拿不准时，直接说明会转给人工处理，不要猜测。" },
-  { key: "translate", icon: "globe", avatar: "orange", name: "翻译官", desc: "中英互译，保留语气、术语和格式",
-    prompt: "你是翻译官。收到中文就译成英文，收到其他语言就译成中文。保留原文的语气、术语和格式（列表、代码、链接），只输出译文。" },
-  { key: "minutes", icon: "clock", avatar: "blue", name: "会议纪要", desc: "把会议记录整理成结论、待办和待定问题",
-    prompt: "你是会议纪要助手。把会议记录或转写整理成：会议主题、结论、待办（事项、负责人、截止时间）、待定问题。语言精炼，不添加记录里没有的信息。" },
-  { key: "writer", icon: "compose", avatar: "purple", name: "写作助手", desc: "起草公告、邮件和周报，按你的语气润色",
-    prompt: "你是写作助手。帮我起草和润色公告、邮件、周报等文字。先弄清用途和读者，再给出成稿；语气自然、结构清楚，不写空话。" },
-  { key: "coder", icon: "code", avatar: "red", name: "代码助手", desc: "读代码、写脚本，在自己的工作区里改文件",
-    prompt: "你是代码助手。阅读和修改工作区里的代码，编写脚本解决问题。动手前先说明计划，改完说明改了什么、怎么验证。" },
+  template("digest", "file", "green"),
+  template("support", "chat", "yellow"),
+  template("translate", "globe", "orange"),
+  template("minutes", "clock", "blue"),
+  template("writer", "compose", "purple"),
+  template("coder", "code", "red"),
 ];
 
 export function NewBotScreen({ first, onCreated, onCancel }) {
@@ -35,11 +45,11 @@ export function NewBotScreen({ first, onCreated, onCancel }) {
   }, []);
   useEffect(() => autoGrow(promptRef.current, 240), [prompt]);
 
-  const pick = (t) => {
-    setTpl(t.key);
-    if (t.avatar !== avatar) choose(t.avatar);
-    setName(t.name);
-    setPrompt(t.prompt);
+  const pick = (tp) => {
+    setTpl(tp.key);
+    if (tp.avatar !== avatar) choose(tp.avatar);
+    setName(tp.name);
+    setPrompt(tp.prompt);
     requestAnimationFrame(() => (nameRef.current?.focus(), nameRef.current?.select()));
   };
   const choose = (k) => {
@@ -62,35 +72,35 @@ export function NewBotScreen({ first, onCreated, onCancel }) {
 
   return html`<section class="new-bot view" data-screen="new-bot">
     <header class="chat-head">
-      <span class="head-bot static"><${BotAvatar} char=${avatar} size=${22} /><span class="name">新机器人</span></span>
+      <span class="head-bot static"><${BotAvatar} char=${avatar} size=${22} /><span class="name">${t("newBot.headName")}</span></span>
       <span class="grow"></span>
-      ${onCancel && html`<${IconButton} icon="close" iconSize=${15} label="取消（Esc）" onClick=${onCancel} />`}
+      ${onCancel && html`<${IconButton} icon="close" iconSize="md" label=${t("newBot.cancel")} onClick=${onCancel} />`}
     </header>
     <div class="new-body">
       <form class="new-form" onSubmit=${create}>
         <${BotAvatar} char=${avatar} size=${96} lively pokeable greet cue=${hi} state=${busy ? "thinking" : name.trim() ? "listening" : "idle"} />
-        <h1 class="new-title">${first ? "创建你的第一个机器人" : "新建机器人"}</h1>
-        <p class="new-lead">挑一个伙伴，起个名字、写几句人设，或者从下面的模板开始。</p>
+        <h1 class="new-title">${first ? t("newBot.firstTitle") : t("newBot.title")}</h1>
+        <p class="new-lead">${t("newBot.lead")}</p>
         <${AvatarPicker} value=${avatar} onChange=${choose} size=${40} />
         <label class="set-field">
-          <span class="k">名称</span>
-          <input class="field" ref=${nameRef} maxlength="60" placeholder="例如：群聊日报" value=${name} onInput=${(e) => setName(e.target.value)}
+          <span class="k">${t("newBot.name")}</span>
+          <input class="field" ref=${nameRef} maxlength="60" placeholder=${t("newBot.namePlaceholder")} value=${name} onInput=${(e) => setName(e.target.value)}
             onKeyDown=${(e) => e.key === "Escape" && name && (e.stopPropagation(), setName(""))} />
         </label>
         <label class="set-field">
-          <span class="k">人设<span class="hint">可选，之后在机器人设置里也能改</span></span>
-          <textarea class="field" ref=${promptRef} rows="3" placeholder="例如：你是一个乐于助人的中文助手，回答简洁准确。" value=${prompt}
+          <span class="k">${t("newBot.persona")}<span class="hint">${t("newBot.personaHint")}</span></span>
+          <textarea class="field" ref=${promptRef} rows="3" placeholder=${t("newBot.personaPlaceholder")} value=${prompt}
             onInput=${(e) => { setPrompt(e.target.value); setTpl(""); }} />
         </label>
-        <${Button} type="submit" variant="primary" size="lg" loading=${busy} disabled=${!name.trim()}>创建<//>
+        <${Button} type="submit" variant="primary" size="lg" loading=${busy} disabled=${!name.trim()}>${t("newBot.create")}<//>
       </form>
       <div class="new-sugg">
-        <div class="list-head">从模板开始</div>
+        <div class="list-head">${t("newBot.fromTemplate")}</div>
         <div class="tpl-grid">
-          ${TEMPLATES.map((t) => html`<button type="button" key=${t.key} class=${`tpl${tpl === t.key ? " on" : ""}`} aria-pressed=${tpl === t.key} onClick=${() => pick(t)}>
-            <span class="tpl-ic"><${Icon} name=${t.icon} size=${17} /></span>
-            <span class="tpl-name">${t.name}</span>
-            <span class="tpl-desc">${t.desc}</span>
+          ${TEMPLATES.map((tp) => html`<button type="button" key=${tp.key} class=${`tpl${tpl === tp.key ? " on" : ""}`} aria-pressed=${tpl === tp.key} onClick=${() => pick(tp)}>
+            <span class="tpl-ic"><${Icon} name=${tp.icon} size="lg" /></span>
+            <span class="tpl-name">${tp.name}</span>
+            <span class="tpl-desc">${tp.desc}</span>
           </button>`)}
         </div>
       </div>

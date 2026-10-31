@@ -7,12 +7,13 @@ import { RuleDetail } from "../components/rules.js";
 import { api } from "../lib/api.js";
 import { failed } from "../lib/store.js";
 import { fmtAgo } from "../lib/format.js";
+import { t } from "../lib/i18n.js";
 
 /** 侧栏机器人列表上方的「需要你」：只有件数大于 0 时才有 */
 export function NeedsRow({ count, on, onClick }) {
   if (!count) return null;
   return html`<button type="button" class=${`needs-row${on ? " sel" : ""}`} aria-current=${on ? "page" : undefined} onClick=${onClick}>
-    <span class="mark" aria-hidden="true"><span class="dot warn"></span></span><span class="label">需要你</span><span class="badge count warn">${count}</span>
+    <span class="mark" aria-hidden="true"><span class="dot warn"></span></span><span class="label">${t("needs.title")}</span><span class="badge count warn">${count}</span>
   </button>`;
 }
 
@@ -58,28 +59,28 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin }) {
   return html`<div class=${`need${open ? " open" : ""}`}>
     <span class=${`dot ${item.severity === "err" ? "err" : "warn"}`} aria-hidden="true"></span>
     ${canOpen
-      ? html`<button type="button" class="need-head" aria-expanded=${expands ? open : undefined} title=${expands ? (open ? "收起" : item.ruleId ? "查看规则" : "查看任务") : "打开对话"} onClick=${head}>${headIn}</button>`
+      ? html`<button type="button" class="need-head" aria-expanded=${expands ? open : undefined} title=${expands ? (open ? t("needs.collapse") : item.ruleId ? t("needs.viewRule") : t("needs.viewTask")) : t("needs.openChat")} onClick=${head}>${headIn}</button>`
       : html`<div class="need-head">${headIn}</div>`}
     ${item.line && html`<div class=${`need-line selectable${item.kind === "approval" ? " mono" : ""}`}>${item.line}</div>`}
     <div class="need-actions">
       ${opts && opts.map((o, i) => html`<${Button} loading=${busy === `o${i}`} disabled=${!!busy} onClick=${() => act("answer", { text: String(i + 1) }, `o${i}`)}>${o.label}<//>`)}
-      ${item.kind === "question" && !writing && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => setWriting(true)}>回复…</button>`}
-      ${item.kind === "approval" && html`<${Button} variant="primary" loading=${busy === "approve"} disabled=${!!busy} onClick=${() => act("approve")}>批准一次<//>
-        <${Button} loading=${busy === "deny"} disabled=${!!busy} onClick=${() => act("deny")}>拒绝<//>`}
-      ${item.kind === "failed" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>重试<//>
-        <button type="button" class="text danger" disabled=${!!busy} onClick=${() => act("stop")}>停止</button>`}
-      ${item.kind === "rule" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>重试<//>`}
-      ${item.kind === "delivery" && item.actions.includes("retry") && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>重试<//>`}
-      ${item.kind === "delivery" && item.actions.includes("dismiss") && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>不再提示</button>`}
-      ${item.kind === "login" && html`<${Button} onClick=${() => onRelogin?.(item.botId)}>重新扫码<//>`}
+      ${item.kind === "question" && !writing && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => setWriting(true)}>${t("needs.reply")}</button>`}
+      ${item.kind === "approval" && html`<${Button} variant="primary" loading=${busy === "approve"} disabled=${!!busy} onClick=${() => act("approve")}>${t("needs.approveOnce")}<//>
+        <${Button} loading=${busy === "deny"} disabled=${!!busy} onClick=${() => act("deny")}>${t("needs.deny")}<//>`}
+      ${item.kind === "failed" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>
+        <button type="button" class="text danger" disabled=${!!busy} onClick=${() => act("stop")}>${t("needs.stop")}</button>`}
+      ${item.kind === "rule" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
+      ${item.kind === "delivery" && item.actions.includes("retry") && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
+      ${item.kind === "delivery" && item.actions.includes("dismiss") && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.dismiss")}</button>`}
+      ${item.kind === "login" && html`<${Button} onClick=${() => onRelogin?.(item.botId)}>${t("needs.relogin")}<//>`}
     </div>
     ${writing && html`<div class="need-reply">
-      <input ref=${input} class="field" placeholder="你的回答" value=${text} disabled=${busy === "text"}
+      <input ref=${input} class="field" placeholder=${t("needs.answerPlaceholder")} value=${text} disabled=${busy === "text"}
         onInput=${(e) => setText(e.target.value)} onKeyDown=${(e) => {
           if (e.key === "Enter" && !e.isComposing) send();
           if (e.key === "Escape") (e.stopPropagation(), setWriting(false));
         }} />
-      <${Button} variant="primary" loading=${busy === "text"} disabled=${!text.trim()} onClick=${send}>发送<//>
+      <${Button} variant="primary" loading=${busy === "text"} disabled=${!text.trim()} onClick=${send}>${t("needs.send")}<//>
     </div>`}
     ${open && item.taskId && html`<div class="need-detail"><${TaskDetail} task=${{ id: item.taskId, title: item.subject, stage: { group: "needs" } }} /></div>`}
     ${open && item.ruleId && html`<div class="need-detail"><${RuleOpen} id=${item.ruleId} /></div>`}
@@ -91,7 +92,7 @@ function RuleOpen({ id }) {
   const [rule, setRule] = useState(null);
   const load = useCallback(() => api(`/rules/${encodeURIComponent(id)}`).then((d) => setRule(d.rule)).catch(() => setRule(false)), [id]);
   useEffect(() => void load(), [load]);
-  if (rule === false) return html`<span class="hint">规则已经删了</span>`;
+  if (rule === false) return html`<span class="hint">${t("rules.gone")}</span>`;
   return rule ? html`<${RuleDetail} rule=${rule} onChanged=${load} />` : html`<${Skeleton} w="60%" />`;
 }
 
@@ -101,8 +102,8 @@ export function NeedsYouScreen({ multiBot, onChanged, onOpenChat, onRelogin }) {
   const load = useCallback(() => api("/attention").then((d) => setItems(d.items || [])).catch(() => setItems((v) => v || [])), []);
   useEffect(() => {
     load();
-    const t = setInterval(() => document.visibilityState === "visible" && load(), 3000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => document.visibilityState === "visible" && load(), 3000);
+    return () => clearInterval(timer);
   }, [load]);
   const onAct = (it) => async (action, body) => {
     const d = await api(`/attention/${encodeURIComponent(it.id)}/${action}`, { method: "POST", body });
@@ -110,10 +111,10 @@ export function NeedsYouScreen({ multiBot, onChanged, onOpenChat, onRelogin }) {
     onChanged?.();
   };
   return html`<div class="settings needs view" data-screen="needs">
-    <div class="set-head"><h1 class="set-title">需要你</h1></div>
+    <div class="set-head"><h1 class="set-title">${t("needs.title")}</h1></div>
     <div class="set-body">
       ${!items && html`<div class="list needs-list"><div class="need"><${Skeleton} w="50%" /><${Skeleton} w="70%" /></div></div>`}
-      ${items && !items.length && html`<p class="set-none">没有需要你处理的事</p>`}
+      ${items && !items.length && html`<p class="set-none">${t("needs.none")}</p>`}
       ${items && items.length > 0 && html`<div class="list needs-list">
         ${items.map((it) => html`<${NeedItem} key=${it.id} item=${it} multiBot=${multiBot} onAct=${onAct(it)} onOpenChat=${onOpenChat} onRelogin=${onRelogin} />`)}
       </div>`}

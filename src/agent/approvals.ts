@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { ApprovalRow, Store } from "../store/db.js";
 import { logger } from "../log.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("approvals");
 
@@ -268,58 +269,58 @@ export class ApprovalCenter {
    * - 任务的提问是机器人最后一条消息：只认选项编号或选项原文
    */
   handleReply(conversationId: string, text: string, by: string, ctx: ReplyContext = {}): ReplyResult {
-    const t = text.trim();
-    if (!t || t.startsWith("/")) return { handled: false };
+    const msg = text.trim();
+    if (!msg || msg.startsWith("/")) return { handled: false };
     const all = this.pending(conversationId);
     const chat = all.filter((r) => !r.taskId && !r.ruleId);
     const task = all.filter((r) => r.taskId);
     // 引用了任务的提示
     const quote = ctx.quote;
     const quoted = quote ? task.find((r) => ctx.quotes?.(r, quote)) : undefined;
-    if (quoted) return this.replyTo(quoted, (ctx.plain ?? t).trim(), by, ctx);
-    const m = YES_NO.exec(t);
+    if (quoted) return this.replyTo(quoted, (ctx.plain ?? msg).trim(), by, ctx);
+    const m = YES_NO.exec(msg);
     if (m && m[2]) {
       const row = this.store.pendingApprovalByCode(m[2]);
       if (!row || row.conversationId !== conversationId || row.kind !== "approval") {
-        return { handled: true, ack: `⚠️ 没有编号为 ${m[2]} 的待批准请求（可能已过期或已处理）` };
+        return { handled: true, ack: t("approvals.noSuchCode", { code: m[2] }) };
       }
       return this.decideReply(row, YES.test(m[1]), by);
     }
     if (m) {
       const list = [...chat.filter((r) => r.kind === "approval"), ...task.filter((r) => r.kind === "approval" && ctx.latest?.(r))];
       if (list.length === 1) return this.decideReply(list[0], YES.test(m[1]), by);
-      if (list.length > 1) return { handled: true, ack: `有 ${list.length} 个待批准请求，请带上编号回复，例如 y ${list[0].code}` };
+      if (list.length > 1) return { handled: true, ack: t("approvals.needCode", { count: list.length, code: list[0].code }) };
     }
     // 「1234 中文」：以任务提问的编号开头
-    const c = /^(\d{4})(?:\s*[:：,，.。、]\s*|\s+)(\S[\s\S]*)$/.exec(t);
+    const c = /^(\d{4})(?:\s*[:：,，.。、]\s*|\s+)(\S[\s\S]*)$/.exec(msg);
     const byCode = c ? task.find((r) => r.kind === "question" && r.code === c[1]) : undefined;
     if (c && byCode) return this.replyTo(byCode, c[2], by, ctx);
     // 聊天回合在等的提问：直接回复就是回答
     const q = chat.find((r) => r.kind === "question");
     if (q) {
-      this.answer(q.id, parseAnswer(questionsOf(q), t), by);
+      this.answer(q.id, parseAnswer(questionsOf(q), msg), by);
       return { handled: true };
     }
     // 任务的提问是机器人最后一条消息：只认选项编号或选项原文
     const last = task.find((r) => r.kind === "question" && ctx.latest?.(r));
-    if (last && isOptionReply(questionsOf(last), t)) return this.replyTo(last, t, by, ctx);
+    if (last && isOptionReply(questionsOf(last), msg)) return this.replyTo(last, msg, by, ctx);
     return { handled: false };
   }
 
   private decideReply(row: ApprovalRow, allow: boolean, by: string): ReplyResult {
-    if (!this.decide(row.id, allow, by)) return { handled: true, ack: `⚠️ 请求 ${row.code} 已过期或已处理` };
-    return { handled: true, ack: allow ? `✅ 已批准 ${row.code}（仅本次）` : `❌ 已拒绝 ${row.code}` };
+    if (!this.decide(row.id, allow, by)) return { handled: true, ack: t("approvals.expiredOrDone", { code: row.code }) };
+    return { handled: true, ack: t(allow ? "approvals.approved" : "approvals.rejected", { code: row.code }) };
   }
 
   /** 认定是对这一条的回答：提问记下回答；审批要 y / n */
   private replyTo(row: ApprovalRow, text: string, by: string, ctx: ReplyContext): ReplyResult {
     if (row.kind === "approval") {
       const m = YES_NO.exec(text);
-      if (!m || (m[2] && m[2] !== row.code)) return { handled: true, ack: `回复 y ${row.code} 批准，n ${row.code} 拒绝` };
+      if (!m || (m[2] && m[2] !== row.code)) return { handled: true, ack: t("approvals.replyYesNo", { code: row.code }) };
       return this.decideReply(row, YES.test(m[1]), by);
     }
-    if (!text) return { handled: true, ack: "引用时写上你的回答" };
-    if (!this.answerText(row.id, text, by)) return { handled: true, ack: "这个问题已经回答过了" };
+    if (!text) return { handled: true, ack: t("approvals.quoteNeedsAnswer") };
+    if (!this.answerText(row.id, text, by)) return { handled: true, ack: t("approvals.alreadyAnswered") };
     return { handled: true, ack: ctx.answered?.(row) };
   }
 }
@@ -381,8 +382,8 @@ export function parseAnswer(questions: QuestionItem[], text: string): QuestionAn
 export function promptText(row: ApprovalRow): string {
   if (row.kind === "approval") {
     const cmd = row.detail ? ` \`${row.detail.replace(/`/g, "'").slice(0, 300)}\`` : "";
-    const why = row.reason && !row.detail ? `（${row.reason.slice(0, 200)}）` : "";
-    return `需批准: ${row.tool}${cmd}${why} — 回复 y ${row.code} / n ${row.code}`;
+    const why = row.reason && !row.detail ? t("approvals.promptWhy", { reason: row.reason.slice(0, 200) }) : "";
+    return t("approvals.prompt", { tool: row.tool, cmd, why, code: row.code });
   }
   const qs = questionsOf(row);
   const blocks = qs.map((q, i) => {
@@ -390,7 +391,12 @@ export function promptText(row: ApprovalRow): string {
     const opts = (q.options ?? []).map((o, j) => `  ${j + 1}. ${o.label}${o.description ? ` — ${o.description}` : ""}`);
     return [head, ...opts].join("\n");
   });
-  const hint = qs.length > 1 ? "（每行回答一个问题：回复编号或直接写答案）" : qs[0]?.options?.length ? `（回复编号${qs[0].multiSelect ? "，可多选用逗号分隔" : ""}，或直接写答案）` : "（直接回复答案）";
+  const hint =
+    qs.length > 1
+      ? t("approvals.hintMulti")
+      : qs[0]?.options?.length
+        ? t("approvals.hintOptions", { multi: qs[0].multiSelect ? t("approvals.hintOptionsMulti") : "" })
+        : t("approvals.hintFree");
   return `❓ ${blocks.join("\n\n")}\n${hint}`;
 }
 
@@ -402,20 +408,20 @@ export function promptText(row: ApprovalRow): string {
 export function taskPromptText(row: ApprovalRow, title: string): string {
   if (row.kind === "approval") {
     const what = row.detail ? `\`${row.detail.replace(/`/g, "'").slice(0, 300)}\`` : `${row.tool}${row.reason ? `（${row.reason.slice(0, 200)}）` : ""}`;
-    return `需批准（任务「${title}」）：${what} — 回复 y ${row.code} / n ${row.code}`;
+    return t("approvals.taskApproval", { title, what, code: row.code });
   }
   const q = questionsOf(row)[0];
   const opts = (q?.options ?? []).map((o, i) => `${i + 1}. ${o.label}`);
-  const hint = opts.length ? `（回复编号${q?.multiSelect ? "，可多选" : ""}，或引用这条消息回答）` : "（引用这条消息回答）";
-  return [`❓「${title}」想问你：${q?.question ?? row.detail}`, ...opts, hint].join("\n");
+  const hint = opts.length ? t("approvals.taskHintOptions", { multi: q?.multiSelect ? t("approvals.taskHintMulti") : "" }) : t("approvals.taskHintQuote");
+  return [t("approvals.taskQuestion", { title, question: q?.question ?? row.detail }), ...opts, hint].join("\n");
 }
 
 /** 卡片渠道（飞书）的按钮：审批是允许 / 拒绝；单选的提问是每个选项一个按钮 */
 export function promptButtons(row: ApprovalRow): Array<{ label: string; value: Record<string, string>; style: "primary" | "danger" | "default" }> | undefined {
   if (row.kind === "approval") {
     return [
-      { label: "允许（仅本次）", value: { amb: "approval", id: row.id, decision: "allow" }, style: "primary" },
-      { label: "拒绝", value: { amb: "approval", id: row.id, decision: "deny" }, style: "danger" },
+      { label: t("approvals.allowOnce"), value: { amb: "approval", id: row.id, decision: "allow" }, style: "primary" },
+      { label: t("approvals.deny"), value: { amb: "approval", id: row.id, decision: "deny" }, style: "danger" },
     ];
   }
   const qs = questionsOf(row);

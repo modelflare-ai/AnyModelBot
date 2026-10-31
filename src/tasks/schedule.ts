@@ -6,9 +6,11 @@
  * - nextRun：after 之后（不含）第一次到点；latestRun：t 及之前最后一次到点（错过的补跑只补最近的一次）。
  * - graceOf：错过多久之内还补跑一次（间隔的一半和 2 小时取小的）；更早的记为跳过，从不补一串。
  * - parseSchedule：聊天代理给的一行（"daily 08:00"、"weekly mon,thu 09:00"、"every 30m"、"once 2026-11-02 15:00"、"cron 0 8 * * 1-5"）。
- * - describe：给用户看的话：每天 08:00、每个工作日 08:00、每周一、周四 09:00、每 30 分钟、11月2日 15:00。
+ * - describe：给用户看的话（跟着语言，src/i18n 的 rules.*）：每天 08:00、每个工作日 08:00、每周一、周四 09:00、每 30 分钟、11月2日 15:00；
+ *   英文 Daily 08:00、Weekdays 08:00、Every Mon, Thu 09:00、Every 30 min、Nov 2 15:00。
  */
 import { localParts, minuteOf } from "../core/quiet.js";
+import { lang as currentLang, tl, type Lang } from "../i18n/index.js";
 
 export type Schedule =
   | { kind: "once"; at: number; tz: string }
@@ -221,39 +223,39 @@ const hhmm = (s: string): string | undefined => {
  * 校验界面或接口给的结构化时间表（JSON），补上时区；有错时 error 是给人看的一句话。
  * now：once 不能在过去；every 没给起点就从下一个整分钟起。
  */
-export function normalizeSchedule(raw: unknown, tz: string, now: number): { schedule?: Schedule; error?: string } {
+export function normalizeSchedule(raw: unknown, tz: string, now: number, l: Lang = currentLang()): { schedule?: Schedule; error?: string } {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const zone = typeof r.tz === "string" && validZone(r.tz) ? r.tz : tz;
   switch (r.kind) {
     case "once": {
       const at = Number(r.at);
-      if (!Number.isFinite(at) || at <= 0) return { error: "缺少时间" };
-      if (at <= now) return { error: "这个时间已经过了" };
+      if (!Number.isFinite(at) || at <= 0) return { error: tl(l, "rules.needTime") };
+      if (at <= now) return { error: tl(l, "rules.pastTime") };
       return { schedule: { kind: "once", at: Math.floor(at / MIN) * MIN, tz: zone } };
     }
     case "daily":
     case "weekly": {
       const time = hhmm(String(r.time ?? ""));
-      if (!time) return { error: "时间要写成 08:00 这样" };
+      if (!time) return { error: tl(l, "rules.timeFormat") };
       const days = Array.isArray(r.days) ? [...new Set(r.days.map((d) => Number(d) % 7).filter((d) => Number.isInteger(d) && d >= 0))].sort((a, b) => a - b) : [];
-      if (r.kind === "weekly" && !days.length) return { error: "选一天或几天" };
+      if (r.kind === "weekly" && !days.length) return { error: tl(l, "rules.pickDays") };
       if (r.kind === "weekly") return { schedule: { kind: "weekly", time, days, tz: zone } };
       return { schedule: { kind: "daily", time, ...(days.length && days.length < 7 ? { days } : {}), tz: zone } };
     }
     case "every": {
       const minutes = Math.round(Number(r.minutes));
-      if (!Number.isFinite(minutes) || minutes < MIN_EVERY_MIN) return { error: `间隔至少 ${MIN_EVERY_MIN} 分钟` };
-      if (minutes > 7 * 1440) return { error: "间隔最长 7 天" };
+      if (!Number.isFinite(minutes) || minutes < MIN_EVERY_MIN) return { error: tl(l, "rules.minEvery", { min: MIN_EVERY_MIN }) };
+      if (minutes > 7 * 1440) return { error: tl(l, "rules.maxEvery") };
       const from = Number(r.from) > 0 ? Number(r.from) : Math.ceil((now + 1) / MIN) * MIN;
       return { schedule: { kind: "every", minutes, from, tz: zone } };
     }
     case "cron": {
       const cron = String(r.cron ?? "").trim().replace(/\s+/g, " ");
-      if (!parseCron(cron)) return { error: "cron 要写 5 段：分 时 日 月 星期" };
+      if (!parseCron(cron)) return { error: tl(l, "rules.cronFields") };
       return { schedule: { kind: "cron", cron, tz: zone } };
     }
     default:
-      return { error: "不认识的时间表" };
+      return { error: tl(l, "rules.unknownSchedule") };
   }
 }
 
@@ -279,19 +281,19 @@ export function parseSchedule(text: string, tz: string, now: number): { schedule
   if (kind === "daily" || kind === "weekdays" || kind === "weekends") {
     const time = hhmm(tail);
     if (!time) return bad;
-    return normalizeSchedule({ kind: "daily", time, days: kind === "weekdays" ? [1, 2, 3, 4, 5] : kind === "weekends" ? [0, 6] : [] }, tz, now);
+    return normalizeSchedule({ kind: "daily", time, days: kind === "weekdays" ? [1, 2, 3, 4, 5] : kind === "weekends" ? [0, 6] : [] }, tz, now, "en");
   }
   if (kind === "weekly") {
     const m = /^(.+?) (\d{1,2}[:：]\d{2})$/.exec(tail);
     const days = m ? dayList(m[1]) : undefined;
     if (!m || !days) return bad;
-    return normalizeSchedule({ kind: "weekly", time: m[2], days }, tz, now);
+    return normalizeSchedule({ kind: "weekly", time: m[2], days }, tz, now, "en");
   }
   if (kind === "every") {
     const m = /^(\d+)\s*(m|min|mins|minute|minutes|h|hr|hour|hours)$/i.exec(tail);
     if (!m) return bad;
     const n = Number(m[1]) * (/^h/i.test(m[2]) ? 60 : 1);
-    const r = normalizeSchedule({ kind: "every", minutes: n }, tz, now);
+    const r = normalizeSchedule({ kind: "every", minutes: n }, tz, now, "en");
     return r.error ? { error: `every needs at least ${MIN_EVERY_MIN} minutes` } : r;
   }
   if (kind === "once") {
@@ -299,37 +301,44 @@ export function parseSchedule(text: string, tz: string, now: number): { schedule
     const time = m ? hhmm(m[4]) : undefined;
     if (!m || !time) return bad;
     const at = localTime(Number(m[1]), Number(m[2]), Number(m[3]), minuteOf(time)!, tz);
-    const r = normalizeSchedule({ kind: "once", at }, tz, now);
+    const r = normalizeSchedule({ kind: "once", at }, tz, now, "en");
     return r.error ? { error: `That time (${tail}, ${tz}) has already passed.` } : r;
   }
   if (kind === "cron") {
-    const r = normalizeSchedule({ kind: "cron", cron: tail }, tz, now);
+    const r = normalizeSchedule({ kind: "cron", cron: tail }, tz, now, "en");
     return r.error ? { error: "cron needs 5 fields: minute hour day-of-month month day-of-week" } : r;
   }
   return bad;
 }
 
-const WEEK = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const pad = (n: number) => String(n).padStart(2, "0");
 
-function daysText(days: number[] | undefined): string {
-  if (!days?.length || days.length === 7) return "每天";
+/** 星期几的短名（周一 / Mon）：2026-11-01 是周日 */
+const dayName = (d: number, l: Lang) => new Intl.DateTimeFormat(l, { weekday: "short", timeZone: "UTC" }).format(Date.UTC(2026, 10, 1 + d));
+
+function daysText(days: number[] | undefined, time: string, l: Lang): string {
+  if (!days?.length || days.length === 7) return tl(l, "rules.daily", { time });
   const key = days.join(",");
-  if (key === "1,2,3,4,5") return "每个工作日";
-  if (key === "0,6") return "每个周末";
+  if (key === "1,2,3,4,5") return tl(l, "rules.weekdays", { time });
+  if (key === "0,6") return tl(l, "rules.weekends", { time });
   // 周一在前、周日在最后
-  return "每" + [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => WEEK[d]).join("、");
+  const list = [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => dayName(d, l));
+  return tl(l, "rules.weekly", { days: list.join(tl(l, "rules.daysSep")), time });
 }
 
-/** 给用户看的时间表：每天 08:00、每个工作日 08:00、每周一、周四 09:00、每 30 分钟、11月2日 15:00；withZone 时带上时区 */
-export function describe(s: Schedule, withZone = false): string {
+/**
+ * 给用户看的时间表：每天 08:00、每个工作日 08:00、每周一、周四 09:00、每 30 分钟、11月2日 15:00；withZone 时带上时区。
+ * l：语言（默认当前的；给模型看的第一条输入固定用简体中文）
+ */
+export function describe(s: Schedule, withZone = false, l: Lang = currentLang()): string {
   let text: string;
   if (s.kind === "once") {
     const p = localParts(s.at, s.tz);
     const m = Math.floor(p.minute);
-    text = `${p.mo}月${p.d}日 ${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
-  } else if (s.kind === "daily" || s.kind === "weekly") text = `${daysText(s.days)} ${s.time}`;
-  else if (s.kind === "every") text = s.minutes % 60 === 0 ? `每 ${s.minutes / 60} 小时` : `每 ${s.minutes} 分钟`;
-  else text = `cron ${s.cron}`;
-  return withZone ? `${text}（${s.tz}）` : text;
+    const date = new Intl.DateTimeFormat(l, { month: l === "en" ? "short" : "long", day: "numeric", timeZone: s.tz }).format(s.at);
+    text = tl(l, "rules.once", { date, time: `${pad(Math.floor(m / 60))}:${pad(m % 60)}` });
+  } else if (s.kind === "daily" || s.kind === "weekly") text = daysText(s.days, s.time, l);
+  else if (s.kind === "every") text = s.minutes % 60 === 0 ? tl(l, "rules.everyHour", { count: s.minutes / 60 }) : tl(l, "rules.everyMin", { count: s.minutes });
+  else text = tl(l, "rules.cron", { cron: s.cron });
+  return withZone ? tl(l, "rules.withZone", { text, tz: s.tz }) : text;
 }

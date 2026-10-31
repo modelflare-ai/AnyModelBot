@@ -7,44 +7,42 @@ import { html, Icon, Button, Seg, Sheet, Spinner } from "./ui.js";
 import { ActivityLine } from "./activity.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, toast } from "../lib/store.js";
-import { CHANNEL_NAME } from "../lib/access.js";
+import { channelName } from "../lib/access.js";
+import { t, locale } from "../lib/i18n.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-const WEEK = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-const dayDiff = (t, now = Date.now()) => {
+const dayDiff = (at, now = Date.now()) => {
   const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  return Math.round((day(new Date(t)) - day(new Date(now))) / 86_400_000);
+  return Math.round((day(new Date(at)) - day(new Date(now))) / 86_400_000);
 };
+const shortDate = (d) => d.toLocaleDateString(locale(), { month: "numeric", day: "numeric" });
 
-/** 运行记录里的时间：今天 08:00 / 昨天 08:00 / 前天 08:00 / 10/27 08:00 */
-export function fmtRunAt(t, now = Date.now()) {
-  const d = new Date(t);
-  const n = dayDiff(t, now);
-  if (n === 0) return `今天 ${hm(d)}`;
-  if (n === -1) return `昨天 ${hm(d)}`;
-  if (n === -2) return `前天 ${hm(d)}`;
-  return `${d.getMonth() + 1}/${d.getDate()} ${hm(d)}`;
+/** 运行记录里的时间：今天 08:00 / 昨天 08:00 / 10/27 08:00 */
+export function fmtRunAt(at, now = Date.now()) {
+  const d = new Date(at);
+  const n = dayDiff(at, now);
+  if (n === 0) return t("time.today", { time: hm(d) });
+  if (n === -1) return t("time.yesterday", { time: hm(d) });
+  return t("time.dateTime", { date: shortDate(d), time: hm(d) });
 }
 
 /** 下次运行：今天 15:00 / 明天 08:00 / 周一 09:00 / 11/20 09:00 */
-export function fmtNext(t, now = Date.now()) {
-  const d = new Date(t);
-  const n = dayDiff(t, now);
-  if (n <= 0) return `今天 ${hm(d)}`;
-  if (n === 1) return `明天 ${hm(d)}`;
-  if (n < 7) return `${WEEK[d.getDay()]} ${hm(d)}`;
-  return `${d.getMonth() + 1}/${d.getDate()} ${hm(d)}`;
+export function fmtNext(at, now = Date.now()) {
+  const d = new Date(at);
+  const n = dayDiff(at, now);
+  if (n <= 0) return t("time.today", { time: hm(d) });
+  if (n === 1) return t("rules.tomorrow", { time: hm(d) });
+  if (n < 7) return t("rules.weekdayTime", { day: d.toLocaleDateString(locale(), { weekday: "short" }), time: hm(d) });
+  return t("time.dateTime", { date: shortDate(d), time: hm(d) });
 }
 
-const MODE = { observe: "观察", act: "执行" };
-
-/** 行的第二行：观察中 · 下次 明天 08:00；正在运行；已暂停 · 连续失败 3 次 */
+/** 行的第二行：观察中 · 下次 明天 08:00；正在运行；已暂停 · 连续失败 3 次（状态文字由服务端按界面语言给） */
 export function ruleSub(rule, now = Date.now()) {
-  if (rule.live) return rule.live.state === "queued" ? `${rule.state.label} · 排队中` : `${rule.state.label} · 正在运行`;
-  if (rule.state.key === "paused") return `已暂停 · 连续失败 ${rule.failures} 次`;
+  if (rule.live) return t(rule.live.state === "queued" ? "rules.queued" : "rules.running", { state: rule.state.label });
+  if (rule.state.key === "paused") return t("rules.paused", { count: rule.failures });
   if (rule.state.key === "off" || rule.state.key === "done") return rule.state.label;
-  return rule.nextRunAt ? `${rule.state.label} · 下次 ${fmtNext(rule.nextRunAt, now)}` : rule.state.label;
+  return rule.nextRunAt ? t("rules.sub", { state: rule.state.label, next: fmtNext(rule.nextRunAt, now) }) : rule.state.label;
 }
 
 async function put(rule, body, done) {
@@ -64,7 +62,7 @@ export function RuleRow({ rule, onChanged, open, onToggle }) {
   const toAct = async (e) => {
     e.stopPropagation();
     setBusy(true);
-    if (await put(rule, { mode: "act" })) (toast(`「${rule.title}」改为执行`), onChanged?.());
+    if (await put(rule, { mode: "act" })) (toast(t("rules.nowActs", { title: rule.title })), onChanged?.());
     setBusy(false);
   };
   return html`<div class=${`row compact clickable rule-row${open ? " open" : ""}`} role="button" tabindex="0" aria-expanded=${open}
@@ -73,7 +71,7 @@ export function RuleRow({ rule, onChanged, open, onToggle }) {
       <div class="who">
         <div class="name">${rule.when} · ${rule.title}</div>
         <div class="sub">${ruleSub(rule)}</div>
-        ${rule.hint && html`<button type="button" class="text rule-hint" disabled=${busy} onClick=${toAct} onKeyDown=${(e) => e.stopPropagation()}>已观察 ${rule.observed} 次 · 改为执行？</button>`}
+        ${rule.hint && html`<button type="button" class="text rule-hint" disabled=${busy} onClick=${toAct} onKeyDown=${(e) => e.stopPropagation()}>${t("rules.hint", { count: rule.observed })}</button>`}
       </div>
     </div>
     ${open && html`<div class="row-edit rule-edit"><${RuleDetail} rule=${rule} onChanged=${onChanged} /></div>`}`;
@@ -82,8 +80,8 @@ export function RuleRow({ rule, onChanged, open, onToggle }) {
 /** 运行记录的一行：时间 · 模式 · 一句话；点开看报告、步骤、版本和权限（不另起一块） */
 function RunItem({ rule, run }) {
   const [open, setOpen] = useState(false);
-  const mode = rule.kind === "remind" ? "" : MODE[run.mode] || "";
-  const meta = [`第 ${run.version} 版`, run.permission, run.cause === "manual" ? "手动运行" : run.cause === "event" ? "事件" : ""].filter(Boolean).join(" · ");
+  const mode = rule.kind === "remind" || !["observe", "act"].includes(run.mode) ? "" : t(`rules.mode.${run.mode}`);
+  const meta = [t("rules.version", { n: run.version }), run.permission, run.cause === "manual" ? t("rules.manual") : run.cause === "event" ? t("rules.event") : ""].filter(Boolean).join(" · ");
   return html`<li class=${`rule-run${open ? " open" : ""}`}>
     <button type="button" class="rule-run-head" aria-expanded=${open} onClick=${() => setOpen(!open)}>
       <span class="at num">${fmtRunAt(run.at)}</span>${mode && html`<span class="m">${mode}</span>`}<span class="l">${run.line}</span>
@@ -91,9 +89,9 @@ function RunItem({ rule, run }) {
     </button>
     ${open && html`<div class="rule-run-body">
       ${run.summary && html`<p class="selectable">${run.summary}</p>`}
-      ${run.would && html`<p class="selectable"><span class="t-label">本会做</span> ${run.would}</p>`}
+      ${run.would && html`<p class="selectable"><span class="t-label">${t("rules.would")}</span> ${run.would}</p>`}
       ${meta && html`<span class="hint">${meta}</span>`}
-      ${run.steps > 0 && html`<${ActivityLine} label="处理过程" count=${run.steps} load=${() => api(`/rules/${encodeURIComponent(rule.id)}/runs/${encodeURIComponent(run.id)}/activity`).then((x) => x.steps)} />`}
+      ${run.steps > 0 && html`<${ActivityLine} label=${t("rules.steps")} count=${run.steps} load=${() => api(`/rules/${encodeURIComponent(rule.id)}/runs/${encodeURIComponent(run.id)}/activity`).then((x) => x.steps)} />`}
     </div>`}
   </li>`;
 }
@@ -128,44 +126,44 @@ export function RuleDetail({ rule, runs: given, onChanged }) {
   const setMode = (mode) => act("mode", () => put(rule, { mode }));
   const runNow = () => act("run", () => api(`/rules/${encodeURIComponent(rule.id)}/run`, { method: "POST", body: {} }));
   const del = async () => {
-    if (!(await confirmSheet({ title: `删除「${rule.title}」？`, body: "运行记录一起删除。", confirmLabel: "删除", danger: true }))) return;
-    act("del", () => api(`/rules/${encodeURIComponent(rule.id)}`, { method: "DELETE" }).then(() => toast("已删除")));
+    if (!(await confirmSheet({ title: t("rules.deleteTitle", { title: rule.title }), body: t("rules.deleteBody"), confirmLabel: t("common.delete"), danger: true }))) return;
+    act("del", () => api(`/rules/${encodeURIComponent(rule.id)}`, { method: "DELETE" }).then(() => toast(t("rules.deleted"))));
   };
-  const modes = rule.kind === "remind" ? [["act", "开"], ["off", "关"]] : [["observe", "观察"], ["act", "执行"], ["off", "关"]];
-  const where = CHANNEL_NAME[rule.channel] || rule.channel;
-  const line = [rule.nextRunAt && rule.state.key !== "paused" && rule.mode !== "off" ? `下次 ${fmtNext(rule.nextRunAt)}` : "", where && `发到 ${where}`].filter(Boolean).join(" · ");
+  const modes =
+    rule.kind === "remind"
+      ? [["act", t("rules.mode.on")], ["off", t("rules.mode.off")]]
+      : [["observe", t("rules.mode.observe")], ["act", t("rules.mode.act")], ["off", t("rules.mode.off")]];
+  const where = rule.channel ? channelName(rule.channel) : "";
+  const next = rule.nextRunAt && rule.state.key !== "paused" && rule.mode !== "off" ? t("rules.next", { time: fmtNext(rule.nextRunAt) }) : "";
+  const line = [next, where && t("rules.sendsTo", { where })].filter(Boolean).join(" · ");
   return html`<div class="rule-detail">
-    <p class="rule-words selectable">「${rule.kind === "remind" ? rule.message : rule.instruction}」</p>
+    <p class="rule-words selectable">${t("rules.words", { text: rule.kind === "remind" ? rule.message : rule.instruction })}</p>
     ${line && html`<span class="hint">${line}</span>`}
     <div class="actions">
-      <${Seg} label="模式" options=${modes} value=${rule.mode} disabled=${busy === "mode"} onChange=${setMode} />
+      <${Seg} label=${t("rules.modeLabel")} options=${modes} value=${rule.mode} disabled=${busy === "mode"} onChange=${setMode} />
       <span class="grow"></span>
-      <${Button} size="sm" loading=${busy === "run"} disabled=${!!busy || !!rule.live || rule.mode === "off"} onClick=${runNow}>立即运行<//>
+      <${Button} size="sm" loading=${busy === "run"} disabled=${!!busy || !!rule.live || rule.mode === "off"} onClick=${runNow}>${t("rules.runNow")}<//>
     </div>
-    ${rule.mode === "act" && rule.observeLeft > 0 && html`<span class="hint">改了规则，先观察 ${rule.observeLeft} 次再执行</span>`}
-    ${rule.kind === "check" && rule.mode === "observe" && html`<span class="hint">观察时不发消息、不改文件，但拦不住命令联网。</span>`}
+    ${rule.mode === "act" && rule.observeLeft > 0 && html`<span class="hint">${t("rules.observeLeft", { count: rule.observeLeft })}</span>`}
+    ${rule.kind === "check" && rule.mode === "observe" && html`<span class="hint">${t("rules.observeHelp")}</span>`}
     <div class="actions">
-      <button type="button" class="text" onClick=${() => setEditing(true)}>编辑</button>
-      <button type="button" class="text danger" disabled=${busy === "del"} onClick=${del}>删除</button>
+      <button type="button" class="text" onClick=${() => setEditing(true)}>${t("common.edit")}</button>
+      <button type="button" class="text danger" disabled=${busy === "del"} onClick=${del}>${t("common.delete")}</button>
     </div>
-    <div class="t-label">运行记录</div>
-    ${!runs && html`<span class="hint">加载中…</span>`}
-    ${runs && !runs.length && html`<span class="hint">还没有运行过</span>`}
+    <div class="t-label">${t("rules.log")}</div>
+    ${!runs && html`<span class="hint">${t("common.loading")}</span>`}
+    ${runs && !runs.length && html`<span class="hint">${t("rules.noRuns")}</span>`}
     ${runs && runs.length > 0 && html`<ol class="rule-runs">${runs.map((r) => html`<${RunItem} key=${r.id + r.state} rule=${rule} run=${r} />`)}</ol>`}
-    ${more && html`<button type="button" class="text" onClick=${() => load(runs.at(-1).at)}>更早的</button>`}
+    ${more && html`<button type="button" class="text" onClick=${() => load(runs.at(-1).at)}>${t("rules.earlier")}</button>`}
     ${editing && html`<${RuleEditor} botId=${rule.botId} rule=${rule} onClose=${() => setEditing(false)} onSaved=${() => (setEditing(false), onChanged?.())} />`}
   </div>`;
 }
 
-const KINDS = [
-  ["daily", "每天"],
-  ["weekdays", "工作日"],
-  ["weekly", "每周"],
-  ["every", "每隔"],
-  ["once", "一次"],
-  ["cron", "cron"],
-];
+const KINDS = ["daily", "weekdays", "weekly", "every", "once", "cron"];
+const kindOptions = () => KINDS.map((k) => [k, t(`rules.kinds.${k}`)]);
 const DAY_PICKS = [1, 2, 3, 4, 5, 6, 0];
+/** 星期几的短名：2026-11-01 是周日，往后数 */
+const dayName = (d) => new Date(2026, 10, 1 + d).toLocaleDateString(locale(), { weekday: "short" });
 
 /** 规则的时间表 → 编辑器里的字段 */
 function formOf(s) {
@@ -201,7 +199,7 @@ function convOptions(convs, current) {
   }
   const n = (ch) => list.filter((c) => c.channel === ch).length;
   return list.map((c) => {
-    const name = CHANNEL_NAME[c.channel] || c.channel;
+    const name = channelName(c.channel);
     return [c.id, n(c.channel) > 1 ? `${name} · ${(c.title || c.peerId).slice(0, 8)}` : name];
   });
 }
@@ -244,7 +242,7 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
       const d = rule
         ? await api(`/rules/${encodeURIComponent(rule.id)}`, { method: "PUT", body })
         : await api("/rules", { method: "POST", body: { ...body, botId, kind } });
-      toast(rule ? "已保存" : kind === "remind" ? "已建好提醒" : "已建好规则，先观察");
+      toast(rule ? t("common.saved") : kind === "remind" ? t("rules.createdRemind") : t("rules.createdCheck"));
       onSaved?.(d.rule);
     } catch (e) {
       failed(e);
@@ -252,34 +250,35 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
     setBusy(false);
   };
   const ok = title.trim() && words.trim() && conv && (event || f.kind !== "weekly" || f.days.length);
-  return html`<${Sheet} title=${rule ? "编辑规则" : "新规则"} onClose=${onClose}>
+  const remind = kind === "remind";
+  return html`<${Sheet} title=${rule ? t("rules.editTitle") : t("rules.newTitle")} onClose=${onClose}>
     <div class="rule-form">
-      ${!rule && html`<${Seg} label="类型" options=${[["check", "检查"], ["remind", "提醒"]]} value=${kind} onChange=${setKind} />`}
-      <label>名称<input class="field" data-autofocus value=${title} maxlength="40" placeholder=${kind === "remind" ? "开会" : "看 X 价格"} onInput=${(e) => setTitle(e.target.value)} /></label>
-      <label>${kind === "remind" ? "提醒的话" : "要做什么"}
-        <textarea class="field" rows=${kind === "remind" ? 2 : 3} value=${words} placeholder=${kind === "remind" ? "该去开会了。" : "看看 X 的价格，低于 200 告诉我"} onInput=${(e) => setWords(e.target.value)}></textarea></label>
+      ${!rule && html`<${Seg} label=${t("rules.kind")} options=${[["check", t("rules.kindCheck")], ["remind", t("rules.kindRemind")]]} value=${kind} onChange=${setKind} />`}
+      <label>${t("rules.name")}<input class="field" data-autofocus value=${title} maxlength="40" placeholder=${remind ? t("rules.namePhRemind") : t("rules.namePhCheck")} onInput=${(e) => setTitle(e.target.value)} /></label>
+      <label>${remind ? t("rules.wordsRemind") : t("rules.wordsCheck")}
+        <textarea class="field" rows=${remind ? 2 : 3} value=${words} placeholder=${remind ? t("rules.wordsPhRemind") : t("rules.wordsPhCheck")} onInput=${(e) => setWords(e.target.value)}></textarea></label>
       ${!event && html`<div class="rule-when">
-        <span class="t-label">时间</span>
-        <${Seg} label="时间" options=${KINDS} value=${f.kind} onChange=${(v) => setF({ ...f, kind: v })} />
+        <span class="t-label">${t("rules.when")}</span>
+        <${Seg} label=${t("rules.when")} options=${kindOptions()} value=${f.kind} onChange=${(v) => setF({ ...f, kind: v })} />
         <div class="rule-when-row">
           ${["daily", "weekdays", "weekly"].includes(f.kind) && html`<input class="field num" type="time" value=${f.time} onInput=${set("time")} />`}
-          ${f.kind === "every" && html`<input class="field num" type="number" min="15" step="5" value=${f.minutes} onInput=${set("minutes")} /><span class="hint">分钟</span>`}
+          ${f.kind === "every" && html`<input class="field num" type="number" min="15" step="5" value=${f.minutes} onInput=${set("minutes")} /><span class="hint">${t("rules.minutes")}</span>`}
           ${f.kind === "once" && html`<input class="field num" type="datetime-local" value=${f.at} onInput=${set("at")} />`}
           ${f.kind === "cron" && html`<input class="field mono" value=${f.cron} placeholder="0 8 * * 1-5" onInput=${set("cron")} />`}
         </div>
-        ${f.kind === "weekly" && html`<div class="rule-days" role="group" aria-label="星期">
-          ${DAY_PICKS.map((d) => html`<button type="button" class=${`chip${f.days.includes(d) ? " on" : ""}`} aria-pressed=${f.days.includes(d)} onClick=${() => toggleDay(d)}>${WEEK[d].slice(1)}</button>`)}
+        ${f.kind === "weekly" && html`<div class="rule-days" role="group" aria-label=${t("rules.days")}>
+          ${DAY_PICKS.map((d) => html`<button type="button" class=${`chip${f.days.includes(d) ? " on" : ""}`} aria-pressed=${f.days.includes(d)} onClick=${() => toggleDay(d)}>${dayName(d)}</button>`)}
         </div>`}
       </div>`}
       <div class="rule-when">
-        <span class="t-label">发到</span>
-        ${!convs ? html`<${Spinner} />` : convs.length ? html`<${Seg} label="发到" options=${convOptions(convs, conv)} value=${conv} onChange=${setConv} />` : html`<span class="hint">先在微信、飞书或网页里和机器人说句话</span>`}
+        <span class="t-label">${t("rules.to")}</span>
+        ${!convs ? html`<${Spinner} />` : convs.length ? html`<${Seg} label=${t("rules.to")} options=${convOptions(convs, conv)} value=${conv} onChange=${setConv} />` : html`<span class="hint">${t("rules.noConvs")}</span>`}
       </div>
-      ${channel === "weixin" && html`<p class="hint">微信只在你 24 小时内发过消息时才能主动发给你；否则会在你下次发消息时一起送到，并显示在桌面端。</p>`}
+      ${channel === "weixin" && html`<p class="hint">${t("rules.weixinNote")}</p>`}
     </div>
     <div class="actions">
-      <${Button} onClick=${onClose}>取消<//>
-      <${Button} variant="primary" loading=${busy} disabled=${!ok} onClick=${save}>${rule ? "保存" : "建好"}<//>
+      <${Button} onClick=${onClose}>${t("common.cancel")}<//>
+      <${Button} variant="primary" loading=${busy} disabled=${!ok} onClick=${save}>${rule ? t("common.save") : t("rules.create")}<//>
     </div>
   <//>`;
 }

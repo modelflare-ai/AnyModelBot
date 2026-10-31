@@ -25,14 +25,21 @@ const textOf = (v: any): string => (v == null || typeof v === "boolean" ? "" : t
 describe("界面：侧栏的「需要你」行", () => {
   it("没事时不画这一行；有事时是黄点、「需要你」和件数", async () => {
     // 界面模块在浏览器里跑：只补上它们加载时要的那一点
-    (globalThis as any).window ??= { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+    (globalThis as any).window ??= { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} };
     // @ts-expect-error 界面代码是不经构建的 JS
     const { NeedsRow } = await import("../ui/screens/needs-you.js");
+    // @ts-expect-error 同上
+    const ui = await import("../ui/lib/i18n.js");
     expect(NeedsRow({ count: 0 })).toBeNull();
     expect(NeedsRow({ count: undefined })).toBeNull();
+    ui.setLangPref("zh-CN");
     const row = NeedsRow({ count: 3, on: true, onClick: () => {} }) as any;
     expect(row.props.class).toBe("needs-row sel");
     expect(textOf(row)).toBe("需要你3");
+    // 文字跟着界面语言
+    ui.setLangPref("en");
+    expect(textOf(NeedsRow({ count: 3, on: true, onClick: () => {} }))).toBe("Needs you3");
+    ui.setLangPref("zh-CN");
   });
 });
 

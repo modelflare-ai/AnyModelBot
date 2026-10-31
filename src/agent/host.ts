@@ -15,6 +15,7 @@ import { pwshPatchLines, pwshProbe } from "./pwsh.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 import { acceptsImages } from "../llm/client.js";
 import { CUA_SKILL, MEDIA_SKILL, TASK_RULES, agentPersona, botPrompt } from "./prompts/index.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("agent.host");
 
@@ -990,7 +991,7 @@ exec "$REAL" "$@"
     this.syncPrompt();
     // 连续启动失败后不再每条消息都重试一遍（每次都要等满初始化超时）：直到手动重启或冷却结束
     if (!this.harness && !this.starting && this.state === "error" && Date.now() < this.retryAfter) {
-      throw new Error(`代理进程启动失败，${Math.ceil((this.retryAfter - Date.now()) / 60_000)} 分钟后再试（或在 设置 → 故障排查 里重启代理进程）：${this.lastError}`);
+      throw new Error(t("agent.startRetryLater", { min: Math.ceil((this.retryAfter - Date.now()) / 60_000), error: this.lastError }));
     }
     if (this.harness && this.sig !== this.settingsSig() && this.active === 0 && this.tasksAllowRestart()) {
       log.info("bot settings or PowerShell changed, restarting dsh", { bot: this.o.botId, backgroundTasks: this.taskBusy.size });
@@ -1217,7 +1218,7 @@ exec "$REAL" "$@"
       this.state = "error";
       this.retryAfter = Date.now() + 10 * 60_000;
       log.error("dsh failed to start twice; agent paused for 10 minutes (plain chat still works)", { bot: this.o.botId, message: this.lastError });
-      this.o.onNotice?.(`代理进程连续两次启动失败，已暂停 10 分钟（期间用纯对话回复）。可在 设置 → 故障排查 查看原因并重启代理进程。原因：${this.lastError.slice(0, 200)}`);
+      this.o.onNotice?.(t("agent.startPaused", { error: this.lastError.slice(0, 200) }));
       return;
     }
     const delay = Math.min(30_000, 1000 * 2 ** Math.min(this.failures - 1, 5));

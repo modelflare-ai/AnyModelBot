@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import type { AddressInfo } from "node:net";
 import { logger, redactText, registerSecret } from "../log.js";
 import { peekStream, type CompactionPlan, type ServerCompaction } from "./server-compaction.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("agent.bridge");
 /** 长调用的保活间隔：远小于 fetch 默认的 5 分钟数据间隔超时 */
@@ -142,7 +143,7 @@ export class AgentBridge {
 
   private async proxy(req: http.IncomingMessage, res: http.ServerResponse, url: string): Promise<void> {
     const up = this.h.upstream();
-    if (!up.baseUrl) throw new Error("模型网关未就绪");
+    if (!up.baseUrl) throw new Error(t("agent.gatewayNotReady"));
     const target = up.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "") + url;
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) {

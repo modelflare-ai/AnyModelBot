@@ -23,15 +23,19 @@ src/
   web/           console server (JSON API + streaming chat over SSE)
   cli/           init first-run wizard, weixin-login
   modelflare.ts  Modelflare routes, key validation (GET /v1/models), model routing and attribution
+  guide.ts       onboarding checklist progress
+  i18n/          server-side i18n: errors, status text, tray menu, system messages from bots (messages/<namespace>.ts)
   diagnostics.ts troubleshooting: probes, log tail, redacted diagnostics report
   main.ts        command-line entry point
 electron/        desktop main process (launcher + tray)
 ui/              console UI (Preact + htm, no build step)
   design/        design system: tokens/, base/, components/, bot characters bots/
+  locales/       UI strings: zh-CN/ and en/, one file per namespace
   css/ lib/ components/ screens/ assets/ main.js
 dsh-runtime/     dependency manifest for the DSH agent runtime and AnyModelBot plugins (plugins/)
 scripts/         setup / build-magpie / fetch-cua-driver / prepare-dsh / bundle-dsh / electron-smoke / check-readme and more
 vendor/          git submodules: magpie (compiled at build time), deepseek-harness, kimi-computer-use
+site/            website (Astro static site); see site/README.md
 docs/            development guide, privacy notes, README assets (docs/assets/)
 ```
 
@@ -113,6 +117,10 @@ Inside the container the console listens on 0.0.0.0, so token access is enforced
 - Sidebar: bot list (avatar + name + latest message), ＋ New, right-click to rename / delete; the account button at the bottom-left opens Settings (`⌘/Ctrl+,`).
 - Chat screen: the floating bot-name pill at the top opens the info panel (`⌘/Ctrl+⇧+I`: channels, requests, pending approvals, memory, recent sessions; ⚙ opens bot settings). Replies stream in (Markdown, one-click copy for code blocks) and can be stopped at any time (`Esc`). Approvals and questions appear as cards in the chat. Scrolling up is never yanked back to the bottom.
 - Command palette `⌘/Ctrl+K`; appearance (system / light / dark) is in Settings → General.
+- Language: 简体中文 / English, in Settings → General → Language (also at the top-right of the onboarding screen and in the command palette). It follows the system by default (English when the system language is neither Chinese nor English). The preference is stored in `ui.lang` in config.json; the tray menu, server error and status messages, and system messages bots send to WeChat / Feishu (`/help`, approval prompts, …) all follow it. On the command line / Docker, "System" means `AMB_LANG`, then `LC_ALL` / `LANG`, falling back to Simplified Chinese. Logs, prompts sent to the model and bot names users chose are not translated.
+  - UI strings live in `ui/locales/<lang>/<namespace>.js` and are used as `t("namespace.key", { params })` (`ui/lib/i18n.js`); server strings live in `src/i18n/messages/<namespace>.ts` with type-checked keys. Every UI request carries `x-amb-lang`, and the server answers that request in the same language.
+  - Add every new string in both languages. `node scripts/i18n-check.mjs [files…]` reports Chinese left in UI code, keys that don't exist, and zh / en dictionaries that are out of sync (`test/i18n.unit.test.ts` in `npm test` checks the same). Chinese that must stay in code (font names, regexes matching Chinese input) gets a `// i18n-ignore` on that line.
+- Onboarding checklist: the empty chat state shows a six-step checklist — say hello, switch models, connect WeChat, let it do something, let it remember you, generate an image. The last step only plays a built-in demo inside the guide, whether or not the account has image / video models: it still confirms, generates and shows the image, but nothing is sent to the bot, no model is called and nothing is charged; the image is the bundled `ui/assets/guide-demo.svg`. The point is to teach the flow without spending the user's money; actually asking it to draw, or receiving an image later, also completes the step. "Send this" tries it directly; "Show me" or the checklist entry at the bottom-left of the sidebar shows a guide card pointing at the right control (highlighted with a ring). Steps tick themselves off: a reply in the chat, a model switch, a received file / image, a connected channel, a memory write. Progress is stored in `ui.guide` in config.json (API `/amb/api/guide`), and steps that existing users have already done count as complete. The checklist can be collapsed to the bottom-left or hidden for good, and Settings → General → Onboarding checklist starts it over.
 - Visuals: neutrals and components are adapted from magpie's UI (MIT); the accent is Modelflare's fluorescent yellow-green `#d7ff00`. The design system is described in `ui/design/README.md`.
 
 ## Persona and prompts

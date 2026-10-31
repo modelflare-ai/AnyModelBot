@@ -29,4 +29,3 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 }
 /* 滚动条：细、半透明，盖在玻璃和环境光上都不突兀（macOS 的浮动滚动条不受影响） */
 * { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
-svg.ic { width: 16px; height: 16px; flex: none; display: block; }

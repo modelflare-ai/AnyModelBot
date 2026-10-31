@@ -45,9 +45,11 @@
   --pill-press: rgba(0, 0, 0, .1);
   --seg-track: rgba(0, 0, 0, .055);
   --seg-thumb-bg: var(--white);
-  --side-hover: rgba(255, 255, 255, .55);   /* 侧栏行：悬停是更亮的一层玻璃 */
-  --side-press: rgba(255, 255, 255, .36);
-  --side-active: rgba(255, 255, 255, .9);   /* 选中：浮起的白色玻璃片 */
+  --side-hover: rgba(0, 0, 0, .042);        /* 侧栏行：悬停叠一层淡灰（侧栏本来就接近白色，再亮一层几乎看不出来） */
+  --side-press: rgba(0, 0, 0, .07);
+  --side-active: rgba(255, 255, 255, .92);  /* 选中：浮起的白色玻璃片。悬停暗一点、选中亮一点，一眼分得开 */
+  --side-solid: #f4f4f2;      /* 侧栏的近似实色：压在侧栏头像上的状态点要挖一圈和底一样的缺口 */
+  --side-solid-on: #fefefe;   /* 选中的行上的近似实色 */
   --bubble-user: rgba(0, 0, 0, .05);        /* 用户消息气泡；机器人回复不加气泡 */
   --bubble-ai: rgba(0, 0, 0, .035);         /* 信息面板里的会话记录等次要气泡 */
   --qr-bg: var(--white);      /* 二维码在任何主题下都要白底 */
@@ -59,6 +61,7 @@
   /* —— 线 —— */
   --line: rgba(0, 0, 0, .1);          /* 表格表头的下沿、正文里的分隔线 hr */
   --line-2: rgba(0, 0, 0, .06);       /* 行与行之间的细线：列表行、表格行、菜单里的分隔 */
+  --split-line: rgba(0, 0, 0, .2);    /* 分隔条：指针停住时空隙中间亮起的细线（拖动、键盘焦点时换成 --accent） */
   --ctl-edge: rgba(0, 0, 0, .44);     /* 文字输入框的边：对主区、信息面板、对话框和 --well 都 ≥ 3:1（3.2:1） */
   --ctl-edge-hover: rgba(0, 0, 0, .6);
 
@@ -109,24 +112,21 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .05), 0 3px 10px rgba(0, 0, 0, .05);
   --shadow-md: 0 2px 6px rgba(0, 0, 0, .05), 0 10px 28px rgba(0, 0, 0, .09);
   --shadow-lg: 0 4px 12px rgba(0, 0, 0, .06), 0 24px 60px rgba(0, 0, 0, .16);
-  --shadow-pane: 0 0 0 .5px rgba(0, 0, 0, .1), 0 1px 3px rgba(0, 0, 0, .04), 0 8px 30px rgba(0, 0, 0, .04);
-  --shadow-tile: 0 1px 2px rgba(0, 0, 0, .07);   /* 侧栏选中项：浮起的玻璃片（只有投影，不描边） */
+  --shadow-pane: 0 0 0 var(--hairline) rgba(0, 0, 0, .1), 0 1px 3px rgba(0, 0, 0, .04), 0 8px 30px rgba(0, 0, 0, .04);
+  --shadow-tile: 0 1px 2px rgba(0, 0, 0, .06), 0 2px 6px rgba(0, 0, 0, .035);   /* 侧栏选中项：浮起的玻璃片（只有投影，不描边） */
   --seg-edge: 0 1px 2px rgba(0, 0, 0, .14);      /* 分段 thumb、开关圆钮：只有投影，不描边 */
 
   /* —— 机器人头像：角色颜色在 primitives 的 --bot-*，这里只给随主题变的光晕和影子 —— */
   --avatar-aura: 30%;         /* 工作中头像背后的辉光（角色辉光色的混合比例） */
   --avatar-shadow: rgba(0, 0, 0, .16);  /* 大头像脚下的影子 */
 
-  /* —— 字体 —— */
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
-  --code: ui-monospace, "SF Mono", Menlo, Consolas, "Microsoft YaHei UI", monospace;
 }
 /* 由其他语义 token 推导的值：每个主题作用域都要重新计算，否则子树会继承外层主题算好的结果 */
 :root, [data-theme] {
   --code-bg: color-mix(in srgb, var(--fg) 7%, transparent);
   --ring: 0 0 0 3px var(--accent-soft);   /* 焦点光晕，配合 accent 色描边 */
   --ring-danger: 0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent);
-  --glass-ring: inset 0 1px 0 var(--glass-hi), 0 0 0 .5px var(--glass-edge);   /* 玻璃的边：顶边高光 + 细描边 */
+  --glass-ring: inset 0 1px 0 var(--glass-hi), 0 0 0 var(--hairline) var(--glass-edge);   /* 玻璃的边：顶边高光 + 细描边 */
   --shadow-float: var(--glass-ring), var(--shadow-md);   /* 浮在内容上的玻璃：输入框、回到底部、提示 */
   --shadow-pop: var(--glass-ring), var(--shadow-lg);     /* 菜单、命令面板、对话框 */
 }
@@ -169,10 +169,40 @@
   --r-pane: var(--r-2xl);   /* 浮起的面板与浮层：主区、信息面板、对话框、命令面板、引导页卡片 */
   --r-bubble: var(--r-3xl); /* 消息气泡：对话里的用户消息、会话记录里的双方消息 */
 }
-:root.win {
-  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
-  --code: "Cascadia Mono", Consolas, "Microsoft YaHei UI", "Microsoft YaHei", monospace;
+/* 字体：与主题无关。--font-system / --code-system 是各平台的系统字体；页面和组件只用 --font / --code，
+   它们默认就是系统字体，设置 › 外观可以换成衬线或自定义字体（见下文「用户偏好」）。 */
+:root {
+  --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --code-system: ui-monospace, "SF Mono", Menlo, Consolas, "Microsoft YaHei UI", monospace;
+  --font-serif: ui-serif, "New York", Georgia, "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Noto Serif SC", "SimSun", serif;
+  --font: var(--font-system);
+  --code: var(--code-system);
 }
+:root.win {
+  --font-system: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --code-system: "Cascadia Mono", Consolas, "Microsoft YaHei UI", "Microsoft YaHei", monospace;
+}
+
+/* 用户偏好（设置 › 外观）：lib/prefs.js 把偏好解析成 <html> 上的 data-* 属性（首帧前 index.html 先套一遍），
+   这里只把属性翻译成 token，页面和组件不认这些属性。都只挂在 :root 上，和主题作用域无关。
+     data-text       sm | md | lg | xl     字体大小：--fs-* 都乘以 --fs-scale；控件高度、图标和间距不变
+     data-font       system | serif | custom  界面字体；custom 时 prefs.js 在 <html> 上内联 --font（自定义字体 + 系统字体兜底），
+                                           自定义代码字体同样内联 --code
+     data-width      normal | wide | full  对话宽度（--col-w）
+     data-code-wrap  on | off              代码块自动换行（--code-wrap）
+     data-glass      on | off              毛玻璃；off 时材质换成实色（见下一段）
+     data-motion     full | reduce | off   动画（tokens/motion.css） */
+:root {
+  --fs-scale: 1;
+  --code-wrap: pre;   /* 代码块的 white-space */
+}
+:root[data-text="sm"] { --fs-scale: .92; }
+:root[data-text="lg"] { --fs-scale: 1.1; }
+:root[data-text="xl"] { --fs-scale: 1.2; }
+:root[data-font="serif"] { --font: var(--font-serif); }
+:root[data-width="wide"] { --col-w: var(--col-w-wide); --bubble-w: var(--bubble-w-wide); }
+:root[data-width="full"] { --col-w: 100%; --bubble-w: var(--bubble-w-wide); }   /* 对话列铺满，两侧仍留 --page-gutter */
+:root[data-code-wrap="on"] { --code-wrap: pre-wrap; }
 
 [data-theme="dark"] {
   color-scheme: dark;
@@ -183,7 +213,7 @@
   --aura-c: .1;
   --aura-a: .55;
 
-  --surface: rgba(20, 20, 20, .84);
+  --surface: rgba(23, 23, 23, .86);   /* 比侧栏亮一档：深色下面板要浮得出来 */
   --surface-solid: #151515;
   --glass-side: rgba(16, 16, 16, .4);
   --glass-chrome: rgba(22, 22, 22, .7);
@@ -204,9 +234,11 @@
   --pill-press: rgba(255, 255, 255, .125);
   --seg-track: rgba(255, 255, 255, .05);
   --seg-thumb-bg: rgba(255, 255, 255, .14);
-  --side-hover: rgba(255, 255, 255, .045);
-  --side-press: rgba(255, 255, 255, .03);
-  --side-active: rgba(255, 255, 255, .085);
+  --side-hover: rgba(255, 255, 255, .05);
+  --side-press: rgba(255, 255, 255, .035);
+  --side-active: rgba(255, 255, 255, .09);
+  --side-solid: #121212;
+  --side-solid-on: #232323;
   --bubble-user: rgba(255, 255, 255, .075);
   --bubble-ai: rgba(255, 255, 255, .05);
   --scrim: rgba(0, 0, 0, .48);
@@ -216,6 +248,7 @@
 
   --line: rgba(255, 255, 255, .1);
   --line-2: rgba(255, 255, 255, .065);
+  --split-line: rgba(255, 255, 255, .22);
   --ctl-edge: rgba(255, 255, 255, .36);   /* 3.2:1 */
   --ctl-edge-hover: rgba(255, 255, 255, .5);
 
@@ -260,32 +293,37 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 3px 10px rgba(0, 0, 0, .25);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, .3), 0 12px 32px rgba(0, 0, 0, .42);
   --shadow-lg: 0 4px 14px rgba(0, 0, 0, .35), 0 28px 70px rgba(0, 0, 0, .6);
-  --shadow-pane: 0 0 0 .5px rgba(255, 255, 255, .08), 0 8px 30px rgba(0, 0, 0, .35);
+  --shadow-pane: 0 0 0 var(--hairline) rgba(255, 255, 255, .08), 0 8px 30px rgba(0, 0, 0, .35);
   --shadow-tile: inset 0 1px 0 rgba(255, 255, 255, .05), 0 1px 2px rgba(0, 0, 0, .3);
-  --seg-edge: inset 0 .5px 0 rgba(255, 255, 255, .1), 0 1px 2px rgba(0, 0, 0, .3);
+  --seg-edge: inset 0 var(--hairline) 0 rgba(255, 255, 255, .1), 0 1px 2px rgba(0, 0, 0, .3);
 
   --avatar-aura: 52%;
   --avatar-shadow: rgba(0, 0, 0, .5);
 }
 
-/* 系统设置了"降低透明度"：玻璃换成接近实色的材质，层次靠描边和投影 */
-@media (prefers-reduced-transparency: reduce) {
-  [data-theme="light"] {
-    --surface: #fbfbfb;
-    --glass-side: #f2f2f1;
-    --glass-chrome: #fbfbfb;
-    --glass-float: #ffffff;
-    --glass-panel: #f8f8f8;
-    --glass-pop: #fcfcfc;
-    --glass-sheet: #ffffff;
-  }
-  [data-theme="dark"] {
-    --surface: #161616;
-    --glass-side: #121212;
-    --glass-chrome: #161616;
-    --glass-float: #262626;
-    --glass-panel: #1a1a1a;
-    --glass-pop: #242424;
-    --glass-sheet: #1e1e1e;
-  }
+/* 关掉毛玻璃（data-glass="off"：设置 › 外观 › 毛玻璃效果，跟随系统时看"降低透明度" prefers-reduced-transparency）：
+   玻璃换成接近实色的材质、不再模糊背景，层次靠描边和投影。局部主题作用域也要跟着换，所以两种写法都要 */
+:root[data-glass="off"] {
+  --glass-filter: none;
+  --glass-filter-lg: none;
+  --glass-filter-sm: none;
+}
+:root[data-glass="off"][data-theme="light"], :root[data-glass="off"] [data-theme="light"] {
+  --surface: #fbfbfb;
+  --glass-side: #f2f2f1;
+  --side-solid: #f2f2f1;
+  --glass-chrome: #fbfbfb;
+  --glass-float: #ffffff;
+  --glass-panel: #f8f8f8;
+  --glass-pop: #fcfcfc;
+  --glass-sheet: #ffffff;
+}
+:root[data-glass="off"][data-theme="dark"], :root[data-glass="off"] [data-theme="dark"] {
+  --surface: #161616;
+  --glass-side: #121212;
+  --glass-chrome: #161616;
+  --glass-float: #262626;
+  --glass-panel: #1a1a1a;
+  --glass-pop: #242424;
+  --glass-sheet: #1e1e1e;
 }

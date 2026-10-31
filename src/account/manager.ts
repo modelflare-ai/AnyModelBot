@@ -5,6 +5,7 @@
  */
 import os from "node:os";
 import { logger } from "../log.js";
+import { t } from "../i18n/index.js";
 import type { Store } from "../store/db.js";
 import { MODELFLARE_CLIENT_ID, MODELFLARE_SCOPES, MODELFLARE_WEB, UTM, webUrl, type KeyBalance } from "../modelflare.js";
 import { discover, OAuthError, revokeToken, startLogin, type LoginAttempt, type OidcEndpoints } from "./oauth.js";
@@ -22,6 +23,10 @@ export interface AccountHooks {
   removeBotKey(botId: string): Promise<void>;
   /** 只有 API Key 时的余额；没有连接时 undefined */
   keyBalance(): Promise<KeyBalance | undefined>;
+  /** 内置网关共用连接当前那把 Key 的最后 4 位；没连接时为空 */
+  sharedKeyTail(): string;
+  /** 共用连接的 Key 已经不能用：没连接，或 Modelflare 说这把 Key 无效 */
+  sharedKeyRejected(): Promise<boolean>;
   /** 提醒：写入应用通知；push = 同时经机器人发到你的微信 / 飞书 */
   alert(text: string, push: boolean): void;
 }
@@ -75,6 +80,8 @@ export class AccountManager {
   private quotaPerUnit = 0;
   private state: AccountState = "signed_out";
   private refreshing: Promise<AccountStatus> | undefined;
+  private keyCheck: Promise<boolean> | undefined;
+  private keysChecked = { at: 0, replaced: false };
 
   constructor(
     private o: {
@@ -146,7 +153,7 @@ export class AccountManager {
   /** 开始登录：返回在浏览器里打开的地址；完成后自动签发本机 Key 并接到内置网关 */
   async startLogin(): Promise<string> {
     if (this.state === "signing_in" && this.login) return this.login.url;
-    if (this.session) throw new ApiError("已经登录了 Modelflare 账户", 409);
+    if (this.session) throw new ApiError(t("account.already_signed_in"), 409);
     const ep = await this.ensureEndpoints();
     const attempt = await startLogin(ep, {
       clientId: MODELFLARE_CLIENT_ID,
@@ -178,9 +185,8 @@ export class AccountManager {
     const session = this.newSession(rec, { token: tokens.accessToken, expiresAt: tokens.expiresAt });
     try {
       const account = await session.account();
-      const host = this.o.hostname ?? os.hostname();
-      const key = await session.createKey(`AnyModelBot · ${host}`.slice(0, 50));
-      if (!key.key) throw new Error("Modelflare 没有返回新 Key");
+      const key = await session.createKey(this.deviceKeyName());
+      if (!key.key) throw new Error(t("account.no_new_key"));
       try {
         await this.o.hooks.connectKey(key.key);
       } catch (e) {
@@ -188,16 +194,17 @@ export class AccountManager {
         await this.revokeQuietly(session);
         throw e;
       }
-      this.o.vault.save({ ...session.record, deviceKeyId: key.id });
+      session.updateRecord({ deviceKeyId: key.id });
       this.session = session;
       this.state = "signed_in";
       this.applyAccount(account);
       log.info("signed in to Modelflare", { name: account.display_name || account.username });
       this.checkLowBalance();
-      void this.syncBotKeys().catch((e) => log.warn("sync bot keys failed", { message: (e as Error).message }));
+      // 给开着预算、还没有 Key 的机器人补签（换设备或重新登录后）。走核对，和刷新余额时的核对合并，不会重复签发
+      void this.repairKeys();
     } catch (e) {
       this.state = this.session ? "signed_in" : "signed_out";
-      this.snapshot.error = `登录没有完成：${(e as Error).message}`;
+      this.snapshot.error = t("account.login_incomplete", { reason: (e as Error).message });
       log.warn("login failed", { message: (e as Error).message });
     } finally {
       this.login = undefined;
@@ -237,12 +244,12 @@ export class AccountManager {
   private async onRevoked(): Promise<void> {
     log.warn("Modelflare authorization revoked");
     await this.forget();
-    this.snapshot.error = "Modelflare 授权已失效（可能在网页上撤销了），请重新登录";
+    this.snapshot.error = t("account.revoked_elsewhere");
     this.o.hooks.alert(this.snapshot.error, false);
   }
 
   private async call<T>(fn: (s: AccountSession) => Promise<T>): Promise<T> {
-    if (!this.session) throw new ApiError("请先登录 Modelflare 账户", 409);
+    if (!this.session) throw new ApiError(t("account.sign_in_first"), 409);
     try {
       return await fn(this.session);
     } catch (e) {
@@ -276,6 +283,8 @@ export class AccountManager {
     try {
       if (this.session) {
         this.applyAccount(await this.call((s) => s.account()));
+        // 启动后、之后每 5 分钟、切回窗口时都顺带核对一次 Key；不拖慢余额的返回
+        void this.repairKeys(60_000);
       } else {
         const b = await this.o.hooks.keyBalance();
         this.snapshot = {
@@ -302,7 +311,7 @@ export class AccountManager {
     const alerted = !!this.o.store.getKV(ALERTED);
     if (bal < lowBalanceUsd && !alerted) {
       this.o.store.setKV(ALERTED, String(Date.now()));
-      this.o.hooks.alert(`Modelflare 余额只剩 $${bal.toFixed(2)}，低于提醒线 $${lowBalanceUsd}。充值：${webUrl("/billing", "amb_low_balance")}`, push);
+      this.o.hooks.alert(t("account.low_balance", { balance: bal.toFixed(2), threshold: lowBalanceUsd, url: webUrl("/billing", "amb_low_balance") }), push);
     } else if (bal >= lowBalanceUsd && alerted) {
       this.o.store.deleteKV(ALERTED);
     }
@@ -357,7 +366,7 @@ export class AccountManager {
    * 机器人的请求改走这把 Key；关闭时删除 Key，机器人回到本机共用的 Key。
    */
   async setBotBudget(botId: string, botName: string, budget: BotBudget): Promise<void> {
-    if (!this.session) throw new ApiError("给机器人设预算需要先登录 Modelflare 账户", 409);
+    if (!this.session) throw new ApiError(t("account.budget_needs_login"), 409);
     let id = this.botKeyIds().get(botId);
     if (!budget.enabled) {
       if (id) await this.deleteKeyQuietly(id);
@@ -375,7 +384,7 @@ export class AccountManager {
       }
     }
     const key = await this.call((s) => s.createKey(keyName(botName), budget.limitUsd));
-    if (!key.key) throw new Error("Modelflare 没有返回新 Key");
+    if (!key.key) throw new Error(t("account.no_new_key"));
     try {
       await this.o.hooks.setBotKey(botId, key.key);
     } catch (e) {
@@ -389,14 +398,96 @@ export class AccountManager {
     try {
       await this.call((s) => s.deleteKey(id));
     } catch (e) {
-      if (!(e instanceof ApiError && e.status === 404)) log.warn("delete bot key failed", { id, message: (e as Error).message });
+      if (!(e instanceof ApiError && e.status === 404)) log.warn("delete key failed", { id, message: (e as Error).message });
     }
   }
 
-  /** 登录后为开着预算、但还没有 Key 的机器人补签（换设备或重新登录后） */
-  async syncBotKeys(bots: Array<{ id: string; name: string; budget: BotBudget }> = this.botsSource()): Promise<void> {
-    const have = this.botKeyIds();
-    for (const b of bots) if (b.budget.enabled && !have.has(b.id)) await this.setBotBudget(b.id, b.name, b.budget);
+  // ---------- Key 核对 ----------
+
+  private deviceKeyName(): string {
+    return `AnyModelBot · ${this.o.hostname ?? os.hostname()}`.slice(0, 50);
+  }
+
+  /**
+   * 核对本机 Key 和各机器人的预算 Key 还在不在（用户可能在 Modelflare 控制台把它们删了），
+   * 不在就重新签发并接到内置网关。返回 true = 换了 Key，刚才失败的请求可以再试一次。
+   * 并发调用合并成一次；maxAgeMs 内刚核对过就沿用那次的结果。不抛错。
+   */
+  repairKeys(maxAgeMs = 0): Promise<boolean> {
+    if (!this.session) return Promise.resolve(false);
+    if (this.keyCheck) return this.keyCheck;
+    if (Date.now() - this.keysChecked.at < maxAgeMs) return Promise.resolve(this.keysChecked.replaced);
+    this.keyCheck = this.doRepairKeys(this.session)
+      .catch((e: Error) => {
+        log.warn("key check failed", { message: e.message });
+        return false;
+      })
+      .then((replaced) => {
+        this.keysChecked = { at: Date.now(), replaced };
+        this.keyCheck = undefined;
+        return replaced;
+      });
+    return this.keyCheck;
+  }
+
+  private async doRepairKeys(session: AccountSession): Promise<boolean> {
+    // 列表只含这次授权签发、而且还在的 Key
+    const keys = await this.call((s) => s.listKeys());
+    const alive = new Set(keys.map((k) => k.id));
+    const botKeys = this.botKeyIds();
+    let replaced = false;
+
+    if (!alive.has(session.record.deviceKeyId) && !this.adoptDeviceKey(session, keys, botKeys) && (await this.o.hooks.sharedKeyRejected())) {
+      if (this.session !== session) return false;
+      log.warn("device key is gone on Modelflare, issuing a new one", { id: session.record.deviceKeyId });
+      const key = await this.call((s) => s.createKey(this.deviceKeyName()));
+      if (!key.key) throw new Error(t("account.no_new_key"));
+      try {
+        await this.o.hooks.connectKey(key.key);
+      } catch (e) {
+        await this.deleteKeyQuietly(key.id);
+        throw e;
+      }
+      session.updateRecord({ deviceKeyId: key.id });
+      this.o.hooks.alert(t("account.key_reissued"), false);
+      replaced = true;
+    }
+
+    // 开着预算却没有 Key 的机器人（Key 被删，或刚登录还没补签）：按现在的预算签发，用量从零算起。失败的留到下次核对再试
+    const lost = new Set<string>();
+    for (const [botId, id] of botKeys) {
+      if (alive.has(id)) continue;
+      this.o.store.deleteKV(BOT_KEY(botId));
+      lost.add(botId);
+    }
+    for (const b of this.botsSource()) {
+      if (!b.budget.enabled || this.botKeyIds().has(b.id) || this.session !== session) continue;
+      try {
+        await this.setBotBudget(b.id, b.name, b.budget);
+        log.info("issued bot budget key", { bot: b.id, replacedDeleted: lost.has(b.id) });
+        if (lost.has(b.id)) this.o.hooks.alert(t("account.bot_key_reissued", { name: b.name, limit: b.budget.limitUsd }), false);
+        replaced = true;
+      } catch (e) {
+        log.warn("reissue bot key failed", { bot: b.id, message: (e as Error).message });
+      }
+      lost.delete(b.id);
+    }
+    // 预算已经关掉的机器人：只把内置网关里它那把失效的 Key 拿掉
+    for (const botId of lost) await this.o.hooks.removeBotKey(botId).catch(() => {});
+    return replaced;
+  }
+
+  /**
+   * 0.1.10 及更早的版本在令牌轮换时把本机 Key 的 id 写回了 0：按网关里那把 Key 的尾号把它认回来。
+   * 认不回来说明网关里用的不是这次授权签发的 Key（被删了，或者用户自己粘贴了一把）。
+   */
+  private adoptDeviceKey(session: AccountSession, keys: AppKey[], botKeys: Map<string, number>): boolean {
+    const tail = this.o.hooks.sharedKeyTail();
+    const budgetIds = new Set(botKeys.values());
+    const k = tail ? keys.find((k) => k.key_tail === tail && !budgetIds.has(k.id)) : undefined;
+    if (!k) return false;
+    session.updateRecord({ deviceKeyId: k.id });
+    return true;
   }
 
   /** App 注入：当前机器人及其预算设置 */

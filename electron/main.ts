@@ -6,9 +6,10 @@
  *  - 托盘：显示 / 开机自启 / 退出；关闭窗口=隐藏到托盘（可在设置 → 常规里改为退出）；退出时干净关闭 magpie
  *  - 「需要你」：托盘提示和角标是件数（没事时什么都不加），新的一件在窗口不在前台时发一条系统通知（每件最多一次）
  *  - 设置页里的开机自启、缩放、打开数据目录经 core.desktop 回调到这里（同进程，无需 preload/IPC）
+ *  - 托盘菜单和对话框跟着应用语言（src/i18n）：跟随系统时取系统首选语言，界面里换了语言托盘菜单立刻重建
  * CLI（npm start）与 Docker 走同一套 src/ 代码，本文件只做桌面外壳。
  */
-import { app, BrowserWindow, Menu, Notification, Tray, nativeImage, net, powerMonitor, shell, dialog, safeStorage } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, nativeImage, nativeTheme, net, powerMonitor, shell, dialog, safeStorage } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -17,6 +18,7 @@ import { loadConfig } from "../src/config.js";
 import { App } from "../src/app.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
 import { initFileLog, logFilePath, logger, registerSecret, setConsoleLog } from "../src/log.js";
+import { normalizeLang, onLangChange, setLangPref, setSystemLang, t } from "../src/i18n/index.js";
 import { notificationOf, trayTitle, type AttentionItem } from "../src/tasks/attention.js";
 
 const log = logger("desktop");
@@ -49,6 +51,25 @@ function showWindow(): void {
 const PRODUCT = "AnyModelBot";
 const canAutostart = process.platform === "darwin" || process.platform === "win32";
 
+// Windows：也不要系统标题栏，侧栏顶部那一行就是标题栏——左上角是应用图标 + 名称（Windows 的习惯；macOS 那里是红绿灯），
+// 右上角由 Electron 画系统的最小化 / 最大化 / 关闭（Window Controls Overlay），贴住窗口的右上角，界面里最右的顶栏给它让位
+// （界面在 Electron + Windows 下带 win-app，见 shell.css）。Linux 的窗口管理器各不相同，仍用系统标题栏。
+// 叠层透明，高度 = 侧栏顶部那一行（--pane-gap 8 + --head-h 52），跟着页面缩放一起变；
+// 符号颜色跟界面主题：主题存在界面的 localStorage 里，界面解析后经 core.desktop.setTitleBarTheme 告诉这里，在那之前先按系统主题猜。
+// 底色虽然透明，RGB 也不能随便填：Electron 按底色的亮度挑悬停时那层灰（亮底 → 黑色、暗底 → 白色）
+const TITLE_BAR_H = 60;
+let titleBarDark = nativeTheme.shouldUseDarkColors;
+function titleBarOverlay(): Electron.TitleBarOverlay {
+  return {
+    color: titleBarDark ? "rgba(0, 0, 0, 0)" : "rgba(255, 255, 255, 0)",
+    symbolColor: titleBarDark ? "#ececec" : "#1a1a1a", // = --fg
+    height: Math.round(TITLE_BAR_H * (core?.config.ui.zoom ?? 1)),
+  };
+}
+function updateTitleBar(): void {
+  if (isWin && win && !win.isDestroyed()) win.setTitleBarOverlay(titleBarOverlay());
+}
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1200,
@@ -59,9 +80,11 @@ function createWindow(): void {
     icon: windowIconPath(),
     show: !SMOKE,
     autoHideMenuBar: true,
-    // macOS：无标题栏，红绿灯嵌进侧栏顶部（界面在 Electron + Mac 下给它留位）；其他系统用系统标题栏。
-    // 侧栏顶部先让出 --pane-gap（8）再放 52 高的顶栏，和主区顶栏同一条中线，所以红绿灯也比顶栏原来的位置低 8
+    // macOS：无标题栏，红绿灯嵌进侧栏顶部（界面在 Electron + Mac 下给它留位）。
+    // 侧栏顶部先让出 --pane-gap（8）再放 52 高的顶栏，和主区顶栏同一条中线，所以红绿灯也比顶栏原来的位置低 8。
+    // Windows：无标题栏 + 窗口按钮叠层（见上面的 titleBarOverlay）；Linux 用系统标题栏
     ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 23 } } : {}),
+    ...(isWin ? { titleBarStyle: "hidden" as const, titleBarOverlay: titleBarOverlay() } : {}),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   const origin = new URL(entryUrl).origin;
@@ -152,24 +175,25 @@ function buildTray(): void {
     tray!.setContextMenu(
       Menu.buildFromTemplate([
         // 有事在等你时才有这一项
-        ...(needsCount ? [{ label: `需要你（${needsCount}）`, click: openNeeds }, { type: "separator" as const }] : []),
-        { label: `打开 ${PRODUCT}`, click: showWindow },
-        { label: "在浏览器中打开", click: () => void shell.openExternal(entryUrl) },
+        ...(needsCount ? [{ label: t("desktop.trayNeeds", { count: needsCount }), click: openNeeds }, { type: "separator" as const }] : []),
+        { label: t("desktop.trayOpen", { product: PRODUCT }), click: showWindow },
+        { label: t("desktop.trayOpenInBrowser"), click: () => void shell.openExternal(entryUrl) },
         { type: "separator" },
         {
-          label: "开机自启",
+          label: t("desktop.trayAutostart"),
           type: "checkbox",
           enabled: canAutostart,
           checked: canAutostart && app.getLoginItemSettings().openAtLogin,
           click: (item) => setAutostart(item.checked),
         },
-        { label: "打开数据目录", click: () => void shell.openPath(core!.config.dataDir) },
+        { label: t("desktop.trayOpenDataDir"), click: () => void shell.openPath(core!.config.dataDir) },
         { type: "separator" },
-        { label: "退出", click: () => app.quit() },
+        { label: t("desktop.trayQuit"), click: () => app.quit() },
       ]),
     );
   renderTray = render;
   render();
+  onLangChange(render); // 界面里换了语言：托盘菜单跟着换
   tray.on("click", showWindow);
 }
 
@@ -185,6 +209,9 @@ async function boot(): Promise<void> {
   // 尽早打开日志文件：配置读取失败、启动失败也能留下记录
   initFileLog(path.join(dataDir, "logs"));
   const config = loadConfig({ dataDir });
+  // 语言：跟随系统时用系统的首选语言（不支持的语言用英文）；偏好本身在 config.ui.lang
+  setSystemLang(app.getPreferredSystemLanguages().map(normalizeLang).find(Boolean) ?? normalizeLang(app.getLocale()) ?? "en");
+  setLangPref(config.ui.lang);
   // 桌面版：仅回环 + 每次启动随机令牌；端口沿用配置（默认 3600，被占用时自动换随机端口）
   config.ui.host = "127.0.0.1";
   if (!config.ui.token) config.ui.token = crypto.randomBytes(24).toString("base64url");
@@ -193,7 +220,15 @@ async function boot(): Promise<void> {
   core.desktop = {
     autostart: () => ({ supported: canAutostart, on: canAutostart && app.getLoginItemSettings().openAtLogin }),
     setAutostart,
-    applyZoom: (z) => win?.webContents.setZoomFactor(z),
+    applyZoom: (z) => {
+      win?.webContents.setZoomFactor(z);
+      updateTitleBar(); // 叠层高度跟着缩放（调用方已把 z 写进 config.ui.zoom）
+    },
+    setTitleBarTheme: (dark) => {
+      if (dark === titleBarDark) return;
+      titleBarDark = dark;
+      updateTitleBar();
+    },
     openDataDir: () => void shell.openPath(config.dataDir),
     openInBrowser: () => void shell.openExternal(entryUrl),
     openExternal: (url) => {
@@ -207,7 +242,7 @@ async function boot(): Promise<void> {
     fetch: ((input: string | URL | Request, init?: RequestInit) => net.fetch(input instanceof URL ? input.href : input, init)) as typeof fetch,
   };
   await core.start();
-  if (!core.web) throw new Error("管理界面未启动");
+  if (!core.web) throw new Error(t("desktop.uiNotStarted"));
   // 规则的定时器：电脑醒来、解锁时马上重新看一遍（睡着时错过的按宽限期补跑一次或记为跳过）
   powerMonitor.on("resume", () => core?.tasks.scheduler.wake());
   powerMonitor.on("unlock-screen", () => core?.tasks.scheduler.wake());
@@ -257,7 +292,12 @@ process.on("uncaughtException", (e) => {
   if (Date.now() - lastErrorBox < 60_000 || !app.isReady()) return;
   lastErrorBox = Date.now();
   void dialog
-    .showMessageBox({ type: "error", title: PRODUCT, message: `${PRODUCT} 出错了`, detail: `${err?.message ?? String(e)}\n\n详细信息见日志：${logFilePath() ?? "（未启用）"}` })
+    .showMessageBox({
+      type: "error",
+      title: PRODUCT,
+      message: t("desktop.errorTitle", { product: PRODUCT }),
+      detail: t("desktop.errorDetail", { message: err?.message ?? String(e), log: logFilePath() ?? t("desktop.logDisabled") }),
+    })
     .catch(() => {});
 });
 process.on("unhandledRejection", (e) => log.warn(`unhandled rejection: ${(e as Error)?.stack || String(e)}`));
@@ -292,7 +332,7 @@ if (!app.requestSingleInstanceLock()) {
     .then(boot)
     .catch((e) => {
       log.error((e as Error).stack || String(e));
-      dialog.showErrorBox(`${PRODUCT} 启动失败`, (e as Error).message);
+      dialog.showErrorBox(t("desktop.bootFailed", { product: PRODUCT }), (e as Error).message);
       app.exit(1);
     });
 }

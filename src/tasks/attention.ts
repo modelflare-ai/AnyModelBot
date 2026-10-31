@@ -11,6 +11,7 @@ import type { ApprovalRow, Store } from "../store/db.js";
 import { questionsOf, type QuestionItem } from "../agent/approvals.js";
 import type { AttentionItem as DeliveryItem } from "../core/delivery.js";
 import { logger } from "../log.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("attention");
 
@@ -184,7 +185,7 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       kind: r.kind,
       botId: r.botId,
       botName: store.getBot(r.botId)?.name ?? r.botId,
-      subject: task?.title ?? (rule ? `规则「${rule.title}」` : (CHANNEL[channel] ?? "对话")),
+      subject: task?.title ?? (rule ? t("rules.subject", { title: rule.title }) : (CHANNEL[channel] ?? "对话")),
       status: r.kind === "approval" ? "等你批准" : "等你回答",
       line: line.length > 300 ? line.slice(0, 299) + "…" : line,
       since: r.createdAt,

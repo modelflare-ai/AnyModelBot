@@ -1,7 +1,7 @@
 /** 模型选择器的模型族分组：Modelflare 的 ID 不带厂商前缀，按名字归族，族内版本新的在前。 */
 import { describe, it, expect } from "vitest";
 // @ts-expect-error 界面代码是不经构建的 JS
-import { groupModels, modelFamily } from "../ui/lib/models.js";
+import { groupModels, modelFamily, OTHER_FAMILY } from "../ui/lib/models.js";
 
 // Modelflare 2026-10-30 公开的对话模型（节选）
 const LIST = [
@@ -18,12 +18,13 @@ describe("模型族", () => {
     expect(modelFamily("modelflare/claude-opus-5-5")).toBe("Claude");
     expect(modelFamily("qwen3.8-max")).toBe("Qwen");
     expect(modelFamily("kimi-k3")).toBe("Kimi");
-    expect(modelFamily("muse-spark-1.3")).toBe("其他");
+    expect(modelFamily("muse-spark-1.3")).toBe(OTHER_FAMILY);
+    expect(OTHER_FAMILY).toBe("other");
   });
 
   it("族按固定顺序，「其他」最后；族内版本新的在前，同版本按名字", () => {
     const g = groupModels(LIST);
-    expect(g.map(([f]: [string]) => f)).toEqual(["GPT", "Claude", "Gemini", "Grok", "DeepSeek", "Qwen", "Kimi", "GLM", "其他"]);
+    expect(g.map(([f]: [string]) => f)).toEqual(["GPT", "Claude", "Gemini", "Grok", "DeepSeek", "Qwen", "Kimi", "GLM", OTHER_FAMILY]);
     const of = (f: string) => g.find(([x]: [string]) => x === f)[1].map(([, label]: [string, string]) => label);
     expect(of("GPT")).toEqual(["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.4", "codex-auto-review"]);
     expect(of("Claude")).toEqual(["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5", "claude-opus-5", "claude-haiku-4-5"]);

@@ -80,12 +80,23 @@ describe("AccountManager", () => {
   let calls: string[];
   let alerts: string[];
   let manager: AccountManager;
+  /** 内置网关共用连接现在用的 Key */
+  let gw: string;
   const hooks = (): AccountHooks => ({
-    connectKey: async (key) => void calls.push(`connect:${key}`),
-    disconnect: async () => void calls.push("disconnect"),
+    connectKey: async (key) => {
+      calls.push(`connect:${key}`);
+      gw = key;
+    },
+    disconnect: async () => {
+      calls.push("disconnect");
+      gw = "";
+    },
     setBotKey: async (botId, key) => void calls.push(`bot:${botId}:${key}`),
     removeBotKey: async (botId) => void calls.push(`unbot:${botId}`),
     keyBalance: async () => undefined,
+    sharedKeyTail: () => gw.slice(-4),
+    // mock 签发的 Key 被删了就失效；别的 Key 当作用户自己粘贴的、还能用的
+    sharedKeyRejected: async () => !gw || (gw.startsWith("sk-key-") && !mf.s.keys.some((k) => `sk-key-${k.id}` === gw)),
     alert: (text) => void alerts.push(text),
   });
   const make = () => {
@@ -101,6 +112,7 @@ describe("AccountManager", () => {
     const url = await manager.startLogin();
     await approveInBrowser(mf, url);
     await until(() => manager.status().state === "signed_in");
+    await manager.repairKeys(Infinity); // 等登录后那次核对跑完
   };
 
   beforeEach(async () => {
@@ -109,6 +121,7 @@ describe("AccountManager", () => {
     store = new Store(":memory:");
     calls = [];
     alerts = [];
+    gw = "";
     manager = make();
   });
   afterEach(async () => {
@@ -188,6 +201,89 @@ describe("AccountManager", () => {
 
   it("没登录时不能设预算", async () => {
     await expect(manager.setBotBudget("b1", "x", { enabled: true, limitUsd: 1 })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("令牌轮换后账户文件里仍记着本机 Key 的 id", async () => {
+    await signIn();
+    mf.s.access.clear(); // 让下一次请求 401，强制换一次令牌
+    await manager.refresh();
+    expect(AccountVault.at(dir).load()).toMatchObject({ refreshToken: "rt-2", deviceKeyId: 1 });
+  });
+
+  it("Key 都在：核对不签发、不提醒；并发核对只请求一次，maxAgeMs 内沿用上次结果", async () => {
+    await signIn();
+    const before = mf.s.keyLists;
+    expect(await Promise.all([manager.repairKeys(), manager.repairKeys()])).toEqual([false, false]);
+    expect(await manager.repairKeys(60_000)).toBe(false);
+    expect(mf.s.keyLists).toBe(before + 1);
+    expect(mf.s.keys.map((k) => k.id)).toEqual([1]);
+    expect(calls).toEqual(["connect:sk-key-1"]);
+    expect(alerts).toEqual([]);
+  });
+
+  it("本机 Key 在控制台被删：重新签发、接到网关、记下新 id、提醒一次", async () => {
+    await signIn();
+    mf.s.keys = [];
+    expect(await manager.repairKeys()).toBe(true);
+    expect(calls).toEqual(["connect:sk-key-1", "connect:sk-key-2"]);
+    expect(mf.s.keys).toMatchObject([{ id: 2, name: "AnyModelBot · test-pc" }]);
+    expect(AccountVault.at(dir).load()!.deviceKeyId).toBe(2);
+    expect(alerts.filter((a) => a.includes("已自动重新签发"))).toHaveLength(1);
+    // 刚换过：maxAgeMs 内再问得到“换过了”（失败的请求可以重试），过后重新核对，没再换
+    expect(await manager.repairKeys(60_000)).toBe(true);
+    expect(await manager.repairKeys()).toBe(false);
+    expect(mf.s.keys).toHaveLength(1);
+  });
+
+  it("旧版本把本机 Key 的 id 记成了 0：按网关里 Key 的尾号认回来，不另签", async () => {
+    await signIn();
+    AccountVault.at(dir).save({ ...AccountVault.at(dir).load()!, deviceKeyId: 0 });
+    const again = make();
+    expect(await again.repairKeys()).toBe(false);
+    expect(AccountVault.at(dir).load()!.deviceKeyId).toBe(1);
+    expect(mf.s.keys).toHaveLength(1);
+  });
+
+  it("网关里换成了用户自己粘贴、还能用的 Key：本机 Key 被删也不去替换", async () => {
+    await signIn();
+    gw = "sk-user-own-key";
+    mf.s.keys = [];
+    expect(await manager.repairKeys()).toBe(false);
+    expect(gw).toBe("sk-user-own-key");
+    expect(mf.s.keys).toHaveLength(0);
+  });
+
+  it("预算 Key 被删：按现在的预算重新签发；预算已关掉的只拿掉网关里失效的 Key", async () => {
+    await signIn();
+    const bots = [
+      { id: "b1", name: "写作助手", budget: { enabled: true, limitUsd: 5 } },
+      { id: "b2", name: "翻译", budget: { enabled: true, limitUsd: 2 } },
+    ];
+    manager.botsSource = () => bots;
+    await manager.setBotBudget("b1", "写作助手", bots[0].budget);
+    await manager.setBotBudget("b2", "翻译", bots[1].budget);
+    bots[1].budget = { enabled: false, limitUsd: 2 }; // 只改了本机设置，Key 还在（模拟不一致的状态）
+    mf.s.keys = mf.s.keys.filter((k) => k.id === 1);
+    expect(await manager.repairKeys()).toBe(true);
+    expect(calls).toContain("bot:b1:sk-key-4");
+    expect(calls).toContain("unbot:b2");
+    expect(mf.s.keys.find((k) => k.id === 4)).toMatchObject({ name: "AnyModelBot · 写作助手", limit_usd: 5 });
+    expect(alerts.filter((a) => a.includes("写作助手") && a.includes("$5"))).toHaveLength(1);
+    expect(await manager.botBudgets()).toMatchObject({ b1: { limit_usd: 5 } });
+    expect(Object.keys(await manager.botBudgets())).toEqual(["b1"]);
+  });
+
+  it("登录后给开着预算的机器人补签 Key，不提醒“被删”", async () => {
+    manager.botsSource = () => [{ id: "b1", name: "写作助手", budget: { enabled: true, limitUsd: 3 } }];
+    await signIn();
+    await until(() => calls.includes("bot:b1:sk-key-2"));
+    expect(await manager.repairKeys()).toBe(false);
+    expect(mf.s.keys).toHaveLength(2);
+    expect(alerts).toEqual([]);
+  });
+
+  it("没登录时不核对", async () => {
+    expect(await manager.repairKeys()).toBe(false);
   });
 });
 
@@ -583,5 +679,97 @@ describe("amb-media 插件与 bridge", () => {
       await mgr.bridge.stop();
       store.close();
     }
+  });
+});
+
+describe("Key 失效后自动重试", () => {
+  const ev: any = { id: "e1", channel: "web", botId: "b1", conversation: { kind: "dm", id: "console" }, sender: { id: "u", name: "u" }, parts: [{ type: "text", text: "hi" }], replyHandle: {}, receivedAt: Date.now() };
+  const setup = async (o: { agent?: any; models?: any; recovered: boolean }) => {
+    const { BotRuntime } = await import("../src/core/runtime.js");
+    const store = new Store(":memory:");
+    store.createBot({ id: "b1", name: "b", defaultModel: "m1" });
+    let recovers = 0;
+    const rt = new BotRuntime({
+      store,
+      models: o.models ?? { listModels: async () => ["m1"], streamChat: async () => "plain" },
+      defaultModel: () => "",
+      contextMessages: 10,
+      contextChars: 5000,
+      agent: o.agent,
+      recoverKey: async () => (recovers++, o.recovered),
+    });
+    const ops: any[] = [];
+    await rt.handle(ev, { apply: async (op: any) => void ops.push(op) });
+    store.close();
+    return { finish: ops.filter((x) => x.type === "stream.finish").at(-1)?.text as string, recovers: () => recovers };
+  };
+  const flaky = (failures: Array<(onDelta: (d: string) => void) => void>) => {
+    let n = 0;
+    return {
+      calls: () => n,
+      listModels: async () => ["m1"],
+      streamChat: async (_r: unknown, onDelta: (d: string) => void) => {
+        const fail = failures[n++];
+        if (fail) {
+          fail(onDelta);
+          throw new Error("HTTP 401 invalid token");
+        }
+        onDelta("ok");
+        return "ok";
+      },
+    };
+  };
+
+  it("纯对话：还没输出就失败、Key 换过了 → 用新 Key 再发一次", async () => {
+    const models = flaky([() => {}]);
+    const r = await setup({ models, recovered: true });
+    expect(models.calls()).toBe(2);
+    expect(r.recovers()).toBe(1);
+    expect(r.finish).toBe("ok");
+  });
+
+  it("纯对话：Key 没换就不重试，照常报错；已经输出了一部分也不重试", async () => {
+    const m1 = flaky([() => {}]);
+    const r1 = await setup({ models: m1, recovered: false });
+    expect(m1.calls()).toBe(1);
+    expect(r1.finish).toContain("HTTP 401");
+    const m2 = flaky([(d) => d("半句")]);
+    const r2 = await setup({ models: m2, recovered: true });
+    expect(m2.calls()).toBe(1);
+    expect(r2.recovers()).toBe(0);
+    expect(r2.finish).toContain("半句");
+  });
+
+  const agentWith = (runTurn: (input: any) => Promise<any>) => ({
+    available: true,
+    host: () => ({ state: "running", workspace: os.tmpdir() }),
+    approvals: { bindSink: () => () => {}, handleReply: () => ({ handled: false }), pending: () => [] },
+    runTurn: (_botId: string, input: any) => runTurn(input),
+    settings: () => ({ memory: { enabled: false } }),
+    takeSeed: () => "",
+  });
+
+  it("代理回合：还没调用工具就失败、Key 换过了 → 整个回合再跑一次", async () => {
+    let n = 0;
+    const agent = agentWith(async () => {
+      if (n++ === 0) throw new Error("401 invalid token");
+      return { text: "agent ok", files: [] };
+    });
+    const r = await setup({ agent, recovered: true });
+    expect(n).toBe(2);
+    expect(r.finish).toBe("agent ok");
+  });
+
+  it("代理回合：已经调用过工具（可能有副作用）就不重试", async () => {
+    let n = 0;
+    const agent = agentWith(async (input) => {
+      n++;
+      input.observer.onProgress("🔧 bash");
+      throw new Error("401 invalid token");
+    });
+    const r = await setup({ agent, recovered: true });
+    expect(n).toBe(1);
+    expect(r.recovers()).toBe(0);
+    expect(r.finish).toContain("401 invalid token");
   });
 });

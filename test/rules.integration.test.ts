@@ -244,10 +244,16 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
     const run = await tick(r.rule!.id);
     expect(run).toMatchObject({ mode: "observe", outcome: "done" });
     expect(run.report!.summary).toBe("not run");
-    expect(run.would).toMatch(/^需要批准：.*echo esc-\$\(\(40\+2\)\)/);
+    expect(run.would).toMatch(/^approval: .*echo esc-\$\(\(40\+2\)\)/);
     expect(app.store.listApprovals({ ruleId: r.rule!.id })).toEqual([]);
     expect((await api("/attention")).items).toEqual([]);
-    expect((await api(`/rules/${r.rule!.id}/runs`)).runs[0].line).toMatch(/^本会做：需要批准：/);
+    const logged = (await api(`/rules/${r.rule!.id}/runs`)).runs[0];
+    expect(logged.line).toMatch(/^本会做：需要批准：/);
+    expect(logged.would).toMatch(/^需要批准：.*echo esc/);
+    // 界面是英文时（请求头 x-amb-lang）：同一条记录按英文给
+    const en = await (await fetch(`${base}/amb/api/rules/${r.rule!.id}/runs`, { headers: { "x-amb-lang": "en" } })).json() as any;
+    expect(en.runs[0]).toMatchObject({ permission: "Read-only" });
+    expect(en.runs[0].line).toMatch(/^Would do: Needs approval: .*echo esc/);
     await api(`/rules/${r.rule!.id}`, { method: "DELETE" });
     expect(app.store.getRule(r.rule!.id)).toBeUndefined();
   }, 180_000);
@@ -256,6 +262,9 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
     const bad = await fetch(`${base}/amb/api/rules`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ botId: "default", conversationId: CONV, title: "x", instruction: "x", schedule: { kind: "every", minutes: 5 } }) });
     expect(bad.status).toBe(400);
     expect(((await bad.json()) as any).error).toBe("间隔至少 15 分钟");
+    const badEn = await fetch(`${base}/amb/api/rules`, { method: "POST", headers: { "content-type": "application/json", "x-amb-lang": "en" }, body: JSON.stringify({ botId: "default", conversationId: CONV, title: "x", instruction: "x", schedule: { kind: "every", minutes: 5 } }) });
+    expect(((await badEn.json()) as any).error).toBe("The interval must be at least 15 minutes");
+    expect((await (await fetch(`${base}/amb/api/rules?bot=default`, { headers: { "x-amb-lang": "en" } })).json() as any).rules[0]).toMatchObject({ when: "Daily 08:00", state: { label: "Acting" } });
     const c = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", title: "看天气", instruction: "每个工作日早上看看会不会下雨", schedule: { kind: "daily", time: "07:30", days: [1, 2, 3, 4, 5] } } })).rule;
     expect(c).toMatchObject({ mode: "observe", when: "每个工作日 07:30", state: { key: "observe" } });
     const r = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "remind", title: "喝水", message: "喝水。", schedule: { kind: "every", minutes: 120 } } })).rule;

@@ -165,10 +165,11 @@ function parseLines(lines, depth) {
 }
 
 const PUNCT = /[!-/:-@[-`{-~]/;
-const TRAIL = /[.,;:!?。，、；：！？'"”’）】》]+$/;
+// 中文标点不算链接的一部分（匹配的是消息正文，不是界面文案）
+const TRAIL = /[.,;:!?。，、；：！？'"”’）】》]+$/; // i18n-ignore
 
 function bareUrl(s, i) {
-  const m = /^https?:\/\/[^\s<>"'`，。；、（）【】《》“”]+/i.exec(s.slice(i));
+  const m = /^https?:\/\/[^\s<>"'`，。；、（）【】《》“”]+/i.exec(s.slice(i)); // i18n-ignore
   if (!m) return null;
   let url = m[0].replace(TRAIL, "");
   // 末尾 ) 只在括号成对时保留

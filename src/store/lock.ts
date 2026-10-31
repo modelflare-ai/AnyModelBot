@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { logger } from "../log.js";
+import { t } from "../i18n/index.js";
 
 const log = logger("lock");
 
@@ -25,7 +26,8 @@ export class DataDirLocked extends Error {
     readonly dataDir: string,
     readonly holder: { pid: number; host: string },
   ) {
-    super(`数据目录 ${dataDir} 正被另一个 anymodel bot 进程使用（${holder.host === os.hostname() ? "" : `${holder.host} 上的 `}pid ${holder.pid}）。先退出它，或者换一个数据目录（AMB_DATA_DIR）。`);
+    const who = holder.host === os.hostname() ? `pid ${holder.pid}` : t("app.data_dir_locked_remote", { host: holder.host, pid: holder.pid });
+    super(t("app.data_dir_locked", { dir: dataDir, who }));
     this.name = "DataDirLocked";
   }
 }

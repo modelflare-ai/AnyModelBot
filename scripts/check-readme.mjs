@@ -39,6 +39,7 @@ const LIMITS = [
   [/^docs\/assets\/brand\/social-preview\.png$/, 400 * KB],
   [/^docs\/assets\/hero\/hero-demo\.gif$/, 5 * MB],
   [/^docs\/assets\/modelflare\/modelflare-logo\.png$/, 40 * KB],
+  [/^docs\/assets\/modelflare\/modelflare-banner-(zh|en)\.webp$/, 150 * KB],
   [/^docs\/assets\/download\/install-windows\.gif$/, 2.5 * MB],
   [/^docs\/assets\/screenshots\/[a-z]+-(light|dark)\.webp$/, 300 * KB],
   [/^docs\/assets\/features\/characters-eyes\.gif$/, 1.5 * MB],

@@ -35,6 +35,7 @@ import type { ApprovalRow, Conversation, InputKind, RuleKind, RuleMode, RuleRow,
 import type { AttentionItem } from "./attention.js";
 import { logger } from "../log.js";
 import { localParts, systemTimeZone } from "../core/quiet.js";
+import { t } from "../i18n/index.js";
 import { DEFAULT_MAX_BACKGROUND, pickRuns, priorityOf } from "./slots.js";
 import { taskStage, type Stage } from "./stage.js";
 import { MAX_GRACE_MS, graceOf, nextRun, latestRun, parseSchedule, type Schedule } from "./schedule.js";
@@ -50,11 +51,16 @@ import {
   RULE_HINT_AFTER,
   RULE_OBSERVE_AFTER_EDIT,
   RULE_RUN_CAP_MS,
+  RUN_ERROR,
+  WOULD_APPROVAL,
+  errorText,
+  permissionText,
   ruleState,
   rulePermission,
   runLine,
   runMode,
   whenOf,
+  wouldText,
   type RuleRunView,
   type RuleView,
 } from "./rules.js";
@@ -188,6 +194,8 @@ interface Live {
 }
 
 const hex = (n: number) => crypto.randomBytes(n).toString("hex");
+/** 翻译（updateRule 里有叫 t 的局部变量） */
+const tr = t;
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -197,9 +205,6 @@ function stamp(ts: number, tz: string): string {
   const m = Math.floor(p.minute);
   return `${p.mo}月${p.d}日 ${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 }
-
-/** 规则发到微信时，建规则的回复里要说的那句（设计第 6 节「Be honest when a rule is created」） */
-export const WEIXIN_RULE_NOTE = "微信只在你 24 小时内发过消息时才能主动发给你；否则会在你下次发消息时一起送到，并显示在桌面端。";
 
 /** 文件夹名里的 slug：标题里的字母数字（中文标题就是 task） */
 export function slugOf(title: string): string {
@@ -1145,9 +1150,9 @@ export class TaskService {
     if (!list.length && !rules.length) return "没有后台任务。";
     const lines = list.map((t, i) => `${i + 1}. ${t.title} · ${t.stage.label}${t.latest ? `：${clip(t.latest, 40)}` : ""}`);
     // 规则接着编号（/stop 编号 关掉它）
-    const ruleLines = rules.map((r, i) => `${list.length + i + 1}. ${r.when} ${r.title} · ${r.state.label}`);
-    const working = list.findIndex((t) => t.stage.group === "working");
-    return [...(list.length ? ["后台任务：", ...lines] : []), ...(rules.length ? ["规则：", ...ruleLines] : []), ...(working >= 0 || rules.length ? ["发 /stop 编号 可停止。"] : [])].join("\n");
+    const ruleLines = rules.map((r, i) => t("rules.listLine", { n: list.length + i + 1, when: r.when, title: r.title, state: r.state.label }));
+    const working = list.findIndex((x) => x.stage.group === "working");
+    return [...(list.length ? ["后台任务：", ...lines] : []), ...(rules.length ? [t("rules.listHead"), ...ruleLines] : []), ...(working >= 0 || rules.length ? [t("rules.stopHint")] : [])].join("\n");
   }
 
   /** /tasks 里列出的规则：开着的（关了的、跑完了的一次性规则不列） */
@@ -1163,7 +1168,7 @@ export class TaskService {
     if (rule) {
       this.updateRule(rule.id, { mode: "off" });
       log.info("rule turned off from chat", { rule: rule.id, by });
-      return `已关闭规则「${rule.title}」。`;
+      return tr("rules.turnedOff", { title: rule.title });
     }
     if (!t) return `没有第 ${n} 个后台任务，发 /tasks 查看。`;
     if (t.stage.group !== "working") return `「${t.title}」${t.stage.label}。`;
@@ -1277,33 +1282,33 @@ export class TaskService {
     const next: Partial<RuleRow> = { updatedAt: now };
     if (patch.title !== undefined) {
       const t = clip(oneLine(patch.title), 40);
-      if (!t) return { error: "名称不能为空" };
+      if (!t) return { error: tr("rules.nameEmpty") };
       next.title = t;
     }
     let reworded = false;
     if (patch.instruction !== undefined) {
       const t = patch.instruction.trim().slice(0, 2000);
-      if (!t) return { error: "规则不能为空" };
+      if (!t) return { error: tr("rules.wordsEmpty") };
       if (t !== rule.instruction) (next.instruction = t), (reworded = true);
     }
     if (patch.message !== undefined && rule.kind === "remind") {
       const m = clip(oneLine(patch.message), MESSAGE_MAX);
-      if (!m) return { error: "提醒的话不能为空" };
+      if (!m) return { error: tr("rules.messageEmpty") };
       if (m !== rule.message) (next.message = m), (reworded = true);
     }
     if (patch.conversationId !== undefined && patch.conversationId !== rule.conversationId) {
       const c = this.store.getConversation(patch.conversationId);
-      if (!c || c.botId !== rule.botId) return { error: "没有这个会话" };
+      if (!c || c.botId !== rule.botId) return { error: tr("rules.noConversation") };
       next.conversationId = c.id;
     }
     let trigger = rule.trigger;
     if (patch.schedule) {
-      if (rule.trigger.kind !== "schedule") return { error: "这条规则由事件触发，没有时间表" };
+      if (rule.trigger.kind !== "schedule") return { error: tr("rules.eventNoSchedule") };
       trigger = next.trigger = { kind: "schedule", schedule: patch.schedule };
     }
     let mode = rule.mode;
     if (patch.mode !== undefined && patch.mode !== rule.mode) {
-      if (rule.kind === "remind" && patch.mode === "observe") return { error: "提醒没有观察模式" };
+      if (rule.kind === "remind" && patch.mode === "observe") return { error: tr("rules.remindNoObserve") };
       mode = next.mode = patch.mode;
       next.observeLeft = 0;
     }
@@ -1336,8 +1341,8 @@ export class TaskService {
   runRuleNow(id: string): { error?: string } {
     const rule = this.store.getRule(id);
     if (!rule) return { error: "rule not found" };
-    if (rule.mode === "off") return { error: "规则关着" };
-    if (this.ruleBusy(id)) return { error: "正在运行" };
+    if (rule.mode === "off") return { error: tr("rules.isOff") };
+    if (this.ruleBusy(id)) return { error: tr("rules.isRunning") };
     this.fireRule(rule, "manual", this.now());
     this.pump();
     return {};
@@ -1376,10 +1381,10 @@ export class TaskService {
       const last = latestRun(s, now, due) ?? due;
       this.store.updateRule(rule.id, { nextRunAt: nextRun(s, now) ?? 0 });
       if (now - last > graceOf(s, last)) {
-        this.skipRun(rule, due, "电脑没开");
+        this.skipRun(rule, due, RUN_ERROR.appOff);
         continue;
       }
-      if (last > due) this.skipRun(rule, due, "电脑没开");
+      if (last > due) this.skipRun(rule, due, RUN_ERROR.appOff);
       this.fireRule(rule, "schedule", last);
     }
     this.pump();
@@ -1411,7 +1416,7 @@ export class TaskService {
    */
   private fireRule(rule: RuleRow, cause: RunCause, at: number, event?: { source: string; event: RuleEvent }): RunRow | undefined {
     if (this.ruleBusy(rule.id)) {
-      if (cause === "schedule" || cause === "event") this.skipRun(rule, at, "上次还没跑完");
+      if (cause === "schedule" || cause === "event") this.skipRun(rule, at, RUN_ERROR.overlap);
       return undefined;
     }
     if (rule.kind === "remind") return this.remind(rule, cause, at);
@@ -1445,7 +1450,8 @@ export class TaskService {
     }
     return ruleBrief({
       title: rule.title,
-      when: whenOf(rule),
+      // 第一条输入是给模型的，和别的提示词一样固定用简体中文
+      when: whenOf(rule, false, "zh-CN"),
       instruction: rule.instruction,
       mode,
       recent,
@@ -1466,7 +1472,7 @@ export class TaskService {
     return this.store.getRun(id)!;
   }
 
-  /** 记一条跳过（电脑没开、一直在忙、上次还没跑完） */
+  /** 记一条跳过（电脑没开、一直在忙、上次还没跑完：why 是 RUN_ERROR 里的代码） */
   private skipRun(rule: RuleRow, at: number, why: string): void {
     this.store.insertEndedRun({ id: `r_${hex(6)}`, botId: rule.botId, ruleId: rule.id, ruleVersion: rule.version, mode: runMode(rule), cause: "schedule", outcome: "skipped", error: why, queuedAt: at, endedAt: this.now() });
     log.info("rule run skipped", { rule: rule.id, at, why });
@@ -1482,7 +1488,7 @@ export class TaskService {
       return true;
     }
     if (now - run.queuedAt <= this.graceFor(rule, run.queuedAt)) return false;
-    this.store.updateRun(run.id, { state: "ended", outcome: "skipped", error: "一直在忙", endedAt: now });
+    this.store.updateRun(run.id, { state: "ended", outcome: "skipped", error: RUN_ERROR.busy, endedAt: now });
     log.info("rule run skipped: no free slot within its grace period", { rule: rule.id, run: run.id });
     this.changed(rule.id);
     return true;
@@ -1537,8 +1543,8 @@ export class TaskService {
       if (this.live.get(l.runId) !== l) return;
       if (this.o.approvals?.pendingAll().some((a) => a.ruleId && a.runId === l.runId)) return this.armCap(l, 60_000);
       log.warn("rule run hit its time cap; stopping it", { rule: l.ruleId, run: l.runId });
-      l.activity.end("超时");
-      this.end(l, "failed", undefined, "超时");
+      l.activity.end(t("rules.whyTimeout"));
+      this.end(l, "failed", undefined, RUN_ERROR.timeout);
       void this.o.host.stop(l.botId, l.sessionId).catch(() => undefined);
     }, ms);
     l.capTimer.unref?.();
@@ -1570,7 +1576,7 @@ export class TaskService {
   private endRule(l: Live, outcome: RunOutcome, report?: TaskReport, error = ""): void {
     this.forget(l);
     const now = this.now();
-    const would = [report?.would ?? "", ...(l.would ?? []).map((d) => `需要批准：${d}`)].filter(Boolean).join("\n");
+    const would = [report?.would ?? "", ...(l.would ?? []).map((d) => `${WOULD_APPROVAL}${d}`)].filter(Boolean).join("\n");
     this.store.updateRun(l.runId, { state: "ended", outcome, report, would, error, endedAt: now, activity: JSON.stringify(l.activity.steps), tokensIn: l.tokensIn, tokensOut: l.tokensOut });
     for (const a of this.o.approvals?.pendingAll().filter((x) => x.ruleId && x.runId === l.runId) ?? []) this.o.approvals!.cancel(a.id, "run ended");
     const rule = this.store.getRule(l.ruleId);
@@ -1599,8 +1605,9 @@ export class TaskService {
     this.store.updateRule(rule.id, { failures, pausedReason: "failures", nextRunAt: 0 });
     log.warn("rule paused after failing in a row", { rule: rule.id, failures });
     if (rule.mode === "act") {
-      const why = clip(oneLine(report?.message || error || "没有给出结果"), 200);
-      this.deliverRule(rule, runId, "failure", `⚠️ 规则「${rule.title}」连续失败 ${failures} 次，已暂停：${why}`);
+      // 后台推送：应用的语言
+      const why = clip(oneLine(report?.message || errorText(error || "没有给出结果")), 200);
+      this.deliverRule(rule, runId, "failure", t("rules.pausedPush", { title: rule.title, count: failures, why }));
     }
   }
 
@@ -1673,7 +1680,7 @@ export class TaskService {
     if (!rule) return;
     const fresh = this.now() - run.queuedAt <= this.graceFor(rule, run.queuedAt);
     if (run.cause === "recover" || !fresh || rule.mode === "off" || rule.pausedReason || this.ruleBusy(rule.id)) {
-      this.store.updateRun(run.id, { outcome: "skipped", error: "应用重启了" });
+      this.store.updateRun(run.id, { outcome: "skipped", error: RUN_ERROR.restart });
       this.changed(rule.id);
       return;
     }
@@ -1717,7 +1724,7 @@ export class TaskService {
     const l = this.live.get(row.runId);
     if (!l) return;
     void this.o.host.stop(l.botId, l.sessionId).catch(() => undefined);
-    this.end(l, "failed", undefined, "批准超时");
+    this.end(l, "failed", undefined, RUN_ERROR.approvalTimeout);
   }
 
   // ---------- 规则：聊天代理的工具 ----------
@@ -1729,11 +1736,12 @@ export class TaskService {
     const kind: RuleKind = a.kind === "remind" ? "remind" : "check";
     const r = this.createRule({ botId: conv.botId, conversationId: conv.id, title: String(a.title ?? ""), instruction: String(a.instruction ?? ""), kind, message: String(a.message ?? ""), schedule: s.schedule });
     if (!r.rule) return { error: r.error };
+    // 建议给用户的那几句按应用的语言（模型照着说，聊天的语言不同时它会自己换）；其余是给模型的指示
     const when = whenOf(r.rule);
-    const wx = conv.channel === "weixin" ? ` This chat is WeChat, so also say: 「${WEIXIN_RULE_NOTE}」` : "";
-    if (kind === "remind") return { text: `Created reminder ${r.rule.id}: ${when} the user gets 「${r.rule.message}」. Confirm in one sentence, e.g. 「好，${when} 提醒你。」${wx}` };
+    const wx = conv.channel === "weixin" ? ` This chat is WeChat, so also say: 「${t("rules.weixinNote")}」` : "";
+    if (kind === "remind") return { text: `Created reminder ${r.rule.id}: ${when} the user gets 「${r.rule.message}」. Confirm in one sentence, e.g. 「${t("rules.remindReply", { when })}」${wx}` };
     return {
-      text: `Created rule ${r.rule.id} 「${r.rule.title}」 (${when}) in observe mode: it only records what it would say until the user switches it to act. Tell the user in one sentence: 「已建好规则：${when} ${r.rule.title}。先观察几天，只记录不打扰你；在「任务」里可以改成执行。」${wx}`,
+      text: `Created rule ${r.rule.id} 「${r.rule.title}」 (${when}) in observe mode: it only records what it would say until the user switches it to act. Tell the user in one sentence: 「${t("rules.createdReply", { when, title: r.rule.title })}」${wx}`,
     };
   }
 
@@ -1827,10 +1835,10 @@ export class TaskService {
       line: runLine(r, rule.kind, this.carrier(r)),
       summary: r.report?.summary ?? "",
       message: r.report?.message ?? "",
-      would: r.would || r.report?.would || "",
-      error: r.error,
+      would: wouldText(r.would || r.report?.would || ""),
+      error: errorText(r.error),
       version: r.ruleVersion,
-      permission: r.permission === "read-only" ? "只读" : r.permission === "workspace-write" ? "可写工作区" : "",
+      permission: permissionText(r.permission),
       steps: r.startedAt && r.outcome !== "skipped" ? this.activity(r.id).length : 0,
       startedAt: r.startedAt,
       endedAt: r.endedAt,
@@ -1853,9 +1861,9 @@ export class TaskService {
         kind: "rule",
         botId: rule.botId,
         botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
-        subject: `规则「${rule.title}」`,
-        status: paused ? `连续失败 ${rule.failures} 次，已暂停` : `连续失败 ${rule.failures} 次`,
-        line: clip(oneLine(last?.report?.message || last?.error || ""), 200),
+        subject: t("rules.subject", { title: rule.title }),
+        status: t(paused ? "rules.failingPaused" : "rules.failing", { count: rule.failures }),
+        line: last ? clip(oneLine(last.report?.message || errorText(last.error || "没有给出结果")), 200) : "",
         since: last?.endedAt || rule.updatedAt,
         severity: paused ? "err" : "warn",
         actions: ["retry"],

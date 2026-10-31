@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 步 · 接到微信 · 新手引导预览</title>
+<style>
+body{margin:0;background:#060706}
+*,*::before,*::after{box-sizing:border-box}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+input,textarea{font:inherit}
+a{color:#d7ff00}a:hover{color:#e9ff66}
+</style>
+<link rel="stylesheet" href="css/bots.css">
+<link rel="stylesheet" href="css/proto.css">
+</head>
+<body data-page="weixin">
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #060706; color: #fafaf7; font-family: Geist, 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <aside aria-label="机器人" style="flex: 1 1 248px; max-width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 14px 12px 12px; background: #0a0b0a; border-right: 1px solid rgba(255,255,255,.10)">
+    <div aria-hidden="true" style="display: flex; gap: 8px; padding: 4px 6px 14px">
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: rgba(127,127,127,.45)"></span>
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: rgba(127,127,127,.45)"></span>
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: rgba(127,127,127,.45)"></span>
+    </div>
+    <button type="button" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 10px; color: #a1a1aa; font-size: 13.5px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      新建机器人
+    </button>
+    <div style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; color: #a1a1aa; padding: 10px 10px 4px">机器人</div>
+    <a href="Main.html" style="display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 10px; border-radius: 12px; background: rgba(255,255,255,.06); color: #fafaf7; text-decoration: none">
+      <span class="face" data-char="blue" style="width: 34px; height: 34px; flex: none"></span>
+      <span style="display: flex; flex-direction: column; min-width: 0">
+        <span style="font-weight: 600; font-size: 14px">小蓝</span>
+        <span style="color: #a1a1aa; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">换好了，现在用 gpt-6.1-terra…</span>
+      </span>
+    </a>
+    <div style="flex: 1"></div>
+    <a href="Main.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 12px; background: rgba(215,255,0,.10); box-shadow: inset 0 0 0 1px rgba(215,255,0,.30); color: #fafaf7; font-size: 13.5px; text-decoration: none">
+      <span style="display: flex; gap: 3px" aria-hidden="true">
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: #d7ff00"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: #d7ff00"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+        <span style="width: 5px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.16)"></span>
+      </span>
+      <span style="flex: 1; font-weight: 500">上手清单</span>
+      <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">2 / 6</span>
+    </a>
+    <button type="button" style="display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 10px; border-radius: 12px; text-align: left">
+      <span aria-hidden="true" style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #d7ff00; color: #161a00; font-weight: 700; font-size: 13px">Z</span>
+      <span style="flex: 1; font-size: 13.5px">我的账户</span>
+      <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #a1a1aa">$12.39</span>
+    </button>
+  </aside>
+
+  <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-wrap: wrap; min-height: 100vh">
+    <!-- 对话区 -->
+    <main style="position: relative; flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column">
+      <header style="display: flex; align-items: center; gap: 8px; height: 54px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,.10)">
+        <button type="button" id="capsule" aria-pressed="false" style="position: relative; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 6px; border-radius: 999px; background: rgba(215,255,0,.10); box-shadow: 0 0 0 2px #d7ff00, 0 0 0 7px rgba(215,255,0,.16); font-weight: 600; font-size: 14px">
+          <span class="face" data-char="blue" style="width: 24px; height: 24px"></span>
+          小蓝
+          <span class="mk" data-mk="1" aria-hidden="true" style="position: absolute; right: -10px; top: -10px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #d7ff00; color: #161a00; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; font-weight: 600">1</span>
+        </button>
+        <span style="flex: 1"></span>
+        <button type="button" aria-label="开始新的一段对话" style="display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: #a1a1aa">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+        <button type="button" id="panel-btn" aria-label="信息面板" aria-pressed="false" style="display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.06); color: #fafaf7">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></svg>
+        </button>
+      </header>
+
+      <div style="flex: 1; overflow: auto">
+        <div style="max-width: 720px; margin: 0 auto; padding: 32px 24px 24px; display: flex; flex-direction: column; gap: 22px">
+          <div style="align-self: flex-end; max-width: 80%; padding: 10px 16px; border-radius: 18px; background: rgba(255,255,255,.07)">换成 gpt-6.1-terra，用一句话介绍你自己。</div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; color: #a1a1aa">gpt-6.1-terra · 用时 3 秒</span>
+            <p style="margin: 0; line-height: 1.75">换好了，现在用 gpt-6.1-terra。我是住在你电脑里的小蓝：能聊、能写、能动手，还记得你交代过的事。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 引导卡片：指向右侧信息面板 -->
+      <section id="coach" hidden aria-label="上手引导" style="position: absolute; right: 22px; top: 150px; z-index: 3; width: 340px; padding: 20px 20px 16px; border-radius: 20px; background: #0b0b10; box-shadow: 0 0 0 1px rgba(255,255,255,.18), 0 30px 80px -20px rgba(0,0,0,.75)">
+        <span class="face" data-char="blue" style="position: absolute; right: 18px; top: -40px; width: 52px; height: 52px"></span>
+        <span id="arrow" aria-hidden="true" style="position: absolute; right: -7px; top: 120px; width: 14px; height: 14px; transform: rotate(45deg); background: #0b0b10; box-shadow: 1px -1px 0 rgba(255,255,255,.18)"></span>
+        <p id="c-kick" style="display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 12.5px; letter-spacing: .06em; color: #a1a1aa">
+          <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #d7ff00">03 / 06</span>上手清单
+        </p>
+        <h2 id="c-title" style="margin: 0 0 6px; font-size: 19px; font-weight: 600; letter-spacing: -.01em">把小蓝接到微信</h2>
+        <p id="c-body" style="margin: 0 0 14px; color: #a1a1aa; line-height: 1.7">扫码后，在微信里直接私聊小蓝，不用装新 App。电脑开着，它就在线。</p>
+        <ol id="c-list" style="list-style: none; margin: 0 0 14px; padding: 12px 0 0; border-top: 1px solid rgba(255,255,255,.10); display: flex; flex-direction: column; gap: 10px; font-size: 13.5px">
+          <li data-s="1" style="display: flex; gap: 10px; align-items: flex-start; transition: opacity .3s"><span aria-hidden="true" style="flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; background: #d7ff00; color: #161a00; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; font-weight: 600">1</span>点顶部的「小蓝」，打开信息面板</li>
+          <li data-s="2" style="display: flex; gap: 10px; align-items: flex-start; transition: opacity .3s"><span aria-hidden="true" style="flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; background: #d7ff00; color: #161a00; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; font-weight: 600">2</span>在「渠道」里点「微信」→「扫码登录」</li>
+          <li data-s="3" style="display: flex; gap: 10px; align-items: flex-start; transition: opacity .3s"><span aria-hidden="true" style="flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; background: #d7ff00; color: #161a00; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; font-weight: 600">3</span>用微信扫码，在手机上确认</li>
+        </ol>
+        <p style="display: flex; gap: 8px; margin: 0 0 6px; padding: 10px 12px; border-radius: 12px; background: #101110; color: #a1a1aa; font-size: 12.5px; line-height: 1.6">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+          微信的规定：你每发一条消息，它 24 小时内最多回 10 条。
+        </p>
+        <a href="#feishu" style="display: inline-block; margin: 0 0 14px; font-size: 13px">用飞书？查看接入步骤</a>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+          <button type="button" id="c-later" style="min-height: 36px; padding: 0 4px; color: #a1a1aa; font-size: 13.5px">稍后再说</button>
+          <a id="c-next" href="Step4-Hands.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px; border-radius: 999px; background: #d7ff00; color: #161a00; font-weight: 600; font-size: 14px; text-decoration: none">下一步</a>
+        </div>
+      </section>
+
+      <div style="padding: 0 24px 24px">
+        <div style="max-width: 720px; margin: 0 auto; border-radius: 18px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <textarea id="input" class="input" rows="1" aria-label="消息" placeholder="给「小蓝」发消息，/ 查看命令"></textarea>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px">
+            <button type="button" aria-label="更多操作" style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #a1a1aa">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button type="button" style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; color: #a1a1aa; font-size: 12.5px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>
+              工作区可写
+            </button>
+            <span style="flex: 1"></span>
+            <button type="button" style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; color: #a1a1aa; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px">gpt-6.1-terra</button>
+            <button type="button" id="send" aria-label="发送" style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #161a00; color: #d7ff00; opacity: .5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 信息面板 -->
+    <aside id="panel" hidden aria-label="信息面板" style="flex: 1 1 340px; max-width: 100%; display: flex; flex-direction: column; background: #0a0b0a; border-left: 1px solid rgba(255,255,255,.10)">
+      <div style="display: flex; align-items: center; gap: 4px; height: 54px; padding: 0 10px 0 18px; border-bottom: 1px solid rgba(255,255,255,.10)">
+        <span style="flex: 1; font-weight: 600">小蓝</span>
+        <button type="button" aria-label="机器人设置" style="display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #a1a1aa">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+        </button>
+        <button type="button" aria-label="关闭信息面板" style="display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #a1a1aa">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div style="flex: 1; overflow: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 8px">
+        <div style="position: relative; display: flex; align-items: center; gap: 10px; padding: 0 6px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; color: #a1a1aa">
+          渠道
+          <span class="mk" data-mk="2" aria-hidden="true" style="display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #d7ff00; color: #161a00; font-size: 11px; font-weight: 600; letter-spacing: 0">2</span>
+        </div>
+        <div style="border-radius: 16px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10)">
+          <button type="button" aria-expanded="false" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 8px 14px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.10)">
+            <span style="flex: 1; min-width: 0"><span style="display: block; font-weight: 500">飞书</span><span style="display: block; color: #a1a1aa; font-size: 12.5px">长连接接收消息</span></span>
+            <span style="height: 22px; padding: 0 9px; border-radius: 999px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); color: #a1a1aa; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; line-height: 22px">未连接</span>
+          </button>
+          <div id="wx" style="border-radius: 0 0 16px 16px">
+            <button type="button" id="wx-row" aria-expanded="false" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 8px 14px; text-align: left">
+              <span style="flex: 1; min-width: 0"><span style="display: block; font-weight: 500">微信</span><span style="display: block; color: #a1a1aa; font-size: 12.5px">iLink 官方通道</span></span>
+              <span id="wx-badge" style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 999px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); color: #a1a1aa; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; line-height: 22px">未登录</span>
+            </button>
+            <div id="wx-body" hidden style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 4px 14px 16px">
+              <button type="button" id="wx-login" style="min-height: 38px; padding: 0 18px; border-radius: 999px; background: #d7ff00; color: #161a00; font-weight: 600; font-size: 13.5px">扫码登录</button>
+              <p id="wx-done" hidden style="margin: 0; align-self: stretch; padding: 10px 12px; border-radius: 12px; background: rgba(111,217,155,.10); color: #6fd99b; font-size: 13px">已绑定「小蓝」· 现在可以在微信里私聊它了</p>
+              <div id="wx-qr" hidden style="position: relative; padding: 12px; border-radius: 14px; background: #ffffff">
+                <span id="wx-scan" class="scan" aria-hidden="true"></span>
+                <div id="wx-scanned" hidden style="position: absolute; inset: 0; z-index: 2; display: grid; place-content: center; gap: 2px; border-radius: 14px; background: rgba(255,255,255,.93); color: #161a00; text-align: center; font-weight: 600; font-size: 14px"><span>已扫码</span><span style="font-weight: 400; font-size: 12px; color: #465612">请在手机上点「确认」</span></div>
+                <svg width="152" height="152" viewBox="0 0 29 29" aria-hidden="true" shape-rendering="crispEdges">
+                  <defs>
+                    <pattern id="qr-dots" width="5" height="5" patternUnits="userSpaceOnUse">
+                      <rect x="0" y="0" width="1" height="1" fill="#161a00"/><rect x="2" y="0" width="2" height="1" fill="#161a00"/><rect x="1" y="1" width="1" height="2" fill="#161a00"/><rect x="3" y="2" width="1" height="1" fill="#161a00"/><rect x="0" y="3" width="2" height="1" fill="#161a00"/><rect x="4" y="3" width="1" height="2" fill="#161a00"/><rect x="2" y="4" width="1" height="1" fill="#161a00"/>
+                    </pattern>
+                  </defs>
+                  <rect x="0" y="0" width="29" height="29" fill="url(#qr-dots)"/>
+                  <rect x="0" y="0" width="9" height="9" fill="#ffffff"/><rect x="20" y="0" width="9" height="9" fill="#ffffff"/><rect x="0" y="20" width="9" height="9" fill="#ffffff"/>
+                  <rect x="0.5" y="0.5" width="7" height="7" fill="none" stroke="#161a00"/><rect x="2" y="2" width="4" height="4" fill="#161a00"/>
+                  <rect x="21.5" y="0.5" width="7" height="7" fill="none" stroke="#161a00"/><rect x="23" y="2" width="4" height="4" fill="#161a00"/>
+                  <rect x="0.5" y="21.5" width="7" height="7" fill="none" stroke="#161a00"/><rect x="2" y="23" width="4" height="4" fill="#161a00"/>
+                  <rect x="11" y="11" width="7" height="7" rx="1.5" fill="#ffffff"/>
+                </svg>
+                <span class="face" data-char="blue" style="position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; transform: translate(-50%, -50%)"></span>
+                <span class="mk" data-mk="3" aria-hidden="true" style="position: absolute; right: -10px; top: -10px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #d7ff00; color: #161a00; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; font-weight: 600">3</span>
+              </div>
+              <p id="wx-hint" hidden style="margin: 0; color: #a1a1aa; font-size: 13px; text-align: center">用微信扫一扫，然后在手机上确认。</p>
+              <p id="wx-demo" hidden style="margin: -6px 0 0; color: #a1a1aa; font-size: 11.5px; font-family: 'Geist Mono', ui-monospace, monospace">演示：几秒后自动模拟扫码</p>
+              <div id="wx-actions" hidden style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px">
+                <button type="button" style="min-height: 34px; padding: 0 14px; border-radius: 999px; background: #101110; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); font-size: 13px" id="wx-cancel">取消</button>
+                <button type="button" style="min-height: 34px; padding: 0 10px; color: #a1a1aa; font-size: 13px">停用微信渠道</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="padding: 14px 6px 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; color: #a1a1aa">待审批</div>
+        <div style="padding: 14px; border-radius: 16px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); color: #a1a1aa; font-size: 13px">没有待处理的审批</div>
+        <div style="padding: 14px 6px 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; color: #a1a1aa">记忆</div>
+        <div style="padding: 14px; border-radius: 16px; background: #0b0b10; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); color: #a1a1aa; font-size: 13px">还没有长期记忆</div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script type="module" src="js/page-weixin.js"></script>
+</body>
+</html>

@@ -13,7 +13,8 @@ import { describe as describeSchedule, graceOf, latestRun, localTime, nextRun, n
 import { Scheduler } from "../src/tasks/scheduler.js";
 import { RuleEvents, matchesFilter } from "../src/tasks/rule-events.js";
 import { RULE_DENY, runLine } from "../src/tasks/rules.js";
-import { TaskService, WEIXIN_RULE_NOTE, type TaskHost, type TaskNotification } from "../src/tasks/service.js";
+import { TaskService, type TaskHost, type TaskNotification } from "../src/tasks/service.js";
+import { setLangPref, t as tServer, withLang } from "../src/i18n/index.js";
 import { ApprovalCenter } from "../src/agent/approvals.js";
 import { DEFAULT_SETTINGS } from "../src/agent/settings.js";
 import { RULE_NUDGE, RULE_RERUN, RULE_RESULT_SYSTEM, ruleRules } from "../src/agent/prompts/index.js";
@@ -130,9 +131,12 @@ describe("时间表：下一次、上一次、宽限期", () => {
 
 describe("界面：规则的一行（健康时只有状态和下次）", () => {
   it("第二行：观察中 · 下次 明天 08:00；正在运行；暂停了说连续失败几次；关了、跑完了只有状态；运行记录的时间", async () => {
-    (globalThis as any).window ??= { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+    (globalThis as any).window ??= { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} };
     // @ts-expect-error 界面代码是不经构建的 JS
     const { ruleSub, fmtRunAt, fmtNext } = await import("../ui/components/rules.js");
+    // @ts-expect-error 同上
+    const ui = await import("../ui/lib/i18n.js");
+    ui.setLangPref("zh-CN");
     const now = new Date(2026, 10, 2, 7, 30).getTime();
     const t = (d: number, h: number, m = 0) => new Date(2026, 10, 2 + d, h, m).getTime();
     const r = (o: any) => ({ failures: 0, nextRunAt: t(1, 8), state: { key: "observe", label: "观察中" }, ...o });
@@ -142,9 +146,15 @@ describe("界面：规则的一行（健康时只有状态和下次）", () => {
     expect(ruleSub(r({ state: { key: "paused", label: "已暂停" }, failures: 3, nextRunAt: 0 }), now)).toBe("已暂停 · 连续失败 3 次");
     expect(ruleSub(r({ state: { key: "off", label: "已关闭" } }), now)).toBe("已关闭");
     expect(ruleSub(r({ state: { key: "done", label: "已结束" }, nextRunAt: 0 }), now)).toBe("已结束");
-    expect([fmtRunAt(t(0, 8), now), fmtRunAt(t(-1, 8), now), fmtRunAt(t(-2, 8), now), fmtRunAt(t(-6, 8), now)]).toEqual(["今天 08:00", "昨天 08:00", "前天 08:00", "10/27 08:00"]);
+    expect([fmtRunAt(t(0, 8), now), fmtRunAt(t(-1, 8), now), fmtRunAt(t(-6, 8), now)]).toEqual(["今天 08:00", "昨天 08:00", "10/27 08:00"]);
     // 2026-11-02 是周一
     expect([fmtNext(t(3, 9), now), fmtNext(t(10, 9), now)]).toEqual(["周四 09:00", "11/12 09:00"]);
+    // 英文：状态文字是服务端按界面语言给的，这里只换了界面自己的那部分
+    ui.setLangPref("en");
+    expect(ruleSub(r({ state: { key: "observe", label: "Observing" } }), now)).toBe("Observing · Next: Tomorrow 08:00");
+    expect(ruleSub(r({ state: { key: "paused", label: "Paused" }, failures: 3, nextRunAt: 0 }), now)).toBe("Paused · failed 3 times in a row");
+    expect([fmtRunAt(t(-1, 8), now), fmtNext(t(3, 9), now)]).toEqual(["Yesterday 08:00", "Thu 09:00"]);
+    ui.setLangPref("zh-CN");
   });
 });
 
@@ -350,7 +360,7 @@ describe("规则（假宿主、假时钟）", () => {
     expect(rule.trigger).toEqual({ kind: "schedule", schedule: { kind: "daily", time: "08:00", tz: TZ } });
     expect(rule.nextRunAt).toBe(at("2026-11-02T08:00"));
     expect(text).toContain("「已建好规则：每天 08:00 看 X 价格。先观察几天，只记录不打扰你；在「任务」里可以改成执行。」");
-    expect(text).toContain(WEIXIN_RULE_NOTE);
+    expect(text).toContain(tServer("rules.weixinNote"));
     expect(svc.getRuleView(rule.id)).toMatchObject({ when: "每天 08:00", state: { key: "observe", label: "观察中", dot: "" }, hint: false });
     // 时间表说不清：照着错误改
     const bad = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "t", instruction: "i", schedule: "每天" } });
@@ -512,7 +522,7 @@ describe("规则（假宿主、假时钟）", () => {
     svc = make();
     svc.start();
     await flush();
-    expect(runsOf(rule.id).slice(1).map((r) => [r.outcome, r.error, r.queuedAt])).toEqual([["skipped", "电脑没开", at("2026-11-03T08:00")]]);
+    expect(runsOf(rule.id).slice(1).map((r) => [r.outcome, r.error, r.queuedAt])).toEqual([["skipped", "app_off", at("2026-11-03T08:00")]]);
     expect(svc.ruleLog(rule.id)[0].line).toBe("跳过：电脑没开");
     expect(store.getRule(rule.id)!.nextRunAt).toBe(at("2026-11-06T08:00"));
     // 每 15 分钟的：关了一小时，最近的那格在 7.5 分钟内 → 跳过一条、跑一次
@@ -539,7 +549,8 @@ describe("规则（假宿主、假时钟）", () => {
     expect(runsOf(rule.id).map((r) => r.state)).toEqual(["queued"]);
     now = at("2026-11-02T10:01");
     svc.pump();
-    expect(runsOf(rule.id).map((r) => [r.outcome, r.error])).toEqual([["skipped", "一直在忙"]]);
+    expect(runsOf(rule.id).map((r) => [r.outcome, r.error])).toEqual([["skipped", "busy"]]);
+    expect(svc.ruleLog(rule.id)[0].line).toBe("跳过：一直在忙");
     svc.stop();
     svc = make();
     svc.start();
@@ -548,7 +559,7 @@ describe("规则（假宿主、假时钟）", () => {
     await go(at("2026-11-04T08:00"));
     expect(runsOf(rule.id).map((r) => [r.state, r.outcome, r.error]).slice(1)).toEqual([
       ["running", "", ""],
-      ["ended", "skipped", "上次还没跑完"],
+      ["ended", "skipped", "overlap"],
     ]);
   });
 
@@ -609,7 +620,7 @@ describe("规则（假宿主、假时钟）", () => {
     svc = make();
     svc.start();
     await flush();
-    expect(runsOf(rule.id).at(-1)).toMatchObject({ cause: "schedule", outcome: "skipped", error: "应用重启了" });
+    expect(runsOf(rule.id).at(-1)).toMatchObject({ cause: "schedule", outcome: "skipped", error: "restart" });
   });
 
   it("运行记录：新的在前，一次一行，可以往前翻；展开有报告、版本、权限；runLine 的几种说法", async () => {
@@ -625,7 +636,7 @@ describe("规则（假宿主、假时钟）", () => {
     expect(page.map((r) => r.id)).toEqual(all.slice(2).map((r) => r.id));
     expect(all[0]).toMatchObject({ summary: "X 现在 ¥199", message: "", version: 1, permission: "只读", outcome: "done" });
     const run = (o: Partial<RunRow>): RunRow => ({ id: "r", botId: "b", taskId: "", ruleId: "x", ruleVersion: 1, mode: "act", sessionId: "", cause: "schedule", state: "ended", outcome: "done", report: undefined, would: "", activity: "", tokensIn: 0, tokensOut: 0, costUsd: 0, error: "", delivery: "", permission: "", queuedAt: 0, startedAt: 0, endedAt: 0, ...o });
-    expect(runLine(run({ outcome: "failed", error: "超时" }), "check")).toBe("失败：超时");
+    expect(runLine(run({ outcome: "failed", error: "timeout" }), "check")).toBe("失败：超时");
     expect(runLine(run({ outcome: "interrupted" }), "check")).toBe("中断：应用重启了");
     expect(runLine(run({ state: "queued" }), "check")).toBe("排队中");
     expect(runLine(run({ state: "running" }), "check")).toBe("正在运行");
@@ -671,7 +682,8 @@ describe("规则（假宿主、假时钟）", () => {
     const sid = host.prompts.at(-1)!.sessionId;
     await new Promise((r) => setTimeout(r, 60));
     await flush();
-    expect(runsOf(rule.id)[0]).toMatchObject({ outcome: "failed", error: "超时" });
+    expect(runsOf(rule.id)[0]).toMatchObject({ outcome: "failed", error: "timeout" });
+    expect(svc.ruleLog(rule.id)[0]).toMatchObject({ line: "失败：超时", error: "超时" });
     expect(host.stops).toContain(sid);
     expect(store.getRule(rule.id)!.failures).toBe(1);
   });
@@ -684,7 +696,8 @@ describe("规则（假宿主、假时钟）", () => {
     expect(host.prompts.at(-1)!.text).toBe(RULE_NUDGE);
     await turn();
     const [run] = runsOf(rule.id);
-    expect(run).toMatchObject({ outcome: "failed", error: "没有给出结果", would: "需要批准：curl -X POST https://x.example/alert" });
+    expect(run).toMatchObject({ outcome: "failed", error: "没有给出结果", would: "approval: curl -X POST https://x.example/alert" });
+    expect(svc.ruleLog(rule.id)[0]).toMatchObject({ line: "失败：没有给出结果", would: "需要批准：curl -X POST https://x.example/alert" });
     // 不能问用户
     await go(at("2026-11-03T08:00"));
     expect(svc.report({ sessionId: host.prompts.at(-1)!.sessionId, state: "needs_you", summary: "" }).error).toMatch(/cannot ask the user/);
@@ -704,7 +717,7 @@ describe("规则（假宿主、假时钟）", () => {
     approvals.sweep();
     await flush();
     expect(store.getApproval(row.id)!.status).toBe("expired");
-    expect(runsOf(rule.id)[0]).toMatchObject({ outcome: "failed", error: "批准超时" });
+    expect(runsOf(rule.id)[0]).toMatchObject({ outcome: "failed", error: "approval_timeout" });
     expect(host.stops).toContain(sid);
   });
 
@@ -755,6 +768,46 @@ describe("规则（假宿主、假时钟）", () => {
     expect(pushes()).toEqual([]);
     expect(store.listMessages(WEB).at(-1)!.content).toBe("X 降到 199 了");
     expect(runsOf(r.rule!.id)[0].delivery).toBe(`rule:${r.rule!.id}:${runsOf(r.rule!.id)[0].id}`);
+  });
+
+  it("英文（界面请求、应用语言是英文时）：时间表的话、状态、运行记录、「需要你」、暂停推送、建规则时建议的回复；给模型的第一条输入照旧是中文", async () => {
+    const d = (text: string) => describeSchedule(parseSchedule(text, TZ, now).schedule!, false, "en");
+    expect([d("daily 08:00"), d("weekdays 08:00"), d("weekly sun,thu,mon 09:00"), d("every 30m"), d("every 1h"), d("every 2h"), d("once 2026-11-03 15:00")]).toEqual([
+      "Daily 08:00",
+      "Weekdays 08:00",
+      "Every Mon, Thu, Sun 09:00",
+      "Every 30 min",
+      "Every hour",
+      "Every 2 hours",
+      "Nov 3 15:00",
+    ]);
+    expect(normalizeSchedule({ kind: "every", minutes: 5 }, TZ, now, "en").error).toBe("The interval must be at least 15 minutes");
+    const { rule } = await create();
+    svc.updateRule(rule.id, { mode: "act" });
+    await day("2026-11-02", report("done", "X 降到 199 了"));
+    await day("2026-11-03", report("done"));
+    withLang("en", () => {
+      expect(svc.getRuleView(rule.id)).toMatchObject({ when: "Daily 08:00", state: { key: "act", label: "Acting" } });
+      expect(svc.ruleLog(rule.id).map((r) => [r.line, r.permission])).toEqual([
+        ["Stayed quiet: X 现在 ¥199", "Can write the workspace"],
+        ["Waiting to send: “X 降价了：现在 ¥199（昨天 ¥259）。”", "Can write the workspace"],
+      ]);
+    });
+    // 应用语言是英文：推送的暂停那句、「需要你」、/tasks、建规则时建议的回复都是英文；给模型的第一条输入照旧
+    setLangPref("en");
+    try {
+      for (const date of ["2026-11-04", "2026-11-05", "2026-11-06"]) await day(date, report("failed", "", {}));
+      expect(pushes().find((r) => r.purpose === "failure")!.body.text).toBe("⚠️ Rule “看 X 价格” failed 3 times in a row and is paused: no result");
+      expect(svc.ruleAttention()[0]).toMatchObject({ subject: "Rule “看 X 价格”", status: "Failed 3 times in a row, paused", line: "no result" });
+      expect(svc.listText(CONV)).toBe("Rules:\n1. Daily 08:00 看 X 价格 · Paused\nSend /stop <number> to stop one.");
+      expect(host.prompts.at(-1)!.text).toContain("[规则]\n看 X 价格（每天 08:00）");
+      const made = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "Weather", instruction: "check the rain every weekday", schedule: "weekdays 07:30" } });
+      expect(made.text).toContain("「Rule set: Weather, Weekdays 07:30. It watches quietly for a few days; switch it to act under Tasks.」");
+      expect(made.text).toContain("WeChat lets the bot message you only within 24 hours of your last message.");
+      expect(svc.updateRule(rule.id, { title: " " }).error).toBe("Name can't be empty");
+    } finally {
+      setLangPref("system");
+    }
   });
 
   it("模拟 48 小时：三条规则（每天、每 30 分钟、一次性提醒），中间应用关了 3 小时；次数、跳过、推送都对", async () => {

@@ -296,6 +296,41 @@ button.thread:active { background: var(--side-press); }
 .transcript-turn { display: grid; gap: var(--space-1); }
 .transcript .work-line { font-size: var(--fs-sm); }
 
+/* 规则（components/rules.js）：「任务」组里一条规则一行（时间表 · 标题、状态和下次），观察够了的行里多一句改为执行；
+   点开是同一块里的详情（原话、模式、操作、运行记录），运行记录一次一行、不画分隔线，点开一行看报告和步骤，也不另起一块 */
+.rule-row .dot { flex: none; }
+.rule-hint { display: block; margin-top: var(--space-0-5); font-size: var(--fs-xs); text-align: left; }
+.rule-detail { display: grid; gap: var(--space-2); min-width: 0; }
+.rule-detail > .actions { display: flex; align-items: center; gap: var(--ctl-gap); flex-wrap: wrap; }
+.rule-detail > .actions .grow { flex: 1; }
+.rule-detail > .t-label { margin-top: var(--space-1); }
+.rule-words { font-size: var(--fs-sm); color: var(--fg); line-height: var(--lh-snug); overflow-wrap: anywhere; }
+.rule-runs { display: grid; list-style: none; margin: 0; padding: 0; }
+.rule-run-head {
+  display: flex; align-items: baseline; gap: var(--space-2); width: 100%; min-width: 0; padding: var(--space-1) 0;
+  text-align: left; font-size: var(--fs-xs); color: var(--fg-2); border-radius: var(--r-sm); transition: color var(--t-fast);
+}
+.rule-run-head:hover { color: var(--fg); }
+.rule-run-head :is(.at, .m) { flex: none; color: var(--muted); }
+.rule-run-head .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rule-run.open .rule-run-head .l { white-space: normal; overflow-wrap: anywhere; }
+.rule-run-head .chev { flex: none; align-self: center; color: var(--muted); transition: transform var(--t-fast); }
+.rule-run.open .rule-run-head .chev { transform: rotate(90deg); }
+.rule-run-body { display: grid; gap: var(--space-1-5); padding: 0 0 var(--space-2); font-size: var(--fs-xs); color: var(--fg-2); line-height: var(--lh-normal); }
+.rule-run-body p { overflow-wrap: anywhere; }
+.rule-run-body .activity, .rule-run-body .work-line { margin-bottom: 0; }
+/* 详情本身就是一块 --well（面板里的展开区、「需要你」的列表）：步骤列表不再铺一层底，只是折叠打开 */
+.rule-detail .act-list { background: none; padding: 0; margin-bottom: 0; }
+/* 新建 / 编辑规则的对话框：表单直接排在对话框里 */
+.rule-form { display: grid; gap: var(--space-3); }
+.rule-form label { display: grid; gap: var(--space-1-5); font-size: var(--fs-xs); color: var(--fg-2); font-weight: var(--fw-medium); }
+.rule-when { display: grid; gap: var(--space-1-5); justify-items: start; }
+.rule-when-row { display: flex; align-items: center; gap: var(--ctl-gap); flex-wrap: wrap; }
+.rule-when-row .field { width: auto; --field-h: var(--ctl-md); }
+.rule-days { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.rule-days .chip { height: var(--ctl-sm); padding: 0 var(--space-2-5); }
+.rule-days .chip.on { background: var(--pill-press); color: var(--fg); font-weight: var(--fw-medium); }
+
 .panel-scrim { display: none; }
 /* narrow window: the panel floats over the chat as a glass drawer over a scrim */
 @media (max-width: 1180px) {

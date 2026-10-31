@@ -10,6 +10,7 @@ import { fmtAgo, fmtClock, fmtDur, fmtTime } from "../lib/format.js";
 import { channelName as accessChannel } from "../lib/access.js";
 import { TaskRow } from "../components/tasks.js";
 import { t } from "../lib/i18n.js";
+import { RuleRow } from "../components/rules.js";
 
 export function usePoll(fn, ms, deps = []) {
   const [data, setData] = useState(null);
@@ -224,6 +225,10 @@ export function InfoPanel({ bot, leaving, onClose, onOpenBotSettings, onOpenChat
   // 后台任务：只列还没结束的（进行中、等你的）；一个都没有时不显示这一组
   const [taskData, , reloadTasks] = usePoll(() => api(`/tasks?bot=${encodeURIComponent(bot.id)}&limit=20`), 4000, [bot.id]);
   const tasks = (taskData?.tasks || []).filter((t) => t.stage.group !== "ended");
+  // 规则（3d）：和任务在同一组；跑完了的一次性规则只留一天
+  const [ruleData, , reloadRules] = usePoll(() => api(`/rules?bot=${encodeURIComponent(bot.id)}`), 6000, [bot.id]);
+  const rules = (ruleData?.rules || []).filter((r) => r.state.key !== "done" || Date.now() - (r.last?.at || r.updatedAt) < 86_400_000);
+  const [openRule, setOpenRule] = useState("");
   const [viewing, setViewing] = useState(null);
   const pending = (appr && appr.approvals) || [];
   // 上手清单：微信扫码绑定了，或飞书连上了，就算接好了渠道
@@ -257,9 +262,10 @@ export function InfoPanel({ bot, leaving, onClose, onOpenBotSettings, onOpenChat
           <button type="button" class="text" style="justify-self:start" onClick=${reloadAppr}>${t("common.refresh")}</button></div>`
         : html`<div class="list"><div class="row"><span class="hint">${t("info.noApprovals")}</span></div></div>`}
 
-      ${tasks.length > 0 && html`<div class="list-head">${t("info.tasks")}</div>
+      ${(tasks.length > 0 || rules.length > 0) && html`<div class="list-head">${t("info.tasks")}</div>
         <div class="list">${tasks.slice(0, 8).map((t) => html`<${TaskRow} key=${t.id} task=${t} onChanged=${reloadTasks}
-          onOpen=${() => (t.channel === "web" ? onOpenChat() : setViewing((convs?.conversations || []).find((c) => c.id === t.conversationId) || null))} />`)}</div>`}
+          onOpen=${() => (t.channel === "web" ? onOpenChat() : setViewing((convs?.conversations || []).find((c) => c.id === t.conversationId) || null))} />`)}
+          ${rules.map((r) => html`<${RuleRow} key=${r.id} rule=${r} open=${openRule === r.id} onToggle=${() => setOpenRule(openRule === r.id ? "" : r.id)} onChanged=${reloadRules} />`)}</div>`}
 
       <${MemorySection} botId=${bot.id} />
 

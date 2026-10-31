@@ -115,5 +115,9 @@ export default {
     quietTo: "免打扰结束",
     nudge: "微信续期提醒",
     nudgeSub: "还有消息要发时，24 小时到期前请你回一句",
+    rules: "规则",
+    rulesSub: "到点检查或提醒",
+    rulesCount: { other: "{count} 条，在信息面板的「任务」里" },
+    newRule: "新建",
   },
 };

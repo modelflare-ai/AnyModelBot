@@ -14,7 +14,7 @@ const ORDER: Record<Priority, number> = { person: 0, launch: 1, recover: 2, rule
 export function priorityOf(cause: RunCause): Priority {
   if (cause === "launch") return "launch";
   if (cause === "recover") return "recover";
-  if (cause === "schedule") return "rule";
+  if (cause === "schedule" || cause === "event") return "rule";
   return "person";
 }
 

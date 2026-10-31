@@ -1,6 +1,6 @@
 # Background tasks and proactive rules (Phase 3 design)
 
-Status: **3a (task core) is built**: `src/tasks/`, `dsh-runtime/plugins/amb-tasks.mjs`, tests in `test/tasks.*.test.ts`. 3b–3f are still design. Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
+Status: **3a–3d are built**: tasks, questions and needs-you, delivery, and rules with observe mode (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`). 3e–3f are still design. Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
 Feasibility evidence is in [Appendix A](#appendix-a-feasibility-answers-with-evidence). The spike that produced it is `scripts/spikes/p3-tasks/`.
 
 ## Summary
@@ -249,6 +249,8 @@ The host therefore stores everything it owes a session, and recovers like this:
 - `cron`, under "advanced"
 
 The time zone is the system's IANA zone, stored on the rule when it is created. The schedule is shown back in words for confirmation, for example 「每个工作日 08:00（Asia/Shanghai）」.
+
+**Triggers (as built in 3d).** A rule's trigger is a tagged union: `{kind: "schedule", schedule}` (the host timer below) or `{kind: "event", source, filter?}`. Event rules are started through `RuleEvents.emit(source, event)` (`src/tasks/rule-events.ts`) and run through the same observe/act path. This is only the extension point for user-configured event sources ("workloads", such as a GitHub repo) that come later; no event source, workload config or UI is built yet.
 
 **Mechanics.**
 

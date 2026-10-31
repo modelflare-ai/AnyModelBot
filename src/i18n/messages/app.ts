@@ -21,6 +21,9 @@ export const zh = {
   media_voice: "[语音]",
   media_not_downloaded: "{label}（未能下载：{error}）",
   weixinExpiredSubject: "微信登录已过期",
+  // 数据目录锁（store/lock.ts）：同一个数据目录只能有一个宿主
+  data_dir_locked: "数据目录 {dir} 正被另一个 anymodel bot 进程使用（{who}）。先退出它，或者换一个数据目录（AMB_DATA_DIR）。",
+  data_dir_locked_remote: "{host} 上的 pid {pid}",
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
@@ -41,4 +44,6 @@ export const en: Catalog<typeof zh> = {
   media_voice: "[Voice]",
   media_not_downloaded: "{label} (couldn't download: {error})",
   weixinExpiredSubject: "WeChat sign-in expired",
+  data_dir_locked: "Another anymodel bot process ({who}) is using the data directory {dir}. Quit it, or use another data directory (AMB_DATA_DIR).",
+  data_dir_locked_remote: "pid {pid} on {host}",
 };

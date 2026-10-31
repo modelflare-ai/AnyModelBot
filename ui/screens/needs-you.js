@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, Button, Skeleton } from "../components/ui.js";
 import { TaskDetail } from "../components/tasks.js";
+import { RuleDetail } from "../components/rules.js";
 import { api } from "../lib/api.js";
 import { failed } from "../lib/store.js";
 import { fmtAgo } from "../lib/format.js";
@@ -47,17 +48,18 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin }) {
     setBusy("");
   };
   const send = () => text.trim() && act("answer", { text: text.trim() }, "text");
-  // 详情一下就能看到：任务的展开处理过程；网页对话里的去对话
-  const canOpen = !!item.taskId || item.channel === "web";
-  const head = () => (item.taskId ? setOpen((v) => !v) : onOpenChat?.(item.botId));
+  // 详情一下就能看到：任务的展开处理过程，规则的展开运行记录；网页对话里的去对话
+  const expands = !!item.taskId || !!item.ruleId;
+  const canOpen = expands || item.channel === "web";
+  const head = () => (expands ? setOpen((v) => !v) : onOpenChat?.(item.botId));
   const [lead, ...rest] = [multiBot && item.botName, item.subject, item.status].filter(Boolean);
   const headIn = html`<span class="need-who"><b>${lead}</b>${rest.map((x) => ` · ${x}`).join("")}</span>
     <span class="need-when num">${fmtAgo(item.since)}</span>
-    ${item.taskId && html`<${Icon} name="chevRight" size=${12} class="chev" />`}`;
+    ${expands && html`<${Icon} name="chevRight" size=${12} class="chev" />`}`;
   return html`<div class=${`need${open ? " open" : ""}`}>
     <span class=${`dot ${item.severity === "err" ? "err" : "warn"}`} aria-hidden="true"></span>
     ${canOpen
-      ? html`<button type="button" class="need-head" aria-expanded=${item.taskId ? open : undefined} title=${item.taskId ? (open ? t("needs.collapse") : t("needs.viewTask")) : t("needs.openChat")} onClick=${head}>${headIn}</button>`
+      ? html`<button type="button" class="need-head" aria-expanded=${expands ? open : undefined} title=${expands ? (open ? t("needs.collapse") : item.ruleId ? t("needs.viewRule") : t("needs.viewTask")) : t("needs.openChat")} onClick=${head}>${headIn}</button>`
       : html`<div class="need-head">${headIn}</div>`}
     ${item.line && html`<div class=${`need-line selectable${item.kind === "approval" ? " mono" : ""}`}>${item.line}</div>`}
     <div class="need-actions">
@@ -67,6 +69,7 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin }) {
         <${Button} loading=${busy === "deny"} disabled=${!!busy} onClick=${() => act("deny")}>${t("needs.deny")}<//>`}
       ${item.kind === "failed" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>
         <button type="button" class="text danger" disabled=${!!busy} onClick=${() => act("stop")}>${t("needs.stop")}</button>`}
+      ${item.kind === "rule" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
       ${item.kind === "delivery" && item.actions.includes("retry") && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
       ${item.kind === "delivery" && item.actions.includes("dismiss") && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.dismiss")}</button>`}
       ${item.kind === "login" && html`<${Button} onClick=${() => onRelogin?.(item.botId)}>${t("needs.relogin")}<//>`}
@@ -80,7 +83,17 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin }) {
       <${Button} variant="primary" loading=${busy === "text"} disabled=${!text.trim()} onClick=${send}>${t("needs.send")}<//>
     </div>`}
     ${open && item.taskId && html`<div class="need-detail"><${TaskDetail} task=${{ id: item.taskId, title: item.subject, stage: { group: "needs" } }} /></div>`}
+    ${open && item.ruleId && html`<div class="need-detail"><${RuleOpen} id=${item.ruleId} /></div>`}
   </div>`;
+}
+
+/** 「需要你」里展开的规则：取到最新的规则再画详情（运行记录、模式、重试） */
+function RuleOpen({ id }) {
+  const [rule, setRule] = useState(null);
+  const load = useCallback(() => api(`/rules/${encodeURIComponent(id)}`).then((d) => setRule(d.rule)).catch(() => setRule(false)), [id]);
+  useEffect(() => void load(), [load]);
+  if (rule === false) return html`<span class="hint">${t("rules.gone")}</span>`;
+  return rule ? html`<${RuleDetail} rule=${rule} onChanged=${load} />` : html`<${Skeleton} w="60%" />`;
 }
 
 /** 主区的「需要你」：每 3 秒看一次；处理掉的那件立刻消失（onChanged 让侧栏的件数也跟上） */

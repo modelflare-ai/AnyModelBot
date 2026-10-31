@@ -10,6 +10,7 @@ import { perms, fullWarning, confirmPermission } from "../lib/perms.js";
 import { channelName, sourceLabel } from "../lib/access.js";
 import { fmtAgo } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
+import { RuleEditor } from "../components/rules.js";
 
 /** 免打扰的起止：整点 */
 const HOURS = Array.from({ length: 24 }, (_, h) => {
@@ -156,10 +157,15 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
   const [prompt, setPrompt] = useState(bot.systemPrompt || "");
   const promptRef = useRef(null);
   const [hi, setHi] = useState(null);
+  // 规则（3d）：在这里新建；列表、详情和运行记录在信息面板的「任务」组里
+  const [rules, setRules] = useState(null);
+  const [newRule, setNewRule] = useState(false);
+  const loadRules = () => api(`/rules?bot=${encodeURIComponent(bot.id)}`).then((x) => setRules(x.rules)).catch(() => setRules([]));
   useEffect(() => {
     setName(bot.name);
     setPrompt(bot.systemPrompt || "");
     api(`/bots/${bot.id}/settings`).then(setD).catch(failed);
+    loadRules();
   }, [bot.id]);
   useEffect(() => autoGrow(promptRef.current, 320), [prompt, d]);
   useEffect(() => {
@@ -292,7 +298,11 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
           ${bot.weixinEnabled && html`<${Row} id="nudge" name=${t("botSettings.proactive.nudge")} sub=${t("botSettings.proactive.nudgeSub")}>
             <${Switch} label=${t("botSettings.proactive.nudge")} value=${s.nudge} onChange=${(v) => put({ nudge: v })} />
           <//>`}
+          <${Row} id="rules" name=${t("botSettings.proactive.rules")} sub=${rules && rules.length ? t("botSettings.proactive.rulesCount", { count: rules.length }) : t("botSettings.proactive.rulesSub")}>
+            <button type="button" class="btn" onClick=${() => setNewRule(true)}>${t("botSettings.proactive.newRule")}</button>
+          <//>
         </div>
+        ${newRule && html`<${RuleEditor} botId=${bot.id} onClose=${() => setNewRule(false)} onSaved=${() => (setNewRule(false), loadRules())} />`}
 
         <div class="list-head">${t("botSettings.computer.head")}</div>
         <div class="list">

@@ -3,6 +3,7 @@ export default {
   title: "需要你",
   collapse: "收起",
   viewTask: "查看任务",
+  viewRule: "查看规则",
   openChat: "打开对话",
   reply: "回复…",
   approveOnce: "批准一次",

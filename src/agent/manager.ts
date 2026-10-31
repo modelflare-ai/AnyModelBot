@@ -12,6 +12,7 @@ import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, TASK_APPROVAL_TTL_MS, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import type { TaskHost, TaskService } from "../tasks/service.js";
+import { RULE_APPROVAL_TTL_MS } from "../tasks/rules.js";
 import { DEFAULT_SETTINGS, type BotSettings, type MediaConfirm } from "./settings.js";
 import { t, tl, t as tr } from "../i18n/index.js";
 import {
@@ -28,6 +29,9 @@ import {
 } from "./steward.js";
 
 const log = logger("agent");
+
+/** 规则观察时的审批：不建审批行，直接按拒绝回给插件（id 以它开头） */
+const AUTO_REJECT = "auto-reject:";
 
 export interface AgentManagerOptions {
   store: Store;
@@ -192,6 +196,7 @@ export class AgentManager {
         if (route === "report") return t.report(b);
         if (route === "settled") return t.settled(b);
         if (route === "tool") return t.chatTool(b);
+        if (route === "config") return t.sessionConfig(b);
         return { error: "unknown route" };
       },
     });
@@ -623,7 +628,7 @@ export class AgentManager {
   private async mediaOp(b: any): Promise<{ text?: string; error?: string }> {
     const botId = String(b?.botId ?? "");
     // 后台任务里还不能生成（确认要问用户，3b 才有任务的提问）
-    if (String(b?.sessionId ?? "").startsWith("task-")) return { error: "生成图片和视频暂时只能在聊天里用，后台任务里不行；需要的话在结果里告诉用户。" };
+    if (/^(task|rule)-/.test(String(b?.sessionId ?? ""))) return { error: "生成图片和视频暂时只能在聊天里用，后台任务里不行；需要的话在结果里告诉用户。" };
     if (!this.hosts.has(botId) || !this.activeConvs.get(botId)?.size) return { error: "unknown bot" };
     const media = this.o.media;
     if (!media) return { error: "生成图片和视频需要连接 Modelflare" };
@@ -917,12 +922,19 @@ export class AgentManager {
     return this.tasks?.taskOfSession(sessionId, this.hosts.get(botId)?.taskRootOf(sessionId));
   }
 
+  /** 规则会话或它的子代理属于哪条规则、哪次运行 */
+  private ruleOf(botId: string, sessionId: string) {
+    return this.tasks?.ruleOfSession(sessionId, this.hosts.get(botId)?.taskRootOf(sessionId));
+  }
+
   private resolveConversation(botId: string, sessionId: string): string {
     const c = this.o.store.conversationForSession(sessionId);
     if (c) return c;
     // 后台任务会话（和它的子代理）：落到请求它的会话
     const task = this.taskOf(botId, sessionId);
     if (task) return task.conversationId;
+    const rule = this.ruleOf(botId, sessionId);
+    if (rule) return rule.conversationId;
     const active = [...(this.activeConvs.get(botId) ?? [])];
     return active.length === 1 ? active[0] : "";
   }
@@ -934,8 +946,10 @@ export class AgentManager {
     const conversationId = this.resolveConversation(botId, sessionId);
     // 后台任务里来的：记下是哪个任务、哪个 run，由任务服务推给用户；没人在旁边看，等 12 小时
     const t = this.o.store.conversationForSession(sessionId) ? undefined : this.taskOf(botId, sessionId);
-    const task = t ? { taskId: t.taskId, runId: t.runId, ttlMs: TASK_APPROVAL_TTL_MS } : {};
-    if (b?.kind === "question") {
+    // 规则（3d）：观察时一律自动拒绝，记成「需要批准：…」；执行时进「需要你」，等 1 小时
+    const rule = t || this.o.store.conversationForSession(sessionId) ? undefined : this.ruleOf(botId, sessionId);
+    const task = t ? { taskId: t.taskId, runId: t.runId, ttlMs: TASK_APPROVAL_TTL_MS } : rule ? { ruleId: rule.ruleId, runId: rule.runId, ttlMs: RULE_APPROVAL_TTL_MS } : {};
+    if (b?.kind === "question" && !rule) {
       const qs = (Array.isArray(b.questions) ? b.questions : []) as QuestionItem[];
       const row = this.approvals.create({ kind: "question", botId, conversationId, sessionId, tool: "ask_user_question", detail: qs.map((q) => q.question).join(" / "), reason: "", payload: JSON.stringify(qs), ...task });
       return { id: row.id };
@@ -946,6 +960,11 @@ export class AgentManager {
     for (let i = 0; !call && callId && i < 10; i++) {
       await new Promise((r) => setTimeout(r, 50));
       call = host.calls.get(callId);
+    }
+    // 观察时（规则会话里也没人能回答提问）：不建审批，直接拒绝，记成「需要批准：…」
+    if (rule && (rule.mode === "observe" || b?.kind === "question")) {
+      this.tasks!.wouldNeedApproval(rule.runId, call ? callDetail(call.name, call.args) : String(b?.toolName ?? b?.reason ?? ""));
+      return { id: `${AUTO_REJECT}${crypto.randomUUID()}` };
     }
     const tool = String(b?.toolName ?? call?.name ?? "tool");
     const row = this.approvals.create({
@@ -963,6 +982,7 @@ export class AgentManager {
 
   private async wait(b: any): Promise<Record<string, unknown>> {
     const id = String(b?.id ?? "");
+    if (id.startsWith(AUTO_REJECT)) return { done: true, outcome: "rejected", answer: null };
     const row = await this.approvals.wait(id, Math.min(Number(b?.timeoutMs) || 20_000, 25_000));
     if (!row) return { done: true, outcome: "rejected", answer: null };
     if (row.status === "pending") return { done: false };

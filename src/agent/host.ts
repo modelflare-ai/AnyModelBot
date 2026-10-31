@@ -1573,12 +1573,12 @@ exec "$REAL" "$@"
     return this.taskRoot({ method: "session.event", params: { sessionId } } as SdkNotification);
   }
 
-  /** 通知属于哪个任务会话（task-* 本身，或它的子代理）；不属于任务就是 undefined */
+  /** 通知属于哪个任务会话（task-* 本身、规则的 rule-*，或它们的子代理）；不属于任务就是 undefined */
   private taskRoot(n: SdkNotification): string | undefined {
     const sub = n.method === "subagent.started" || n.method === "subagent.finished";
     const sid = String((sub ? n.params?.parentSessionId : n.params?.sessionId) ?? "");
     if (!sid) return undefined;
-    if (sid.startsWith("task-")) return sid;
+    if (sid.startsWith("task-") || sid.startsWith("rule-")) return sid;
     if (!this.taskSessions.size) return undefined;
     const c = this.harness?.client;
     if (typeof c?.isDescendantOf !== "function") return undefined;

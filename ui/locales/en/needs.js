@@ -3,6 +3,7 @@ export default {
   title: "Needs you",
   collapse: "Collapse",
   viewTask: "View task",
+  viewRule: "View rule",
   openChat: "Open conversation",
   reply: "Reply…",
   approveOnce: "Approve once",

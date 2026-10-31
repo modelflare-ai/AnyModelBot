@@ -5,6 +5,7 @@ import { html, Icon, ICONS, Button, IconButton, Seg, Switch, MenuButton, Menu, B
 import { BotAvatar, AvatarPicker, AppMark, BOT_CHARS, CHAR_KEYS, MAIN_CHAR } from "../components/avatar.js";
 import { TEMPLATES } from "../screens/new-bot.js";
 import { NeedItem, NeedsRow } from "../screens/needs-you.js";
+import { RuleRow, RuleDetail } from "../components/rules.js";
 import { Markdown } from "../components/markdown.js";
 import { useStore, toast, saved, failed, confirmSheet } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
@@ -381,7 +382,7 @@ function Gallery() {
     ["原则", [["principles", "分层与约定"]]],
     ["Token", [["color", "颜色"], ["material", "材质"], ["type", "文字"], ["space", "间距与尺寸"], ["elevation", "投影与层级"], ["motion", "动效"]]],
     ["组件", [["states", "状态矩阵"], ["icons", "图标"], ["buttons", "按钮"], ["inputs", "输入"], ["menus", "菜单与分段"], ["status", "状态与反馈"], ["lists", "列表行"], ["splitter", "分隔条"], ["overlays", "对话框与提示"], ["avatars", "头像"]]],
-    ["页面模式", [["patterns", "对话"], ["needs", "需要你"], ["custom", "定制"]]],
+    ["页面模式", [["patterns", "对话"], ["needs", "需要你"], ["rules", "规则"], ["custom", "定制"]]],
   ];
   return html`<${Compare.Provider} value=${compare}><div class="gal">
     <nav class="gal-nav" aria-label="目录">
@@ -610,6 +611,19 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <//>
       <//>
 
+      <${Section} id="rules" title="规则" lead="信息面板「任务」组里一条规则一行：时间表 · 标题，状态和下次运行。观察了 3 次的，行里多一句改为执行（只在这里，从不推送）。点开是同一块里的详情和运行记录，记录一次一行、不画分隔线，再点开一行看报告。">
+        <${Demo} title="行" note="RuleRow：观察中（提示改为执行）/ 执行中 / 暂停 / 提醒">
+          ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
+            <div class="list">${RULES.map((r) => html`<${RuleRow} rule=${r} open=${false} onToggle=${() => {}} />`)}</div>
+          </div>`}
+        <//>
+        <${Demo} title="详情与运行记录" note="RuleDetail：原话、模式、立即运行、运行记录（本会发送 / 保持安静 / 失败 / 跳过）">
+          ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
+            <div class="list"><div class="row-edit rule-edit"><${RuleDetail} rule=${RULES[0]} runs=${RULE_RUNS} /></div></div>
+          </div>`}
+        <//>
+      <//>
+
       <${Section} id="custom" title="定制" lead="不改组件源码：在上下文里覆盖组件变量；需要一块不同主题的区域时，加 data-theme。">
         <${Demo} title="覆盖组件变量" code=${`.notice .btn { --btn-h: var(--ctl-sm); --btn-px: var(--space-2-5); }      /* 上下文覆盖 */
 <button class="btn" style="--btn-bg: var(--green-soft); --btn-fg: var(--green)">…</button>
@@ -637,7 +651,29 @@ const NEEDS = [
   { id: "a", kind: "approval", botName: "小蓝", subject: "清理旧构建", status: "等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
   { id: "d", kind: "delivery", botName: "小蓝", subject: "1 条结果未送达微信", status: "在微信里发条消息就能收到", line: "季度报告做好了，在 tasks 文件夹里。", since: Date.now() - 20 * 60_000, severity: "warn", actions: [] },
   { id: "f", kind: "failed", botName: "红魔", subject: "季度报告", status: "失败", line: "X 云的价格页要登录，我进不去", since: Date.now() - 40 * 60_000, severity: "err" },
+  { id: "r", kind: "rule", botName: "红魔", subject: "规则「每日 issue 巡检」", status: "连续失败 3 次，已暂停", line: "GitHub 返回 401：令牌可能过期了", since: Date.now() - 90 * 60_000, severity: "err", actions: ["retry"] },
   { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
+];
+
+/** 规则的样例（单人：自己的机器人小蓝）：每天 8 点看 X 价格（观察了 3 次）、每周的 issue 周报、暂停了的巡检、一次性的提醒 */
+const at = (days, h, m = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
+};
+const rule = (o) => ({ botId: "b", kind: "check", mode: "observe", observeLeft: 0, failures: 0, hint: false, observed: 0, channel: "weixin", message: "", trigger: { kind: "schedule" }, version: 1, ...o });
+const RULES = [
+  rule({ id: "g1", title: "看 X 价格", when: "每天 08:00", instruction: "每天早上看看 X 的价格，降到 200 以下告诉我", state: { key: "observe", label: "观察中", dot: "" }, nextRunAt: at(1, 8), hint: true, observed: 3 }),
+  rule({ id: "g2", title: "issue 周报", when: "每周一 09:00", instruction: "每周一早上把仓库上周的 issue 汇总成三句话发给我", mode: "act", state: { key: "act", label: "执行中", dot: "ok" }, nextRunAt: at(3, 9) }),
+  rule({ id: "g3", title: "每日 issue 巡检", when: "每天 08:30", instruction: "每天看看有没有新的 issue 需要我回复", mode: "act", state: { key: "paused", label: "已暂停", dot: "err" }, failures: 3, nextRunAt: 0 }),
+  rule({ id: "g4", title: "交房租", when: "11月3日 12:00", kind: "remind", mode: "act", message: "该交房租了。", state: { key: "remind", label: "提醒", dot: "ok" }, nextRunAt: at(2, 12) }),
+];
+const RULE_RUNS = [
+  { id: "x1", at: at(0, 8), mode: "observe", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", summary: "X 现在 ¥199，比昨天低 ¥60，低于 200。", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule" },
+  { id: "x2", at: at(-1, 8), mode: "observe", line: "本会保持安静：X 现在 ¥259", summary: "X 现在 ¥259，高于 200。", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule" },
+  { id: "x3", at: at(-2, 8), mode: "observe", line: "失败：页面打不开", summary: "", would: "", version: 1, permission: "只读", steps: 0, cause: "schedule" },
+  { id: "x4", at: at(-5, 8), mode: "observe", line: "跳过：电脑没开", summary: "", would: "", version: 1, permission: "", steps: 0, cause: "schedule" },
 ];
 
 // 等 @import 进来的样式表都加载完再复制伪类规则

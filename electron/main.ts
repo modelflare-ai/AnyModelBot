@@ -27,10 +27,15 @@ let entryUrl = "";
 let quitting = false;
 let stopped = false;
 
-function iconPath(): string {
+// 图标由 scripts/build-app-icons.py 生成。Windows 窗口和托盘都用多尺寸 ico，系统按当前缩放挑对应的帧；
+// 其他系统窗口用 icon.png（macOS 忽略，Dock 用包里的 icns），托盘用 18px 的 tray.png，高分屏自动换 tray@2x.png
+function assetPath(name: string): string {
   const root = findAppRoot(path.dirname(fileURLToPath(import.meta.url)));
-  return path.join(root, "assets", "icon.png");
+  return path.join(root, "assets", name);
 }
+const isWin = process.platform === "win32";
+const windowIconPath = () => assetPath(isWin ? "icon.ico" : "icon.png");
+const trayIconPath = () => assetPath(isWin ? "icon.ico" : "tray.png");
 
 function showWindow(): void {
   if (!win) return createWindow();
@@ -49,7 +54,7 @@ function createWindow(): void {
     minWidth: 860,
     minHeight: 520,
     title: PRODUCT,
-    icon: iconPath(),
+    icon: windowIconPath(),
     show: !SMOKE,
     autoHideMenuBar: true,
     // macOS：无标题栏，红绿灯嵌进侧栏顶部（界面在 Electron + Mac 下给它留位）；其他系统用系统标题栏。
@@ -84,8 +89,8 @@ function createWindow(): void {
 }
 
 function buildTray(): void {
-  const img = nativeImage.createFromPath(iconPath()).resize({ width: 18, height: 18 });
-  tray = new Tray(img);
+  // 不要 resize：会丢掉 ico 的多尺寸帧和 @2x 图，托盘在高分屏上发糊
+  tray = new Tray(nativeImage.createFromPath(trayIconPath()));
   tray.setToolTip(PRODUCT);
   const render = () =>
     tray!.setContextMenu(
@@ -195,6 +200,8 @@ process.on("unhandledRejection", (e) => log.warn(`unhandled rejection: ${(e as E
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // Windows 的系统通知（设置 › 常规 › 回复完成时通知）要求进程的 AppUserModelID 和安装器建的快捷方式一致（= build.appId）
+  if (process.platform === "win32") app.setAppUserModelId("dev.anymodel.bot");
   app.on("second-instance", () => showWindow());
   for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => app.quit());
   app.on("window-all-closed", () => {

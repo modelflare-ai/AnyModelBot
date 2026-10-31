@@ -403,7 +403,7 @@ export function diagnosticsReport(app: App, lines = 200): string {
   const ps = pwshReportLine(s.pwsh);
   if (ps) out.push(ps);
   const ob = s.outbox;
-  if (ob) out.push(`[出站队列] 等待发送 ${ob.pending} 条（重试中 ${ob.retrying}）${ob.lastError ? ` · 最近错误：${ob.lastError}` : ""} · 等对方发消息后再发 ${ob.held} 条 · 最近 7 天没发出去 ${ob.gone7d} 条${ob.lastGone ? ` · 最近一次：${ob.lastGone}` : ""}`);
+  if (ob) out.push(`[出站队列] 等待发送 ${ob.pending} 条（重试中 ${ob.retrying}）${ob.lastError ? ` · 最近错误：${ob.lastError}` : ""}${ob.held ? ` · 等对方发消息后再发 ${ob.held} 条` : ""} · 最近 7 天没发出去 ${ob.gone7d} 条${ob.lastGone ? ` · 最近一次：${ob.lastGone}` : ""}`);
   const m = app.lastDiagnostics.model;
   if (m) {
     out.push("");

@@ -79,8 +79,8 @@ function BudgetRows({ bot, budget, account, onSaved, onOpenSettings }) {
 }
 
 /**
- * 谁能使用：只有主人和允许名单里的人。主人 = 扫码登录的微信 / 连上之后第一个发消息的人（可以「更换」：下一个发消息的人成为主人）；
- * 允许名单和拒绝过的人可以移除（移除后他再发消息会重新申请）。
+ * 谁能使用：只有主人和允许名单里的人。主人 = 扫码登录的微信 / 连上之后第一个发消息的人，后者可以更换（下一个发消息的人成为主人）。
+ * 允许名单和拒绝过的人可以移除（移除后他再发消息会重新申请）。没有的项不显示。
  */
 function AccessRows({ botId }) {
   const [d, setD] = useState(null);
@@ -109,7 +109,7 @@ function AccessRows({ botId }) {
   };
   const resetOwner = async (ch, o) => {
     const name = CHANNEL_NAME[ch];
-    if (!(await confirmSheet({ title: `更换${name}主人？`, body: `「${o.name}」不再是主人，之后发消息需要重新被允许。下一个给机器人发消息的人会成为${name}主人：用你自己的${name}发一句话就行。`, confirmLabel: "更换", danger: true }))) return;
+    if (!(await confirmSheet({ title: `更换${name}主人？`, body: `下一个给机器人发消息的人会成为${name}主人，「${o.name}」需要重新被允许。`, confirmLabel: "更换", danger: true }))) return;
     call(`owner/${ch}`, "DELETE");
   };
   if (!d) return html`<div class="list-head">谁能使用</div><div class="list"><div class="row"><${Skeleton} w="45%" /></div></div>`;
@@ -117,27 +117,23 @@ function AccessRows({ botId }) {
   const denied = d.entries.filter((e) => e.status === "denied");
   const owner = (ch) => {
     const o = d.owners[ch];
-    if (o) {
-      return html`<${Row} id=${`access-${ch}`} name=${`${CHANNEL_NAME[ch]}主人：${o.name}（${o.via === "login" ? "扫码登录的微信" : "第一个发消息的人"}）`}>
-        ${o.via !== "login" && html`<button type="button" class="text" onClick=${() => resetOwner(ch, o)}>更换</button>`}
-      <//>`;
-    }
-    const sub = ch === "weixin" ? "扫码登录后，扫码的那个微信就是主人" : `还没有：用你自己的${CHANNEL_NAME[ch]}给机器人发一句话，就完成绑定`;
-    return html`<${Row} id=${`access-${ch}`} name=${`${CHANNEL_NAME[ch]}主人`} sub=${sub} />`;
+    return o && html`<${Row} id=${`access-${ch}`} name=${`${CHANNEL_NAME[ch]}主人`}>
+      <span class="val">${o.name}</span>
+      ${o.via !== "login" && html`<button type="button" class="text" onClick=${() => resetOwner(ch, o)}>更换</button>`}
+    <//>`;
   };
   return html`<div class="list-head">谁能使用</div>
     <div class="list">
-      <${Row} id="access" name="只有主人和你允许的人" sub="其他人发消息只会收到一句提示，不会调用模型；请求出现在信息面板，也会带配对码发给主人" />
+      <${Row} id="access" name="只有主人和你允许的人" />
       ${owner("weixin")}
       ${owner("feishu")}
     </div>
-    <div class="list-head">允许名单${allowed.length > 0 && html`<span class="badge count">${allowed.length}</span>`}</div>
-    <div class="list">
-      ${!allowed.length && html`<div class="row"><span class="hint">还没有允许别人。有人给机器人发消息后，会出现在信息面板的「使用请求」里。</span></div>`}
-      ${allowed.map((e) => html`<${Row} key=${e.id} id=${`access-${e.id}`} name=${e.who} sub=${[SOURCE_LABEL[e.source] || e.source, e.decidedAt ? fmtAgo(e.decidedAt) : ""].filter(Boolean).join(" · ")}>
-        <button type="button" class="text danger" onClick=${() => remove(e)}>移除</button>
-      <//>`)}
-    </div>
+    ${allowed.length > 0 && html`<div class="list-head">允许名单<span class="badge count">${allowed.length}</span></div>
+      <div class="list">
+        ${allowed.map((e) => html`<${Row} key=${e.id} id=${`access-${e.id}`} name=${e.who} sub=${[SOURCE_LABEL[e.source] || e.source, e.decidedAt ? fmtAgo(e.decidedAt) : ""].filter(Boolean).join(" · ")}>
+          <button type="button" class="text danger" onClick=${() => remove(e)}>移除</button>
+        <//>`)}
+      </div>`}
     ${denied.length > 0 && html`<div class="list-head">拒绝过的人</div>
       <div class="list">
         ${denied.map((e) => html`<${Row} key=${e.id} id=${`access-${e.id}`} name=${e.who} sub=${`${fmtAgo(e.decidedAt)}拒绝 · 他再发消息不会收到任何回复`}>

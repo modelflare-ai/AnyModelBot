@@ -169,7 +169,7 @@ describe("飞书：第一个发消息的人成为主人", () => {
     expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：我是老板");
     expect(feishu.texts.length).toBe(texts);
     const acc = (await api("/bots/default/access")).json;
-    expect(acc.owners.feishu).toEqual({ via: "first-message", peer: "oc_boss", name: "ou_boss", who: "飞书用户 ou_boss" });
+    expect(acc.owners.feishu).toEqual({ via: "first-message", peer: "oc_boss", name: "ou_boss" });
     expect(acc.requests.filter((r: any) => r.channel === "feishu")).toEqual([]);
 
     // 同事来了：飞书主人和微信主人都收到配对码，主人在飞书里回复「允许 1234」

@@ -649,7 +649,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           const o = v.owners[ch];
           if (!o) return null;
           const e = (o.entryId ? app.store.getAccessById(o.entryId) : undefined) ?? { channel: ch, peerId: o.peerId, senderId: o.peerId, name: "" };
-          return { peer: shortPeer(o.peerId), name: peerName(e), who: whoText(e), via: o.via };
+          return { peer: shortPeer(o.peerId), name: peerName(e), via: o.via };
         };
         return send(res, 200, {
           policy: v.policy,
@@ -671,7 +671,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       if (seg[2] === "access" && seg[3] === "owner" && seg.length === 5 && m === "DELETE") {
         const ch = seg[4];
         if (ch !== "weixin" && ch !== "feishu") throw new HttpError(404, "没有这个渠道");
-        if (app.access.owner(id, ch)?.via === "login") throw new HttpError(409, "微信的主人是扫码登录的人；要换主人，请用那个微信重新扫码");
+        if (app.access.owner(id, ch)?.via === "login") throw new HttpError(409, "微信主人要重新扫码才能更换");
         app.access.resetOwner(id, ch);
         return send(res, 200, { ok: true });
       }

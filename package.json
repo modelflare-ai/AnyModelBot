@@ -20,6 +20,7 @@
     "weixin:login": "tsx src/cli/weixin-login.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "docs:check": "node scripts/check-readme.mjs",
     "electron:dev": "npm run build && electron .",
     "dist": "npm run build && node scripts/prepare-dsh.mjs && node scripts/bundle-dsh.mjs && node scripts/build-magpie.mjs --target current && node scripts/fetch-cua-driver.mjs --target current && electron-builder",
     "electron:smoke": "npm run build && node scripts/electron-smoke.mjs",
@@ -50,7 +51,8 @@
     "vitest": "^5.0.5"
   },
   "author": {
-    "name": "anymodel bot"
+    "name": "anymodel bot",
+    "email": "support@anymodel.bot"
   },
   "build": {
     "appId": "dev.anymodel.bot",

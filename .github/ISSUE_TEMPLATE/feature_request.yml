@@ -1,0 +1,26 @@
+name: 💡 功能建议 · Feature request
+description: 想让 AnyModelBot 多做点什么。Suggest something AnyModelBot should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先看看 README 里的路线图和已有 issue，也可以先在 Discussions 里聊聊。
+        Check the roadmap in the README and existing issues first; you can also start in Discussions.
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决什么问题 · What problem does this solve?
+      description: 你在做什么、卡在哪里。What you are trying to do and where you get stuck.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望怎么做 · What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 现在的替代办法 · Alternatives you have tried

@@ -27,6 +27,8 @@
 | API Key | 内置网关的隔离配置 `magpie/config/` | 每次模型请求作为鉴权发给 Modelflare | Modelflare |
 | 微信登录态与同步游标 | 数据目录内（`weixin/` 等） | 与微信 iLink 接口通信时会 | 腾讯微信 |
 | 飞书 App ID / Secret | 数据目录内的配置 | 与飞书开放平台建立长连接时会 | 飞书 |
+| 允许名单与使用请求 | `anymodel.db`：谁能用哪个机器人、陌生人发来的第一条消息（截断，帮你认出是谁） | 不会 | — |
+| 待发送的回复 | `anymodel.db` 的出站队列：没发出去的消息内容和原因（发出去的留 7 天、发不出去的留 30 天后删除） | 发送时会 | 微信 / 飞书 |
 | 设置 | `config.json` | 不会 | — |
 | 日志 | `logs/app.log`（按大小轮转） | 不会；「复制诊断信息」由你手动复制，密钥已替换成 `***` | — |
 | 屏幕截图（电脑操作） | 不长期保存 | 会 | 作为模型请求的一部分，经 Modelflare 发给支持视觉的模型；不会转发到微信或飞书聊天，除非你要求作为文件发送 |
@@ -49,7 +51,7 @@
 - 模型请求由内置的 magpie 网关发往 Modelflare，再由 Modelflare 转给你选定的模型供应商。
 - 请求里包含模型回答所需的内容：提示词、对话上下文、被用到的记忆、文件内容、工具结果，以及电脑操作时的截图。
 - 请求带有 `X-Modelflare-Skill: anymodel-bot/<版本>` 头，用于在 Modelflare 侧标识来源；应用里打开的 Modelflare 链接带 `utm_source=anymodelbot`。
-- Modelflare 会保留请求日志；保留什么、保留多久，见 [Modelflare 信任中心](https://modelflare.dev/trust)。各模型供应商对数据的处理，以它们各自的条款为准。
+- Modelflare 会保留请求日志；保留什么、保留多久，见 [Modelflare 信任中心](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme)。各模型供应商对数据的处理，以它们各自的条款为准。
 
 ## 遥测
 
@@ -77,6 +79,7 @@
 ## 渠道
 
 - 你在微信、飞书里和机器人收发的消息，会经过腾讯、飞书的服务器，受这两个平台各自的隐私政策约束。
+- 默认只有主人和你允许的人能和机器人对话；其他人发来的消息不会交给模型，只登记成使用请求（见 [开发文档](./development.md#谁能使用机器人)）。
 
 ## 如何删除数据
 

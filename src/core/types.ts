@@ -45,7 +45,8 @@ export type OutboundOp =
   | { type: "stream.start" }
   | { type: "stream.update"; text: string }
   | { type: "stream.finish"; text: string }
-  | { type: "text"; text: string }
+  /** ack：一句确认（"收到，这条会并入正在进行的处理…"），没有自己的回复；渠道给它短的有效期 */
+  | { type: "text"; text: string; ack?: boolean }
   /** 代理回合的一步（新增或更新，按 id）：只有网页对话显示，其它渠道忽略 */
   | { type: "activity"; step: ActivityStep }
   /** 代理交付的本地文件（present）：微信走 CDN 媒体消息，飞书上传文件/图片，网页列出文件名 */

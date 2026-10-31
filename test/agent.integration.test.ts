@@ -10,7 +10,7 @@ import { RETRY_NOTE, SHELL_LIMITS, locateDshRuntime } from "../src/agent/host.js
 import { CHAT_RULES, MEMORY_GUIDE, botIdentity } from "../src/agent/prompts/index.js";
 import { STEER_ACK } from "../src/core/runtime.js";
 import { findAppRoot } from "../src/magpie/supervisor.js";
-import { listen } from "./helpers.js";
+import { listen, mockIlink } from "./helpers.js";
 
 /**
  * 真实 DSH 子进程 + 脚本化的模型（会发出工具调用），Chat Completions、Responses、Anthropic Messages 三种接口都能答。
@@ -554,6 +554,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
     const send = async (user: string, model: string) => {
       const conv = app.store.ensureConversation("default", "weixin", user, user, "dm");
+      app.access.allow("default", "weixin", user, "test");
       app.store.setConversationModel(conv.id, model);
       const ops: any[] = [];
       const ev = { id: `img-${user}`, channel: "weixin" as const, botId: "default", conversation: { kind: "dm" as const, id: user }, sender: { id: user }, parts: [{ type: "text" as const, text: "LOOKIMG" }, { type: "image" as const, data: png, mime: "image/png" }], replyHandle: {}, receivedAt: Date.now() };
@@ -745,6 +746,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   /** 用一个微信会话（可单独设模型）发一条消息：回复与这一轮的步骤 */
   const turnOn = async (user: string, model: string, text: string, images: Buffer[] = []) => {
     const conv = app.store.ensureConversation("default", "weixin", user, user, "dm");
+    app.access.allow("default", "weixin", user, "test");
     app.store.setConversationModel(conv.id, model);
     const ops: any[] = [];
     const parts = [{ type: "text" as const, text }, ...images.map((data) => ({ type: "image" as const, data, mime: "image/png" }))];
@@ -1126,6 +1128,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   /** 一个微信会话发一条消息，不等它结束：返回 { done（回复文字）, conv } */
   const startOn = (user: string, model: string, text: string, images: Buffer[] = []) => {
     const conv = app.store.ensureConversation("default", "weixin", user, user, "dm");
+    app.access.allow("default", "weixin", user, "test");
     app.store.setConversationModel(conv.id, model);
     const ops: any[] = [];
     const parts = [{ type: "text" as const, text }, ...images.map((data) => ({ type: "image" as const, data, mime: "image/png" }))];
@@ -1307,4 +1310,111 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       await host.restart();
     }
   }, 180_000);
+
+  // —— 微信端到端（真实 DSH + mock iLink）：插话的"收到"、后台命令结束后的回复都经出站队列发到微信，各只发一次 ——
+  describe("on WeChat (mock iLink)", () => {
+    const OWNER = "owner@im.wechat";
+    const FRIEND = "friend@im.wechat";
+    let ilink: Awaited<ReturnType<typeof mockIlink>>;
+    const sentTo = (user: string, text: string) => ilink.state.sent.filter((s) => s.to === user && s.text.includes(text));
+    const outboxRows = (user: string) => app.store.listOutbox({ botId: "default", limit: 500 }).filter((r) => r.peerId === user).reverse();
+
+    beforeAll(async () => {
+      ilink = await mockIlink();
+      // 已经扫码登录：扫码的是 OWNER；渠道连到 mock iLink
+      app.store.saveWeixinAccount({ botId: "default", botToken: "tok", ilinkBotId: "bot@im.bot", baseUrl: ilink.url, ownerUserId: OWNER });
+      await app.restartBot("default");
+    });
+    afterAll(async () => {
+      await app.channels.get("default")?.weixin?.stop();
+      await ilink?.close();
+    });
+
+    it("a long command is backgrounded; when it ends the follow-up reply reaches WeChat exactly once, through the outbox", async () => {
+      const host = app.agent.host("default");
+      const saved = { ...SHELL_LIMITS };
+      Object.assign(SHELL_LIMITS, { bashMs: 1500, bashMaxMs: 3000 });
+      try {
+        await host.restart();
+        const conv = `default:weixin:${OWNER}`;
+        app.store.setConversationModel(conv, "");
+        ilink.push(OWNER, "BGJOB on wechat");
+        // 这一轮先回"还在跑"
+        await waitFor(() => sentTo(OWNER, "STILL-RUNNING").length === 1, 60_000);
+        expect(sentTo(OWNER, "bg-finished-42")).toHaveLength(0);
+        // 命令结束：代理醒来，回复作为一条新消息发到微信
+        await waitFor(() => sentTo(OWNER, "BGDONE").length === 1, 60_000);
+        const done = sentTo(OWNER, "BGDONE")[0];
+        expect(done.text).toContain("bg-finished-42");
+        expect(done.text).toContain("wake-step");
+        // 经出站队列：id 由 DSH 会话和回合号推出（wx:<机器人>:wake:<会话>:t<回合>:final），状态 sent
+        const rows = outboxRows(OWNER);
+        const wake = rows.filter((r) => /^wx:default:wake:[^:]+:t\d+:final$/.test(r.id));
+        expect(wake).toHaveLength(1);
+        expect(wake[0]).toMatchObject({ status: "sent", kind: "text", channel: "weixin" });
+        expect(wake[0].body.text).toContain("BGDONE");
+        expect(wake[0].id).toBe(`wx:default:wake:${app.store.getAgentSession(conv)}:t2:final`);
+        // 先是这一轮的回复，再是后台命令结束后的那条（按会话顺序）
+        expect(rows.map((r) => r.body.text?.split("<<")[0])).toEqual(["STILL-RUNNING", "BGDONE"]);
+        // 再等一会儿：没有重发，平台的 client_id 都不一样
+        await new Promise((r) => setTimeout(r, 2000));
+        await app.outbox.idle();
+        expect(sentTo(OWNER, "BGDONE")).toHaveLength(1);
+        expect(new Set(ilink.state.clientIds).size).toBe(ilink.state.clientIds.length);
+        // 历史：用户消息、这一轮的回复、后台命令结束后的回复；没有正在进行的回合，重启标记清掉了
+        const hist = app.store.listMessages(conv).map((m) => [m.role, m.content.split("<<")[0]]);
+        expect(hist.slice(-3)).toEqual([
+          ["user", "BGJOB on wechat"],
+          ["assistant", "STILL-RUNNING"],
+          ["assistant", "BGDONE"],
+        ]);
+        await waitFor(() => !app.agent.turnsInProgress.has(conv));
+        expect(app.store.getKV(`inflight:${conv}`)).toBeFalsy();
+      } finally {
+        Object.assign(SHELL_LIMITS, saved);
+        await host.restart();
+      }
+    }, 180_000);
+
+    it("a message sent while the turn runs is steered: the 收到 ack and the one reply go through the outbox, once each", async () => {
+      const conv = `default:weixin:${OWNER}`;
+      const before = ilink.state.sent.length;
+      ilink.push(OWNER, "STEERME on wechat");
+      await waitFor(() => toolRunning(conv), 60_000);
+      ilink.push(OWNER, "STEERTEXT from wechat");
+      await waitFor(() => sentTo(OWNER, "SAW<<STEERTEXT from wechat>>").length === 1, 60_000);
+      await app.outbox.idle();
+      const mine = ilink.state.sent.slice(before).filter((s) => s.to === OWNER).map((s) => s.text);
+      expect(mine).toEqual([STEER_ACK, "SAW<<STEERTEXT from wechat>>"]);
+      // ack 的出站记录：短有效期、只发一次
+      const ack = outboxRows(OWNER).filter((r) => r.body.text === STEER_ACK);
+      expect(ack).toHaveLength(1);
+      expect(ack[0].status).toBe("sent");
+      expect(ack[0].expiresAt - ack[0].createdAt).toBeLessThanOrEqual(10 * 60_000);
+      expect(app.store.listMessages(conv).slice(-3).map((m) => [m.role, m.content])).toEqual([
+        ["user", "STEERME on wechat"],
+        ["user", "STEERTEXT from wechat"],
+        ["assistant", "SAW<<STEERTEXT from wechat>>"],
+      ]);
+      await waitFor(() => !app.agent.turnsInProgress.has(conv));
+      expect(app.store.getKV(`inflight:${conv}`)).toBeFalsy();
+    }, 120_000);
+
+    it("a steer never bypasses the allowlist: removed while its turn runs, the next message is refused, not steered", async () => {
+      const entry = app.access.allow("default", "weixin", FRIEND, "test");
+      const conv = `default:weixin:${FRIEND}`;
+      ilink.push(FRIEND, "STEERME from a friend");
+      await waitFor(() => toolRunning(conv), 60_000);
+      // 主人在回合进行中把他移出允许名单
+      app.access.remove(entry.id);
+      ilink.push(FRIEND, "STEERTEXT should not get in");
+      await waitFor(() => sentTo(FRIEND, "NOSTEER").length === 1, 60_000);
+      await app.outbox.idle();
+      expect(sentTo(FRIEND, "SAW<<")).toHaveLength(0);
+      expect(sentTo(FRIEND, STEER_ACK)).toHaveLength(0);
+      expect(app.store.listMessages(conv).map((m) => m.content)).not.toContain("STEERTEXT should not get in");
+      // 模型从没见过这条
+      expect(calls.some((c) => JSON.stringify(c.body).includes("STEERTEXT should not get in"))).toBe(false);
+    }, 120_000);
+  });
 });

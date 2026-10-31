@@ -7,7 +7,7 @@ import { PickModel, shortModel } from "../components/model-picker.js";
 import { KeyForm, LINE_OPTIONS } from "./onboarding.js";
 import { LoginSheet, NotificationsSheet, UsageSheet } from "./account.js";
 import { api } from "../lib/api.js";
-import { MF_CONSOLE, MF_DOCS, MF_TOPUP, usd } from "../lib/links.js";
+import { MF_CONSOLE, MF_DOCS_LINK, MF_TOPUP, usd } from "../lib/links.js";
 import { useStore, confirmSheet, failed, saved } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
 import { TroubleshootPane } from "./troubleshoot.js";
@@ -270,7 +270,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       { tab: "troubleshoot", id: "troubleshoot", name: "故障排查", sub: "模型网关与代理进程的状态、测试模型、测试代理、最近日志、复制诊断信息", keys: "日志 log 测试 test 代理 agent 卡住 转圈 诊断 diagnostics 重启 PowerShell pwsh 命令慢 安装 重新安装 内置 系统默认",
         ctl: html`<button type="button" class="text" onClick=${() => { setQ(""); onTab?.("troubleshoot"); }}>打开</button>` },
       { tab: "about", id: "links", name: "Modelflare", sub: "官网与文档",
-        ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">modelflare.dev ↗</a><a class="text" href=${MF_DOCS} target="_blank" rel="noopener noreferrer">文档 ↗</a>` },
+        ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">modelflare.dev ↗</a><a class="text" href=${MF_DOCS_LINK} target="_blank" rel="noopener noreferrer">文档 ↗</a>` },
     ].filter(Boolean);
   }, [s, mf, mode, models, modelsError, cu, status, bots, acct, invite, unread]);
 

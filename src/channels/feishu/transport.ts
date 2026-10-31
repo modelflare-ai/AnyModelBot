@@ -41,17 +41,18 @@ export interface FeishuTransport {
     onCardAction?: CardActionHandler,
   ): Promise<void>;
   /** 发送带按钮的交互卡片（审批/提问）；未实现时降级为文本 */
-  replyActionCard?(replyToMessageId: string, card: Record<string, unknown>): Promise<void>;
+  replyActionCard?(replyToMessageId: string, card: Record<string, unknown>, uuid?: string): Promise<void>;
   stop(): Promise<void>;
   createStreamingCard(initial: string): Promise<string>;
   sendCardReply(replyToMessageId: string, cardId: string): Promise<void>;
   updateCardText(cardId: string, elementId: string, text: string, sequence: number): Promise<void>;
   finishCard(cardId: string, sequence: number, summary: string): Promise<void>;
-  replyText(replyToMessageId: string, text: string): Promise<void>;
+  /** uuid：出站队列给的确定 id，飞书 1 小时内对同一 uuid 只发一次（去重） */
+  replyText(replyToMessageId: string, text: string, uuid?: string): Promise<void>;
   /** 上传本地文件并作为图片/文件消息回复（present 交付物） */
-  replyFile?(replyToMessageId: string, filePath: string): Promise<void>;
-  /** 主动发一条文本到会话（不是回复某条消息；用于余额提醒） */
-  sendText?(chatId: string, text: string): Promise<void>;
+  replyFile?(replyToMessageId: string, filePath: string, uuid?: string): Promise<void>;
+  /** 主动发一条文本到会话（不是回复某条消息；用于余额提醒、使用请求通知） */
+  sendText?(chatId: string, text: string, uuid?: string): Promise<void>;
 }
 
 export const CARD_ELEMENT_ID = "md";
@@ -101,8 +102,9 @@ export function actionCardSpec(title: string, text: string, buttons: Array<{ lab
   };
 }
 
+/** 飞书返回了错误码：出站队列把它当作"平台拒绝"（试几次就放弃），网络错误则一直重试到过期 */
 function check(res: { code?: number; msg?: string } | undefined, what: string): void {
-  if (res && typeof res.code === "number" && res.code !== 0) throw new Error(`${what} failed: code=${res.code} msg=${res.msg}`);
+  if (res && typeof res.code === "number" && res.code !== 0) throw Object.assign(new Error(`${what} failed: code=${res.code} msg=${res.msg}`), { rejected: true, code: res.code });
 }
 
 export class LarkTransport implements FeishuTransport {
@@ -221,15 +223,15 @@ export class LarkTransport implements FeishuTransport {
     check(res, "cardkit.card.settings");
   }
 
-  async replyActionCard(replyToMessageId: string, card: Record<string, unknown>): Promise<void> {
+  async replyActionCard(replyToMessageId: string, card: Record<string, unknown>, uuid?: string): Promise<void> {
     const res: any = await this.client.im.v1.message.reply({
       path: { message_id: replyToMessageId },
-      data: { msg_type: "interactive", content: JSON.stringify(card) },
+      data: { msg_type: "interactive", content: JSON.stringify(card), ...(uuid ? { uuid } : {}) },
     });
     check(res, "im.message.reply(action card)");
   }
 
-  async replyFile(replyToMessageId: string, filePath: string): Promise<void> {
+  async replyFile(replyToMessageId: string, filePath: string, uuid?: string): Promise<void> {
     const buf = await fsp.readFile(filePath);
     const name = path.basename(filePath);
     const ext = path.extname(name).toLowerCase().slice(1);
@@ -250,22 +252,22 @@ export class LarkTransport implements FeishuTransport {
       msgType = "file";
       content = JSON.stringify({ file_key: key });
     }
-    const res: any = await this.client.im.v1.message.reply({ path: { message_id: replyToMessageId }, data: { msg_type: msgType, content } });
+    const res: any = await this.client.im.v1.message.reply({ path: { message_id: replyToMessageId }, data: { msg_type: msgType, content, ...(uuid ? { uuid } : {}) } });
     check(res, `im.message.reply(${msgType})`);
   }
 
-  async replyText(replyToMessageId: string, text: string): Promise<void> {
+  async replyText(replyToMessageId: string, text: string, uuid?: string): Promise<void> {
     const res: any = await this.client.im.v1.message.reply({
       path: { message_id: replyToMessageId },
-      data: { msg_type: "text", content: JSON.stringify({ text }) },
+      data: { msg_type: "text", content: JSON.stringify({ text }), ...(uuid ? { uuid } : {}) },
     });
     check(res, "im.message.reply(text)");
   }
 
-  async sendText(chatId: string, text: string): Promise<void> {
+  async sendText(chatId: string, text: string, uuid?: string): Promise<void> {
     const res: any = await this.client.im.v1.message.create({
       params: { receive_id_type: "chat_id" },
-      data: { receive_id: chatId, msg_type: "text", content: JSON.stringify({ text }) },
+      data: { receive_id: chatId, msg_type: "text", content: JSON.stringify({ text }), ...(uuid ? { uuid } : {}) },
     });
     check(res, "im.message.create(text)");
   }

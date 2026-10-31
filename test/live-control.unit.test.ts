@@ -263,3 +263,121 @@ describe("runtime: a message sent while an agent turn runs", () => {
     expect(s.steered).toEqual([]);
   });
 });
+
+describe("runtime: restart markers and wake-up replies", () => {
+  const CONV = "b1:weixin:u1";
+  const ev = (text: string, id = Math.random().toString(36)): InboundEvent => ({ id, channel: "weixin", botId: "b1", conversation: { kind: "dm", id: "u1" }, sender: { id: "u1" }, parts: [{ type: "text", text }], replyHandle: { contextToken: "ctx-1" }, receivedAt: Date.now() });
+  const reply = { text: "回答", sessionId: "S", files: [], usage: { tokens: 1, window: 10, maxTokens: 1 } };
+  function setup() {
+    const store = new Store(":memory:");
+    store.createBot({ id: "b1", name: "测试" });
+    const turns = new Map<string, any>();
+    const pending: Array<{ resolve: (v: unknown) => void; reject: (e: Error) => void }> = [];
+    let wakeId: string | undefined;
+    let follow: { resolve: (v: unknown) => void; reject: (e: Error) => void } | undefined;
+    const agent = {
+      available: true,
+      host: () => ({ state: "running", workspace: os.tmpdir(), diagnostics: () => ({}), wakeId: () => wakeId }),
+      approvals: { bindSink: () => () => {}, handleReply: () => ({ handled: false }), pending: () => [] },
+      turnsInProgress: turns,
+      settings: () => ({ ...DEFAULT_SETTINGS, memory: { ...DEFAULT_SETTINGS.memory, enabled: false } }),
+      memoryPrefix: () => "",
+      takeSeed: () => "",
+      canSteer: (conv: string) => turns.has(conv),
+      steer: async () => true,
+      runTurn: (_bot: string, input: any) => {
+        turns.set(input.conversationId, { since: Date.now(), lastProgress: Date.now(), activity: { steps: [] } });
+        input.observer?.onStart?.();
+        return new Promise((resolve, reject) => pending.push({ resolve, reject })).finally(() => turns.delete(input.conversationId));
+      },
+      followTurn: () => {
+        const t = wakeId;
+        wakeId = undefined;
+        return new Promise((resolve, reject) => (follow = { resolve, reject })).then((v) => (void t, v));
+      },
+      stopTurn: () => false,
+    } as unknown as AgentManager & { onWake?: (b: string, c: string) => void };
+    const models = { listModels: async () => ["m1"], streamChat: async () => "纯对话" };
+    const rt = new BotRuntime({ store, models: models as any, defaultModel: () => "m1", contextMessages: 20, contextChars: 20_000, agent });
+    const q = new KeyedQueue();
+    const send = (text: string) => q.run("weixin:b1:u1", () => rt.handle(ev(text), { apply: async () => undefined }));
+    const marker = () => store.getKV(`inflight:${CONV}`);
+    return { store, rt, agent, send, pending, marker, wake: (id: string) => (wakeId = id), follow: () => follow };
+  }
+
+  it("a steered message keeps the conversation's restart marker until the turn it joined is done", async () => {
+    const s = setup();
+    const a = s.send("第一条");
+    await until(() => s.pending.length === 1);
+    const b = s.send("补充一句");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(JSON.parse(s.marker()!).preview).toBe("第一条");
+    s.pending[0].resolve(reply);
+    await Promise.all([a, b]);
+    expect(s.marker()).toBeFalsy();
+  });
+
+  it("the app shuts down while the joined turn runs: the marker stays for the next start, also after the steered message finished", async () => {
+    const s = setup();
+    const a = s.send("第一条");
+    await until(() => s.pending.length === 1);
+    const b = s.send("补充一句");
+    await new Promise((r) => setTimeout(r, 20));
+    s.rt.shutdown();
+    s.pending[0].reject(new Error("DeepSeek Harness runtime closed"));
+    await Promise.all([a, b]);
+    expect(JSON.parse(s.marker()!).preview).toBe("第一条");
+  });
+
+  it("a wake-up turn: its reply goes to the conversation's replier under a key fixed by the DSH session and turn; the marker is set while it runs", async () => {
+    const s = setup();
+    await (async () => {
+      const a = s.send("BGJOB please");
+      await until(() => s.pending.length === 1);
+      s.pending[0].resolve({ ...reply, text: "还在跑" });
+      await a;
+    })();
+    expect(s.marker()).toBeFalsy();
+    const ops: OutboundOp[] = [];
+    const seen: Array<{ handle: unknown; key: string }> = [];
+    let ended = 0;
+    s.rt.registerReplier("b1", "weixin", (_conv, handle, key) => (seen.push({ handle, key }), { out: { apply: async (op) => void ops.push(op) }, done: () => void ended++ }));
+    s.wake("S:t2");
+    const w = s.rt.wake("b1", CONV);
+    await until(() => !!s.follow());
+    // 回复句柄来自 KV（重启也在），出站 id 的 key 由会话与回合号推出
+    expect(seen).toEqual([{ handle: { contextToken: "ctx-1" }, key: "wake:S:t2" }]);
+    expect(JSON.parse(s.marker()!).preview).toBe("BGJOB please");
+    s.follow()!.resolve({ ...reply, text: "后台命令跑完了" });
+    await w;
+    expect(ops.filter((o) => o.type === "stream.finish").map((o: any) => o.text)).toEqual(["后台命令跑完了"]);
+    expect(ended).toBe(1);
+    expect(s.marker()).toBeFalsy();
+    expect(s.store.listMessages(CONV).map((m) => [m.role, m.content])).toEqual([
+      ["user", "BGJOB please"],
+      ["assistant", "还在跑"],
+      ["assistant", "后台命令跑完了"],
+    ]);
+    // 没有醒着的一轮（已经有人跟着、或者随代理进程没了）：什么也不发
+    await s.rt.wake("b1", CONV);
+    expect(seen).toHaveLength(1);
+  });
+
+  it("the app shuts down during a wake-up turn: no reply, the marker stays", async () => {
+    const s = setup();
+    const a = s.send("BGJOB please");
+    await until(() => s.pending.length === 1);
+    s.pending[0].resolve(reply);
+    await a;
+    const ops: OutboundOp[] = [];
+    s.rt.registerReplier("b1", "weixin", () => ({ out: { apply: async (op) => void ops.push(op) } }));
+    s.wake("S:t2");
+    const w = s.rt.wake("b1", CONV);
+    await until(() => !!s.follow());
+    s.rt.shutdown();
+    s.follow()!.reject(new Error("代理进程已退出"));
+    await w;
+    expect(ops.some((o) => o.type === "stream.finish")).toBe(false);
+    expect(JSON.parse(s.marker()!).preview).toBe("BGJOB please");
+  });
+});

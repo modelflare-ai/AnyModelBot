@@ -71,7 +71,8 @@ export class ApprovalCenter {
   }
 
   private newCode(): string {
-    const pending = new Set(this.store.listApprovals({ status: "pending", limit: 500 }).map((r) => r.code));
+    // 也避开待处理的使用请求的配对码（主人回复「同意 1234」时不会认错）
+    const pending = new Set([...this.store.listApprovals({ status: "pending", limit: 500 }).map((r) => r.code), ...this.store.pendingAccessCodes()]);
     for (let i = 0; i < 50; i++) {
       const c = String(crypto.randomInt(0, 10000)).padStart(4, "0");
       if (!pending.has(c)) return c;

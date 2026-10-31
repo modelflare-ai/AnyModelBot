@@ -212,6 +212,11 @@ export class WeixinApiError extends Error {
   get sessionExpired(): boolean {
     return this.ret === SESSION_EXPIRED_ERRCODE || this.errcode === SESSION_EXPIRED_ERRCODE;
   }
+  /** 服务端明确拒绝（有错误码或 HTTP 4xx）：出站队列试几次就放弃；网络错误、5xx 一直重试到过期 */
+  get rejected(): boolean {
+    if (this.sessionExpired) return false;
+    return (this.ret !== undefined && this.ret !== 0) || (this.errcode !== undefined && this.errcode !== 0) || /HTTP 4\d\d/.test(this.message);
+  }
 }
 
 export interface IlinkClientOptions {
@@ -307,15 +312,16 @@ export class IlinkClient {
     return resp;
   }
 
-  async sendText(toUserId: string, text: string, contextToken: string): Promise<void> {
-    await this.sendItem(toUserId, { type: MessageItemType.TEXT, text_item: { text } }, contextToken);
+  /** clientId：出站队列给的确定 id（同一条消息的同一段每次相同），不给就随机 */
+  async sendText(toUserId: string, text: string, contextToken: string, clientId?: string): Promise<void> {
+    await this.sendItem(toUserId, { type: MessageItemType.TEXT, text_item: { text } }, contextToken, clientId);
   }
 
   /**
    * 发送本地文件：getuploadurl → AES-128-ECB 加密后 POST 到 CDN → sendmessage 媒体条目。
    * 移植自 openclaw-weixin src/cdn/upload.ts、src/cdn/cdn-upload.ts、src/messaging/send.ts。
    */
-  async sendMedia(toUserId: string, filePath: string, contextToken: string): Promise<void> {
+  async sendMedia(toUserId: string, filePath: string, contextToken: string, clientId?: string): Promise<void> {
     const plain = await fs.readFile(filePath);
     const kind = mediaKind(filePath);
     const filekey = crypto.randomBytes(16).toString("hex");
@@ -367,7 +373,7 @@ export class IlinkClient {
         : kind === "video"
           ? { type: MessageItemType.VIDEO, video_item: { media, video_size: filesize } }
           : { type: MessageItemType.FILE, file_item: { media, file_name: path.basename(filePath), len: String(plain.length) } };
-    await this.sendItem(toUserId, item, contextToken);
+    await this.sendItem(toUserId, item, contextToken, clientId);
   }
 
   private get cdnBase(): string {
@@ -437,7 +443,7 @@ export class IlinkClient {
     return { kind, data };
   }
 
-  private async sendItem(toUserId: string, item: MessageItem, contextToken: string): Promise<void> {
+  private async sendItem(toUserId: string, item: MessageItem, contextToken: string, clientId?: string): Promise<void> {
     const raw = await this.request(
       "POST",
       "ilink/bot/sendmessage",
@@ -445,7 +451,7 @@ export class IlinkClient {
         msg: {
           from_user_id: "",
           to_user_id: toUserId,
-          client_id: `amb:${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+          client_id: clientId ? `amb:${clientId}` : `amb:${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
           message_type: MessageType.BOT,
           message_state: 2, // FINISH
           context_token: contextToken || undefined,

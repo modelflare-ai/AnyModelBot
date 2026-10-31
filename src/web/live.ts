@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import type { ActivityStep } from "../agent/activity.js";
 import type { OutboundOp, ReplySession } from "../core/types.js";
 import { opEvent } from "./sse-reply.js";
-import { STEER_ACK } from "../core/runtime.js";
 
 export interface LivePrompt {
   kind: string;
@@ -59,7 +58,7 @@ export class LiveTurn implements ReplySession {
 
   async apply(op: OutboundOp): Promise<void> {
     if (this.done) return;
-    if (op.type === "text" && op.text === STEER_ACK) this.steered = true;
+    if (op.type === "text" && op.ack) this.steered = true;
     if (op.type === "stream.update" || op.type === "stream.finish" || op.type === "text") this.text = op.text;
     else if (op.type === "activity") this.steps.set(op.step.id, op.step);
     else if (op.type === "file") this.files.push(op.name);

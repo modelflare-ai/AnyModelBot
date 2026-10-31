@@ -16,6 +16,7 @@ import { clearInflight, markInflight, takeNotice } from "./recovery.js";
 import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
 import { isBotProviderModel } from "../modelflare.js";
 import type { ApprovalRow, Conversation } from "../store/db.js";
+import type { AccessControl } from "./access.js";
 
 const log = logger("runtime");
 
@@ -97,6 +98,8 @@ export interface RuntimeOptions {
    * 会话与界面里保存的仍是不带 provider 的 id。缺省原样发送。
    */
   route?: (botId: string, model: string) => string;
+  /** 谁能和机器人对话（主人 + 允许名单）；缺省不限制 */
+  access?: AccessControl;
 }
 
 const HELP = [
@@ -131,9 +134,14 @@ export const STEER_ACK = "收到，这条会并入正在进行的处理，稍后
 
 /**
  * 不是回复某条消息、而是主动发到会话里（代理自己醒来的一轮：后台命令结束）：渠道给出这个会话的出站会话。
- * last 是这个会话最近收到的一条消息（回复句柄）；done 在这一轮结束时调用。没有办法发时返回 undefined。
+ * 微信、飞书的回复会话经出站队列发（和普通回复同一条路：落库、按会话排队、重试、发送时才查微信的窗口和配额）。
+ * handle 是这个会话最近收到的那条消息的回复句柄（存在 KV 里，重启也在）；key 决定出站消息的 id（同一轮的回复只发一次）；
+ * done 在这一轮结束时调用。没有办法发时返回 undefined。
  */
-export type Replier = (conv: Conversation, last: InboundEvent | undefined) => { out: ReplySession; done?: () => void } | undefined;
+export type Replier = (conv: Conversation, handle: Record<string, string> | undefined, key: string) => { out: ReplySession; done?: () => void } | undefined;
+
+/** 会话最近收到的那条消息的回复句柄（飞书回复要它） */
+const REPLY_TO = "reply-to:";
 
 /** 渠道无关的对话运行时：命令处理、上下文拼装、流式调用模型、持久化。 */
 export class BotRuntime {
@@ -144,8 +152,6 @@ export class BotRuntime {
   private closing = false;
   /** 会话 → 之前所有消息都处理完的时刻（同一会话的消息按到达顺序处理；并进进行中回合的不必等） */
   private tails = new Map<string, Promise<void>>();
-  /** 会话 → 最近收到的一条消息（只留回复句柄）：主动发消息时回复到它 */
-  private lastInbound = new Map<string, InboundEvent>();
   /** "<botId>:<渠道>" → 主动发消息的出站会话 */
   private repliers = new Map<string, Replier>();
   constructor(private opts: RuntimeOptions) {
@@ -208,6 +214,11 @@ export class BotRuntime {
    */
   async handle(ev: InboundEvent, out: ReplySession, opts: { signal?: AbortSignal } = {}): Promise<void> {
     const { store } = this.opts;
+    // 兜底：不在允许名单里的人不建会话、不进模型（正常已在 interceptReply 拦下）
+    if (this.opts.access && !this.opts.access.allowed(ev)) {
+      log.warn("dropped a message from a sender who is not allowed", { bot: ev.botId, channel: ev.channel });
+      return;
+    }
     const bot = store.getBot(ev.botId);
     if (!bot) throw new Error(`unknown bot ${ev.botId}`);
     const conv = store.ensureConversation(bot.id, ev.channel, ev.conversation.id, ev.sender.name || ev.sender.id, ev.conversation.kind === "group" ? "group" : "dm");
@@ -215,7 +226,8 @@ export class BotRuntime {
     const link = () => t.abort.abort();
     if (opts.signal?.aborted) link();
     else opts.signal?.addEventListener("abort", link, { once: true });
-    this.lastInbound.set(conv.id, { ...ev, parts: [] });
+    // 回复句柄存下来（代理自己醒来的一轮要回复到它；重启也在）
+    if (Object.keys(ev.replyHandle).length) store.setKV(REPLY_TO + conv.id, JSON.stringify(ev.replyHandle));
     const done = this.enter(conv.id, t);
     // 重启标记：应用退出或崩溃时还没处理完的，下次启动告诉用户
     const text = eventText(ev);
@@ -277,6 +289,8 @@ export class BotRuntime {
     if (prior) {
       if (agent?.available && !signal.aborted && !text.startsWith("/") && (await this.steer(agent, bot.id, convId, text, images, out, t))) {
         await prior;
+        // 应用正在退出、它并进的那一轮没做完：重启标记留着（下次启动告诉用户）
+        if (this.closing) t.interrupted = true;
         return;
       }
       await prior;
@@ -370,6 +384,11 @@ export class BotRuntime {
    * handled=false 但带 ack：前一条还在处理，渠道先把 ack 发出去，消息照常入队。
    */
   interceptReply(ev: InboundEvent): { handled: boolean; ack?: string } {
+    // 准入：不在允许名单里的人只收到一句提示（限频），不进队列、不碰模型；主人可以用「同意 1234」处理使用请求
+    const gate = this.opts.access?.admit(ev);
+    if (gate && !gate.ok) return { handled: true, ack: gate.reply };
+    const paired = this.opts.access?.handleReply(ev);
+    if (paired?.handled) return paired;
     const text = eventText(ev);
     const convId = `${ev.botId}:${ev.channel}:${ev.conversation.id}`;
     // /status、/help 只读、不碰模型和代理进程：不进会话队列，不会排在一个卡住或正在启动代理的回合后面
@@ -414,7 +433,8 @@ export class BotRuntime {
     const ps = a?.available ? pwshStatusLine(pwshProbe.snapshot()) : "";
     const turn = a?.turnsInProgress.get(convId);
     const busy = turn ? [busyLine(turn.since, turn.lastProgress, turn.activity.steps, !!a?.canSteer(convId))] : [];
-    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
+    const who = this.opts.access ? [this.opts.access.policyLine(botId)] : [];
+    return [`当前模型：${m}${convModel ? "（会话设置）" : ""}`, `运行方式：${mode}`, ...full, ...who, ...host, ...(ps ? [ps] : []), ...busy, ...cu, ...(pend.length ? [`未决：${pend.join("，")}`] : [])].join("\n");
   }
 
   /** 卡片按钮回调：批准/拒绝/选择选项。 */
@@ -592,7 +612,7 @@ export class BotRuntime {
     this.opts.store.addMessage(convId, "user", text);
     t.userStored = true;
     t.release?.();
-    await out.apply({ type: "text", text: STEER_ACK });
+    await out.apply({ type: "text", text: STEER_ACK, ack: true });
     return true;
   }
 
@@ -606,12 +626,22 @@ export class BotRuntime {
     const conv = store.getConversation(convId);
     const bot = store.getBot(botId);
     // 那一轮已经有人跟着、或者随代理进程一起没了：不发任何东西
-    if (this.closing || !agent?.available || !conv || !bot || !agent.host(botId).woke(convId)) return;
-    const r = (this.repliers.get(`${botId}:${conv.channel}`) ?? this.repliers.get(`*:${conv.channel}`))?.(conv, this.lastInbound.get(convId));
+    const wakeId = agent?.available ? agent.host(botId).wakeId(convId) : undefined;
+    if (this.closing || !agent || !conv || !bot || !wakeId) return;
+    let handle: Record<string, string> | undefined;
+    try {
+      handle = JSON.parse(store.getKV(REPLY_TO + convId) || "null") ?? undefined;
+    } catch {
+      handle = undefined;
+    }
+    const r = (this.repliers.get(`${botId}:${conv.channel}`) ?? this.repliers.get(`*:${conv.channel}`))?.(conv, handle, `wake:${wakeId}`);
     if (!r) log.warn("no way to reply in this conversation; the wake-up reply is only kept in its history", { bot: botId, conversationId: convId, channel: conv.channel });
     const out: ReplySession = r?.out ?? { apply: async () => undefined };
     const t: Inflight = { botId, since: Date.now(), abort: new AbortController(), userStored: true };
     const done = this.enter(convId, t);
+    // 重启标记：这一轮没做完应用就退出或崩溃了，下次启动告诉用户（说的是让命令跑起来的那条消息）
+    const asked = store.listMessages(convId, 20).filter((m) => m.role === "user").at(-1)?.content;
+    markInflight(store, convId, asked || "后台命令的结果");
     const steps = new Map<string, ActivityStep>();
     const unbind = agent.approvals.bindSink(convId, async (row) => void (await out.apply(interactiveOp(row))));
     const halt = () => agent.stopTurn(convId);
@@ -632,6 +662,11 @@ export class BotRuntime {
           },
         });
       } catch (e) {
+        // 应用正在退出时代理进程被关掉：不回复，重启标记留着
+        if (this.closing) {
+          t.interrupted = true;
+          return;
+        }
         const msg = turnFailedText(e as Error, [...steps.values()]);
         store.addMessage(convId, "assistant", msg, [...steps.values()]);
         await out.apply({ type: "stream.finish", text: msg });
@@ -652,6 +687,13 @@ export class BotRuntime {
       unbind();
       await out.apply({ type: "typing", on: false }).catch(() => undefined);
       done.leave();
+      if (!this.inflight.get(convId)?.size && !t.interrupted) {
+        try {
+          clearInflight(store, convId);
+        } catch {
+          /* 退出时数据库可能已经关了 */
+        }
+      }
       r?.done?.();
     }
   }

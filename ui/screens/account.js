@@ -3,10 +3,13 @@ import { useEffect, useState } from "preact/hooks";
 import { html, Seg, Sheet, Skeleton } from "../components/ui.js";
 import { AccountLogin } from "./onboarding.js";
 import { api } from "../lib/api.js";
-import { MF_SITE, usd } from "../lib/links.js";
+import { MF_SITE, tagLink, usd } from "../lib/links.js";
 
 /** 通知里的链接：站内路径补成官网地址；只放行 https */
-const notifLink = (link) => (!link ? "" : link.startsWith("/") && !link.startsWith("//") ? MF_SITE + link : /^https:\/\//.test(link) ? link : "");
+const notifLink = (link) => {
+  const raw = !link ? "" : link.startsWith("/") && !link.startsWith("//") ? MF_SITE + link : /^https:\/\//.test(link) ? link : "";
+  return raw && tagLink(raw, "amb_notice");
+};
 
 export function LoginSheet({ onClose, onSignedIn }) {
   return html`<${Sheet} title="登录 Modelflare 账户" onClose=${onClose}>

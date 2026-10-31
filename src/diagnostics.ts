@@ -357,8 +357,20 @@ export function diagnosticsStatus(app: App): Record<string, unknown> {
     agent: app.agent.diagnostics(),
     // Windows：代理执行命令用的 PowerShell（没有 7 时每条命令要二三十秒）
     pwsh: pwshProbe.snapshot(),
+    outbox: outboxSummary(app),
     last: app.lastDiagnostics,
   };
+}
+
+/** 出站队列：等着发的、最近 7 天没发出去的（只有数量和原因，不含消息内容） */
+function outboxSummary(app: App): Record<string, unknown> | undefined {
+  try {
+    const pending = app.store.listOutbox({ status: "pending", limit: 500 });
+    const gone = app.store.listOutbox({ status: "gone", since: Date.now() - 7 * 86400_000, limit: 500 });
+    return { pending: pending.length, retrying: pending.filter((r) => r.attempts > 0).length, lastError: pending.find((r) => r.error)?.error, gone7d: gone.length, lastGone: gone[0]?.error };
+  } catch {
+    return undefined;
+  }
 }
 
 const ts = (t?: number) => (t ? new Date(t).toISOString() : "-");
@@ -389,6 +401,8 @@ export function diagnosticsReport(app: App, lines = 200): string {
   }
   const ps = pwshReportLine(s.pwsh);
   if (ps) out.push(ps);
+  const ob = s.outbox;
+  if (ob) out.push(`[出站队列] 等待发送 ${ob.pending} 条（重试中 ${ob.retrying}）${ob.lastError ? ` · 最近错误：${ob.lastError}` : ""} · 最近 7 天没发出去 ${ob.gone7d} 条${ob.lastGone ? ` · 最近一次：${ob.lastGone}` : ""}`);
   const m = app.lastDiagnostics.model;
   if (m) {
     out.push("");

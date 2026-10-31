@@ -506,6 +506,8 @@ class Wake {
   constructor(
     readonly conversationId: string,
     readonly sessionId: string,
+    /** 这一轮的回合号（会话上一轮 + 1） */
+    readonly turn: number,
   ) {
     this.done = new Promise<void>((resolve, reject) => (this.settle = (err) => (err ? reject(err) : resolve())));
     this.done.catch(() => undefined);
@@ -574,6 +576,8 @@ export class AgentHost {
   private wakes = new Map<string, Wake>();
   /** 正在把消息交给代理的会话（还没登记成回合） */
   private claimed = new Set<string>();
+  /** DSH session → 最近的回合号 */
+  private lastTurn = new Map<string, number>();
   private harness: SdkHarness | undefined;
   private starting: Promise<SdkHarness> | undefined;
   private opened = new Set<string>();
@@ -1479,6 +1483,9 @@ exec "$REAL" "$@"
    */
   private tap(n: SdkNotification): void {
     for (const w of this.wakes.values()) if (!w.ended && this.relates(n, w.sessionId)) w.push(n);
+    // 每个会话最近的回合号（代理自己醒来的那一轮是下一个）
+    const ev = n.method === "session.event" ? n.params?.event : undefined;
+    if ((ev?.type === "turn/start" || ev?.type === "turn/end") && Number(ev.data?.turn) > 0) this.lastTurn.set(String(n.params.sessionId), Number(ev.data.turn));
     if (n.method !== "session.status") return;
     const sid = String(n.params?.sessionId ?? "");
     const own = [...this.turns.values()].find((t) => t.sessionId === sid && !t.wake);
@@ -1493,7 +1500,7 @@ exec "$REAL" "$@"
     const conv = this.o.store.conversationForSession(sid);
     // 只跟踪会话自己的 DSH session（不是子代理、不是归档了的旧段）
     if (!conv || this.o.store.getAgentSession(conv) !== sid || this.claimed.has(conv)) return;
-    const w = new Wake(conv, sid);
+    const w = new Wake(conv, sid, (this.lastTurn.get(sid) ?? 0) + 1);
     this.wakes.set(sid, w);
     log.info("agent woke up on its own (a background job ended); following that turn", { bot: this.o.botId, conversationId: conv });
     // 没人接（没有渠道能回复）：结束一分钟后丢掉
@@ -1518,7 +1525,13 @@ exec "$REAL" "$@"
 
   /** 这个会话的代理自己醒着（后台命令结束后被唤醒） */
   woke(conversationId: string): boolean {
-    return [...this.wakes.values()].some((w) => w.conversationId === conversationId && !w.taken);
+    return !!this.wakeId(conversationId);
+  }
+
+  /** 代理自己醒来、还没人跟着的那一轮的确定标识（DSH session + 回合号）：出站消息的 id 由它推出，同一轮的回复只发一次 */
+  wakeId(conversationId: string): string | undefined {
+    const w = [...this.wakes.values()].find((x) => x.conversationId === conversationId && !x.taken);
+    return w ? `${w.sessionId}:t${w.turn}` : undefined;
   }
 
   /**

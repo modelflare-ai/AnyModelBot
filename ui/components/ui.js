@@ -283,7 +283,7 @@ const STATE = {
   failed: ["失败", "err"], stopped: ["已停止", "off"], wait: ["等待扫码", "warn"], scaned: ["已扫码", "warn"], need_verifycode: ["需验证码", "warn"],
   confirmed: ["已确认", "ok"], already_bound: ["已绑定", "ok"], cancelled: ["已取消", "off"], idle: ["空闲", "off"], fetching: ["获取中", "warn"],
   pending: ["待处理", "warn"], allowed: ["已批准", "ok"], rejected: ["已拒绝", "err"], answered: ["已回答", "ok"],
-  retrying: ["重试中", "warn"], denied: ["已拒绝", "err"],
+  denied: ["已拒绝", "err"],
 };
 export const Badge = ({ s }) => {
   const [text, kind] = STATE[s] || [s, ""];

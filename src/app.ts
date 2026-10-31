@@ -149,10 +149,6 @@ export class App {
     });
     this.store = new Store(path.join(config.dataDir, "anymodel.db"));
     this.outbox = new Outbox(this.store);
-    this.outbox.onGone = (row) => {
-      const bot = this.store.getBot(row.botId);
-      this.notice("warn", `机器人「${bot?.name ?? row.botId}」有一条${row.channel === "weixin" ? "微信" : "飞书"}消息没能发出去：${row.error}`);
-    };
     this.access = new AccessControl(this.store, { notify: (to, text, id) => this.reach(to, text, id) });
     if (config.magpie.mode === "managed") {
       this.magpie = new MagpieSupervisor({ dataDir: config.dataDir, binPath: config.magpie.binPath || undefined });
@@ -679,6 +675,8 @@ export class App {
       const prevOwner = this.store.getWeixinAccount(botId)?.ownerUserId;
       this.store.saveWeixinAccount({ botId, botToken: res.botToken, ilinkBotId: res.ilinkBotId, baseUrl: res.baseUrl, ownerUserId: res.userId });
       if (prevOwner && prevOwner !== res.userId) this.access.allow(botId, "weixin", prevOwner, "previous-owner");
+      // 这次拿到了扫码者：之前没拿到时第一个发消息成为主人的人，也留在允许名单里
+      if (res.userId) this.access.resetOwner(botId, "weixin", { keep: true });
       const bot = this.store.getBot(botId);
       if (bot && !bot.weixinEnabled) this.store.updateBot(botId, { weixinEnabled: true });
       await ch.weixin?.stop();

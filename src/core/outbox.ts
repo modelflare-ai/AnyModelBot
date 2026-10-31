@@ -3,7 +3,9 @@
  * - 每条消息有确定的 id（由入站消息 id 推出来），同一 id 只写一次、只发一次；
  * - 同一会话按写入顺序一条一条发，前一条没发完，后面的等着；
  * - 临时失败按退避重试（5 秒起，翻倍到 5 分钟），渠道没在运行时等它上线；
- * - 发不出去了（配额用完、超过 24 小时、过期、平台多次拒绝）标记 gone 并记下原因，界面里能看到；
+ * - 要等对方先发消息才能发的（微信：超过 24 小时没说话、本轮配额用完）留着（held），对方下次发消息时按原来的顺序先发出去，
+ *   能合并的合成一条「你不在时：…」，排在这次的回复前面；
+ * - 再也发不出去了（平台多次拒绝、等待太久）标记 gone 并记下原因，只记在日志和诊断信息里；
  * - 应用重启后接着发。流式的中间内容和"正在输入"不经过这里。
  *
  * 设计改编自 deepseek-ai/dsh-superagent-prototype（MIT，© 2026 DeepSeek Harness Team）：src/app/outbox.ts 的回执 +
@@ -17,13 +19,17 @@ const log = logger("outbox");
 
 /** 暂时不能发（渠道没上线、登录过期等）：稍后再试，不算失败 */
 export class Later extends Error {}
-/** 再也发不出去了：标记 gone，message 是给人看的原因 */
+/** 再也发不出去了：标记 gone，message 是原因（日志、诊断信息） */
 export class Gone extends Error {}
+/** 要等对方先发消息才能发（微信 24 小时窗口已过、本轮配额用完）：留着，对方下次发消息时再发（见 release） */
+export class Held extends Error {}
 
 /** 普通消息最长等多久（微信的会话凭证 24 小时有效，飞书也不该再补发一天前的回复） */
 export const OUTBOX_TTL_MS = 24 * 3600_000;
 /** 平台明确拒绝（有错误码）的，试这么多次就放弃 */
 export const REJECTIONS_BEFORE_GONE = 5;
+/** 留着等对方发消息的，最多留多久（ack、审批提示这类短命的照旧按自己的期限） */
+export const HOLD_TTL_MS = 7 * 86400_000;
 
 export interface OutboxInput {
   id: string;
@@ -37,6 +43,12 @@ export interface OutboxInput {
   replyTo?: string;
   /** 多久之后不再发（默认 24 小时；ack、审批提示更短） */
   ttlMs?: number;
+}
+
+/** 对方发消息后一起发的一组留着的消息：body 给了就合成这一条发，否则这组只有一条、照原样发 */
+export interface HeldGroup {
+  rows: OutboxRow[];
+  body?: OutboxBody;
 }
 
 /** 渠道的发送函数：成功返回；Later / Gone / 其他错误（临时失败，会重试）。progress 记下长文本已发出的分段数 */
@@ -69,8 +81,6 @@ export class Outbox {
   private scheduled = false;
   private started = false;
   private stopped = false;
-  /** 一条消息发不出去了（界面提示、日志） */
-  onGone: ((row: OutboxRow) => void) | undefined;
 
   constructor(
     private store: Store,
@@ -122,6 +132,7 @@ export class Outbox {
     this.started = true;
     this.stopped = false;
     try {
+      for (const r of this.store.listOutbox({ status: "held", limit: 500 })) if (r.expiresAt <= this.now()) this.gone(r, "等待太久，已不再发送");
       this.store.pruneOutbox(this.now());
       // 重启了：等着退避的不用再等，马上试一次
       this.store.resumeOutbox(this.now());
@@ -155,12 +166,23 @@ export class Outbox {
     }
   }
 
-  /** 界面上"知道了" */
-  dismiss(id: string): boolean {
-    const row = this.store.getOutbox(id);
-    if (!row || row.status !== "gone") return false;
-    this.store.updateOutbox(id, { dismissed: true }, this.now());
-    return true;
+  /**
+   * 对方又发消息了：留着给他的消息放回队列，按原来的顺序排在这次回复的前面。
+   * combine 决定哪几条合成一条发（每组第一条换成合并后的内容，其余标记 merged）；不给就一条一条发。过期的不再发。
+   */
+  release(botId: string, channel: string, peerId: string, combine?: (rows: OutboxRow[]) => HeldGroup[]): number {
+    const held = this.store.heldOutbox(`${botId}:${channel}:${peerId}`);
+    if (!held.length) return 0;
+    const now = this.now();
+    const live = held.filter((r) => r.expiresAt > now || (this.gone(r, "等待太久，已不再发送"), false));
+    for (const g of combine ? combine(live) : live.map((r): HeldGroup => ({ rows: [r] }))) {
+      const [first, ...rest] = g.rows;
+      this.store.updateOutbox(first.id, { status: "pending", due: now, error: "", ...(g.body ? { body: g.body, progress: 0 } : {}) }, now);
+      for (const r of rest) this.store.updateOutbox(r.id, { status: "merged" }, now);
+    }
+    if (live.length) log.info(`releasing ${live.length} held message(s)`, { bot: botId, channel });
+    this.kick();
+    return live.length;
   }
 
   private kick(): void {
@@ -223,6 +245,7 @@ export class Outbox {
     const msg = String((e as Error)?.message ?? e).slice(0, 300);
     const now = this.now();
     if (e instanceof Gone) return this.gone(row, msg);
+    if (e instanceof Held) return this.hold(row, msg);
     // 关机中：留到下次启动
     if (this.stopped) return;
     const [base, max] = this.opts.retry ?? [5000, 300_000];
@@ -238,13 +261,15 @@ export class Outbox {
     this.store.updateOutbox(row.id, { attempts, error: msg, due: now + delay }, now);
   }
 
+  /** 留着等对方发消息：不算失败；普通消息最多留 HOLD_TTL_MS，短命的（ack、审批提示）照旧按自己的期限 */
+  private hold(row: OutboxRow, reason: string): void {
+    const expiresAt = row.expiresAt - row.createdAt >= OUTBOX_TTL_MS ? Math.max(row.expiresAt, row.createdAt + HOLD_TTL_MS) : row.expiresAt;
+    this.store.updateOutbox(row.id, { status: "held", error: reason, expiresAt }, this.now());
+    log.info("message held until the user writes again", { id: row.id, channel: row.channel, kind: row.kind, reason });
+  }
+
   private gone(row: OutboxRow, reason: string): void {
     this.store.updateOutbox(row.id, { status: "gone", error: reason }, this.now());
     log.warn("message gone", { id: row.id, channel: row.channel, kind: row.kind, reason });
-    try {
-      this.onGone?.({ ...row, status: "gone", error: reason });
-    } catch {
-      /* ignore */
-    }
   }
 }

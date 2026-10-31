@@ -89,7 +89,7 @@ export interface ApprovalRow {
 }
 
 /**
- * 谁能和机器人对话（每个机器人、每个渠道）：owner = 在应用里设的主人（微信的主人默认是扫码登录的人，不存在这里），
+ * 谁能和机器人对话（每个机器人、每个渠道）：owner = 连上之后第一个发消息的主人（微信的主人默认是扫码登录的人，不存在这里），
  * allowed = 允许名单，pending = 等主人处理的使用请求，denied = 被拒绝（不再回复，主人可移除）。
  * peerId 是单聊会话 id（微信 = 用户 id，飞书 = 单聊 chat_id）。
  */
@@ -103,7 +103,7 @@ export interface AccessEntry {
   senderId: string;
   name: string;
   status: AccessStatus;
-  /** 怎么来的：request（发消息申请）、migration（升级前已在使用）、previous-owner（换了扫码的微信）、app（在应用里添加） */
+  /** 怎么来的：request（发消息申请）、first-message（第一个发消息，成了主人）、migration（升级前已在使用）、previous-owner（之前的主人）、app（在应用里添加） */
   source: string;
   /** 待处理请求的配对码（主人回复「同意 1234」）；处理后清空 */
   code: string;
@@ -120,7 +120,8 @@ export interface AccessEntry {
   notifiedAt: number;
 }
 
-export type OutboxStatus = "pending" | "sent" | "gone";
+/** pending 等着发；held 等对方先发消息（微信）；sent 发出去了；merged 合进别的一条发出去了；gone 再也发不出去 */
+export type OutboxStatus = "pending" | "held" | "sent" | "merged" | "gone";
 /** 出站消息的内容：文本（最终回复、提示、通知）、文件、带按钮的卡片（飞书审批） */
 export interface OutboxBody {
   text?: string;
@@ -135,6 +136,8 @@ export interface OutboxBody {
   cardSeq?: number;
   /** 卡片上已经是最终全文 */
   shown?: boolean;
+  /** 已经是合成的「你不在时：…」（再被留着时不再加前缀） */
+  away?: boolean;
 }
 export type OutboxKind = "text" | "file" | "card" | "notice";
 /** 持久化的出站消息（见 core/outbox.ts） */
@@ -155,13 +158,12 @@ export interface OutboxRow {
   /** 已经发出去的分段数（长文本分多条发，崩溃后从这里接着发） */
   progress: number;
   due: number;
-  /** 最近一次失败的原因；gone 时是发不出去的原因 */
+  /** 最近一次失败的原因；held / gone 时是留着 / 发不出去的原因 */
   error: string;
   createdAt: number;
   updatedAt: number;
   expiresAt: number;
   sentAt: number;
-  dismissed: boolean;
 }
 
 type Row = Record<string, unknown>;
@@ -216,7 +218,7 @@ CREATE TABLE IF NOT EXISTS outbox (
   reply_to TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
   progress INTEGER NOT NULL DEFAULT 0, due INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
-  sent_at INTEGER NOT NULL DEFAULT 0, dismissed INTEGER NOT NULL DEFAULT 0);
+  sent_at INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS outbox_status ON outbox(status, seq);
 CREATE INDEX IF NOT EXISTS outbox_bot ON outbox(bot_id, status);
 `;
@@ -731,7 +733,6 @@ export class Store {
       updatedAt: Number(r.updated_at),
       expiresAt: Number(r.expires_at),
       sentAt: Number(r.sent_at),
-      dismissed: Number(r.dismissed) === 1,
     };
   }
   /** 同一 id 只写一次；返回是否是新写入的 */
@@ -752,30 +753,33 @@ export class Store {
   pendingOutbox(limit = 1000): OutboxRow[] {
     return (this.db.prepare("SELECT * FROM outbox WHERE status = 'pending' ORDER BY seq LIMIT ?").all(limit) as Row[]).map((r) => this.toOutbox(r));
   }
-  updateOutbox(id: string, patch: Partial<Pick<OutboxRow, "status" | "attempts" | "progress" | "due" | "error" | "sentAt" | "dismissed">>, now = Date.now()): void {
-    const cols: Record<string, string> = { status: "status", attempts: "attempts", progress: "progress", due: "due", error: "error", sentAt: "sent_at", dismissed: "dismissed" };
+  updateOutbox(id: string, patch: Partial<Pick<OutboxRow, "status" | "attempts" | "progress" | "due" | "error" | "sentAt" | "expiresAt" | "body">>, now = Date.now()): void {
+    const cols: Record<string, string> = { status: "status", attempts: "attempts", progress: "progress", due: "due", error: "error", sentAt: "sent_at", expiresAt: "expires_at", body: "body" };
     const keys = (Object.keys(patch) as Array<keyof typeof patch>).filter((k) => k in cols);
     if (!keys.length) return;
-    const vals = keys.map((k) => (typeof patch[k] === "boolean" ? (patch[k] ? 1 : 0) : (patch[k] as string | number)));
+    const vals = keys.map((k) => (k === "body" ? JSON.stringify(patch.body) : (patch[k] as string | number)));
     this.db.prepare(`UPDATE outbox SET ${keys.map((k) => `${cols[k]} = ?`).join(", ")}, updated_at = ? WHERE id = ?`).run(...vals, now, id);
   }
-  listOutbox(opts: { botId?: string; status?: OutboxStatus; dismissed?: boolean; since?: number; limit?: number } = {}): OutboxRow[] {
+  listOutbox(opts: { botId?: string; status?: OutboxStatus; since?: number; limit?: number } = {}): OutboxRow[] {
     const where: string[] = [];
     const args: Array<string | number> = [];
     if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
     if (opts.status) (where.push("status = ?"), args.push(opts.status));
-    if (opts.dismissed !== undefined) (where.push("dismissed = ?"), args.push(opts.dismissed ? 1 : 0));
     if (opts.since) (where.push("updated_at >= ?"), args.push(opts.since));
     const sql = `SELECT * FROM outbox ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY seq DESC LIMIT ${Math.max(1, Math.min(500, opts.limit ?? 100))}`;
     return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toOutbox(r));
+  }
+  /** 留着等这个会话的对方发消息的，按写入顺序 */
+  heldOutbox(conversationId: string): OutboxRow[] {
+    return (this.db.prepare("SELECT * FROM outbox WHERE conversation_id = ? AND status = 'held' ORDER BY seq").all(conversationId) as Row[]).map((r) => this.toOutbox(r));
   }
   /** 启动时：等着退避重试的马上再试一次 */
   resumeOutbox(now = Date.now()): number {
     return Number(this.db.prepare("UPDATE outbox SET due = ? WHERE status = 'pending' AND due > ?").run(now, now).changes);
   }
-  /** 清理：发出去的留 7 天（这期间同一 id 不会再发），发不出去的留 30 天 */
+  /** 清理：发出去的（含合进别的一条发的）留 7 天（这期间同一 id 不会再发），发不出去的留 30 天 */
   pruneOutbox(now = Date.now()): void {
-    this.db.prepare("DELETE FROM outbox WHERE (status = 'sent' AND updated_at < ?) OR (status = 'gone' AND updated_at < ?)").run(now - 7 * 86400_000, now - 30 * 86400_000);
+    this.db.prepare("DELETE FROM outbox WHERE (status IN ('sent', 'merged') AND updated_at < ?) OR (status = 'gone' AND updated_at < ?)").run(now - 7 * 86400_000, now - 30 * 86400_000);
   }
 }
 

@@ -28,7 +28,7 @@ This document explains what AnyModelBot stores where, what leaves your device, a
 | WeChat sign-in state and sync cursor | Inside the data directory (`weixin/` and others) | When talking to the WeChat iLink API | Tencent WeChat |
 | Feishu App ID / Secret | Configuration inside the data directory | When opening the long connection to the Feishu Open Platform | Feishu |
 | Allowlist and access requests | `anymodel.db`: who may use which bot, and the first message a stranger sent (truncated, so you can tell who it is) | No | — |
-| Replies waiting to be sent | `anymodel.db` outbox: unsent message content and the reason (sent ones are deleted after 7 days, undeliverable ones after 30) | When they are sent | WeChat / Feishu |
+| Replies waiting to be sent | `anymodel.db` outbox: unsent message content and the reason, including WeChat messages held until the person writes again (kept up to 7 days; sent ones are deleted after 7 days, undeliverable ones after 30) | When they are sent | WeChat / Feishu |
 | Settings | `config.json` | No | — |
 | Logs | `logs/app.log` (rotated by size) | No; "Copy diagnostics" is something you copy by hand, with keys replaced by `***` | — |
 | Screenshots (computer use) | Not kept long-term | Yes | Sent as part of the model request through Modelflare to a vision-capable model; never forwarded to WeChat or Feishu chats unless you ask for them as files |

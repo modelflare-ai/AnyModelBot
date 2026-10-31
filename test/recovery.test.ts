@@ -68,6 +68,9 @@ describe("运行时：处理中留标记，处理完清掉；退出时被打断�
         return new Promise((ok, fail) => (finish = { ok, fail }));
       },
       stopTurn: () => false,
+      // 回合进行中来的消息都能并进去
+      canSteer: () => true,
+      steer: async () => true,
     } as unknown as AgentManager;
     const models = { listModels: async () => ["m1"], streamChat: async () => "纯对话" };
     const rt = new BotRuntime({ store, models: models as any, defaultModel: () => "m1", contextMessages: 20, contextChars: 20_000, agent });
@@ -92,6 +95,54 @@ describe("运行时：处理中留标记，处理完清掉；退出时被打断�
     finish().fail(new Error("runtime closed"));
     await p;
     expect(texts().at(-1)).toMatch(/没有处理完，请重新发送/);
+    expect(marked()).toEqual([]);
+  });
+
+  /** 渠道关"正在输入"要等一次网络请求（微信 sendtyping）：卡住它，看标记是不是在收尾之前就清了 */
+  function slowTypingOff() {
+    let unblock!: () => void;
+    const blocked = new Promise<void>((r) => (unblock = r));
+    const ops: OutboundOp[] = [];
+    const out = {
+      apply: async (op: OutboundOp) => {
+        ops.push(op);
+        if (op.type === "typing" && !op.on) await blocked;
+      },
+    };
+    return { out, ops, unblock, typingOff: () => ops.some((o) => o.type === "typing" && !o.on) };
+  }
+  const done = { text: "好的", sessionId: "s", files: [], usage: { tokens: 1, window: 1, maxTokens: 1 } };
+
+  it("回复交给渠道就清掉标记，不等收尾：关「正在输入」时崩溃，下次启动不会误报没处理完；并进这一轮的消息随它一起答完", async () => {
+    const { rt, marked, inputs, finish } = setup();
+    const s = slowTypingOff();
+    const first = rt.handle(ev("整理周报"), s.out);
+    await until(() => inputs.length === 1);
+    // 第二条并进进行中的这一轮：它的回复就是这一轮的回复
+    const steered = rt.handle(ev("顺便加一段总结"), s.out);
+    await until(() => s.ops.some((o) => o.type === "text" && o.ack));
+    finish().ok(done);
+    await until(s.typingOff);
+    expect(s.ops.find((o) => o.type === "stream.finish")).toMatchObject({ text: "好的" });
+    expect(marked()).toEqual([]);
+    s.unblock();
+    await Promise.all([first, steered]);
+    expect(marked()).toEqual([]);
+  });
+
+  it("这一轮答完时会话里还有排着、没答的消息：标记留着，等它也答完", async () => {
+    const { rt, marked, inputs, finish } = setup();
+    const s = slowTypingOff();
+    const first = rt.handle(ev("整理周报"), s.out);
+    await until(() => inputs.length === 1);
+    // 命令不并入进行中的回合，排在它后面
+    const queued = rt.handle(ev("/help"), s.out);
+    finish().ok(done);
+    await until(s.typingOff);
+    expect(marked()).toEqual(["inflight:b1:web:console"]);
+    s.unblock();
+    await Promise.all([first, queued]);
+    expect(s.ops.at(-1)).toMatchObject({ type: "text", text: expect.stringContaining("/help") });
     expect(marked()).toEqual([]);
   });
 

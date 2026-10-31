@@ -127,6 +127,8 @@ interface Inflight {
   release?: () => void;
   /** 用户消息已经存进历史（交给代理时就存，保证插进来的消息排在它后面） */
   userStored?: boolean;
+  /** 并进了进行中的回合：那一轮的回复也是它的回复 */
+  steered?: boolean;
 }
 
 /** 回合还没交给代理（或纯对话还没出字）就被停止时的回复 */
@@ -274,6 +276,21 @@ export class BotRuntime {
     };
   }
 
+  /**
+   * 这一轮的回复（和交付的文件）已经交给渠道：清掉重启标记，不等收尾。微信、飞书的回复这时已经落进出站队列，重启后会补发；
+   * 之后还有关"正在输入"（微信要一次网络请求）、让出会话，在那之间退出或崩溃，下次启动不该再说"没处理完，请重新发送"。
+   * 并进这一轮的消息随它一起答完了；会话里还有排着、没答的消息时标记留着。
+   */
+  private answered(convId: string, t: Inflight): void {
+    if (t.interrupted) return;
+    for (const x of this.inflight.get(convId) ?? []) if (x !== t && !x.steered) return;
+    try {
+      clearInflight(this.opts.store, convId);
+    } catch {
+      /* 退出时数据库可能已经关了 */
+    }
+  }
+
   private async handleMessage(ev: InboundEvent, out: ReplySession, bot: NonNullable<ReturnType<Store["getBot"]>>, convId: string, t: Inflight, prior: Promise<void> | undefined): Promise<void> {
     const { store } = this.opts;
     const signal = t.abort.signal;
@@ -378,6 +395,7 @@ export class BotRuntime {
       const msg = acc ? `${acc}\n\n⚠️ 生成中断：${err.message}` : `⚠️ 模型调用失败（${model}）：${err.message}`;
       await out.apply({ type: "stream.finish", text: msg });
     } finally {
+      this.answered(conv.id, t);
       await out.apply({ type: "typing", on: false });
     }
   }
@@ -526,6 +544,7 @@ export class BotRuntime {
       inflight.userStored = true;
       store.addMessage(convId, "assistant", msg);
       await out.apply({ type: "stream.finish", text: msg });
+      this.answered(convId, inflight);
       return true;
     };
     const stopped = new Promise<"stopped">((r) => (signal.aborted ? r("stopped") : signal.addEventListener("abort", () => r("stopped"), { once: true })));
@@ -590,6 +609,7 @@ export class BotRuntime {
           log.warn("deliver file failed", { name: path.basename(f), message: (e as Error).message.slice(0, 200) });
         }
       }
+      this.answered(convId, inflight);
       return true;
     } catch (e) {
       const err = e as Error;
@@ -608,6 +628,7 @@ export class BotRuntime {
       inflight.userStored = true;
       store.addMessage(convId, "assistant", msg, [...steps.values()]);
       await out.apply({ type: "stream.finish", text: msg });
+      this.answered(convId, inflight);
       return true;
     } finally {
       clearInterval(startup);
@@ -630,6 +651,7 @@ export class BotRuntime {
     log.info("message steered into the running turn", { bot: botId, conversationId: convId });
     this.opts.store.addMessage(convId, "user", text);
     t.userStored = true;
+    t.steered = true;
     t.release?.();
     await out.apply({ type: "text", text: STEER_ACK, ack: true });
     return true;
@@ -689,6 +711,7 @@ export class BotRuntime {
         const msg = turnFailedText(e as Error, [...steps.values()]);
         store.addMessage(convId, "assistant", msg, [...steps.values()]);
         await out.apply({ type: "stream.finish", text: msg });
+        this.answered(convId, t);
         return;
       }
       const finalText = res.text.trim() || "（后台任务已结束，没有文字回复）";
@@ -701,6 +724,7 @@ export class BotRuntime {
           log.warn("deliver file failed", { name: path.basename(f), message: (e as Error).message.slice(0, 200) });
         }
       }
+      this.answered(convId, t);
     } finally {
       t.abort.signal.removeEventListener("abort", halt);
       unbind();

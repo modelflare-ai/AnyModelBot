@@ -22,6 +22,7 @@ export interface ConnectedAccount {
 export interface AppKey {
   id: number;
   name: string;
+  /** 完整 Key 的最后 4 位 */
   key_tail: string;
   status: "enabled" | "disabled" | "expired" | "exhausted";
   unlimited: boolean;
@@ -71,6 +72,12 @@ export class AccountSession {
 
   get record(): AccountRecord {
     return this.o.record;
+  }
+
+  /** 改账户记录并立刻落盘。令牌轮换时写回的是这里的记录，所以不能绕过它直接写文件 */
+  updateRecord(patch: Partial<AccountRecord>): void {
+    this.o.record = { ...this.o.record, ...patch };
+    this.o.persist(this.o.record);
   }
 
   private get fetch(): typeof fetch {

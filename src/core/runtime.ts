@@ -102,6 +102,11 @@ export interface RuntimeOptions {
   route?: (botId: string, model: string) => string;
   /** 谁能和机器人对话（主人 + 允许名单）；缺省不限制 */
   access?: AccessControl;
+  /**
+   * 模型请求失败后调用：核对 Key 是否已失效（例如在 Modelflare 控制台被删）并重新签发。
+   * 返回 true = 换了 Key，这条消息自动再试一次（只在还没有任何输出时）。缺省不重试。
+   */
+  recoverKey?: () => Promise<boolean>;
 }
 
 const help = () => t("runtime.help");
@@ -199,6 +204,13 @@ export class BotRuntime {
     const list = await this.listModels();
     if (!list.length) throw new Error(t("runtime.noModels"));
     return list[0];
+  }
+
+  /** 失败后是否值得重试一次：Key 被换掉了才重试；核对本身出错按不重试处理 */
+  private async keyRecovered(): Promise<boolean> {
+    const recovered = await this.opts.recoverKey?.().catch(() => false);
+    if (recovered) log.info("model key was reissued, retrying the message once");
+    return !!recovered;
   }
 
   /**
@@ -347,10 +359,16 @@ export class BotRuntime {
     await out.apply({ type: "typing", on: true });
     await out.apply({ type: "stream.start" });
     let acc = "";
-    try {
-      const full = await this.opts.models.streamChat({ model: routed, messages, signal }, (delta) => {
+    const call = () =>
+      this.opts.models.streamChat({ model: routed, messages, signal }, (delta) => {
         acc += delta;
         void out.apply({ type: "stream.update", text: acc });
+      });
+    try {
+      const full = await call().catch(async (e: Error) => {
+        // 一个字都还没出来就失败：Key 若刚被换掉，就用新 Key 再发一次
+        if (acc || signal.aborted || !(await this.keyRecovered())) throw e;
+        return call();
       });
       const finalText = full || acc || t("runtime.emptyReply");
       store.addMessage(conv.id, "assistant", finalText);
@@ -559,32 +577,42 @@ export class BotRuntime {
       // 后台任务的结果发出去之后，下一条聊天消息带上那张便条：聊天代理知道发生了什么
       const notes = takeTaskNotes(store, convId);
       const input = notes ? `${notes}\n\n${first}` : first;
-      // runTurn 同步登记回合，之后的停止交给代理（TurnStopped，会重启代理进程）
-      const turn = agent.runTurn(botId, {
-        conversationId: convId,
-        text: input,
-        model,
-        ...(images.length ? { images } : {}),
-        onStep,
-        observer: {
-          // 工具调用不进入聊天：只用于判断代理已开始工作（不再回退到纯对话），正在输入状态由渠道维持
-          onProgress: () => {
-            visible = true;
+      const runOnce = async () => {
+        // runTurn 同步登记回合，之后的停止交给代理（TurnStopped，会重启代理进程）
+        const turn = agent.runTurn(botId, {
+          conversationId: convId,
+          text: input,
+          model,
+          ...(images.length ? { images } : {}),
+          onStep,
+          observer: {
+            // 工具调用不进入聊天：只用于判断代理已开始工作（不再回退到纯对话），正在输入状态由渠道维持
+            onProgress: () => {
+              visible = true;
+            },
+            // 代理收下了这条消息：先存用户消息（之后并进来的消息排在它后面），再让出渠道队列，后来的消息可以并入这一轮
+            onStart: () => {
+              if (!inflight.userStored) store.addMessage(convId, "user", text);
+              inflight.userStored = true;
+              inflight.release?.();
+            },
           },
-          // 代理收下了这条消息：先存用户消息（之后并进来的消息排在它后面），再让出渠道队列，后来的消息可以并入这一轮
-          onStart: () => {
-            if (!inflight.userStored) store.addMessage(convId, "user", text);
-            inflight.userStored = true;
-            inflight.release?.();
-          },
-        },
-      });
-      const halt = () => agent.stopTurn(convId);
-      signal.addEventListener("abort", halt, { once: true });
-      const r = await turn.finally(() => {
-        clearInterval(startup);
-        signal.removeEventListener("abort", halt);
-      });
+        });
+        const halt = () => agent.stopTurn(convId);
+        signal.addEventListener("abort", halt, { once: true });
+        try {
+          return await turn;
+        } finally {
+          signal.removeEventListener("abort", halt);
+        }
+      };
+      const r = await runOnce()
+        .catch(async (e: Error) => {
+          // 还没有任何步骤就失败（没调用工具、没有副作用）：Key 若刚被换掉，就用新 Key 把这一回合再跑一次
+          if (e instanceof TurnStopped || signal.aborted || visible || steps.size || agent.host(botId).state !== "running" || !(await this.keyRecovered())) throw e;
+          return runOnce();
+        })
+        .finally(() => clearInterval(startup));
       if (!inflight.userStored) store.addMessage(convId, "user", text);
       inflight.userStored = true;
       const finalText = r.text.trim() || t("runtime.doneNoText");

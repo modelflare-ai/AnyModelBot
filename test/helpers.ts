@@ -307,9 +307,14 @@ export async function mockModelflare() {
     keys: [] as Array<{ id: number; name: string; limit_usd: number | null; used_usd: number }>,
     balance: 12.5,
     revokeAll: false,
+    /** GET /api-keys 被请求的次数 */
+    keyLists: 0,
   };
   let base = "";
   let n = 0;
+  // Key 的 id 和服务端一样只增不减：删掉一把后新签发的不会和它重号
+  let keySeq = 0;
+  const keyOut = (k: (typeof s.keys)[number]) => ({ ...k, key_tail: `sk-key-${k.id}`.slice(-4), status: "enabled", unlimited: k.limit_usd === null, remain_usd: k.limit_usd });
   const issue = (res: http.ServerResponse) => {
     const access = `at-${++n}`;
     const refresh = `rt-${n}`;
@@ -356,11 +361,14 @@ export async function mockModelflare() {
       if (p === "/account") return json({ success: true, data: { display_name: "Ada", username: "ada", group: "default", balance_usd: s.balance, used_usd: 3, billed_to_enterprise: false, quota_per_unit: 500000 } });
       if (p === "/api-keys" && req.method === "POST") {
         const b = await readJson(req);
-        const k = { id: s.keys.length + 1, name: b.name, limit_usd: b.limit_usd ?? null, used_usd: 0 };
+        const k = { id: ++keySeq, name: b.name, limit_usd: b.limit_usd ?? null, used_usd: 0 };
         s.keys.push(k);
-        return json({ success: true, data: { ...k, key: `sk-key-${k.id}`, key_tail: `y-${k.id}`, status: "enabled", unlimited: k.limit_usd === null, remain_usd: k.limit_usd } });
+        return json({ success: true, data: { ...keyOut(k), key: `sk-key-${k.id}` } });
       }
-      if (p === "/api-keys" && req.method === "GET") return json({ success: true, data: s.keys.map((k) => ({ ...k, status: "enabled", unlimited: k.limit_usd === null, remain_usd: k.limit_usd })) });
+      if (p === "/api-keys" && req.method === "GET") {
+        s.keyLists++;
+        return json({ success: true, data: s.keys.map(keyOut) });
+      }
       const m = p.match(/^\/api-keys\/(\d+)$/);
       if (m && req.method === "PATCH") {
         const k = s.keys.find((x) => x.id === Number(m[1]));

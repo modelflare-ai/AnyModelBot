@@ -1,8 +1,9 @@
 /**
  * 规则（3d）的纯函数部分：状态、给人看的一行、每种模式的权限和去掉的工具。写库的是任务服务（service.ts，唯一的写入者）。
  *
- * 状态（第一条符合的为准）：暂停了（连续失败 3 次）→ 已暂停；关了 → 已关闭；一次性的跑过了 → 已结束；提醒 → 提醒；
- * 观察中（含改了原话后先观察的那一次）→ 观察中；其余 → 执行中。状态是"点 + 文字"：红 = 暂停，绿 = 执行中、提醒，灰 = 观察、关闭、结束。
+ * 状态（第一条符合的为准）：暂停了（连续失败 3 次、本月预算用完）→ 已暂停；关了 → 已关闭；一次性的跑过了 → 已结束；提醒 → 提醒；
+ * 观察中（含改了原话后先观察的那一次）→ 观察中；其余 → 执行中。状态是"点 + 文字"：红 = 连续失败暂停，黄 = 本月预算用完暂停，
+ * 绿 = 执行中、提醒，灰 = 观察、关闭、结束。
  * 给人看的文字跟着语言（src/i18n 的 rules.*）；跳过、失败的原因存成代码（RUN_ERROR），显示时再翻。
  */
 import type { OutboxRow, RuleMode, RuleRow, RunRow } from "../store/db.js";
@@ -50,13 +51,13 @@ export function rulePermission(mode: "observe" | "act", botPreset: string): "rea
 export interface RuleState {
   key: "paused" | "off" | "done" | "remind" | "observe" | "act";
   label: string;
-  /** 状态点：err 红、ok 绿、空 = 灰 */
-  dot: "" | "ok" | "err";
+  /** 状态点：err 红、warn 黄、ok 绿、空 = 灰 */
+  dot: "" | "ok" | "warn" | "err";
 }
 
 export function ruleState(rule: RuleRow, live = false, l: Lang = currentLang()): RuleState {
   const s = (key: RuleState["key"], label: MessageKey, dot: RuleState["dot"]): RuleState => ({ key, label: tl(l, label), dot });
-  if (rule.pausedReason) return s("paused", "rules.statePaused", "err");
+  if (rule.pausedReason) return s("paused", "rules.statePaused", rule.pausedReason === "budget" ? "warn" : "err");
   if (rule.mode === "off") return s("off", "rules.stateOff", "");
   if (!live && !rule.nextRunAt && rule.trigger.kind === "schedule") return s("done", "rules.stateDone", "");
   if (rule.kind === "remind") return s("remind", "rules.stateRemind", "ok");
@@ -89,6 +90,12 @@ export interface RuleView {
   /** 这一版好好观察过几次 */
   observed: number;
   failures: number;
+  /** 暂停的原因：failures / budget；空 = 没暂停 */
+  pausedReason: string;
+  /** 本月估算花了多少、每月的预算、每次的预算（美元） */
+  monthUsd: number;
+  monthBudgetUsd: number;
+  runBudgetUsd: number;
   folder: string;
   version: number;
   createdAt: number;
@@ -114,6 +121,10 @@ export const RUN_ERROR = {
   modelErrors: "model_errors",
   agentFailed: "agent_failed",
   agentUnavailable: "agent_unavailable",
+  /** 3e：超出单次预算、本月预算用完、机器人的预算留给聊天 */
+  runBudget: "run_budget",
+  monthBudget: "month_budget",
+  reserve: "reserve",
 } as const;
 
 /** 原因 → 词条：规则自己的，和任务共用的那几种（tasks.*，和任务失败时的说法一样） */
@@ -129,6 +140,9 @@ const WHY: Record<string, MessageKey> = {
   model_errors: "tasks.modelKeptFailing",
   agent_failed: "tasks.agentDidntStart",
   agent_unavailable: "tasks.agentUnavailable",
+  run_budget: "rules.whyRunBudget",
+  month_budget: "rules.whyMonthBudget",
+  reserve: "rules.whyReserve",
 };
 
 /** 存下来的原因给人看：认得的翻成当前语言，其余（模型自己说的）原样 */
@@ -184,7 +198,7 @@ export function runLine(run: RunRow, kind: RuleRow["kind"], carrier?: OutboxRow,
     case "stopped":
       return tl(l, "tasks.stageStopped");
     case "budget":
-      return tl(l, "tasks.stageBudget");
+      return run.error ? tl(l, "rules.budgetStopped", { why: errorText(run.error, l) }) : tl(l, "tasks.stageBudget");
     case "done":
       break;
     default:
@@ -222,6 +236,8 @@ export interface RuleRunView {
   /** 那次的权限：只读 / 可写工作区 */
   permission: string;
   steps: number;
+  /** 估算花了多少（美元） */
+  costUsd: number;
   startedAt: number;
   endedAt: number;
 }

@@ -63,6 +63,16 @@ export function recoveryNote(jobs: string[]): string {
   return `The app restarted while you were working on this task. Your last step may not have finished, and these background jobs were stopped: ${list}. Before repeating any outside action (sending, posting, paying, deleting, or calling an API that changes something), read \`.task/journal.md\`, check your folder and check the outside system. Then continue and report with task_report.`;
 }
 
+/**
+ * 被宿主停下之后接着做（3e，给模型的，英文）：budget = 任务的预算用完停下、用户加了预算；reserve = 机器人的预算快用完时
+ * 为了给聊天留着而暂停、现在恢复了。和恢复说明一样：上一步可能没做完，后台命令被停了，重复外部动作之前先查。
+ */
+export function resumeNote(why: "budget" | "reserve", jobs: string[]): string {
+  const list = jobs.length ? jobs.join("; ") : "none";
+  const head = why === "budget" ? "This task was stopped when it used its budget, and the user has now added more." : "The app paused this task to keep the bot's remaining budget for chat, and has now resumed it.";
+  return `${head} Your last step may not have finished, and these background jobs were stopped: ${list}. Before repeating any outside action, read \`.task/journal.md\` and check your folder. Then continue and report with task_report.`;
+}
+
 /** 一轮结束了却没有 task_report：提醒一次 */
 export const NUDGE = "Report this task's state with task_report now: state done with a one-line message for the user if it is finished, failed with the reason if you cannot finish it. If there is still work to do, do it first and then report.";
 

@@ -233,6 +233,7 @@ export interface TaskRow {
   model: string;
   /** 建任务时机器人的权限预设（快照） */
   permission: string;
+  /** 预算（美元，默认 1；用完时停下问「再给 $1 继续？」）与估算的已花费用（各个 run 的 cost_usd 之和） */
   budgetUsd: number;
   spentUsd: number;
   /** 最近一次 Report */
@@ -325,8 +326,11 @@ export interface RuleRow {
   nextRunAt: number;
   /** 连续失败几次（成功一次清零；3 次自动暂停） */
   failures: number;
-  /** 暂停的原因：failures；空 = 没暂停 */
+  /** 暂停的原因：failures（连续失败）、budget（本月预算用完，下个月自动恢复）；空 = 没暂停 */
   pausedReason: string;
+  /** 每次运行的预算、每月的预算（美元，3e）；本月花了多少从 runs 汇总 */
+  runBudgetUsd: number;
+  monthBudgetUsd: number;
   /** 不受免打扰和每天上限限制（固定提醒：时间是用户定的） */
   anytime: boolean;
   createdAt: number;
@@ -363,6 +367,7 @@ const TASK_COLS: Record<string, string> = {
   title: "title",
   sessionId: "session_id",
   model: "model",
+  budgetUsd: "budget_usd",
   spentUsd: "spent_usd",
   report: "report",
   endedAt: "ended_at",
@@ -400,6 +405,8 @@ const RULE_COLS: Record<string, string> = {
   nextRunAt: "next_run_at",
   failures: "failures",
   pausedReason: "paused_reason",
+  runBudgetUsd: "run_budget_usd",
+  monthBudgetUsd: "month_budget_usd",
   anytime: "anytime",
   updatedAt: "updated_at",
 };
@@ -517,6 +524,9 @@ const COLUMNS: Array<[string, string, string]> = [
   // 规则（3d）执行时的审批
   ["approvals", "rule_id", "TEXT NOT NULL DEFAULT ''"],
   ["runs", "permission", "TEXT NOT NULL DEFAULT ''"],
+  // 规则的预算（3e）：每次运行、每月
+  ["rules", "run_budget_usd", "REAL NOT NULL DEFAULT 0.1"],
+  ["rules", "month_budget_usd", "REAL NOT NULL DEFAULT 3"],
 ];
 
 export class Store {
@@ -930,10 +940,10 @@ export class Store {
     return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toApproval(r));
   }
   /** 只在 pending 时生效，返回是否更新成功（防止重复决定）。 */
-  decideApproval(id: string, status: Exclude<ApprovalStatus, "pending">, decidedBy: string, result = ""): boolean {
+  decideApproval(id: string, status: Exclude<ApprovalStatus, "pending">, decidedBy: string, result = "", at = Date.now()): boolean {
     const res = this.db
       .prepare("UPDATE approvals SET status = ?, decided_by = ?, result = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
-      .run(status, decidedBy, result, Date.now(), id);
+      .run(status, decidedBy, result, at, id);
     return Number(res.changes) > 0;
   }
 
@@ -1215,8 +1225,12 @@ export class Store {
     const r = this.db.prepare("SELECT * FROM tasks WHERE session_id = ?").get(sessionId) as Row | undefined;
     return r ? this.toTask(r) : undefined;
   }
-  updateTask(id: string, patch: Partial<Pick<TaskRow, "originRef" | "title" | "sessionId" | "model" | "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy" | "updatedAt">>): void {
+  updateTask(id: string, patch: Partial<Pick<TaskRow, "originRef" | "title" | "sessionId" | "model" | "budgetUsd" | "spentUsd" | "report" | "endedAt" | "endReason" | "stoppedBy" | "updatedAt">>): void {
     updateRow(this.db, "tasks", TASK_COLS, id, patch);
+  }
+  /** 任务又花了一点（每次模型请求的估算加上去） */
+  addTaskSpent(id: string, usd: number): void {
+    if (usd > 0) this.db.prepare("UPDATE tasks SET spent_usd = spent_usd + ? WHERE id = ?").run(usd, id);
   }
   /** open：还没结束（停止、归档）的；since：之后更新过的 */
   listTasks(opts: { botId?: string; conversationId?: string; open?: boolean; since?: number; limit?: number } = {}): TaskRow[] {
@@ -1375,19 +1389,28 @@ export class Store {
       nextRunAt: Number(r.next_run_at),
       failures: Number(r.failures),
       pausedReason: String(r.paused_reason),
+      runBudgetUsd: Number(r.run_budget_usd ?? 0.1),
+      monthBudgetUsd: Number(r.month_budget_usd ?? 3),
       anytime: Number(r.anytime) === 1,
       createdAt: Number(r.created_at),
       updatedAt: Number(r.updated_at),
     };
   }
-  insertRule(r: Omit<RuleRow, "version" | "failures" | "pausedReason" | "observeLeft"> & Partial<Pick<RuleRow, "version" | "observeLeft">>): RuleRow {
+  insertRule(
+    r: Omit<RuleRow, "version" | "failures" | "pausedReason" | "observeLeft" | "runBudgetUsd" | "monthBudgetUsd"> & Partial<Pick<RuleRow, "version" | "observeLeft" | "runBudgetUsd" | "monthBudgetUsd">>,
+  ): RuleRow {
     this.db
       .prepare(
-        `INSERT INTO rules(id, bot_id, conversation_id, title, instruction, message, kind, trigger_spec, mode, observe_left, folder, version, next_run_at, anytime, created_at, updated_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO rules(id, bot_id, conversation_id, title, instruction, message, kind, trigger_spec, mode, observe_left, folder, version, next_run_at, anytime, created_at, updated_at, run_budget_usd, month_budget_usd)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(r.id, r.botId, r.conversationId, r.title, r.instruction, r.message, r.kind, JSON.stringify(r.trigger), r.mode, r.observeLeft ?? 0, r.folder, r.version ?? 1, r.nextRunAt, r.anytime ? 1 : 0, r.createdAt, r.updatedAt);
+      .run(r.id, r.botId, r.conversationId, r.title, r.instruction, r.message, r.kind, JSON.stringify(r.trigger), r.mode, r.observeLeft ?? 0, r.folder, r.version ?? 1, r.nextRunAt, r.anytime ? 1 : 0, r.createdAt, r.updatedAt, r.runBudgetUsd ?? 0.1, r.monthBudgetUsd ?? 3);
     return this.getRule(r.id)!;
+  }
+  /** 规则从 since 起（按该跑的时间）花了多少：本月的花费 */
+  ruleSpent(ruleId: string, since: number): number {
+    const r = this.db.prepare("SELECT COALESCE(SUM(cost_usd), 0) AS s FROM runs WHERE rule_id = ? AND queued_at >= ?").get(ruleId, since) as Row | undefined;
+    return Number(r?.s ?? 0);
   }
   getRule(id: string): RuleRow | undefined {
     const r = this.db.prepare("SELECT * FROM rules WHERE id = ?").get(id) as Row | undefined;

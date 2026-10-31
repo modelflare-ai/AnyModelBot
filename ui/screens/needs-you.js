@@ -1,5 +1,7 @@
-// 需要你（3b）：所有机器人里在等你的事，一行一件，操作就在行里（回答、批准、重试…）；点标题那一行展开详情。
+// 需要你（3b）：所有机器人里在等你的事，一行一件，操作就在行里（回答、批准、重试、加预算继续…）；点标题那一行展开详情。
 // 没事时侧栏没有这一行，直接打开这一页只有一句「没有需要你处理的事」。状态是"点 + 文字"：黄 = 等你，红 = 失败 / 登录过期。
+// 预算（3e）：任务预算用完是一个提问（「已用约 $1.00，再给 $1 继续？」继续 / 停止）；规则本月预算用完可以继续；
+// 机器人的预算留给聊天、后台工作停着的，去机器人设置调整预算。
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, Button, Skeleton } from "../components/ui.js";
 import { TaskDetail } from "../components/tasks.js";
@@ -28,13 +30,14 @@ function choices(item) {
  * 一件事：标题行（机器人 · 任务 · 状态 · 时间；只有一个机器人时不写机器人名）、第二行（问题 / 命令 / 原因）、行内操作。
  * onAct(action, body) 返回 Promise
  */
-export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin }) {
+export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenBotSettings }) {
   const [busy, setBusy] = useState("");
   const [open, setOpen] = useState(false);
   const [writing, setWriting] = useState(false);
   const [text, setText] = useState("");
   const input = useRef(null);
   const opts = item.kind === "question" ? choices(item) : null;
+  const can = (a) => (item.actions || []).includes(a);
   useEffect(() => {
     if (writing) requestAnimationFrame(() => input.current?.focus());
   }, [writing]);
@@ -67,9 +70,14 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin }) {
       ${item.kind === "question" && !writing && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => setWriting(true)}>${t("needs.reply")}</button>`}
       ${item.kind === "approval" && html`<${Button} variant="primary" loading=${busy === "approve"} disabled=${!!busy} onClick=${() => act("approve")}>${t("needs.approveOnce")}<//>
         <${Button} loading=${busy === "deny"} disabled=${!!busy} onClick=${() => act("deny")}>${t("needs.deny")}<//>`}
-      ${item.kind === "failed" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>
-        <button type="button" class="text danger" disabled=${!!busy} onClick=${() => act("stop")}>${t("needs.stop")}</button>`}
-      ${item.kind === "rule" && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
+      ${item.kind === "failed" && (can("continue")
+        ? html`<${Button} variant="primary" loading=${busy === "continue"} disabled=${!!busy} onClick=${() => act("continue")}>${t("needs.continue")}<//>`
+        : html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`)}
+      ${item.kind === "failed" && html`<button type="button" class="text danger" disabled=${!!busy} onClick=${() => act("stop")}>${t("needs.stop")}</button>`}
+      ${item.kind === "rule" && (can("continue")
+        ? html`<${Button} variant="primary" loading=${busy === "continue"} disabled=${!!busy} onClick=${() => act("continue")}>${t("needs.continue")}<//>`
+        : html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`)}
+      ${item.kind === "budget" && html`<${Button} onClick=${() => onOpenBotSettings?.(item.botId, "budget")}>${t("needs.raiseBudget")}<//>`}
       ${item.kind === "delivery" && item.actions.includes("retry") && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
       ${item.kind === "delivery" && item.actions.includes("dismiss") && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.dismiss")}</button>`}
       ${item.kind === "login" && html`<${Button} onClick=${() => onRelogin?.(item.botId)}>${t("needs.relogin")}<//>`}
@@ -97,7 +105,7 @@ function RuleOpen({ id }) {
 }
 
 /** 主区的「需要你」：每 3 秒看一次；处理掉的那件立刻消失（onChanged 让侧栏的件数也跟上） */
-export function NeedsYouScreen({ multiBot, onChanged, onOpenChat, onRelogin }) {
+export function NeedsYouScreen({ multiBot, onChanged, onOpenChat, onRelogin, onOpenBotSettings }) {
   const [items, setItems] = useState(null);
   const load = useCallback(() => api("/attention").then((d) => setItems(d.items || [])).catch(() => setItems((v) => v || [])), []);
   useEffect(() => {
@@ -116,7 +124,7 @@ export function NeedsYouScreen({ multiBot, onChanged, onOpenChat, onRelogin }) {
       ${!items && html`<div class="list needs-list"><div class="need"><${Skeleton} w="50%" /><${Skeleton} w="70%" /></div></div>`}
       ${items && !items.length && html`<p class="set-none">${t("needs.none")}</p>`}
       ${items && items.length > 0 && html`<div class="list needs-list">
-        ${items.map((it) => html`<${NeedItem} key=${it.id} item=${it} multiBot=${multiBot} onAct=${onAct(it)} onOpenChat=${onOpenChat} onRelogin=${onRelogin} />`)}
+        ${items.map((it) => html`<${NeedItem} key=${it.id} item=${it} multiBot=${multiBot} onAct=${onAct(it)} onOpenChat=${onOpenChat} onRelogin=${onRelogin} onOpenBotSettings=${onOpenBotSettings} />`)}
       </div>`}
     </div>
   </div>`;

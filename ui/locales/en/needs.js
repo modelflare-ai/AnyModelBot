@@ -15,4 +15,6 @@ export default {
   send: "Send",
   none: "Nothing needs you right now",
   dismiss: "Don't show again",
+  continue: "Continue",
+  raiseBudget: "Change budget",
 };

@@ -390,7 +390,7 @@ function App() {
       ${view === "settings" && html`<${SettingsScreen} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} onTab=${(t) => openSettings(t)} focusRow=${route.row}
         mf=${mf} onMfChanged=${reloadMf} onSettings=${setSettings} models=${models} modelsError=${modelsError} reloadModels=${reloadModels}
         status=${status} bots=${bots} onOpenBotSettings=${openBotSettings} account=${managed ? account : null} onAccount=${setAccount} />`}
-      ${view === "needs" && html`<${NeedsYouScreen} multiBot=${!!bots && bots.length > 1} onChanged=${pollWorking} onOpenChat=${openChat} onRelogin=${relogin} />`}
+      ${view === "needs" && html`<${NeedsYouScreen} multiBot=${!!bots && bots.length > 1} onChanged=${pollWorking} onOpenChat=${openChat} onRelogin=${relogin} onOpenBotSettings=${openBotSettings} />`}
       ${view === "bot-settings" && routedBot && html`<${BotSettingsScreen} key=${routedBot.id} bot=${routedBot} section=${route.section}
         models=${models} modelsError=${modelsError} reloadModels=${reloadModels} defaultModel=${settings && settings.defaultModel}
         account=${managed ? account : null} onOpenSettings=${openSettings}

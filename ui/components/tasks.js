@@ -1,5 +1,6 @@
-// 后台任务（3a）：对话里请求那条消息下面的任务胶囊「后台任务 · 标题 · 进行中 ›」，点开是最新进展、每次运行折叠的处理过程和停止；
-// 信息面板里一行一个任务。状态是"点 + 文字"：绿 = 进行中，黄 = 等你，红 = 失败，灰 = 已完成 / 已停止。健康时不多占地方。
+// 后台任务（3a）：对话里请求那条消息下面的任务胶囊「后台任务 · 标题 · 进行中 ›」，点开是最新进展、花费、每次运行折叠的处理过程和停止；
+// 信息面板里一行一个任务。状态是"点 + 文字"：绿 = 进行中，黄 = 等你，红 = 失败，灰 = 已完成 / 已停止。健康时不多占地方：
+// 花费（3e，「约 $0.08」）在有了花费之后才出现。
 import { useEffect, useState } from "preact/hooks";
 import { html, Icon, Notice } from "./ui.js";
 import { ActivityLine } from "./activity.js";
@@ -16,6 +17,10 @@ export function stageDot(stage) {
   if (stage.group === "needs") return "warn";
   return "";
 }
+
+/** 估算的花费到了一分钱才显示（之前什么都不写） */
+export const hasCost = (usd) => Number(usd) >= 0.005;
+export const money = (usd) => `$${Number(usd || 0).toFixed(2)}`;
 
 /** 每次运行怎么来的（launch、followup、recover、retry、continue、answer、manual） */
 const cause = (c) => (has(`tasks.cause.${c}`) ? t(`tasks.cause.${c}`) : c);
@@ -38,7 +43,7 @@ export async function stopTask(task) {
   }
 }
 
-/** 任务的详情：最新进展、文件夹、每次运行（折叠的处理过程）、停止。working 时每 3 秒刷新 */
+/** 任务的详情：最新进展、花费、文件夹、每次运行（折叠的处理过程）、停止。working 时每 3 秒刷新 */
 export function TaskDetail({ task, onChanged }) {
   const [d, setD] = useState(null);
   const [stopping, setStopping] = useState(false);
@@ -65,6 +70,7 @@ export function TaskDetail({ task, onChanged }) {
   };
   return html`<div class="task-detail">
     ${view.latest && html`<div class="task-line"><span class="t-label">${t("tasks.latest")}</span><span class="v selectable">${view.latest}</span></div>`}
+    ${hasCost(view.spentUsd) && html`<div class="task-line"><span class="t-label">${t("tasks.cost")}</span><span class="v num">${t("tasks.costOf", { spent: money(view.spentUsd), budget: money(view.budgetUsd) })}</span></div>`}
     ${view.folder && html`<div class="task-line"><span class="t-label">${t("tasks.folder")}</span><span class="v mono selectable">${view.folder}</span></div>`}
     ${runs.map(
       (r, i) => html`<${ActivityLine} key=${r.id + (r.state === "ended" ? ":e" : "")} label=${runLabel(r, i, now)} live=${r.state === "running" || r.state === "settling"} count=${r.steps}
@@ -88,7 +94,7 @@ export function TaskChip({ task, onChanged }) {
   </div>`;
 }
 
-/** 信息面板里的一行：状态点 + 标题，下面一行是状态、什么时候开始的、最新进展；进行中的可以停止 */
+/** 信息面板里的一行：状态点 + 标题，下面一行是状态、什么时候开始的、花了多少（有了花费才写）；进行中的可以停止 */
 export function TaskRow({ task, onChanged, onOpen }) {
   const [stopping, setStopping] = useState(false);
   const working = task.stage.group === "working";
@@ -104,7 +110,7 @@ export function TaskRow({ task, onChanged, onOpen }) {
     <span class=${`dot ${stageDot(task.stage)}`} aria-hidden="true"></span>
     <div class="who">
       <div class="name">${task.title}</div>
-      <div class="sub">${task.stage.label} · ${when}</div>
+      <div class="sub">${task.stage.label} · ${when}${hasCost(task.spentUsd) ? ` · ${t("tasks.costShort", { spent: money(task.spentUsd) })}` : ""}</div>
     </div>
     ${working && html`<button type="button" class="text danger" disabled=${stopping} onClick=${stop}>${stopping ? t("tasks.stopping") : t("tasks.stop")}</button>`}
   </div>`;

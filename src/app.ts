@@ -39,7 +39,7 @@ import {
 } from "./modelflare.js";
 import { AccountManager } from "./account/manager.js";
 import { AccountVault, type SecretBox } from "./account/vault.js";
-import { loadModelInfo, type ModelInfo } from "./account/model-info.js";
+import { loadModelInfo, type ModelInfo, type Rates } from "./account/model-info.js";
 import { MediaService, pickDefault } from "./agent/media.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
@@ -153,6 +153,8 @@ export class App {
   private picksTimer: NodeJS.Timeout | undefined;
   private modelInfoCache: { at: number; data: Record<string, ModelInfo> } | undefined;
   private modelInfoLoading: Promise<Record<string, ModelInfo>> | undefined;
+  /** 各机器人预算 Key 的总额与余额（每 5 分钟随余额一起读；后台工作在剩下不到 20% 时停下，3e） */
+  private botBudgetCache: { at: number; data: Record<string, { limitUsd: number; remainUsd: number }> } | undefined;
   /** 数据目录锁（命令行、Docker：同一个数据目录只能一个宿主，调度器开始之前拿） */
   private lock: DataDirLock | undefined;
 
@@ -253,6 +255,13 @@ export class App {
           () => {},
         ),
       timeZone: opts.timeZone,
+      // 花费按 Modelflare 目录的参考价估算（缓存的那份；没读过就先不算，顺手去读）
+      rates: (model) => this.ratesOf(model),
+      botBudget: (botId) => {
+        const c = this.botBudgetCache;
+        const b = c?.data[botId];
+        return c && b && this.store.getBot(botId)?.settings.budget.enabled ? { ...b, at: c.at } : undefined;
+      },
     });
     this.agent.tasks = this.tasks;
     this.ruleEvents = new RuleEvents(this.tasks);
@@ -456,7 +465,45 @@ export class App {
     const bot = this.store.getBot(botId);
     if (!bot) throw new Error(t("app.bot_not_found"));
     await this.account.setBotBudget(bot.id, bot.name, budget);
-    return this.store.updateBot(botId, { settings: { ...bot.settings, budget } })!;
+    const out = this.store.updateBot(botId, { settings: { ...bot.settings, budget } })!;
+    // 调高了预算：留给聊天而停着的后台工作马上接着来
+    void this.refreshBotBudgets();
+    return out;
+  }
+
+  /**
+   * 读各机器人预算 Key 的总额与余额（登录了、有机器人开着预算时）。任务服务按它决定后台工作要不要为聊天停下；
+   * 读到了就告诉它（预算回来了，等着的开始）。读不到就留着上一次的。
+   */
+  async refreshBotBudgets(): Promise<void> {
+    if (!this.account?.signedIn || !this.store.listBots().some((b) => b.settings.budget.enabled)) {
+      if (this.botBudgetCache) {
+        this.botBudgetCache = undefined;
+        this.tasks.budgetsChanged();
+      }
+      return;
+    }
+    try {
+      const keys = await this.account.botBudgets();
+      const data: Record<string, { limitUsd: number; remainUsd: number }> = {};
+      for (const [botId, k] of Object.entries(keys)) {
+        if (k.limit_usd === null || !(k.limit_usd > 0)) continue;
+        data[botId] = { limitUsd: k.limit_usd, remainUsd: k.status === "exhausted" ? 0 : Math.max(0, Number(k.remain_usd ?? k.limit_usd - k.used_usd)) };
+      }
+      this.botBudgetCache = { at: Date.now(), data };
+      this.tasks.budgetsChanged();
+    } catch (e) {
+      log.warn("reading bot budgets failed", { message: (e as Error).message.slice(0, 200) });
+    }
+  }
+
+  /** 估算花费用的单价：缓存的 Modelflare 目录里这个模型的（去掉内置网关的 provider 前缀，再试最后一段）；没读过就去读，这次先没有 */
+  private ratesOf(model: string): Rates | undefined {
+    const c = this.modelInfoCache;
+    if (!c || Date.now() - c.at > 3600_000) void this.modelInfo().catch(() => undefined);
+    if (!c) return undefined;
+    const bare = bareModel(model);
+    return (c.data[bare] ?? c.data[bare.split("/").pop() ?? bare])?.rates;
   }
 
   /** 删除机器人时一并删掉它的预算 Key */
@@ -526,8 +573,11 @@ export class App {
     this.delivery.start();
     for (const bot of this.store.listBots()) await this.startBot(bot.id);
     if (interrupted.length) void this.tellInterrupted(interrupted);
-    // 后台任务：上次没跑完的记为中断、带着恢复说明接着做（渠道已经上线，结果能发出去）
-    if (this.agent.available) this.tasks.start();
+    // 后台任务：上次没跑完的记为中断、带着恢复说明接着做（渠道已经上线，结果能发出去）；估算花费用的价格目录先读起来
+    if (this.agent.available) {
+      this.tasks.start();
+      void this.modelInfo().catch(() => undefined);
+    }
     if (!this.opts.noWeb) this.web = await startWebServer(this);
     if (this.magpie) {
       // 启动时和之后每小时核对一次启用的模型（新上架的加入，下架的移出）
@@ -550,6 +600,7 @@ export class App {
       // 余额与低余额提醒：启动后读一次，之后每 5 分钟一次
       const tick = () => {
         if (this.account.signedIn || this.magpie?.modelflareInfo().connected) void this.account.refresh();
+        void this.refreshBotBudgets();
       };
       setTimeout(tick, 3000).unref();
       this.accountTimer = setInterval(tick, 5 * 60_000);

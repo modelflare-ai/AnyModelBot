@@ -604,19 +604,19 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <//>
       <//>
 
-      <${Section} id="needs" title="需要你" lead="所有机器人里在等你的事：提问和审批在前，再是失败、没送到、登录。侧栏那一行和托盘角标只在有事时出现；一件一块，操作在行里，点标题行展开任务详情。">
+      <${Section} id="needs" title="需要你" lead="所有机器人里在等你的事：提问和审批在前，再是失败、没送到、登录，问要不要改为执行的最后。侧栏那一行和托盘角标只在有事时出现；一件一块，操作在行里，点标题行展开任务详情。">
         <${Demo} title="侧栏" note="NeedsRow：件数为 0 时不画">
           ${() => html`<div class="gal-strip-in" style="width: 264px; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-side)">
             <${NeedsRow} count=${3} onClick=${() => {}} /><${NeedsRow} count=${2} on onClick=${() => {}} /><${NeedsRow} count=${0} />
           </div>`}
         <//>
-        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天">
+        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天 / 清理文件夹 / 观察够了，要不要改为执行（不推送）">
           ${() => html`<div class="list needs-list">${NEEDS.map((it) => html`<${NeedItem} item=${it} multiBot onAct=${async () => {}} />`)}</div>`}
         <//>
       <//>
 
-      <${Section} id="rules" title="规则" lead="信息面板「任务」组里一条规则一行：时间表 · 标题，状态和下次运行。观察了 3 次的，行里多一句改为执行（只在这里，从不推送）。点开是同一块里的详情和运行记录，记录一次一行、不画分隔线，再点开一行看报告。">
-        <${Demo} title="行" note="RuleRow：观察中（提示改为执行）/ 执行中 / 暂停 / 提醒">
+      <${Section} id="rules" title="规则" lead="信息面板「任务」组里一条规则一行：时间表 · 标题，状态和下次运行。观察够了要不要改为执行，在「需要你」里问（从不推送）。点开是同一块里的详情和运行记录，记录一次一行、不画分隔线，再点开一行看报告。">
+        <${Demo} title="行" note="RuleRow：观察中 / 执行中 / 暂停 / 提醒">
           ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
             <div class="list">${RULES.map((r) => html`<${RuleRow} rule=${r} open=${false} onToggle=${() => {}} />`)}</div>
           </div>`}
@@ -689,6 +689,7 @@ const NEEDS = [
   { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
   { id: "rs", kind: "budget", botName: "小蓝", subject: "后台工作已停", status: "", line: "机器人预算只剩约 $1.80（共 $10），留给聊天", since: Date.now() - 4 * 3600_000, severity: "warn", actions: ["open"] },
   { id: "c", kind: "cleanup", botName: "小蓝", subject: "2 个任务文件夹 11月4日 删除", status: "", line: "整理下载目录和旧照片归档 · 30 天没动过", since: Date.now() - 5 * 3600_000, severity: "warn", actions: ["keep", "dismiss"] },
+  { id: "s", kind: "suggest", botName: "小蓝", subject: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", status: "", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", since: Date.now() - 6 * 3600_000, severity: "warn", actions: ["act", "dismiss"], ruleTitle: "看 X 价格" },
 ];
 
 /** 任务的样例（单人：自己的机器人小蓝）：在调研的、问了个有默认回答的问题接着在做的、等你回答的、昨天做完的（文件夹 3 天后清理） */
@@ -733,16 +734,16 @@ const ENDED_DETAIL = {
   runs: [{ id: "r2", cause: "launch", state: "ended", outcome: "done", queuedAt: ago(27 * 1440 + 10), startedAt: ago(27 * 1440 + 10), endedAt: ago(27 * 1440 - 20), steps: 0 }],
 };
 
-/** 规则的样例（单人：自己的机器人小蓝）：每天 8 点看 X 价格（观察了 3 次）、每周的 issue 周报、暂停了的巡检、一次性的提醒 */
+/** 规则的样例（单人：自己的机器人小蓝）：每天 8 点看 X 价格（观察中）、每周的 issue 周报、暂停了的巡检、一次性的提醒 */
 const at = (days, h, m = 0) => {
   const d = new Date();
   d.setDate(d.getDate() + days);
   d.setHours(h, m, 0, 0);
   return d.getTime();
 };
-const rule = (o) => ({ botId: "b", kind: "check", mode: "observe", observeLeft: 0, failures: 0, hint: false, observed: 0, channel: "weixin", message: "", trigger: { kind: "schedule" }, version: 1, ...o });
+const rule = (o) => ({ botId: "b", kind: "check", mode: "observe", observeLeft: 0, failures: 0, channel: "weixin", message: "", trigger: { kind: "schedule" }, version: 1, ...o });
 const RULES = [
-  rule({ id: "g1", title: "看 X 价格", when: "每天 08:00", instruction: "每天早上看看 X 的价格，降到 200 以下告诉我", state: { key: "observe", label: "观察中", dot: "" }, nextRunAt: at(1, 8), hint: true, observed: 3, monthUsd: 0.41, monthBudgetUsd: 3 }),
+  rule({ id: "g1", title: "看 X 价格", when: "每天 08:00", instruction: "每天早上看看 X 的价格，降到 200 以下告诉我", state: { key: "observe", label: "观察中", dot: "" }, nextRunAt: at(1, 8), monthUsd: 0.41, monthBudgetUsd: 3 }),
   rule({ id: "g2", title: "issue 周报", when: "每周一 09:00", instruction: "每周一早上把仓库上周的 issue 汇总成三句话发给我", mode: "act", state: { key: "act", label: "执行中", dot: "ok" }, nextRunAt: at(3, 9) }),
   rule({ id: "g3", title: "每日 issue 巡检", when: "每天 08:30", instruction: "每天看看有没有新的 issue 需要我回复", mode: "act", state: { key: "paused", label: "已暂停", dot: "err" }, failures: 3, nextRunAt: 0 }),
   rule({ id: "g4", title: "交房租", when: "11月3日 12:00", kind: "remind", mode: "act", message: "该交房租了。", state: { key: "remind", label: "提醒", dot: "ok" }, nextRunAt: at(2, 12) }),

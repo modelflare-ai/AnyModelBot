@@ -1,5 +1,5 @@
-// 规则（3d）：信息面板「任务」组里一条规则一行——时间表 · 标题，下面一行是状态和下次运行；观察了 3 次的，行里多一句
-// 「已观察 3 次 · 改为执行？」（只在这里，从不推送）。点开是规则的详情：用户的原话、模式（观察 / 执行 / 关）、立即运行、编辑、删除，
+// 规则（3d）：信息面板「任务」组里一条规则一行——时间表 · 标题，下面一行是状态和下次运行（观察够了要不要改为执行，在「需要你」里问，
+// 从不推送）。点开是规则的详情：用户的原话、模式（观察 / 执行 / 关）、立即运行、编辑、删除，
 // 和运行记录（一次一行：时间 · 模式 · 本会发送 / 保持安静 / 失败 / 跳过），每行再点开看报告、步骤、版本和权限；运行记录可以导出成
 // Markdown（3f）。编辑器里有每次、每月的预算（3f，检查才有）。
 // 健康时不多说话：状态是"点 + 文字"（绿 = 执行中、提醒，灰 = 观察中、关了，红 = 暂停了）。
@@ -60,20 +60,12 @@ async function put(rule, body, done) {
 
 /** 信息面板里的一行：点开是详情（和行同一块，像普通的折叠一样展开） */
 export function RuleRow({ rule, onChanged, open, onToggle }) {
-  const [busy, setBusy] = useState(false);
-  const toAct = async (e) => {
-    e.stopPropagation();
-    setBusy(true);
-    if (await put(rule, { mode: "act" })) (toast(t("rules.nowActs", { title: rule.title })), onChanged?.());
-    setBusy(false);
-  };
   return html`<div class=${`row compact clickable rule-row${open ? " open" : ""}`} role="button" tabindex="0" aria-expanded=${open}
       onClick=${onToggle} onKeyDown=${(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggle())}>
       <span class=${`dot ${rule.state.dot}`} aria-hidden="true"></span>
       <div class="who">
         <div class="name">${rule.when} · ${rule.title}</div>
         <div class="sub">${ruleSub(rule)}</div>
-        ${rule.hint && html`<button type="button" class="text rule-hint" disabled=${busy} onClick=${toAct} onKeyDown=${(e) => e.stopPropagation()}>${t("rules.hint", { count: rule.observed })}</button>`}
       </div>
     </div>
     ${open && html`<div class="row-edit rule-edit"><${RuleDetail} rule=${rule} onChanged=${onChanged} /></div>`}`;

@@ -18,4 +18,6 @@ export default {
   continue: "继续",
   raiseBudget: "调整预算",
   keep: "保留",
+  toAct: "改为执行",
+  keepObserving: "继续观察",
 };

@@ -1,7 +1,7 @@
 /**
  * 规则（3d）端到端：真实 DSH 子进程 + 脚本化的模型 + mock iLink（主人在微信里和自己的机器人聊）。
  * 退出演示：微信里说「每天 08:00 看 X 价格」，聊天代理 rule_create 建好规则（观察）；「三天」到点各跑一次（把 next_run_at 拨到现在、
- * 叫醒定时器），运行记录读得懂，什么都没发；提示改为执行；改了之后命中时推一句，只推一次。
+ * 叫醒定时器），运行记录读得懂，什么都没发；「需要你」里问要不要改为执行；改了之后命中时推一句，只推一次。
  * 另外：每次运行一个新会话；观察只读（写不了文件），执行可写工作区；规则会话的工具（观察去掉能改变什么的）；检查用小模型、
  * 那一句用主模型写；观察时要批准的自动拒绝、记下来，「需要你」里没有；事件触发走同一条路。
  */
@@ -161,7 +161,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
     const chat = calls.find((c) => !c.rule && c.users.some((u) => u.includes("RULE PRICE")))!;
     expect(chat.tools).toEqual(expect.arrayContaining(["rule_create", "rule_update", "task_list"]));
     const [rule] = (await api("/rules?bot=default")).rules;
-    expect(rule).toMatchObject({ title: "看 X 价格", when: "每天 08:00", mode: "observe", state: { key: "observe", label: "观察中" }, instruction: "每天 08:00 看看 X 的价格，低于 200 告诉我", conversationId: CONV, hint: false });
+    expect(rule).toMatchObject({ title: "看 X 价格", when: "每天 08:00", mode: "observe", state: { key: "observe", label: "观察中" }, instruction: "每天 08:00 看看 X 的价格，低于 200 告诉我", conversationId: CONV });
     // 三天：观察。每次一个新会话，检查用小模型；写不了文件（只读）；什么都不发
     price(259);
     const d1 = await tick(rule.id);
@@ -198,11 +198,13 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
     expect(calls.filter((c) => c.tools.length === 0 && c.system.includes(RULE_RESULT_SYSTEM.split("\n")[0])).map((c) => c.model)).toEqual(["mock-agent"]);
     await app.outbox.idle();
     expect(ilink.state.sent.filter((s) => /MAIN|199/.test(s.text))).toEqual([]);
-    // 观察了 3 次：提示改为执行（只在界面上）
-    expect((await api(`/rules/${rule.id}`)).rule).toMatchObject({ hint: true, observed: 3 });
-    // 改为执行：命中时推一句（主模型写的），只推一次；执行能写自己的文件夹
-    const put = await api(`/rules/${rule.id}`, { method: "PUT", body: { mode: "act" } });
-    expect(put.rule).toMatchObject({ mode: "act", state: { key: "act", label: "执行中" }, hint: false });
+    // 观察了 3 次：「需要你」里问要不要改为执行（只在应用里，不推）
+    const ask = (await api("/attention")).items.find((i: any) => i.id === `suggest:${rule.id}`);
+    expect(ask).toMatchObject({ kind: "suggest", subject: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", line: "本会保持安静：X 现在 ¥262；写文件失败", actions: ["act", "dismiss"] });
+    // 在那里改为执行：命中时推一句（主模型写的），只推一次；执行能写自己的文件夹
+    const acted = await api(`/attention/suggest:${rule.id}/act`, { method: "POST", body: {} });
+    expect(acted.items.find((i: any) => i.id === `suggest:${rule.id}`)).toBeUndefined();
+    expect((await api(`/rules/${rule.id}`)).rule).toMatchObject({ mode: "act", state: { key: "act", label: "执行中" } });
     price(195);
     const d4 = await tick(rule.id);
     expect(d4).toMatchObject({ mode: "act", outcome: "done", permission: "workspace-write" });

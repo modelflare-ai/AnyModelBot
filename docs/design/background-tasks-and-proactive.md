@@ -283,7 +283,7 @@ The time zone is the system's IANA zone, stored on the rule when it is created. 
 | Recorded | "本会发送：…" / "本会保持安静" / "本会做：…" plus cost and steps | what it said and did |
 
 - **Every new rule starts in observe.** The one exception is a **fixed reminder**, such as 「明天下午 3 点提醒我开会」. The user dictated both the text and the time, so there is nothing to judge. It runs in act and delivers the text without a model turn. (Open question Q6.)
-- **Switching modes.** After 3 observed runs, the rule row shows a quiet hint 「已观察 3 次 · 改为执行？」. The hint is never pushed. The user switches in the UI or by telling the bot. Act can go back to observe at any time.
+- **Switching modes.** After 3 good observed runs on the current version (outcome done; failed and skipped runs don't count), "needs you" asks: 「规则「看 X 价格」已观察 3 次，需要你来决定是否执行」, with the latest run's line (「本会发送：“…”」) under it and [改为执行] [继续观察]. It is the least urgent kind: last in the list, never pushed, no desktop notification, though it counts toward the badge. 继续观察 stops asking for this version (kept across restarts); editing the instruction makes a new version, which asks again after 3 more good runs. The row goes away when the rule switches to act or off, pauses, or is deleted. The user can also switch in the rule detail or by telling the bot. Act can go back to observe at any time.
 - **Editing the instruction** puts the rule back in observe; this needs PO confirmation (Q7). Editing only the schedule keeps the mode.
 - **Tasks a person asked for are never in observe.** An explicit request is its own mandate, as in superagent, where explicit requests work in every accept mode.
 - **What observe guarantees:** no message to anyone through AnyModelBot, and no file changes, because the sandbox is read-only. It does not block network calls from shell tools. The prompt forbids outside actions, and the Report lists what the rule would do. We say exactly this in the UI help text.
@@ -463,10 +463,14 @@ These use `ui/design/README.md`:
 │─────────────────────────────────────────────────────────────│
 │ ● 绿草 · 微信登录已过期                                今天    │   red dot
 │   [重新扫码]                                                  │
+│─────────────────────────────────────────────────────────────│
+│ ● 小蓝 · 规则「看 X 价格」已观察 3 次，需要你来决定是否执行  08:00 │   never pushed
+│   本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”                  │
+│   [改为执行] [继续观察]                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Order: questions and approvals first (time-sensitive), then failures, then deliveries, then the system (logins, stuck turns, budget). When the list is empty, there is no sidebar row and no badge. Opening the view directly shows a quiet 「没有需要你处理的事」.
+Order: questions and approvals first (time-sensitive), then failures, then deliveries, then the system (logins, stuck turns, budget), and last a rule that has observed enough and asks whether to act. When the list is empty, there is no sidebar row and no badge. Opening the view directly shows a quiet 「没有需要你处理的事」.
 
 **Tasks view** (main pane; all bots, with a bot filter). Sections appear only when non-empty.
 
@@ -481,7 +485,6 @@ Order: questions and approvals first (time-sensitive), then failures, then deliv
 规则
 ┌─────────────────────────────────────────────────────────────┐
 │ ○ 每天 08:00 · 看 X 价格   观察中 · 下次 明天 08:00            › │   grey
-│                            已观察 3 次 · 改为执行？             │   quiet hint, text button
 │ ● 每周一 09:00 · issue 周报 执行中 · 上次 周一 · 说了 1 句      › │
 └─────────────────────────────────────────────────────────────┘
 已完成 · 最近 7 天

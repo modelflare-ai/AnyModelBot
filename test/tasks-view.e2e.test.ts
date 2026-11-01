@@ -5,6 +5,7 @@
  * 规则运行记录和任务导出成 Markdown（下载的文件名、按 ?lang= 的语言）。
  * 问了个有默认回答的问题、接着在做的任务：在进行中那组，「进行中，有个问题等你回答」；详情、「需要你」、对话里的卡片都有那一句
  * 「不回复就按中文做」（按界面的语言）。
+ * 观察够了的规则：「需要你」里问要不要改为执行；改为执行（同 PUT /rules/:id 切模式）、继续观察（这一版不再问）。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -172,5 +173,46 @@ describe("问了还在做：有默认回答的提问", () => {
     expect((await api(`/tasks/${id}`)).data.task.question).toBeUndefined();
     expect((await api(`/approvals/${q.id}`)).data.approval).toMatchObject({ status: "answered" });
     expect((await api(`/approvals/${q.id}`)).data.approval.note).toBeUndefined();
+  });
+});
+
+describe("观察够了的规则：「需要你」里问要不要改为执行", () => {
+  /** 一条观察中的检查和它这一版的 n 次好好观察（直接写库；最近那次「本会发送」） */
+  const observed = async (title: string, n: number): Promise<string> => {
+    const rule = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", title, instruction: `每天看看${title}`, schedule: { kind: "daily", time: "08:00" } } })).data.rule;
+    for (let i = 0; i < n; i++) {
+      const at = Date.now() - (n - i) * 86400_000;
+      const id = `r_${rule.id.slice(3, 9)}${String(i).padStart(6, "0")}`;
+      app.store.insertEndedRun({ id, botId: "default", ruleId: rule.id, ruleVersion: 1, mode: "observe", cause: "schedule", outcome: "done", error: "", queuedAt: at, endedAt: at + 60_000 });
+      app.store.updateRun(id, { report: { state: "done", summary: "X 现在 ¥259", message: i === n - 1 ? "X 降到 199 了" : "", at } });
+    }
+    return rule.id;
+  };
+  const find = async (id: string, lang?: string) => (await api("/attention", { lang })).data.items.find((i: any) => i.id === `suggest:${id}`);
+
+  it("改为执行和规则详情里切模式一样，那一行随之消失；继续观察了这一版不再问；英文", async () => {
+    const few = await observed("Y 价格", 2);
+    expect(await find(few)).toBeUndefined();
+    const id = await observed("X 价格", 3);
+    expect(await find(id)).toMatchObject({ kind: "suggest", subject: "规则「X 价格」已观察 3 次，需要你来决定是否执行", status: "", line: "本会发送：“X 降到 199 了”", actions: ["act", "dismiss"], ruleId: id, ruleTitle: "X 价格" });
+    expect((await find(id, "en")).subject).toBe("Rule “X 价格” has observed 3 times; decide whether it should act");
+    // 算在侧栏的件数里
+    expect((await api("/agent")).data.attention).toBeGreaterThan(0);
+    const r = await api(`/attention/suggest:${id}/act`, { method: "POST", body: {} });
+    expect(r.status).toBe(200);
+    expect(r.data.items.find((i: any) => i.id === `suggest:${id}`)).toBeUndefined();
+    expect((await api(`/rules/${id}`)).data.rule).toMatchObject({ mode: "act", state: { key: "act", label: "执行中" } });
+    // 已经处理掉了：再点是 409
+    expect((await api(`/attention/suggest:${id}/act`, { method: "POST", body: {} })).status).toBe(409);
+    // 继续观察：这一版不再问，模式不变
+    const keep = await observed("Z 价格", 3);
+    expect(await find(keep)).toBeDefined();
+    expect((await api(`/attention/suggest:${keep}/dismiss`, { method: "POST", body: {} })).status).toBe(200);
+    expect(await find(keep)).toBeUndefined();
+    expect((await api(`/rules/${keep}`)).data.rule).toMatchObject({ mode: "observe" });
+    // 不支持的操作
+    const other = await observed("W 价格", 3);
+    expect((await api(`/attention/suggest:${other}/retry`, { method: "POST", body: {} })).status).toBe(400);
+    for (const x of [few, id, keep, other]) await api(`/rules/${x}`, { method: "DELETE" });
   });
 });

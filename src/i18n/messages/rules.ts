@@ -62,6 +62,7 @@ export const zh = {
   subject: "规则「{title}」",
   failingPaused: { other: "连续失败 {count} 次，已暂停" },
   failing: { other: "连续失败 {count} 次" },
+  suggest: { other: "规则「{title}」已观察 {count} 次，需要你来决定是否执行" },
   // 推送：连续失败暂停了（执行中的规则）
   pausedPush: "⚠️ 规则「{title}」连续失败 {count} 次，已暂停：{why}",
   // 建规则时建议给用户的那句（经聊天代理转述）
@@ -151,6 +152,7 @@ export const en: Catalog<typeof zh> = {
   subject: "Rule “{title}”",
   failingPaused: { one: "Failed {count} time in a row, paused", other: "Failed {count} times in a row, paused" },
   failing: { one: "Failed {count} time in a row", other: "Failed {count} times in a row" },
+  suggest: { one: "Rule “{title}” has observed {count} time; decide whether it should act", other: "Rule “{title}” has observed {count} times; decide whether it should act" },
   pausedPush: "⚠️ Rule “{title}” failed {count} times in a row and is paused: {why}",
   createdReply: "Rule set: {title}, {when}. It watches quietly for a few days; switch it to act under Tasks.",
   remindReply: "OK, reminder set for {when}.",

@@ -18,4 +18,6 @@ export default {
   continue: "Continue",
   raiseBudget: "Change budget",
   keep: "Keep",
+  toAct: "Switch to act",
+  keepObserving: "Keep observing",
 };

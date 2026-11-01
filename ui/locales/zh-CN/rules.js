@@ -9,7 +9,6 @@ export default {
   paused: { other: "已暂停 · 连续失败 {count} 次" },
   pausedBudget: "已暂停 · 本月预算用完",
   month: "本月 约 {spent} / {budget}",
-  hint: { other: "已观察 {count} 次 · 改为执行？" },
   nowActs: "「{title}」改为执行",
   version: "第 {n} 版",
   manual: "手动运行",

@@ -296,10 +296,9 @@ button.thread:active { background: var(--side-press); }
 .transcript-turn { display: grid; gap: var(--space-1); }
 .transcript .work-line { font-size: var(--fs-sm); }
 
-/* 规则（components/rules.js）：「任务」组里一条规则一行（时间表 · 标题、状态和下次），观察够了的行里多一句改为执行；
+/* 规则（components/rules.js）：「任务」组里一条规则一行（时间表 · 标题、状态和下次；观察够了要不要改为执行在「需要你」里问）；
    点开是同一块里的详情（原话、模式、操作、运行记录），运行记录一次一行、不画分隔线，点开一行看报告和步骤，也不另起一块 */
 .rule-row .dot { flex: none; }
-.rule-hint { display: block; margin-top: var(--space-0-5); font-size: var(--fs-xs); text-align: left; }
 .rule-detail { display: grid; gap: var(--space-2); min-width: 0; }
 .rule-detail > .actions { display: flex; align-items: center; gap: var(--ctl-gap); flex-wrap: wrap; }
 .rule-detail > .actions .grow { flex: 1; }

@@ -4,12 +4,13 @@
 // 预算（3e）：任务预算用完是一个提问（「已用约 $1.00，再给 $1 继续？」继续 / 停止）；规则本月预算用完可以继续；
 // 机器人的预算留给聊天、后台工作停着的，去机器人设置调整预算。
 // 清理（3f）：任务文件夹 30 天没动过、过几天删除的，一个机器人一行，可以保留或知道了（不推送，只在这里说一次）。
+// 观察够了的规则：问要不要改为执行（第二行是最近那次的「本会发送：…」），可以改为执行或继续观察；排在最后，不推送、不发系统通知。
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, Button, Skeleton } from "../components/ui.js";
 import { TaskDetail } from "../components/tasks.js";
 import { RuleDetail } from "../components/rules.js";
 import { api } from "../lib/api.js";
-import { failed } from "../lib/store.js";
+import { failed, toast } from "../lib/store.js";
 import { fmtAgo } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 
@@ -45,12 +46,15 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenB
   }, [writing]);
   const act = async (action, body = {}, key = action) => {
     setBusy(key);
+    let ok = false;
     try {
       await onAct(action, body);
+      ok = true;
     } catch (e) {
       failed(e);
     }
     setBusy("");
+    return ok;
   };
   const send = () => text.trim() && act("answer", { text: text.trim() }, "text");
   // 详情一下就能看到：任务的展开处理过程，规则的展开运行记录；网页对话里的去对话
@@ -86,6 +90,8 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenB
       ${item.kind === "login" && html`<${Button} onClick=${() => onRelogin?.(item.botId)}>${t("needs.relogin")}<//>`}
       ${item.kind === "cleanup" && html`<${Button} loading=${busy === "keep"} disabled=${!!busy} onClick=${() => act("keep")}>${t("needs.keep")}<//>
         <button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.seen")}</button>`}
+      ${item.kind === "suggest" && html`<${Button} loading=${busy === "act"} disabled=${!!busy} onClick=${async () => (await act("act")) && toast(t("rules.nowActs", { title: item.ruleTitle }))}>${t("needs.toAct")}<//>
+        <button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.keepObserving")}</button>`}
     </div>
     ${writing && html`<div class="need-reply">
       <input ref=${input} class="field" placeholder=${t("needs.answerPlaceholder")} value=${text} disabled=${busy === "text"}

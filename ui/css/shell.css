@@ -215,17 +215,32 @@ button.thread:active { background: var(--side-press); }
 :root.mac-app .side-top { padding-left: var(--titlebar-inset); }
 
 /* Windows desktop（:root.win-app）：右上角是系统画的最小化 / 最大化 / 关闭（Window Controls Overlay，electron/main.ts），
-   和侧栏顶部这一行一样高、贴住窗口右上角，背景透明。最右边的顶栏给它让位：信息面板开着时是面板的顶栏（抽屉模式也是），
-   关着时是主区的顶栏。让出的宽度 = 按钮宽度（env(titlebar-area-*) 算出来）减去面板离窗口右边的 --pane-gap，
-   再留一个 --head-px，自家的按钮和窗口按钮之间空出一截 */
+   和侧栏顶部这一行一样高（--pane-gap + --head-h）、贴住窗口右上角，背景透明。
+   最右边的面板（信息面板开着时是它，抽屉也是；关着时是主区）贴住这个角：上、右不留 --pane-gap，右边两个角是直角，
+   按钮就落在它的顶栏上，像原生应用的标题栏；底边照旧离窗口下沿 --pane-gap，和侧栏的账户行对齐。
+   它的顶栏往上长出 --pane-gap（上内边距也是这么多），内容仍在侧栏顶部那条中线上，下沿也不动。
+   顶栏右边让出按钮的宽度（env(titlebar-area-*) 算出来），再留一个 --head-px，自家的按钮和窗口按钮之间空出一截 */
 :root.win-app {
   --caption-w: calc(100vw - env(titlebar-area-x, calc(100vw - var(--caption-w-fallback))) - env(titlebar-area-width, 0px));
-  --caption-reserve: calc(var(--caption-w) - var(--pane-gap));
 }
-:root.win-app .app:not(.with-panel) .chat-head,
-:root.win-app .panel-head { padding-right: calc(var(--head-px) + var(--caption-reserve)); }
-/* 信息面板开合时主区顶栏的让位跟着列宽一起滑，不跳 */
-:root.win-app .chat > .chat-head { transition: box-shadow var(--t-base), padding-right var(--dur-slow) var(--ease-spring); }
+:root.win-app .app > .panel { width: var(--panel-col); margin-top: 0; margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+:root.win-app .panel-head { height: calc(var(--head-h) + var(--pane-gap)); padding-top: var(--pane-gap); padding-right: calc(var(--head-px) + var(--caption-w)); }
+/* 主区在不在角上（--main-corner: 1 / 0）：信息面板关着时在；窗口窄、信息面板是浮在上面的抽屉时也一直在（见下面的 @media）。
+   主区让出的 --pane-gap 变成它的上内边距，里面每一页都不动；对话和新建页的顶栏、设置页的滚动区再往上伸进这一截。
+   信息面板开合时这些和列宽一起滑，不跳 */
+:root.win-app .app:not(.with-panel) { --main-corner: 1; }
+:root.win-app .app > .main {
+  --corner-gap: calc(var(--pane-gap) * var(--main-corner, 0));
+  margin-top: calc(var(--pane-gap) - var(--corner-gap)); margin-right: calc(var(--pane-gap) - var(--corner-gap)); padding-top: var(--corner-gap);
+  border-top-right-radius: calc(var(--r-pane) * (1 - var(--main-corner, 0))); border-bottom-right-radius: calc(var(--r-pane) * (1 - var(--main-corner, 0)));
+  transition: margin var(--dur-slow) var(--ease-spring), padding var(--dur-slow) var(--ease-spring), border-radius var(--dur-slow) var(--ease-spring);
+}
+:root.win-app .main .chat-head {
+  margin-top: calc(-1 * var(--corner-gap)); height: calc(var(--head-h) + var(--corner-gap));
+  padding-top: var(--corner-gap); padding-right: calc(var(--head-px) + var(--caption-w) * var(--main-corner, 0));
+}
+:root.win-app .main .chat > .chat-head { transition: box-shadow var(--t-base), margin var(--dur-slow) var(--ease-spring), padding var(--dur-slow) var(--ease-spring), height var(--dur-slow) var(--ease-spring); }
+:root.win-app .main > .settings { margin-top: calc(-1 * var(--corner-gap)); padding-top: var(--corner-gap); }
 /* 面板自己的关闭钮会和窗口的关闭钮挨在一起（两个 ×）：Windows 上不放，主区顶栏的面板开关、⌘⇧I、Esc、点遮罩都能关 */
 :root.win-app .panel-close { display: none; }
 
@@ -362,6 +377,9 @@ a.text { display: inline-flex; align-items: center; text-decoration: none; }
     background: var(--scrim-soft); animation: fade-in var(--dur-base) var(--ease-out);
   }
   .panel-scrim.leaving { animation: fade-out var(--dur-base) var(--ease-in) forwards; pointer-events: none; }
+  /* Windows：抽屉贴住窗口的右上角（同上面的信息面板），主区在它底下也一直在角上，开合时不动 */
+  :root.win-app .app { --main-corner: 1; }
+  :root.win-app .app > .panel { top: 0; right: 0; }
 }
 @media (max-width: 900px) {
   :root { --side-w: 240px; }

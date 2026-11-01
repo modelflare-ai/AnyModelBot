@@ -134,4 +134,14 @@
 .gal-split-b { display: grid; place-items: center; margin: var(--pane-gap) var(--pane-gap) var(--pane-gap) 0; border-radius: var(--r-pane); background: var(--surface); box-shadow: var(--shadow-pane); }   /* 描边：和主区同一种面板 */
 .gal-split > .splitter { --split-x: calc(var(--gal-col) - var(--pane-gap) / 2); --split-inset: calc(var(--pane-gap) + var(--r-pane)); }
 .gal-split.mini { --gal-col: 64px; width: 180px; height: 72px; background: none; }
+/* —— Windows 标题栏样例：一个 --gal-win-w 宽的模拟窗口（iframe），靠右裁切，只看右边那一截。
+   .gal-caption 是系统画的最小化 / 最大化 / 关闭的替身，只在样例页里有：贴住右上角，和真的一样高、一样宽，背景透明 —— */
+.gal-win { position: relative; height: 220px; overflow: hidden; }
+.gal-win + .gal-win { border-top: 1px solid var(--line-2); }
+.gal-win > iframe { position: absolute; top: 0; right: 0; width: var(--gal-win-w); height: 100%; border: 0; }
+.gal-caption { position: fixed; z-index: var(--z-toast); top: 0; right: 0; display: flex; height: calc(var(--pane-gap) + var(--head-h)); color: var(--fg); }
+.gal-caption > span { display: grid; place-items: center; width: calc(var(--caption-w-fallback) / 3); transition: background var(--t-fast), color var(--t-fast); }
+.gal-caption > span:hover { background: var(--pill-hover); }
+.gal-caption > .close:hover { background: var(--red); color: var(--on-danger); }
+.gal-caption svg { width: 10px; height: 10px; fill: none; stroke: currentColor; }
 }

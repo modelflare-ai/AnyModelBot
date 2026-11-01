@@ -11,6 +11,7 @@ import { Markdown } from "../components/markdown.js";
 import { useStore, toast, saved, failed, confirmSheet } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
 import "../lib/prefs.js"; // 外观偏好（字体大小、动画、毛玻璃…）在样例页里也生效
+import { usePresence } from "./motion.js";
 
 const Compare = createContext(false);
 
@@ -360,6 +361,97 @@ function StateRow({ name, note, ctx = "surface", cells }) {
   </figure>`;
 }
 
+// —— Windows 标题栏：样例页里的模拟窗口，不是桌面版本身。iframe 是一份独立的文档（:root.win-app、真的样式表、自己的视口），
+//    所以抽屉的断点、env(titlebar-area-*) 的回退值都和桌面版一样起作用。右上角的三个按钮是替身（.gal-caption），
+//    桌面版里它们是系统画的（electron/main.ts 的 titleBarOverlay）——
+const WIN_SHEETS = ["./index.css", "../css/shell.css", "../css/chat.css", "../css/settings.css", "./gallery.css"].map((f) => new URL(f, import.meta.url).href);
+const WIN_DOC = `<!doctype html><html class="win-app"><head><meta charset="utf-8">${WIN_SHEETS.map((h) => `<link rel="stylesheet" href="${h}">`).join("")}</head><body></body></html>`;
+
+/** 一个 w 宽的窗口，靠右裁切（只看右边那一截）；children 渲染进 iframe 的 body */
+function WinFrame({ w, theme, children }) {
+  const [body, setBody] = useState(null);
+  useEffect(() => {
+    if (!body) return;
+    body.parentElement.dataset.theme = theme;
+    render(children, body);
+  });
+  useEffect(() => () => body && render(null, body), [body]);
+  return html`<div class="gal-win"><iframe srcdoc=${WIN_DOC} title=${`模拟的 Windows 窗口（${theme === "dark" ? "深色" : "浅色"}）`} style=${{ "--gal-win-w": `${w}px` }}
+    onLoad=${(e) => setBody(e.currentTarget.contentDocument.body)}></iframe></div>`;
+}
+
+/** 系统的最小化 / 最大化 / 关闭的替身：贴住右上角，和真的一样高、一样宽，背景透明 */
+function GalCaption() {
+  return html`<div class="gal-caption" aria-hidden="true">
+    <span><svg viewBox="0 0 10 10"><path d="M0 5.5h10" /></svg></span>
+    <span><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" /></svg></span>
+    <span class="close"><svg viewBox="0 0 10 10"><path d="M.5.5l9 9M9.5.5l-9 9" /></svg></span>
+  </div>`;
+}
+
+/** 应用的骨架：侧栏 | 主区（对话或设置）| 信息面板。点顶栏的面板钮开合，和桌面版一样滑 */
+function WinApp({ screen = "chat", open: initial = false }) {
+  const [open, setOpen] = useState(initial);
+  const fx = usePresence(open, "--dur-slow");
+  const toggle = () => setOpen((v) => !v);
+  if (screen === "onboard")
+    return html`<main class="onboard"><div class="onboard-col">
+      <div class="onboard-lang"><button type="button" class="pick"><${Icon} name="globe" size="sm" class="lead" /><span class="v">简体中文</span><${Icon} name="chevDown" /></button></div>
+      <div class="onboard-hero"><${BotAvatar} char=${MAIN_CHAR} size=${56} /><h1>任意模型，一个助手</h1></div>
+    </div><${GalCaption} /></main>`;
+  const settings = screen === "settings";
+  return html`<div class=${`app${open ? " with-panel" : ""}`} style=${{ "--aura-hue": "225" }}>
+    <aside class="side">
+      ${settings
+        ? html`<div class="side-top start"><button type="button" class="side-back"><${Icon} name="arrowLeft" size="md" />返回应用</button></div>`
+        : html`<div class="side-top"><span class="side-brand"><img src="/amb/static/assets/favicon-64.png" alt="" /><span>AnyModelBot</span></span><${IconButton} icon="plus" iconSize="md" label="新建机器人" /></div>`}
+      <label class="side-search"><${Icon} name="search" size="sm" /><input type="search" placeholder="搜索" /></label>
+      <nav class="side-list">
+        ${settings
+          ? html`<button type="button" class="nav-item sel"><${Icon} name="sliders" size="md" /><span>常规</span></button>
+            <button type="button" class="nav-item"><${Icon} name="palette" size="md" /><span>外观</span></button>`
+          : html`<div class="thread sel"><${BotAvatar} char="blue" size=${38} /><span class="body">
+              <span class="line"><span class="title">小蓝</span><span class="when num">09:26</span></span>
+              <span class="line"><span class="snip">整理好了，截图按日期分进了 3 个文件夹</span></span></span></div>`}
+      </nav>
+    </aside>
+    <main class="main">
+      ${settings
+        ? html`<section class="settings view"><div class="set-head"><h1 class="set-title">常规</h1></div>
+            <div class="set-body"><div class="list">
+              <div class="row"><div class="who"><div class="name">开机自启</div><div class="sub">登录系统后在后台启动</div></div><div class="ctl"><${Switch} label="开机自启" value=${true} onChange=${() => {}} /></div></div>
+            </div></div></section>`
+        : html`<section class="chat"><header class="chat-head">
+              <button type="button" class="head-bot" aria-pressed=${open} onClick=${toggle}><${BotAvatar} char="blue" size=${22} /><span class="name">小蓝</span></button>
+              <span class="grow"></span>
+              <${IconButton} icon="compose" iconSize="md" label="新对话" />
+              <${IconButton} icon="panel" iconSize="md" label="信息面板" on=${open} aria-pressed=${open} onClick=${toggle} />
+            </header>
+            <div class="chat-scroll"><div class="chat-col ready">
+              <div class="msg-row user"><div class="msg">把下载目录里的截图整理一下</div></div>
+              <div class="msg-row assistant"><div class="msg">整理好了，截图按日期分进了 3 个文件夹。</div></div>
+            </div></div></section>`}
+    </main>
+    ${fx.mounted && html`<div class=${`panel-scrim${fx.leaving ? " leaving" : ""}`} onClick=${() => setOpen(false)}></div>
+      <aside class=${`panel${fx.leaving ? " leaving" : ""}`}>
+        <div class="panel-head"><span class="title">小蓝</span>
+          <${IconButton} icon="gear" iconSize="md" label="机器人设置" /><${IconButton} icon="close" iconSize="md" label="关闭" class="panel-close" onClick=${() => setOpen(false)} /></div>
+        <div class="panel-body"><div class="list-head">渠道</div><div class="list">
+          <div class="row compact"><div class="who"><div class="name">微信</div><div class="sub">已连接</div></div></div>
+          <div class="row compact"><div class="who"><div class="name">飞书</div><div class="sub">未连接</div></div></div>
+        </div></div>
+      </aside>`}
+    <${GalCaption} />
+  </div>`;
+}
+
+function WinCase({ name, note, w = 1240, ...app }) {
+  return html`<figure class="gal-specimen">
+    <figcaption><b>${name}</b>${note && html`<span class="t-meta">${note}</span>`}</figcaption>
+    ${["light", "dark"].map((t) => html`<${WinFrame} key=${t} w=${w} theme=${t}><${WinApp} ...${app} /><//>`)}
+  </figure>`;
+}
+
 // 回复里先是模型在回合中间说的话，最后的回复接在后面（chat.js 的 shownText）
 const INTERIM_REPLY = "我先看看下载目录里有什么。\n\n找到 12 张截图，按日期分进了 3 个文件夹，顺手挑了一张做封面。\n\n整理好了：截图都在「截图/2026-10」下面，清单和封面在下面。";
 const MD = "支持 **粗体**、`行内代码`、[链接](https://modelflare.dev)：\n\n- 列表项\n- 第二项\n\n```js\nconst ok = true;\n```";
@@ -385,7 +477,7 @@ function Gallery() {
     ["原则", [["principles", "分层与约定"]]],
     ["Token", [["color", "颜色"], ["material", "材质"], ["type", "文字"], ["space", "间距与尺寸"], ["elevation", "投影与层级"], ["motion", "动效"]]],
     ["组件", [["states", "状态矩阵"], ["icons", "图标"], ["buttons", "按钮"], ["inputs", "输入"], ["menus", "菜单与分段"], ["status", "状态与反馈"], ["lists", "列表行"], ["splitter", "分隔条"], ["overlays", "对话框与提示"], ["avatars", "头像"]]],
-    ["页面模式", [["patterns", "对话"], ["needs", "需要你"], ["rules", "规则"], ["custom", "定制"]]],
+    ["页面模式", [["patterns", "对话"], ["needs", "需要你"], ["rules", "规则"], ["win-caption", "Windows 标题栏"], ["custom", "定制"]]],
   ];
   return html`<${Compare.Provider} value=${compare}><div class="gal">
     <nav class="gal-nav" aria-label="目录">
@@ -671,6 +763,14 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <div class="list"><${TaskRow} task=${TASKS[0]} open data=${TASK_DETAIL} onToggle=${() => {}} onOpenConv=${() => {}} /></div>
           </div>`}
         <//>
+      <//>
+
+      <${Section} id="win-caption" title="Windows 标题栏" lead="Windows 桌面版的右上角是系统画的最小化、最大化、关闭，和侧栏顶部那一行一样高。最右边的面板贴住这个角，按钮落在它的顶栏上；顶栏的内容仍和侧栏顶部在同一条中线上。下面是模拟的窗口：真的样式表加上 win-app，右上角三个按钮是替身。">
+        <${WinCase} name="信息面板关着" note="主区贴住右上角。点顶栏的面板钮开合，或悬停关闭钮" />
+        <${WinCase} name="信息面板开着" note="信息面板贴住右上角，主区照旧浮着" open />
+        <${WinCase} name="窗口窄：信息面板是抽屉" note="1000 宽；抽屉贴住右上角，主区在它底下不动" w=${1000} open />
+        <${WinCase} name="设置" note="内容滚到窗口上沿，从按钮底下过" screen="settings" />
+        <${WinCase} name="引导页" note="没有面板，按钮直接在环境光上" w=${1000} screen="onboard" />
       <//>
 
       <${Section} id="custom" title="定制" lead="不改组件源码：在上下文里覆盖组件变量；需要一块不同主题的区域时，加 data-theme。">

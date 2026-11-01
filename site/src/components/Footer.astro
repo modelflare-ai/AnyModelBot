@@ -9,7 +9,7 @@ import { dict, href, altLang, switchHref, type Lang } from "../i18n";
 import { GITHUB_URL, MF, pricing } from "../lib/site";
 import { docsUrl } from "../lib/docs";
 import { pickModels } from "../lib/eyefield";
-import { BADGES } from "../data/badges";
+import { BADGES, type Badge } from "../data/badges";
 interface Props { lang: Lang; path: string }
 const { lang, path } = Astro.props;
 const t = dict(lang);
@@ -27,9 +27,10 @@ const other = altLang(lang);
 const models = pickModels(pricing.rows);
 // 有深色款的徽章出两份，由 CSS 按主题显示一份。图片懒加载：被隐藏的那份不会发请求，页面也只在快到页脚时才请求这些外部图片
 const lazy = (html: string) => html.replace(/<img\b/g, '<img loading="lazy" decoding="async"');
-const badges = BADGES.flatMap(({ html, dark, kind }) => dark
+type BadgeItem = { html: string; kind: Badge["kind"]; on?: "dark" | "light" };
+const badges = BADGES.flatMap(({ html, dark, kind }): BadgeItem[] => dark
   ? [{ html: lazy(dark), kind, on: "dark" }, { html: lazy(html), kind, on: "light" }]
-  : [{ html: lazy(html), kind, on: undefined }]);
+  : [{ html: lazy(html), kind }]);
 ---
 <footer class="footer">
   <div class="container footer__inner">

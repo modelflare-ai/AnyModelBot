@@ -196,7 +196,7 @@ describe("观察够了的规则：「需要你」里问要不要改为执行", (
     expect(await find(few)).toBeUndefined();
     const id = await observed("X 价格", 3);
     expect(await find(id)).toMatchObject({ kind: "suggest", subject: "规则「X 价格」已观察 3 次，需要你来决定是否执行", status: "", line: "本会发送：“X 降到 199 了”", actions: ["act", "dismiss"], ruleId: id, ruleTitle: "X 价格" });
-    expect((await find(id, "en")).subject).toBe("Rule “X 价格” has observed 3 times; decide whether it should act");
+    expect((await find(id, "en")).subject).toBe("Rule “X 价格” has run 3 times in observe mode; decide whether it should act");
     // 算在侧栏的件数里
     expect((await api("/agent")).data.attention).toBeGreaterThan(0);
     const r = await api(`/attention/suggest:${id}/act`, { method: "POST", body: {} });

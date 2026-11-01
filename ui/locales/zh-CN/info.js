@@ -63,7 +63,7 @@ export default {
     allowed: "已允许「{who}」",
     denied: "已拒绝「{who}」",
     messages: { other: "发了 {count} 条消息" },
-    wants: "想使用这个机器人，配对码 {code}",
+    wants: "想使用这个机器人 · 配对码 {code}",
     quote: "「{text}」",
     allow: "允许",
     deny: "拒绝",

@@ -158,7 +158,7 @@ export const en: Catalog<typeof zh> = {
   subject: "Rule “{title}”",
   failingPaused: { one: "Failed {count} time in a row, paused", other: "Failed {count} times in a row, paused" },
   failing: { one: "Failed {count} time in a row", other: "Failed {count} times in a row" },
-  suggest: { one: "Rule “{title}” has observed {count} time; decide whether it should act", other: "Rule “{title}” has observed {count} times; decide whether it should act" },
+  suggest: { one: "Rule “{title}” has run {count} time in observe mode; decide whether it should act", other: "Rule “{title}” has run {count} times in observe mode; decide whether it should act" },
   headAnswer: "Rule “{title}” is waiting for your answer",
   headApproval: "Rule “{title}” is waiting for your approval",
   headFailing: { one: "Rule “{title}” failed {count} time in a row", other: "Rule “{title}” failed {count} times in a row" },

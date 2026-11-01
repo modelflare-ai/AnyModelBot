@@ -25,8 +25,8 @@ export default {
     more: "更多权限设置…",
   },
   approval: {
-    needed: "需要你的批准，编号 {code}",
-    neededTask: "「{title}」需要你的批准，编号 {code}",
+    needed: "需要你的批准 · {code}",
+    neededTask: "「{title}」需要你的批准 · {code}",
     fallbackReason: "机器人想执行一个超出工作区的操作",
     allowOnce: "允许（仅本次）",
     deny: "拒绝",

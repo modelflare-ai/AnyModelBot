@@ -25,8 +25,8 @@ export default {
     more: "More permission settings…",
   },
   approval: {
-    neededTask: "\"{title}\" needs your approval, code {code}",
-    needed: "Needs your approval, code {code}",
+    neededTask: "\"{title}\" needs your approval · {code}",
+    needed: "Needs your approval · {code}",
     fallbackReason: "The bot wants to do something outside its workspace",
     allowOnce: "Allow once",
     deny: "Deny",

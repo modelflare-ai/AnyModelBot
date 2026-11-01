@@ -10,7 +10,7 @@ export default {
   allDone: "上手清单全部完成",
   /** 「上手清单 · 3/6」；progress 可以是带样式的数字 */
   progress: "上手清单 · {progress}",
-  toastProgress: "完成了「{title}」，上手清单 {progress}",
+  toastProgress: "上手清单 {progress} · {title}",
   collapse: "收起到左下角",
   demoThis: "演示这句",
   watchDemo: "看演示",

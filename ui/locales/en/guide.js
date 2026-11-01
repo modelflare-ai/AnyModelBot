@@ -6,7 +6,7 @@ export default {
   title: "Getting started",
   allDone: "Getting started complete",
   progress: "Getting started · {progress}",
-  toastProgress: "Finished “{title}”, {progress} done",
+  toastProgress: "Getting started {progress} · {title}",
   collapse: "Minimize to sidebar",
   demoThis: "Demo prompt",
   watchDemo: "Watch demo",

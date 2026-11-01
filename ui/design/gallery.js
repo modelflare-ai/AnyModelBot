@@ -411,7 +411,7 @@ function Gallery() {
         <${Demo} col title="容器与层次" note="一组东西 = 底色深一级（--well）+ 间距；里面不再套框；描边只留给输入框（≥ 3:1）和浮层玻璃" code=${`.card { background: var(--well); border-radius: var(--r-well); }        /* 不描边、不加投影 */
 .card .cmd { font-family: var(--code); }                                /* 卡片里的命令是一行等宽字，不再套底 */
 .notice.red { --notice-bg: var(--red-wash); --notice-ic: var(--red); }  /* 提示：淡底 + 图标 + --fg 字，不描边、无色条 */`}>
-          ${() => html`<div class="card"><div class="meta">需要你的批准，编号 <span class="num">A7K2</span></div><div class="q">机器人想在工作区之外写入文件</div>
+          ${() => html`<div class="card"><div class="meta">需要你的批准 · <span class="num">A7K2</span></div><div class="q">机器人想在工作区之外写入文件</div>
               <div class="cmd">write_file  ~/Documents/周报/2026-W44.md</div>
               <div class="actions"><${Button} variant="primary">允许（仅本次）<//><${Button}>拒绝<//></div></div>
             <${Notice} tone="red">模型请求失败：HTTP 529 上游繁忙，请稍后重试<//>

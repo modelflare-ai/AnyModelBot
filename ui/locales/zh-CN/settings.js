@@ -87,7 +87,7 @@ export default {
     guide: {
       name: "上手清单",
       hidden: "已不再显示；重新开始后，对话页和侧栏左下角会再出现",
-      progress: "跟着清单认识机器人能做的事，已完成 {done}/{total}",
+      progress: "跟着清单认识机器人能做的事 · 已完成 {done}/{total}",
       keys: "引导 新手 教程 清单 onboarding guide",
       restart: "重新开始",
       restarted: "上手清单已重新开始",
@@ -156,7 +156,7 @@ export default {
     account: {
       name: "Modelflare 账户",
       signedIn: "已登录",
-      enterprise: "{name}，由企业钱包付费",
+      enterprise: "{name} 的费用由企业钱包支付",
       signedOut: "登录后可以查看用量、通知和邀请链接，也能给机器人单独设预算",
       keys: "登录 注册 账户 退出 account login",
       logout: "退出登录",

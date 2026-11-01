@@ -466,7 +466,7 @@ describe("规则（假宿主、假时钟）", () => {
         ruleTitle: "看 X 价格",
       },
     ]);
-    expect(withLang("en", () => ask()[0].subject)).toBe("Rule “看 X 价格” has observed 3 times; decide whether it should act");
+    expect(withLang("en", () => ask()[0].subject)).toBe("Rule “看 X 价格” has run 3 times in observe mode; decide whether it should act");
     // 不推送（观察本来就什么都不发）；在「需要你」里排在最后，算在件数里，但不发系统通知
     expect(store.listOutbox({ limit: 100 })).toEqual([]);
     const att = new Attention({ store });

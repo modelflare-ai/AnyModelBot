@@ -59,7 +59,7 @@ export default {
     allowed: "Allowed \"{who}\"",
     denied: "Denied \"{who}\"",
     messages: { one: "sent {count} message", other: "sent {count} messages" },
-    wants: "Wants to use this bot with pairing code {code}",
+    wants: "Wants to use this bot · pairing code {code}",
     quote: "\"{text}\"",
     allow: "Allow",
     deny: "Deny",

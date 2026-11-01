@@ -12,6 +12,7 @@ import { findAppRoot } from "../magpie/supervisor.js";
 import { adaptSkill, mcpPatchLines, resolveComputerUse, type CuResolved } from "./computer-use.js";
 import { cuaConfig, cuaMcpEnv, discoverAppsCached, type CuaApp } from "./cua-driver.js";
 import { pwshPatchLines, pwshProbe } from "./pwsh.js";
+import { hasEnvProxy, networkEnv, systemProxyEnv } from "./proxy-env.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
 import { acceptsImages } from "../llm/client.js";
 import { CUA_SKILL, MEDIA_SKILL, TASK_RULES, agentPersona, botPrompt } from "./prompts/index.js";
@@ -213,6 +214,8 @@ export interface AgentHostOptions {
   onTaskEvent?: (root: string, n: SdkNotification) => void;
   /** 宿主这边也空闲（没有在跑或收尾的任务、规则 run，没有等批准的，没有在压缩的会话）：开过的会话多了可以换新的子进程 */
   idle?: () => boolean;
+  /** 桌面版：系统给这个地址用的代理（PAC 写法，如 "PROXY 127.0.0.1:7890"）；环境里没设代理时每次拉起子进程问一次 */
+  systemProxy?: (url: string) => Promise<string | undefined>;
 }
 
 export type HostState = "stopped" | "starting" | "running" | "backoff" | "error";
@@ -897,8 +900,13 @@ exec "$REAL" "$@"
     return dir;
   }
 
-  /** 子进程环境：完全替换 process.env，只给必需项；真实模型密钥永不进入。 */
-  private env(): Record<string, string> {
+  /** 环境里没设代理时问桌面外壳系统用的代理（每次拉起子进程都重新问：之后才开的代理，下次重启就用上）；命令行、Docker 没有 */
+  private async systemProxy(): Promise<Record<string, string>> {
+    return this.o.systemProxy && !hasEnvProxy(process.env) ? systemProxyEnv(this.o.systemProxy) : {};
+  }
+
+  /** 子进程环境：完全替换 process.env，只给必需项；真实模型密钥永不进入。sysProxy：桌面版问到的系统代理（环境里没设代理时用） */
+  private env(sysProxy: Record<string, string> = {}): Record<string, string> {
     const shim = this.writeBwrapShim();
     const basePath = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
     const env: Record<string, string> = {
@@ -922,6 +930,8 @@ exec "$REAL" "$@"
     };
     // 时区：本进程设了 TZ 才传下去；没设就不设，子进程用系统时区（各平台都是，Windows 上 TZ 也只认 POSIX 写法）
     if (process.env.TZ) env.TZ = process.env.TZ;
+    // 代理与证书（用户自己的网络设置，不是密钥）：命令里的 pip、npm、git、curl 和用户平时一样联网；回环地址永远不走代理（proxy-env.ts）
+    Object.assign(env, networkEnv(process.env, sysProxy));
     if (process.platform === "win32") {
       // Windows：系统目录类变量不是密钥，但工具进程离不开（npm/pip 找 APPDATA，脚本找 ProgramFiles、ComSpec…）。
       // libuv 只自动补 SystemRoot/TEMP/USERPROFILE 等少数几个。
@@ -1168,6 +1178,7 @@ exec "$REAL" "$@"
       const cu = this.computerUseActive();
       const apps = cu && cu.backend === "cua" ? await discoverAppsCached() : [];
       const pwshPath = await pwshProbe.dshPath();
+      const sysProxy = await this.systemProxy();
       // 模型资料在新进程里重新查；用过的模型都写进补丁（会话各用各的模型），启动用的模型排第一
       this.routes.clear();
       this.known.add(model);
@@ -1180,12 +1191,12 @@ exec "$REAL" "$@"
       this.sig = this.settingsSig(pwshPath);
       const timeoutMs = this.initTimeoutMs();
       this.control.reset();
-      this.stage("patch written", t0, { api, models: routes.length, computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
+      this.stage("patch written", t0, { api, models: routes.length, computerUse: cu ? cu.backend : "off", apps: apps.length, initTimeoutMs: timeoutMs, proxy: hasEnvProxy(process.env) ? "env" : (sysProxy.HTTPS_PROXY ?? sysProxy.ALL_PROXY ?? "none"), ...(process.platform === "win32" ? { pwsh: pwshPath ?? "dsh default (Windows PowerShell 5.1)" } : {}) });
       h = new sdk.DeepSeekHarness({
         profile: "sdk",
         patches: [patch],
         dshHome: this.home,
-        env: this.env(),
+        env: this.env(sysProxy),
         cwd: this.workspace,
         processCwd: this.workspace,
         provider: first.provider,

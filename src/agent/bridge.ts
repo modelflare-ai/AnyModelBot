@@ -22,6 +22,8 @@ export interface BridgeHandlers {
   steward?(body: any): Promise<unknown>;
   /** amb-media 插件：生图 / 生视频 */
   media?(body: any): Promise<unknown>;
+  /** amb-web-search 插件：web_search 的一次搜索（signal = 连接断了：工具超时或回合被中止） */
+  search?(body: any, signal: AbortSignal): Promise<unknown>;
   /** amb-control 插件：长轮询取宿主的指令（signal = 连接断了）、回报结果 */
   control?: { poll(body: any, signal: AbortSignal): Promise<unknown>; result(body: any): void };
   /** 服务端压缩：长会话的 /v1/responses 换上上游压缩过的历史（见 server-compaction.ts） */
@@ -52,6 +54,7 @@ export const BOT_HEADER = "x-amb-bot";
  * - /v1/*：模型代理（Chat Completions、Responses、Anthropic Messages），把令牌换成真实网关密钥（子进程环境里没有任何真实密钥）
  * - /dsh/ask|wait|cancel：amb-bridge 插件的审批/提问长轮询
  * - /dsh/control/poll|result：amb-control 插件取宿主的指令（中止、插话、换模型）并回报
+ * - /dsh/search：amb-web-search 插件（web_search 由宿主联网搜索）
  * - /dsh/task-report|task-settled|task-tool|task-config：amb-tasks 插件（后台任务的报告、收尾结束、聊天代理的任务工具、规则会话的配置）
  */
 export class AgentBridge {
@@ -270,6 +273,11 @@ export class AgentBridge {
     else if (url === "/dsh/memory" && this.h.memory) out = await this.h.memory(body);
     else if (url === "/dsh/steward" && this.h.steward) out = await this.h.steward(body);
     else if (url === "/dsh/media" && this.h.media) return this.longCall(res, this.h.media(body));
+    else if (url === "/dsh/search" && this.h.search) {
+      const ac = new AbortController();
+      res.on("close", () => ac.abort());
+      out = await this.h.search(body, ac.signal);
+    }
     else if (url === "/dsh/control/poll" && this.h.control) {
       const ac = new AbortController();
       res.on("close", () => ac.abort());

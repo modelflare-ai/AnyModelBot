@@ -726,6 +726,12 @@ export class AgentHost {
       ...providerPatchLines(providerProfiles(list, this.o.bridge.url, this.o.botId)),
       // 长命令转后台；Windows：命令用检测到的 PowerShell 7（DSH 自己只看 Program Files\PowerShell\7 和 PATH，找不到就退回 5.1）
       ...shellPatchLines(pwshPath),
+      // web_search 用 amb-web-search 插件注册的 amb（经 bridge 由宿主搜索），不用 DeepSeek 自带的搜索（要 DeepSeek 的 Key）；
+      // 补丁整体替换这一行的 config，网页抓取照旧写上 http
+      "- id: web",
+      "  config:",
+      "    searchProvider: amb",
+      "    fetchProvider: http",
       // 人设：个人助手（替换 DSH 的 coding agent 人设），不要 "powered by DeepSeek Harness" 那句身份
       "- id: system-prompt",
       "  config:",
@@ -746,6 +752,9 @@ export class AgentHost {
       // 生图 / 生视频：宿主带着本机器人的 Key 调 Modelflare，文件存进工作区 media/；技能说明在 skills/media
       "    - id: amb-media",
       `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-media.mjs"))}`,
+      // 联网搜索：默认免费（Exa MCP、必应、DuckDuckGo），设置里可换成带 Key 的接口（search.ts）
+      "    - id: amb-web-search",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-web-search.mjs"))}`,
       // sdk 配置默认不带这两个工具：ask_user_question 走 user-questions → 插件 → 审批中心；
       // present 只声明交付文件，由宿主在回合结束后经渠道发送。
       "    - id: amb-tool-ask-user",

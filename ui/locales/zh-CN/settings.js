@@ -284,6 +284,25 @@ export default {
       sub: "电脑操作的截图只发给模型，不会发到聊天里",
       keys: "隐私",
     },
+    webSearch: {
+      name: "联网搜索",
+      sub: "默认免费搜索，填写 Key 后优先使用",
+      keys: "搜索 网页 search web tavily exa 博查 bocha 智谱 zhipu searxng",
+      auto: "自动",
+      bocha: "博查",
+      zhipu: "智谱",
+    },
+    webSearchKey: {
+      name: "{provider} Key",
+      placeholder: "粘贴 Key",
+      rejected: "Key 被拒绝，正在用免费搜索",
+      remove: "移除",
+      keys: "搜索 key api 密钥",
+    },
+    webSearchUrl: {
+      name: "SearXNG 地址",
+      keys: "搜索 searxng url 地址",
+    },
     listen: {
       name: "监听地址",
       sub: "修改需设置 AMB_UI_HOST / AMB_UI_PORT 并重启",

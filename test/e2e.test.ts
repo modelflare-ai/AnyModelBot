@@ -277,6 +277,25 @@ describe("Web 界面 / API", () => {
     expect((await api("/settings", { method: "PUT", body: { autostart: true } })).status).toBe(400);
     await api("/settings", { method: "PUT", body: { defaultModel: "", closeToTray: true, zoom: 1 } });
   });
+  it("联网搜索设置：默认自动、不用 Key；Key 只回末 4 位、按接口分开存；SearXNG 地址规整；非法值拒绝", async () => {
+    expect((await api("/settings")).json.webSearch).toEqual({ provider: "auto", keyTail: "", url: "", keyRejected: false });
+    let r = await api("/settings", { method: "PUT", body: { webSearch: { provider: "tavily" } } });
+    expect(r.json.webSearch).toEqual({ provider: "tavily", keyTail: "", url: "", keyRejected: false });
+    r = await api("/settings", { method: "PUT", body: { webSearch: { key: " tvly-abcdef123456 " } } });
+    expect(r.json.webSearch).toMatchObject({ provider: "tavily", keyTail: "3456" });
+    expect(JSON.stringify(r.json)).not.toContain("tvly-abcdef");
+    expect(JSON.parse(app.store.getKV("web-search")!)).toEqual({ provider: "tavily", keys: { tavily: "tvly-abcdef123456" }, url: "" });
+    // 换接口不丢别的接口的 Key；空 Key = 删掉当前接口的
+    expect((await api("/settings", { method: "PUT", body: { webSearch: { provider: "exa" } } })).json.webSearch.keyTail).toBe("");
+    expect((await api("/settings", { method: "PUT", body: { webSearch: { provider: "tavily" } } })).json.webSearch.keyTail).toBe("3456");
+    expect((await api("/settings", { method: "PUT", body: { webSearch: { key: "" } } })).json.webSearch.keyTail).toBe("");
+    r = await api("/settings", { method: "PUT", body: { webSearch: { provider: "searxng", url: " https://searx.example/search/ " } } });
+    expect(r.json.webSearch).toMatchObject({ provider: "searxng", url: "https://searx.example" });
+    expect((await api("/settings", { method: "PUT", body: { webSearch: { provider: "google" } } })).status).toBe(400);
+    expect((await api("/settings", { method: "PUT", body: { webSearch: { url: "ftp://x" } } })).status).toBe(400);
+    await api("/settings", { method: "PUT", body: { webSearch: { provider: "auto", url: "" } } });
+    expect((await api("/settings")).json.webSearch).toEqual({ provider: "auto", keyTail: "", url: "", keyRejected: false });
+  });
   it("窗口按钮配色：浏览器模式下没有桌面外壳，静默忽略", async () => {
     const r = await api("/desktop/title-bar", { method: "POST", body: { dark: true } });
     expect(r.status).toBe(200);

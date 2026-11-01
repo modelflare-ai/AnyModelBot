@@ -45,6 +45,7 @@
 .settings .row .ctl .pick ~ .switch { margin-left: var(--space-2); }
 .settings input.field.num-in { width: 96px; --field-h: var(--ctl-md); text-align: right; font-variant-numeric: tabular-nums; }
 .settings input.field.font-in { width: min(220px, 36vw); --field-h: var(--ctl-md); }
+.settings input.field.key-in { width: min(220px, 36vw); --field-h: var(--ctl-md); }
 
 /* 外观预览（设置 › 外观顶部）：一组 --well，里面一问一答 + 一行代码，用对话页同样的字号与字体 token，
    跟着字体大小、界面字体、代码字体和代码换行实时变 */

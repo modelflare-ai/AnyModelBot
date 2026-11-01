@@ -284,6 +284,25 @@ export default {
       sub: "Computer use screenshots go only to the model, never into chats",
       keys: "privacy screenshot",
     },
+    webSearch: {
+      name: "Web search",
+      sub: "Free search by default. A key you add is used first",
+      keys: "search web internet tavily exa bocha zhipu searxng",
+      auto: "Auto",
+      bocha: "Bocha",
+      zhipu: "Zhipu",
+    },
+    webSearchKey: {
+      name: "{provider} key",
+      placeholder: "Paste key",
+      rejected: "Key rejected. Using free search for now",
+      remove: "Remove",
+      keys: "search key api",
+    },
+    webSearchUrl: {
+      name: "SearXNG address",
+      keys: "search searxng url address",
+    },
     listen: {
       name: "Listen address",
       sub: "To change it, set AMB_UI_HOST / AMB_UI_PORT and restart",

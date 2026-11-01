@@ -75,3 +75,33 @@ describe("bridge /dsh/media", () => {
     expect(JSON.parse(r.chunks.join(""))).toEqual({ error: "boom" });
   });
 });
+
+describe("bridge /dsh/search", () => {
+  it("hands the query to the host and answers with its JSON; the plugin hanging up cancels the search", async () => {
+    const seen: unknown[] = [];
+    let cancelled = false;
+    bridge = new AgentBridge({
+      upstream: () => ({ baseUrl: "", apiKey: "" }),
+      ask: async () => ({ id: "" }),
+      wait: async () => ({}),
+      cancel: async () => undefined,
+      search: (b, signal) => {
+        seen.push(b);
+        if (b.query !== "hang") return Promise.resolve({ sources: [{ url: "https://a.example/" }], truncated: false });
+        return new Promise((resolve) => signal.addEventListener("abort", () => ((cancelled = true), resolve({ error: "aborted" }))));
+      },
+    });
+    await bridge.start();
+    const r = post(bridge, "/dsh/search", { botId: "b", query: "q", maxResults: 5 });
+    await r.end;
+    expect(JSON.parse(r.chunks.join(""))).toEqual({ sources: [{ url: "https://a.example/" }], truncated: false });
+    expect(seen).toEqual([{ botId: "b", query: "q", maxResults: 5 }]);
+    // web_search 超时或回合中止时插件的 fetch 断开连接：宿主那边的搜索收到取消
+    const ac = new AbortController();
+    const pending = fetch(bridge.url + "/dsh/search", { method: "POST", headers: { authorization: `Bearer ${bridge.token}`, "content-type": "application/json" }, body: JSON.stringify({ botId: "b", query: "hang" }), signal: ac.signal }).catch(() => "aborted");
+    await vi.waitFor(() => expect(seen).toHaveLength(2));
+    ac.abort();
+    expect(await pending).toBe("aborted");
+    await vi.waitFor(() => expect(cancelled).toBe(true));
+  });
+});

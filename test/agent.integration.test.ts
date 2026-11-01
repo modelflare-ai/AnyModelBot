@@ -209,7 +209,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
   function plan(messages: any[]): Step {
     let lastUser = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|SUBASK|SUBHELLO|PADDED|STEERME|SLOWOK|BGJOB|TOKENS|^background job |^Background subagent |\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
+      if (messages[i].role === "user" && /QUICKSORT|ESCALATE|SECRET|READFILE|LOOPBACK|PRESENT|ASKQ|NATIVES|LOOKIMG|HANG|COUNTER|OUTWRITE|RMRF|RMWS|CHILDRM|SUBRM|SUBASK|SUBHELLO|PADDED|STEERME|SLOWOK|BGJOB|TOKENS|WEBSEARCH|^background job |^Background subagent |\[用户消息\]/.test(textOf(messages[i].content))) { lastUser = i; break; }
     }
     const user = textOf(messages[lastUser]?.content);
     const tools = messages.slice(lastUser + 1).filter((m) => m.role === "tool");
@@ -259,6 +259,8 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
         ...(canStripTypes ? [{ name: "workflow", args: { script: "return { answer: 6 * 7 }", meta: { name: "calc", description: "multiply" } } }] : []),
       ]],
       [/COUNTER/, [{ name: "bash", args: { description: "run", command: "echo ran >> counter.txt && wc -l < counter.txt" } }]],
+      // 联网搜索：DSH 的 web_search 经 amb-web-search 插件交给宿主（不是 DeepSeek 的搜索）
+      [/WEBSEARCH/, [{ name: "web_search", args: { queries: ["amb probe query"] } }]],
       [/SLOWOK/, [{ name: "bash", args: { description: "run", command: `${gated(SLOW_GATE, 20)}; echo slow-done` } }]],
       // 跑得比转后台的阈值久：命令转到后台，这一轮先回复"还在跑"
       [/BGJOB/, [{ name: "bash", args: { description: "run", command: `${gated(BG_GATE, 30)}; echo bg-finished-42` } }]],
@@ -426,6 +428,20 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     const hist = ((await (await fetch(`${base}/amb/api/conversations/${encodeURIComponent(conv.id)}/messages`)).json()) as any).messages;
     expect(hist.map((m: any) => m.role)).toEqual(["user", "assistant"]);
     expect(JSON.stringify(hist)).not.toMatch(/🔧|tool|bash:/);
+  }, 120_000);
+
+  it("web_search searches through the host (amb-web-search → bridge → app.search), not DeepSeek's search", async () => {
+    const seen: Array<[string, number]> = [];
+    const original = app.search.search;
+    app.search.search = async (q: string, n?: number) => (seen.push([q, n ?? 0]), { backend: "test", sources: [{ url: "https://probe.example/page", title: "Probe Title", snippet: "probe snippet" }] });
+    try {
+      const r = await chat("WEBSEARCH please");
+      expect(seen).toEqual([["amb probe query", 8]]);
+      expect(r.reply).toContain("[Probe Title](https://probe.example/page) — probe snippet");
+      expect(r.reply).not.toMatch(/DeepSeek|API key/i);
+    } finally {
+      app.search.search = original;
+    }
   }, 120_000);
 
   // —— 系统提示词：我们的人设与机器人段（每次请求现读），而不是 DSH 的 coding agent 人设 ——

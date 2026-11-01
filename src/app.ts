@@ -44,6 +44,7 @@ import { AccountManager } from "./account/manager.js";
 import { AccountVault, type SecretBox } from "./account/vault.js";
 import { loadModelInfo, type ModelInfo, type Rates } from "./account/model-info.js";
 import { MediaService, pickDefault } from "./agent/media.js";
+import { SearchService, loadWebSearch, saveWebSearch, type SearchProvider, type WebSearchSettings, type WebSearchView } from "./agent/search.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
 import { TaskService } from "./tasks/service.js";
@@ -156,6 +157,9 @@ export class App {
   readonly ruleEvents: RuleEvents;
   /** "需要你"：所有机器人里在等人的事（侧栏、托盘角标、系统通知） */
   readonly attention: Attention;
+  /** 联网搜索（代理的 web_search）：默认免费，设置 › 网络 里可换成带 Key 的接口 */
+  readonly search: SearchService;
+  private webSearch: WebSearchSettings;
   web: WebServer | undefined;
   desktop: DesktopHooks | undefined;
   /** Modelflare 账户（登录、余额、预算）；start() 时创建，桌面外壳的钥匙串那时已就绪 */
@@ -210,6 +214,9 @@ export class App {
       this.magpie
         ? { baseUrl: this.magpie.baseUrl, apiKey: this.magpie.gatewayKey }
         : { baseUrl: config.magpie.externalBaseUrl.replace(/\/+$/, ""), apiKey: config.magpie.externalApiKey };
+    this.webSearch = loadWebSearch(this.store);
+    // 桌面版搜索走 Chromium 的网络栈（系统代理、PAC、系统证书）；命令行 / Docker 用 Node 的 fetch
+    this.search = new SearchService({ settings: () => this.webSearch, fetch: () => this.desktop?.fetch });
     this.agent = new AgentManager({
       store: this.store,
       dataDir: config.dataDir,
@@ -253,6 +260,7 @@ export class App {
             pricingUrl: () => `${modelflareIssuer()}/api/pricing`,
           })
         : undefined,
+      search: this.search,
       onNotice: (text) => this.notice("warn", text),
     });
     this.attention = new Attention({ store: this.store });
@@ -734,6 +742,27 @@ export class App {
   setDefaultModel(model: string): void {
     this.config.llm.defaultModel = model;
     saveConfigFile(this.config.dataDir, (f) => (f.llm = { ...(f.llm ?? {}), defaultModel: model }));
+  }
+
+  /** 联网搜索设置（设置 › 网络）：Key 只给末 4 位 */
+  webSearchView(): WebSearchView {
+    return this.search.view();
+  }
+
+  /** 改联网搜索（已校验）：provider 换接口，各接口的 Key 分开留着；key 存给当前接口，空 = 删掉；url 是 SearXNG 地址 */
+  setWebSearch(patch: { provider?: SearchProvider; key?: string; url?: string }): WebSearchView {
+    const next: WebSearchSettings = { ...this.webSearch, keys: { ...this.webSearch.keys } };
+    if (patch.provider) next.provider = patch.provider;
+    const p = next.provider;
+    if (patch.key !== undefined && p !== "auto" && p !== "searxng") {
+      if (patch.key) next.keys[p] = patch.key;
+      else delete next.keys[p];
+    }
+    if (patch.url !== undefined) next.url = patch.url;
+    saveWebSearch(this.store, next);
+    this.webSearch = next;
+    log.info("web search settings changed", { provider: p, key: p !== "auto" && p !== "searxng" && !!next.keys[p], url: !!next.url });
+    return this.search.view();
   }
 
   /** 默认的图片 / 视频模型；空字符串 = 自动（推荐顺序的第一个） */

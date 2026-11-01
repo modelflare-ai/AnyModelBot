@@ -13,7 +13,7 @@
 ```
 src/
   core/          统一消息类型、会话队列与去重、运行时（/model /reset、流式）、重启后的提醒、准入（主人 + 允许名单）、持久化出站队列
-  agent/         代理模式：DSH 宿主与桥接、审批、权限预设、记忆与上下文管家、生图 / 生视频、电脑操作、Windows PowerShell
+  agent/         代理模式：DSH 宿主与桥接、审批、权限预设、记忆与上下文管家、生图 / 生视频、联网搜索、电脑操作、Windows PowerShell
     prompts/     交给代理模型的全部提示词：人设、聊天规则、记忆说明、每段第一条消息、技能说明
   llm/           OpenAI 兼容客户端（模型接入接口）
   magpie/        内置 magpie 守护：隔离目录、空闲端口、自动生成密钥、健康检查、崩溃重启、干净退出
@@ -96,6 +96,7 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 - 机器人预算（需要登录）：机器人设置 → 预算，开启后这个机器人用自己的 Key（内置网关里单独的 provider），最多花设定的美元数；关闭后回到共用的 Key。
 - 生图 / 生视频：代理模式下机器人有 `media_models`（可用模型、默认模型、参数范围、参考价）、`media_docs`（从 docs.modelflare.dev 实时读该模型的请求格式）、`generate_image`、`generate_video` 四个工具，并自带一份 media 技能说明。各模型的参数格式不同，机器人按文档写请求体，工作区里的参考图写成 `workspace:路径` 即可；Key 始终只在本程序里，由本程序带着该机器人用的 Key 调 Modelflare，结果存进机器人工作区的 `media/`，再交付到聊天。
 - 生成前确认：直接生成，不打扰你。机器人选了不是默认的模型、要求没说清，都不问：它按最合理的理解生成，再说一句用了什么。只在预计花费超过 $0.5 时（按参考价、张数、视频时长和分辨率估算；视频估不出来也算）先在聊天里问你这次用哪个模型（附提示词、参数、参考价和为什么问）。可以确认、换成别的模型或取消；微信回复编号或模型名，飞书 / 网页点选。10 分钟内没回答就不生成。想每次都确认：机器人设置 → 生图 / 生视频 → 生成前确认 →「每次都问」。
+- 联网搜索：代理的 `web_search` 不用 DeepSeek 自带的搜索（它要 DeepSeek 的 Key），经 `amb-web-search` 插件交给本程序搜。默认免费、不用设置：依次试 Exa 的公开 MCP、必应、DuckDuckGo，上次成功的先试，出错的（限流、验证页、必应给出不相干的结果）跳过 10 分钟。设置 → 网络与访问 → 联网搜索 可以换成 Tavily、Exa、博查、智谱（填 Key）或自己的 SearXNG，填了就先用它，出错时退回免费的。Key 和渠道令牌一样存在本机数据库里，代理进程拿不到。桌面版搜索走系统代理；命令行版用 Node 的 fetch（设 `NODE_USE_ENV_PROXY=1` 后认 `HTTPS_PROXY`）。
 - 默认图片 / 视频模型：首次设置时和默认文本模型一起选，之后在 设置 → Modelflare 修改；选「自动」时用推荐顺序里第一个不需要参考素材的模型。
 - 模型选择器里显示上下文长度、视觉 / 工具 / 推理能力，以及每百万 tokens 输入 / 输出的起步参考价（来自公开价格目录，以账单为准）。
 - 调用归因：经 Modelflare 的请求都带 `X-Modelflare-Skill: anymodel-bot/<版本>`，链接都带 `utm_source=anymodelbot&utm_campaign=amb_<位置>`（应用内 `amb_signup`、`amb_topup`、`amb_console` 等，README 与仓库文档 `amb_readme`，官网 `amb_homepage`；格式由 `test/utm.unit.test.ts` 固定）。

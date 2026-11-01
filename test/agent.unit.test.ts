@@ -418,6 +418,15 @@ describe("agent API per model", () => {
     expect(text).toContain('    - id: amb-control\n      name: "/rt/plugins/amb-control.mjs"\n');
   });
 
+  it("web_search searches through the host: the amb-web-search plugin, and a top-level web row selecting it (fetch stays http)", () => {
+    const text = patchOf([route("m", "openai-completions")]);
+    expect(text).toContain('    - id: amb-web-search\n      name: "/rt/plugins/amb-web-search.mjs"\n');
+    // 顶层的行补丁在插件 insert 列表之前；补丁整体替换 config，所以网页抓取的 http 也要写上。DeepSeek 自带的搜索不会被选中
+    expect(text).toContain("\n- id: web\n  config:\n    searchProvider: amb\n    fetchProvider: http\n- id: ");
+    expect(text.indexOf("\n- id: web\n")).toBeLessThan(text.indexOf("\n- insert:\n"));
+    expect(text).not.toMatch(/deepseek-official|DEEPSEEK_API_KEY/);
+  });
+
   it("long commands move to a background job: shell and job-wait limits sized for a chat assistant; PowerShell keeps its path", () => {
     const text = patchOf([route("m", "openai-completions")], "C:\\PS7\\pwsh.exe");
     expect(text).toContain(`- id: bash-sandbox\n  config:\n    timeoutMs: ${SHELL_LIMITS.bashMs}\n    maxTimeoutMs: ${SHELL_LIMITS.bashMaxMs}\n`);
@@ -607,6 +616,9 @@ describe("full access patch", () => {
     // 网页/渠道的审批、读围栏照旧
     expect(text).toContain("- id: amb-bridge");
     expect(text).toContain("- id: amb-permission");
+    // 搜索走宿主：完全权限下照样
+    expect(text).toContain("    - id: amb-web-search\n");
+    expect(text).toContain("\n- id: web\n  config:\n    searchProvider: amb\n    fetchProvider: http\n");
     expect(JSON.parse(env.AMB_DENY_READ)).toHaveLength(1);
   });
   it("other presets keep DSH's own permission rows", () => {

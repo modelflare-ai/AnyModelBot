@@ -21,6 +21,7 @@ import { connectionFromPids } from "../agent/peer-guard.js";
 import type { ApprovalRow, Message, Store } from "../store/db.js";
 import { defaultLine } from "../agent/approvals.js";
 import { normalizeSettings } from "../agent/settings.js";
+import { SEARCH_PROVIDERS, normalizeSearxUrl, type SearchProvider } from "../agent/search.js";
 import { scopeLabel } from "../agent/memory.js";
 import { pwshProbe, type PwshMode, type PwshStatus } from "../agent/pwsh.js";
 import { ACCESS_CHANNELS, peerName, shortPeer, whoText, type AccessChannel } from "../core/access.js";
@@ -428,6 +429,17 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           if (!app.desktop?.autostart().supported) throw new HttpError(400, t("web.noAutostart"));
           app.desktop.setAutostart(!!b.autostart);
         }
+        if (b.webSearch && typeof b.webSearch === "object") {
+          const w = b.webSearch as Record<string, unknown>;
+          if (w.provider !== undefined && !SEARCH_PROVIDERS.includes(w.provider as SearchProvider)) throw new HttpError(400, t("web.badSearchProvider"));
+          const url = w.url === undefined ? undefined : normalizeSearxUrl(String(w.url));
+          if (url === undefined && w.url !== undefined) throw new HttpError(400, t("web.badSearchUrl"));
+          app.setWebSearch({
+            ...(w.provider !== undefined ? { provider: w.provider as SearchProvider } : {}),
+            ...(w.key !== undefined ? { key: String(w.key).trim() } : {}),
+            ...(url !== undefined ? { url } : {}),
+          });
+        }
       } else if (m !== "GET") throw new HttpError(405, "method not allowed");
       return send(res, 200, {
         defaultModel: cfg.llm.defaultModel,
@@ -440,6 +452,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         desktop: !!app.desktop,
         listen: { host, port: boundPort, tokenRequired: !!token },
         dataDir: cfg.dataDir,
+        webSearch: app.webSearchView(),
       });
     }
     if (p === "/notices" && m === "GET") {

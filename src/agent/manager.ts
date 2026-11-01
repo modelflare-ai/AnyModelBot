@@ -9,6 +9,7 @@ import { ServerCompaction, type CompactEndpoint, type CompactionEvent } from "./
 import { ActivityLog, promotedJob, type ActivityStep } from "./activity.js";
 import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
+import { SearchAborted, type SearchService, type WebSource } from "./search.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, TASK_APPROVAL_TTL_MS, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import type { TaskHost, TaskService } from "../tasks/service.js";
@@ -49,6 +50,8 @@ export interface AgentManagerOptions {
   reviewDelayMs?: number;
   /** 生图 / 生视频（amb-media 插件经 bridge 调用）；缺省时工具返回不可用 */
   media?: MediaService;
+  /** 联网搜索（amb-web-search 插件经 bridge 调用，DSH 的 web_search 用它）；缺省时搜索返回不可用 */
+  search?: SearchService;
   /** 需要让用户看到的提示（代理进程起不来等） */
   onNotice?: (text: string) => void;
   /** 模型的上下文长度（Modelflare 模型资料），写进 DSH 补丁 */
@@ -187,6 +190,7 @@ export class AgentManager {
       memory: (b) => this.memoryOp(b),
       steward: (b) => this.stewardCall(b),
       media: (b) => this.mediaOp(b),
+      search: (b, signal) => this.searchOp(b, signal),
       // amb-control 插件按机器人取指令；不认识的机器人（已删除、已停止）让它别再来
       control: {
         poll: (b, signal) => this.hosts.get(String(b?.botId ?? ""))?.control.poll(b, signal) ?? Promise.resolve({ stop: true }),
@@ -640,6 +644,23 @@ export class AgentManager {
     log.info("memory review", { conversationId: conv, added: res.added, removed: res.removed });
     if (res.added || res.removed) this.note(conv, "review", `+${res.added} -${res.removed}`);
     return res;
+  }
+
+  /**
+   * 联网搜索：聊天和后台任务都能用。出错只回一个 error（插件给代理一句"搜索暂时不可用，可以直接用 web_fetch 打开网页"），
+   * 哪个后端、为什么出错记在日志里（search.ts）。
+   */
+  private async searchOp(b: any, signal: AbortSignal): Promise<{ sources?: WebSource[]; truncated?: boolean; error?: string }> {
+    const search = this.o.search;
+    if (!search || !this.hosts.has(String(b?.botId ?? ""))) return { error: "unavailable" };
+    const query = String(b?.query ?? "").trim();
+    if (!query) return { sources: [], truncated: false };
+    try {
+      const r = await search.search(query, Number(b?.maxResults) || 8, signal);
+      return { sources: r.sources, truncated: false };
+    } catch (e) {
+      return { error: e instanceof SearchAborted ? "aborted" : "unavailable" };
+    }
   }
 
   /**

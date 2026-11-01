@@ -3,7 +3,7 @@
 // 外观（主题、字体、动画、毛玻璃…）和对话习惯（发送键、通知）是本机界面偏好，存在浏览器里（lib/theme.js、lib/prefs.js）；
 // 其余设置走服务端 /settings。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, Seg, Switch, Sheet, CopyButton, Skeleton } from "../components/ui.js";
+import { html, Icon, Seg, Switch, Sheet, CopyButton, Skeleton, MenuButton } from "../components/ui.js";
 import { AccountButton } from "./sidebar.js";
 import { PickModel, shortModel } from "../components/model-picker.js";
 import { KeyForm, lineOptions } from "./onboarding.js";
@@ -95,6 +95,33 @@ function FontInput({ id, value, onChange, placeholder, suggest, fallback, label 
       onInput=${(e) => { setV(e.target.value); onChange(e.target.value); }}
       onChange=${() => saved()} />
     <datalist id=${`${id}-list`}>${(fonts && fonts.length ? fonts : suggest).map((f) => html`<option key=${f} value=${f} />`)}</datalist>`;
+}
+
+// 联网搜索的接口：自动 = 免费搜索，不用 Key
+const SEARCH_OPTIONS = () => [
+  ["auto", t("settings.rows.webSearch.auto")],
+  ["tavily", "Tavily"],
+  ["exa", "Exa"],
+  ["bocha", t("settings.rows.webSearch.bocha")],
+  ["zhipu", t("settings.rows.webSearch.zhipu")],
+  ["searxng", "SearXNG"],
+];
+
+/** 填 Key 或地址：回车或离开输入框时保存。Key 输入框总是空的（服务端只回末 4 位，显示在占位里），地址照原样显示 */
+function SaveInput({ id, value = "", secret, label, placeholder, onSave }) {
+  const ref = useRef(null);
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    if (document.activeElement !== ref.current) setV(value);
+  }, [value]);
+  const commit = () => {
+    const x = v.trim();
+    if (secret ? x : x !== value) onSave(x);
+    if (secret) setV("");
+  };
+  return html`<input ref=${ref} id=${id} class="field mono key-in" type=${secret ? "password" : "url"} autocomplete="off" spellcheck="false"
+    aria-label=${label} placeholder=${placeholder} value=${v} onInput=${(e) => setV(e.target.value)} onBlur=${commit}
+    onKeyDown=${(e) => e.key === "Enter" && (e.preventDefault(), e.currentTarget.blur())} />`;
 }
 
 /** 外观分页顶部的预览：一问一答 + 一行代码，跟着字体大小、字体、代码字体和代码换行实时变 */
@@ -235,6 +262,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
         saved();
       })
       .catch(failed);
+  const putSearch = (patch) => put({ webSearch: patch }, { webSearch: { ...s.webSearch, ...(patch.provider ? { provider: patch.provider } : {}) } });
   const desktop = !!(s && s.desktop);
   const pickFont = (v) => {
     setPrefs({ font: v });
@@ -374,6 +402,17 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       { tab: "privacy", id: "sandbox", name: t("settings.rows.sandbox.name"), sub: t("settings.rows.sandbox.sub"), ctl: null, keys: t("settings.rows.sandbox.keys") },
       { tab: "privacy", id: "screens", name: t("settings.rows.screens.name"), sub: t("settings.rows.screens.sub"), ctl: null, keys: t("settings.rows.screens.keys") },
 
+      { tab: "network", id: "web-search", name: t("settings.rows.webSearch.name"), sub: t("settings.rows.webSearch.sub"), keys: t("settings.rows.webSearch.keys"),
+        ctl: html`<${MenuButton} label=${t("settings.rows.webSearch.name")} value=${s.webSearch.provider} width=${200} options=${SEARCH_OPTIONS()} onChange=${(v) => putSearch({ provider: v })} />` },
+      s.webSearch.provider === "searxng" && { tab: "network", id: "web-search-url", name: t("settings.rows.webSearchUrl.name"), keys: t("settings.rows.webSearchUrl.keys"),
+        ctl: html`<${SaveInput} id="web-search-url-in" value=${s.webSearch.url} label=${t("settings.rows.webSearchUrl.name")} placeholder="https://searx.example.org" onSave=${(url) => putSearch({ url })} />` },
+      s.webSearch.provider !== "auto" && s.webSearch.provider !== "searxng" && (() => {
+        const ws = s.webSearch;
+        const name = t("settings.rows.webSearchKey.name", { provider: SEARCH_OPTIONS().find(([v]) => v === ws.provider)[1] });
+        return { tab: "network", id: "web-search-key", name, sub: ws.keyRejected ? t("settings.rows.webSearchKey.rejected") : "", keys: t("settings.rows.webSearchKey.keys"),
+          ctl: html`<${SaveInput} key=${ws.provider} id="web-search-key-in" secret label=${name} placeholder=${ws.keyTail ? `••••${ws.keyTail}` : t("settings.rows.webSearchKey.placeholder")} onSave=${(key) => putSearch({ key })} />
+            ${ws.keyTail && html`<button type="button" class="text danger" onClick=${() => putSearch({ key: "" })}>${t("settings.rows.webSearchKey.remove")}</button>`}` };
+      })(),
       { tab: "network", id: "listen", name: t("settings.rows.listen.name"), sub: t("settings.rows.listen.sub"), keys: t("settings.rows.listen.keys"),
         ctl: html`<span class="val">${s.listen.host}:${s.listen.port}</span><${CopyButton} text=${`http://${s.listen.host === "0.0.0.0" ? "127.0.0.1" : s.listen.host}:${s.listen.port}/`} label=${t("settings.rows.listen.copy")} />` },
 

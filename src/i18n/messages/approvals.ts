@@ -21,6 +21,7 @@ export const zh = {
   taskHintOptions: "（回复编号{multi}，或引用这条消息回答）",
   taskHintMulti: "，可多选",
   taskHintQuote: "（引用这条消息回答）",
+  taskDefault: "不回复就按{answer}做",
   allowOnce: "允许（仅本次）",
   deny: "拒绝",
 } satisfies Catalog;
@@ -45,6 +46,7 @@ export const en: Catalog<typeof zh> = {
   taskHintOptions: "(reply with a number{multi}, or quote this message to answer)",
   taskHintMulti: "; you can pick several",
   taskHintQuote: "(quote this message to answer)",
+  taskDefault: "If you don't reply, it goes with {answer}",
   allowOnce: "Allow (once)",
   deny: "Deny",
 };

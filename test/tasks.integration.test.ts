@@ -7,6 +7,8 @@
  * 另外：引用回答、中间的普通聊天不被当成回答；任务会话里的审批推到同一个微信会话（带任务名），y 编号批准后接着做。
  * 3e 退出演示：模型每次请求报的用量按（mock 的）Modelflare 价格目录估算，任务花到 $1 停下，微信和「需要你」里问
  * 「已用约 $1.00，再给 $1 继续？」，在桌面上点继续后同一个会话接着做完。
+ * 问了还接着做：任务问一个有默认回答的问题（马上推到微信，带「不回复就按中文做」）、接着跑命令；用户回编号，回答并进在跑的这一轮；
+ * 没人回答就按默认做完，提问从「需要你」里撤掉，之后引用那条提问回答，任务接着做。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -78,6 +80,26 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     // 用户引用结果追加的一句（不经聊天代理，直接到任务）
     const more = /^\[用户追加\]\n(.+)$/.exec(user);
     if (more) return report(`FOLLOWED-${tag}：${more[1]}`);
+    // ASKD / ASKL：先问一个有默认回答的问题，接着跑一条命令（ASKD 6 秒，等用户回答；ASKL 2 秒，没人回答），
+    // 做完时有回答就按回答，没有就按默认；之后又来了回答（引用撤回的提问）就按它改
+    if (tag.startsWith("ASKD") || tag.startsWith("ASKL")) {
+      const tc = messages.flatMap((m: any) => (m.role === "assistant" ? (m.tool_calls ?? []) : []));
+      const names = tc.map((c: any) => String(c.function?.name ?? ""));
+      const lastArgs = (() => {
+        try {
+          return JSON.parse(tc.at(-1)?.function?.arguments ?? "{}");
+        } catch {
+          return {};
+        }
+      })();
+      if (messages.at(-1)?.role === "tool" && names.at(-1) === "task_report" && lastArgs.state === "done") return { text: "已报告" };
+      if (!names.includes("task_report")) return { tool: { name: "task_report", args: { state: "needs_you", summary: "先写正文，差语言", question: "中文还是英文？", options: ["中文", "英文"], default: "中文" } } };
+      if (!names.includes("bash")) return { tool: { name: "bash", args: { description: "draft", command: `sleep ${tag.startsWith("ASKD") ? 6 : 2} && echo drafted` } } };
+      if (messages.at(-1)?.role === "tool" && names.at(-1) !== "bash") return { text: "继续" };
+      // 并进来的回答可能被 DSH 包了一层：不锚定开头结尾
+      const ans = all.map((m) => /\[用户回答了你[^\]]*\]\s*问题：[^\n]*\n回答：([^\n<]+)/.exec(m.text)?.[1]?.trim()).filter(Boolean).at(-1);
+      return { tool: { name: "task_report", args: { state: "done", summary: "写好了", message: ans ? `ANSWERED-${tag}：用${ans}写好了。` : `DEFAULTED-${tag}：按中文写好了，要英文的话引用这条说一声。` } } };
+    }
     // ASK：先问用户（needs_you），回答作为下一条输入回来，再按回答做完
     if (tag.startsWith("ASK")) {
       const ans = /^\[用户回答了你的问题\][\s\S]*回答：(.+)$/.exec(user);
@@ -312,6 +334,52 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("backgrou
     await waitFor(() => stage("ASKW") === "ready");
     expect(calls.some((c) => !c.task && c.users.some((u) => u.includes("英文") && u.includes(">")))).toBe(false);
     expect((await api(`/tasks/${t.id}`)).runs.map((r: any) => r.cause)).toEqual(["launch", "answer"]);
+  }, 180_000);
+
+  it("a question with a default is pushed right away and the task keeps working; a bare number answers it and reaches the running turn", async () => {
+    const t = await research("ASKD1");
+    await waitFor(() => sentTo("❓「调研 ASKD1」").length === 1);
+    expect(sentTo("❓「调研 ASKD1」")[0].text).toBe("❓「调研 ASKD1」想问你：中文还是英文？\n1. 中文\n2. 英文\n不回复就按中文做\n（回复编号，或引用这条消息回答）");
+    // 推出去的时候任务还在跑（进行中，有个问题等你回答），「需要你」里有它和那一句
+    expect(stage("ASKD1")).toBe("working/asking");
+    const { items } = await api("/attention");
+    expect(items.map((x: any) => [x.kind, x.subject, x.status, x.line, x.note])).toEqual([["question", "调研 ASKD1", "等你回答", "中文还是英文？", "不回复就按中文做"]]);
+    const chats = calls.filter((c) => !c.task).length;
+    ilink.push(OWNER, "2");
+    await waitFor(() => sentTo("收到，「调研 ASKD1」继续。").length === 1);
+    await waitFor(() => sentTo("ANSWERED-ASKD1").length === 1);
+    expect(sentTo("ANSWERED-ASKD1")[0].text).toBe("ANSWERED-ASKD1：用英文写好了。引用这条消息可以继续问。");
+    await waitFor(() => stage("ASKD1") === "ready");
+    // 回答并进了在跑的那一轮：一个 run，不经聊天代理
+    expect((await api(`/tasks/${t.id}`)).runs.map((r: any) => [r.cause, r.outcome])).toEqual([["launch", "done"]]);
+    expect(calls.filter((c) => !c.task).length).toBe(chats);
+    expect((await api("/attention")).items).toEqual([]);
+  }, 180_000);
+
+  it("a task that finishes before the answer goes with the default and withdraws its question; quoting the question later resumes it", async () => {
+    const t = await research("ASKL1");
+    await waitFor(() => sentTo("❓「调研 ASKL1」").length === 1);
+    const asked = sentTo("❓「调研 ASKL1」")[0].text;
+    await waitFor(() => sentTo("DEFAULTED-ASKL1").length === 1);
+    await waitFor(() => stage("ASKL1") === "ready");
+    expect(sentTo("DEFAULTED-ASKL1")[0].text).toBe("DEFAULTED-ASKL1：按中文写好了，要英文的话引用这条说一声。引用这条消息可以继续问。");
+    // 提问撤回了：「需要你」是空的，审批中心里它作废了
+    expect((await api("/attention")).items).toEqual([]);
+    expect(app.store.listApprovals({ taskId: t.id })[0]).toMatchObject({ status: "cancelled", decidedBy: "default" });
+    // 引用那条提问回答：交给任务，同一个任务接着做
+    ilink.pushItems(OWNER, [{ type: 1, text_item: { text: "2" }, ref_msg: { title: "", message_item: { type: 1, text_item: { text: asked } } } }]);
+    await waitFor(() => sentTo("收到，「调研 ASKL1」继续。").length === 1);
+    await waitFor(() => sentTo("ANSWERED-ASKL1").length === 1);
+    expect(sentTo("ANSWERED-ASKL1")[0].text).toBe("ANSWERED-ASKL1：用英文写好了。引用这条消息可以继续问。");
+    await waitFor(() => stage("ASKL1") === "ready");
+    expect((await api(`/tasks/${t.id}`)).runs.map((r: any) => [r.cause, r.outcome])).toEqual([
+      ["launch", "done"],
+      ["answer", "done"],
+    ]);
+    // 撤回之后光回编号是普通聊天（聊天的输入前面带着任务的便条）
+    ilink.push(OWNER, "1");
+    await waitFor(() => calls.some((c) => !c.task && /(^|\n)1$/.test(c.users.at(-1) ?? "")));
+    expect(app.store.listApprovals({ taskId: t.id }).map((a) => a.status)).toEqual(["cancelled"]);
   }, 180_000);
 
   it("an approval from a task session lands on the task's WeChat chat, named after the task; 'y CODE' lets the task continue", async () => {

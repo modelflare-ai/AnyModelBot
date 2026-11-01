@@ -136,6 +136,7 @@ export function PromptCard({ requestId, fallback }) {
     ${qs.map((q) => html`<div class="q-block">
       <div class="q">${q.question}</div>
       ${q.detail && html`<div class="q-detail">${q.detail}</div>`}
+      ${row.note && html`<div class="q-detail">${row.note}</div>`}
       ${(q.options || []).length > 0 && html`<div class="opts" role=${q.multiSelect ? "group" : "radiogroup"}>
         ${q.options.map((o, i) => html`<button type="button" class=${`opt${(picked[q.id] || []).includes(o.label) ? " picked" : ""}`} disabled=${!pending || busy}
           role=${q.multiSelect ? "checkbox" : "radio"} aria-checked=${(picked[q.id] || []).includes(o.label)} onClick=${() => choose(q, o.label)}>

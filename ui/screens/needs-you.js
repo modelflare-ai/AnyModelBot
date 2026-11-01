@@ -1,4 +1,5 @@
 // 需要你（3b）：所有机器人里在等你的事，一行一件，操作就在行里（回答、批准、重试、加预算继续…）；点标题那一行展开详情。
+// 任务问的有默认回答的问题（任务接着在做）：问题下面一句不回复会怎样（「不回复就按中文做」）。
 // 没事时侧栏没有这一行，直接打开这一页只有一句「没有需要你处理的事」。状态是"点 + 文字"：黄 = 等你，红 = 失败 / 登录过期。
 // 预算（3e）：任务预算用完是一个提问（「已用约 $1.00，再给 $1 继续？」继续 / 停止）；规则本月预算用完可以继续；
 // 机器人的预算留给聊天、后台工作停着的，去机器人设置调整预算。
@@ -66,6 +67,7 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenB
       ? html`<button type="button" class="need-head" aria-expanded=${expands ? open : undefined} title=${expands ? (open ? t("needs.collapse") : item.ruleId ? t("needs.viewRule") : t("needs.viewTask")) : t("needs.openChat")} onClick=${head}>${headIn}</button>`
       : html`<div class="need-head">${headIn}</div>`}
     ${item.line && html`<div class=${`need-line selectable${item.kind === "approval" ? " mono" : ""}`}>${item.line}</div>`}
+    ${item.note && html`<div class="need-note">${item.note}</div>`}
     <div class="need-actions">
       ${opts && opts.map((o, i) => html`<${Button} loading=${busy === `o${i}`} disabled=${!!busy} onClick=${() => act("answer", { text: String(i + 1) }, `o${i}`)}>${o.label}<//>`)}
       ${item.kind === "question" && !writing && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => setWriting(true)}>${t("needs.reply")}</button>`}
@@ -93,7 +95,7 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenB
         }} />
       <${Button} variant="primary" loading=${busy === "text"} disabled=${!text.trim()} onClick=${send}>${t("needs.send")}<//>
     </div>`}
-    ${open && item.taskId && html`<div class="need-detail"><${TaskDetail} task=${{ id: item.taskId, title: item.subject, stage: { group: "needs" } }} /></div>`}
+    ${open && item.taskId && html`<div class="need-detail"><${TaskDetail} task=${{ id: item.taskId, title: item.subject, stage: { group: "needs" } }} question=${false} /></div>`}
     ${open && item.ruleId && html`<div class="need-detail"><${RuleOpen} id=${item.ruleId} /></div>`}
   </div>`;
 }

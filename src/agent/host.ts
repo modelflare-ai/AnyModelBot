@@ -1678,10 +1678,13 @@ exec "$REAL" "$@"
     return await h.client.prompt(o.sessionId, [{ type: "text", text: o.text }]);
   }
 
-  /** 并进任务正在进行的一轮（agent.steer，id 是我们的输入 id，会话里的用户消息用同一个 id）；会话空闲时返回 false */
+  /**
+   * 并进任务正在进行的一轮（agent.steer，messageId 是我们的输入 id，会话里的用户消息用同一个 id：任务服务按它记下"收下了"）；
+   * 会话空闲时返回 false。不能叫 id：那是指令自己的 id（control.ts 的 send 会盖掉它）
+   */
   async steerTask(sessionId: string, id: string, text: string): Promise<boolean> {
     if (!this.control.connected) return false;
-    const r = await this.control.send<{ accepted?: boolean }>("steer", { sessionId, id, text, images: [] }, 15_000);
+    const r = await this.control.send<{ accepted?: boolean }>("steer", { sessionId, messageId: id, text, images: [] }, 15_000);
     return !!r.accepted;
   }
 
@@ -1826,7 +1829,7 @@ exec "$REAL" "$@"
     const images = this.imageInput && acceptsImages(t.model) ? (msg.images ?? []) : [];
     for (let i = 0; i < 2 && this.control.connected; i++) {
       try {
-        const r = await this.control.send<{ accepted?: boolean; reason?: string }>("steer", { sessionId: t.sessionId, id: msg.id, text: msg.text, images }, 15_000);
+        const r = await this.control.send<{ accepted?: boolean; reason?: string }>("steer", { sessionId: t.sessionId, messageId: msg.id, text: msg.text, images }, 15_000);
         if (!r.accepted) log.info("steer refused; the message waits for the next turn", { bot: this.o.botId, reason: r.reason });
         return !!r.accepted;
       } catch (e) {

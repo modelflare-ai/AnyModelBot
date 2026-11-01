@@ -17,6 +17,7 @@ export default {
   costOf: "About {spent} of {budget}",
   costShort: "About {spent}",
   origin: "From",
+  question: "Question",
   originLine: "{where} · {when} “{text}”",
   openConv: "Open the conversation",
   budget: "Budget",

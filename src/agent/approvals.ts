@@ -16,6 +16,8 @@ export interface QuestionItem {
   header?: string;
   options?: Array<{ label: string; description?: string }>;
   multiSelect?: boolean;
+  /** 后台任务的提问：用户没回答时任务按它做（任务接着做，不等）；有选项时是其中一个 */
+  default?: string;
 }
 export interface QuestionAnswer {
   answers: Array<{ id: string; selected: string[]; custom?: string }>;
@@ -339,6 +341,17 @@ export function questionsOf(row: ApprovalRow): QuestionItem[] {
   return row.kind === "question" ? safeJson<QuestionItem[]>(row.payload, []) : [];
 }
 
+/** 任务提问的默认回答（有就说明任务不等：没回答就按它做） */
+export function defaultOf(row: ApprovalRow): string | undefined {
+  return questionsOf(row)[0]?.default || undefined;
+}
+
+/** 有默认回答的提问那一句：「不回复就按中文做」（「需要你」、推出去的提问、网页的卡片） */
+export function defaultLine(row: ApprovalRow): string | undefined {
+  const d = defaultOf(row);
+  return d ? t("approvals.taskDefault", { answer: d }) : undefined;
+}
+
 /** 只是选项编号（多选可以几个）或某个选项的原文：光回这个才算回答"最后一条消息"的那个提问 */
 export function isOptionReply(questions: QuestionItem[], text: string): boolean {
   const q = questions.length === 1 ? questions[0] : undefined;
@@ -403,7 +416,8 @@ export function promptText(row: ApprovalRow): string {
 
 /**
  * 后台任务推给用户的提示（设计第 6 节的消息样式）：
- * 提问「❓「GPU 价格调研」想问你：报告用中文还是英文？\n1. 中文\n2. 英文\n（回复编号，或引用这条消息回答）」；
+ * 提问「❓「GPU 价格调研」想问你：报告用中文还是英文？\n1. 中文\n2. 英文\n（回复编号，或引用这条消息回答）」，
+ * 有默认回答的在选项后面多一行「不回复就按中文做」；
  * 审批「需批准（任务「清理旧构建」）：`rm -rf build/` — 回复 y 4821 / n 4821」。
  */
 export function taskPromptText(row: ApprovalRow, title: string): string {
@@ -414,7 +428,8 @@ export function taskPromptText(row: ApprovalRow, title: string): string {
   const q = questionsOf(row)[0];
   const opts = (q?.options ?? []).map((o, i) => `${i + 1}. ${o.label}`);
   const hint = opts.length ? t("approvals.taskHintOptions", { multi: q?.multiSelect ? t("approvals.taskHintMulti") : "" }) : t("approvals.taskHintQuote");
-  return [t("approvals.taskQuestion", { title, question: q?.question ?? row.detail }), ...opts, hint].join("\n");
+  const fallback = defaultLine(row);
+  return [t("approvals.taskQuestion", { title, question: q?.question ?? row.detail }), ...opts, ...(fallback ? [fallback] : []), hint].join("\n");
 }
 
 /** 卡片渠道（飞书）的按钮：审批是允许 / 拒绝；单选的提问是每个选项一个按钮 */

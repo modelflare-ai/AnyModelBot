@@ -9,8 +9,10 @@
 //                                            config read this map (as DSH's installModelSelection does)
 //   providers {providers}                   replace llm-pi-ai's (volatile) provider profiles, so a model the
 //                                            launch patch did not list becomes routable without a restart
-//   steer     {sessionId, id, text, images} deliver a user message into the running turn (agent.steer: the
-//                                            model sees it at its next step); refused when the agent is idle
+//   steer     {sessionId, messageId, text, images} deliver a user message into the running turn (agent.steer:
+//                                            the model sees it at its next step) under the host's message id (the
+//                                            session's user/message carries it; the command's own id is the
+//                                            envelope's); refused when the agent is idle
 //   cancel    {sessionId}                   cancel just this session's turn (agent.cancel), its subagents
 //                                            and the shell jobs the turn started
 //   idle      {}                            how many agents are busy (not idle, or input queued) and how many
@@ -214,7 +216,9 @@ export function apply(ctx) {
       await updateProviders(providers)
       return {}
     },
-    async steer({ sessionId, id, text, images }) {
+    async steer({ sessionId, messageId, text, images }) {
+      const id = String(messageId ?? '')
+      if (!id) return { accepted: false, reason: 'no message id' }
       const agent = agents()?.get(String(sessionId))
       if (!agent) return { accepted: false, reason: 'no agent' }
       if (delivered.has(id) || pendingIds(agent).has(id)) return { accepted: true, duplicate: true }

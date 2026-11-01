@@ -1,6 +1,6 @@
 # Background tasks and proactive rules (Phase 3 design)
 
-Status: **3a–3f are built**: tasks, questions and needs-you, delivery, rules with observe mode, cost controls, and the tasks view with retention, cleanup and Markdown export (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`, `ui/components/tasks.js`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`, `test/cost.*`, `test/retention.*`, `test/tasks-view.*`). Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
+Status: **3a–3f are built**, plus questions that don't block (a task asks right away and keeps working while a question with a default waits, see [Questions](#questions-ask-early-keep-working)): tasks, questions and needs-you, delivery, rules with observe mode, cost controls, and the tasks view with retention, cleanup and Markdown export (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`, `ui/components/tasks.js`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`, `test/cost.*`, `test/retention.*`, `test/tasks-view.*`). Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
 Feasibility evidence is in [Appendix A](#appendix-a-feasibility-answers-with-evidence). The spike that produced it is `scripts/spikes/p3-tasks/`.
 
 ## Summary
@@ -17,6 +17,7 @@ Key decisions:
 - **The host is the source of truth.** It owns the tasks, the schedule, delivery and the budget. DSH runs the sessions. One in-child plugin, `amb-tasks.mjs`, decorates the task sessions: it restricts their tools, adds a prompt section and a `task_report` tool, and reports when a session has settled.
 - **Scheduling stays in the host.** `@deepseek-ai/dsh-schedule` can't be activated under our `sdk` profile. Even if it could, it would fire into chat sessions that nobody is watching.
 - **The human lane never waits.** Chat turns never take a task slot. Tasks run in separate DSH sessions in the same process; the spike measured a 63 ms chat reply while two 4-second task turns ran. When a person answers a task's question, the task wakes on a reserved slot.
+- **A task asks as soon as it needs to know, and keeps working when it can.** A question with a reasonable default doesn't stop the task: it goes on with the work that doesn't depend on the answer and, if nobody answered by the time it finishes, uses the default, says so in its result and withdraws the question. Only a question nobody but the user can decide (paying, deleting, choosing an account) makes the task wait. See [Questions](#questions-ask-early-keep-working).
 - **We push only three things:** a result the user can use, a decision the user must make, and a failure. WeChat may hold even these: iLink allows sends only within 24 h of the user's last message, and at most 10 sends per inbound message. See [WeChat](#wechat-the-hard-constraint).
 - **Depends on P1** (the host→child control channel with per-session `steer`, `cancel` and model). Without per-session cancel, stopping one task means killing the bot's DSH process, which also ends the chat and every other task.
 
@@ -60,7 +61,7 @@ flowchart LR
 | **Task** | A unit of authorized background work. It has its own DSH session (`task-<id>`) and folder (`tasks/<slug>-<id6>/`). | It is created only by a person's request, either through the chat agent's `task_start` or the "new task" button. It holds its origin conversation, a snapshot of the permission preset, the model and the budget. It ends only when it is **done**, when a **person stops** it, or when it fails and is archived. A follow-up from a person can resume a done task. It defines its own stage instead of following the DSH session (see [stage table](#2-states-and-transitions)). | Owns the work, the result and the questions. |
 | **Rule** | A standing instruction in the user's own words, plus a schedule and a mode: `off`, `observe` or `act`. | It is created in `observe` mode, except for a fixed reminder (see [observe](#5-observe-mode)). It never acts beyond its mode or its permission cap. It records its `version`, and each run records which version it ran. Three failed runs in a row, or its monthly budget, pause it. | Proactive work with a mandate the user wrote. |
 | **Run** | One stretch of work in a session: a task's launch, an answer, a retry or a recovery, or one firing of a rule. | It goes `queued`, `running`, `settling`, then `ended` with an outcome. It holds a slot while running or settling. It stores its activity steps and its cost. A rule gets a fresh session for each run. | The unit of audit, cost and recovery (superagent's Assignment). |
-| **Report** | The structured state a Run reports through `task_report`. Its state is `progress`, `needs_you`, `done` or `failed`, with a `message` (user-facing, at most 300 characters), a `question` (one question with options), `summary` (internal) and `files`. | The latest Report is "what the task last said". A `progress` Report is internal and never pushed. In observe mode, `message` is recorded as "would have said". | We classify needs-you from structured fields, never from free text. |
+| **Report** | The structured state a Run reports through `task_report`. Its state is `progress`, `needs_you`, `done` or `failed`, with a `message` (user-facing, at most 300 characters), a `question` (one question with options and an optional `default`, one of the options), `summary` (internal) and `files`. A `needs_you` with a default is asked but doesn't end the run. | The latest Report is "what the task last said". A `progress` Report is internal and never pushed. In observe mode, `message` is recorded as "would have said". | We classify needs-you from structured fields, never from free text. |
 | **Attention** | One thing that waits for a person. Some are stored: a question, or an approval (the existing `approvals` table, extended). Others are derived from state: a failed task, a rule that keeps failing, an undelivered message, an expired channel login, a stuck turn, a budget that ran out. | It is shown once, in "needs you". It is pushed only when the [push rules](#what-is-pushed-and-only-that) allow. It goes away by itself when its cause is gone. | It answers "does anything need me now?" |
 
 **Rejected concepts.** Superagent's model is shaped for a team on GitHub and Feishu. This table lists what we leave out.
@@ -82,21 +83,22 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | 1 | `stopped` | A person stopped it | 已停止 | ended |
 | 2 | `needs-you/delivery` | Its latest result, question or failure message has not reached the conversation: it failed 3 times, or it is held because the channel needs the person (WeChat window closed or no quota) | 未送达 | needs you |
-| 3 | `needs-you/answer` | An open question or approval | 等你回答 · 等你批准 | needs you |
+| 3 | `needs-you/answer` | An open approval, or an open question without a default | 等你回答 · 等你批准 | needs you |
 | 4 | `needs-you/budget` | A run stopped at the task budget | 预算用完 | needs you |
 | 5 | `failed` | The latest Report is `failed` or the launch failed, and no person's input since | 失败 | needs you |
 | 6 | `ready` | The latest Report is `done`, and no input since | 已完成 | ended (resumable) |
 | 7 | `working/queued` | Inputs wait, but no run holds a slot | 排队中 | working |
-| 8 | `working` | Otherwise | 进行中 | working |
+| 8 | `working/asking` | A run is running or settling, and a question with a default waits for an answer | 进行中，有个问题等你回答 | working |
+| 9 | `working` | Otherwise | 进行中 | working |
 
-A person's input after rows 3–6 (an answer, a follow-up, "retry" or "continue") starts a new Run. The task then moves to row 7 or 8. Automatic inputs, such as a job wake-up or a recovery after restart, never lift rows 2–5. Recovery applies only to runs that were running.
+A person's input after rows 3–6 (an answer, a follow-up, "retry" or "continue") starts a new Run. The task then moves to row 7, 8 or 9. An answer to a question with a default usually reaches a running Run (row 8) and is steered into it, like a follow-up. Automatic inputs, such as a job wake-up or a recovery after restart, never lift rows 2–5. Recovery applies only to runs that were running.
 
 **Run.** `queued → running ⇄ settling → ended`.
 
 | Outcome | Meaning |
 | --- | --- |
 | `done` | Ended with a `done` Report, with or without a message |
-| `needs_you` | Ended with a question; the task waits |
+| `needs_you` | Ended with a question that has no default; the task waits |
 | `failed` | Ended with a `failed` Report, an error after 3 transient retries, or no Report after one nudge |
 | `budget` | Cancelled at the run or task budget |
 | `stopped` | A person stopped the task |
@@ -108,7 +110,8 @@ A person's input after rows 3–6 (an answer, a follow-up, "retry" or "continue"
 ```mermaid
 stateDiagram-v2
   [*] --> working: task_start
-  working --> needs_you: Report needs_you / approval
+  working --> needs_you: Report needs_you (no default) / approval
+  working --> working: Report needs_you with default (asked, keeps working)
   working --> ready: Report done (delivered)
   working --> failed: Report failed / errors
   working --> needs_you: budget reached
@@ -186,7 +189,7 @@ A person's message reaches a task only by explicit reference:
 
 A follow-up while the task is working is **steered** into it (P1) and lands at its next step. A follow-up to a done or failed task resumes it under the same task. A stopped task can't be continued.
 
-As built: a WeChat quote of a task's pushed result or failure line, or a Feishu message in the reply chain of the task's request message (results are replied under it), goes straight to the task with a one-line acknowledgement (「收到，「GPU 价格调研」继续。」). It doesn't wait for the chat agent to notice. A quote of a digest that names several tasks stays ordinary chat. A pushed result ends with 「引用这条消息可以继续问。」 on WeChat and 「回复这条消息可以继续问。」 on Feishu, and still fits 300 characters. So "详细说说" on a quoted result is answered by the task itself.
+As built: a WeChat quote of a task's pushed result or failure line, or a Feishu message in the reply chain of the task's request message (results are replied under it), goes straight to the task with a one-line acknowledgement (「收到，「GPU 价格调研」继续。」). It doesn't wait for the chat agent to notice. A quote of a digest that names several tasks stays ordinary chat. A quote of a task's question that was withdrawn because the task finished with its default (or failed) goes to the task the same way, as a late answer: 「[用户回答了你之前问的问题（你已经按「中文」做完了）] 问题：… 回答：…」, and the task resumes. A Feishu card button on such a question does the same. A pushed result ends with 「引用这条消息可以继续问。」 on WeChat and 「回复这条消息可以继续问。」 on Feishu, and still fits 300 characters. So "详细说说" on a quoted result is answered by the task itself.
 
 ### Concurrency and the reserved human lane
 
@@ -204,7 +207,7 @@ Settling lasts at most 30 minutes after a turn ends. After that, its jobs are ki
 ### Stop, steer and model (dependency: P1)
 
 - **Stop** uses P1's `cancel(sessionId)`. The task's jobs are killed and its subagents released (superagent's `stopBackground`), and its tools are guarded. Today's only stop is `AgentHost.closeHarness()`, which kills chat and every task of the bot.
-- **Steer** uses P1's `steer(sessionId, text)` for follow-ups.
+- **Steer** uses P1's `steer(sessionId, text)` for follow-ups and for answers to a question with a default. The steered message carries the host's input id (`messageId` on the control op, because the command envelope's `id` is its own), so the host sees the session take it; until then the Run doesn't end.
 - **Model:** a task keeps the model it started with (P1's per-session model). Without it, `AgentHost.ensure()` would restart DSH on a chat model switch, and it already waits for `active === 0`. Task runs must count as active.
 
 ### Restart recovery
@@ -222,7 +225,7 @@ The spike shows that a restart keeps some things and loses others (A.5):
 The host therefore stores everything it owes a session, and recovers like this:
 
 1. **At start, and on every DSH child exit:** each Run in `running` or `settling` ends `interrupted`.
-2. **For each such task:** a `recover` Run is queued, oldest task first and subject to slots. Tasks that wait for a person (stages 2–5) stay as they were, with one exception. A task blocked on an approval lost that approval with its turn, so it is recovered, and the agent asks again if it still needs to.
+2. **For each such task:** a `recover` Run is queued, oldest task first and subject to slots. Tasks that wait for a person (stages 2–5) stay as they were, with one exception. A task blocked on an approval lost that approval with its turn, so it is recovered, and the agent asks again if it still needs to. A Run that had already asked a question without a default (it was settling, or finishing its turn) ends `needs_you` instead of being recovered; its recovery note waits as an input and goes to the session with the answer. Questions are not blocking approvals, so they survive the restart; an open question with a default stays open and its answer reaches the `recover` Run.
 3. **Inputs:** an input the session never took (no `user/message` event with its message id was seen) is delivered again. An input it took is never delivered again.
 4. **The recovery note** is the first message of the new Run. It is model-facing and in English, like our skills:
 
@@ -305,7 +308,7 @@ Nothing below is ever pushed. It lives in the tasks view, the bot's info panel a
 | Push | When | Never |
 | --- | --- | --- |
 | **A result the user can use** | A task's `done` Report; a rule hit in act mode | Progress, "still working", partial drafts, retries, recovery after restart |
-| **A decision the user must make** | A task question or an approval, one at a time per conversation | A question the agent could answer with a reasonable default; repeating an unchanged question |
+| **A decision the user must make** | A task question (as soon as the task asks, with or without a default) or an approval, one at a time per conversation | A question the agent could decide itself; repeating an unchanged question |
 | **A failure that needs them** | A task failed after automatic retries, or a rule paused after 3 failures | A one-off network error; a failure the agent can work around |
 
 The acknowledgement of a new task is the chat reply itself, so it costs no extra message. Observe mode pushes nothing.
@@ -319,6 +322,8 @@ Every pushed message is one line, with an optional second line only for a blocke
 | Ack (part of the chat reply) | 好，后台开始调研三家云的 GPU 价格，好了告诉你，你可以继续聊别的。 | same text | same text, plus a task chip 「后台任务 · GPU 价格调研 · 进行中 ›」 |
 | Result | GPU 价格调研好了：A100 包月最便宜的是 X 云，约 ¥7,800，报告已发给你。引用这条消息可以继续问。 | same line; buttons [详情] [继续改] | message in the conversation; the chip turns 已完成; OS notification only if the window isn't focused |
 | Question | ❓「GPU 价格调研」想问你：报告用中文还是英文？<br>1. 中文<br>2. 英文<br>（回复编号，或引用这条消息回答） | question card with option buttons, as for `ask_user_question` today | the same card in the conversation and in "needs you" |
+| Question with a default (the task keeps working) | ❓「GPU 价格调研」想问你：报告用中文还是英文？<br>1. 中文<br>2. 英文<br>不回复就按中文做<br>（回复编号，或引用这条消息回答） | the same card, with 不回复就按中文做 under the question | the card and the needs-you row carry 不回复就按中文做; the task row and chip read 进行中，有个问题等你回答 |
+| Result after going with the default | 报告写好了，按中文做的，要英文的话引用这条说一声。引用这条消息可以继续问。 | same line | message in the conversation |
 | Approval | 需批准（任务「清理旧构建」）：`rm -rf build/` — 回复 y 4821 / n 4821 | the existing approval card, titled with the task | "needs you" row with [批准一次] [拒绝] |
 | Failure | ⚠️「GPU 价格调研」没做完：X 云的价格页要登录，我进不去。发我一个能打开的链接，或者回复「停止」。 | same, with buttons [重试] [停止] | "needs you" row |
 | Rule hit | X 降价了：现在 ¥199（昨天 ¥259）。 | same | message, with the rule named in small text |
@@ -337,6 +342,19 @@ These rules apply to every pushed message. Replies within a user's active chat t
 - **Answering a task question.** On WeChat, a message is an answer only when it quotes the question, starts with its 4-digit code, or is a bare option number or label while the question is the bot's latest message. Anything else is ordinary chat. Today, any text answers a pending question (`ApprovalCenter.handleReply`). That is fine for a chat question with a turn waiting on it, but wrong for a task question that can wait for hours.
 - **Feishu:** reply in the thread of the request message when one exists. Results and questions are cards.
 - **Web/desktop:** an OS notification only for "needs you" items and for results the user asked for, only when the window isn't focused, and at most one per item. The tray badge is the needs-you count.
+
+### Questions: ask early, keep working
+
+As built (decided by the product owner after 3f). A question can wait for hours (quiet hours, the WeChat window), so a task asks as soon as it knows it needs to, and stops only when it must.
+
+- **Two kinds.** `task_report` `needs_you` takes an optional `default` (one of `options` when options are given; a number is read as that option).
+  - **With a default** (「报告用中文还是英文？」, default 中文): the host asks right away and the turn goes on. The tool result tells the agent to keep working on what doesn't depend on the answer. An answer reaches the running task at its next step, the same way as a follow-up (steered, or delivered as its next input while it settles). If the agent finishes first, it goes with the default, says so in its result (「按中文做了，要英文的话引用这条说一声」) and reports `done`; the host then withdraws the question everywhere: the ApprovalCenter row is cancelled (`decided_by = default`), so needs-you drops it, and a push that is still pending, scheduled or held is withdrawn. A push that was already sent can't be taken back: quoting it (WeChat) or tapping its card button (Feishu) later reaches the task as a late answer and resumes it; a bare number is ordinary chat.
+  - **Must decide** (no safe default: paying, deleting, choosing an account, anything irreversible): unchanged, the agent ends its turn and the Run ends `needs_you` once the session is quiet.
+- **Ask immediately.** Both kinds are created and pushed when `task_report` is called, not when the Run ends or settles. An answer that arrives while the Run still settles (background jobs) or while the host is checking whether it is quiet is delivered to the session as its next input; the Run doesn't end until the session took it.
+- **What else ends a question.** A Run that ends `done` or `failed` withdraws the task's open questions (a failed task asks again on retry); a stopped or archived task withdraws them as before. Asking the same question again replaces the open one. A `budget` or `interrupted` Run leaves them open.
+- **Stage.** A question with a default doesn't block: the task stays in the working group as `working/asking` (进行中，有个问题等你回答). The task detail shows the question, with 不回复就按中文做 under it; the needs-you row shows the question, its options and the same line; so do the pushed WeChat text and the Feishu card.
+- **Unchanged.** One open pushed question per conversation (a question with a default that was pushed holds the slot until it is answered or withdrawn); quiet hours, daily caps and the WeChat window apply as before; approvals and the budget question still block; rules have no `needs_you`.
+- **Prompt.** The task rules say: decide yourself when you can; with a reasonable default, ask as early as possible with `default` and keep doing only what doesn't depend on the answer; when only the user can decide, do the independent work first, then ask and end the turn.
 
 ### WeChat: the hard constraint
 
@@ -427,6 +445,7 @@ These use `ui/design/README.md`:
 ┌─────────────────────────────────────────────────────────────┐
 │ ● 小蓝 · GPU 价格调研 · 等你回答                      2 分钟前 │
 │   报告用中文还是英文？                                        │
+│   不回复就按中文做                                            │   only for a question with a default
 │   [中文] [英文] [回复…]                                       │
 │─────────────────────────────────────────────────────────────│
 │ ● 小蓝 · 清理旧构建 · 等你批准                        5 分钟前 │
@@ -456,6 +475,7 @@ Order: questions and approvals first (time-sensitive), then failures, then deliv
 进行中
 ┌─────────────────────────────────────────────────────────────┐
 │ ● GPU 价格调研            小蓝 · 12 分钟 · 约 $0.08          › │   green
+│ ● 竞品周报                进行中，有个问题等你回答 · 20 分钟   › │   green: asked, keeps working
 │ ● 季度报告 PPT            小蓝 · 等你回答                     › │   amber
 └─────────────────────────────────────────────────────────────┘
 规则
@@ -658,7 +678,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | `task_message` | chat | `{task, text}`: steer a working task or resume a done one |
 | `task_list` | chat | Open tasks and rules with their stage and latest line, read from the host without waking any task |
 | `rule_create` | chat | `{title, instruction, schedule, kind}` → a rule in observe mode, or in act mode for a fixed reminder |
-| `task_report` | task and rule | `{state: progress\|needs_you\|done\|failed, summary, message?, question?: {question, options?, multiSelect?}, files?, would?}` |
+| `task_report` | task and rule | `{state: progress\|needs_you\|done\|failed, summary, message?, question?, options?, default?, files?, would?}`; `question` may also be `{question, options?, multiSelect?, default?}`. With `default`, `needs_you` is asked and the run goes on |
 
 **Bridge** (child → host; the existing loopback with a per-launch token):
 
@@ -686,7 +706,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | Turn ends without a `task_report` | One nudge; then `failed` (「没有给出结果」) |
 | Task loops without progress | The run's time cap and budget stop it; needs you |
 | Job runs forever | Killed 30 minutes after the turn ended; the session is told at its next turn |
-| Approval or question never answered | Blocking approval: rejected at its TTL; the task fails with 「批准超时」. Task question: stays in needs-you; no reminders; the task is archived after 30 idle days and the question withdrawn (decision 9) |
+| Approval or question never answered | Blocking approval: rejected at its TTL; the task fails with 「批准超时」. Task question without a default: stays in needs-you; no reminders; the task is archived after 30 idle days and the question withdrawn (decision 9). Task question with a default: the task finishes with the default and the question is withdrawn |
 | Delivery fails (Feishu API, channel logged out) | Retries at 5 s doubling to 300 s; after 3 failures: needs-you `delivery`. Dropped only when the conversation no longer exists |
 | Feishu messages sent while the app is offline | The long connection doesn't re-push them (the SDK reconnects with no position; the platform only re-pushes events it delivered that weren't acked within 3 s). On start and on every reconnect the app reads each Feishu chat active in the last 7 days from history: messages from the last 24 h after the last one it saw, at most 20 per chat, through the normal inbound pipeline and dedupe. Without the history scope it says so once and carries on |
 | WeChat window closed or no quota | Held, piggybacked on the next inbound, shown in needs-you ([WeChat](#wechat-the-hard-constraint)) |
@@ -706,7 +726,8 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
   - slots, including the reserved person slot and priority order;
   - Report validation;
   - the recovery planner: which runs restart and which inputs are delivered again;
-  - `handleReply` routing for task questions (quote, code, bare number, ordinary chat).
+  - `handleReply` routing for task questions (quote, code, bare number, ordinary chat);
+  - questions asked right away: a question with a default keeps the run going, its answer is steered in, finishing first withdraws it (needs-you, ApprovalCenter, outbox) and a later quote resumes the task; a question without a default is pushed while the run settles and an answer then is delivered; restart keeps both kinds open.
 - **Integration against the real DSH and a mock model**, extending `test/agent.integration.test.ts` and `scripts/spikes/p3-tasks`:
   - a task gets its own folder and ends `done` with its result delivered;
   - question → answer → resume;

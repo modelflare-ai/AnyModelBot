@@ -6,7 +6,7 @@ import { BotAvatar, AvatarPicker, AppMark, BOT_CHARS, CHAR_KEYS, MAIN_CHAR } fro
 import { TEMPLATES } from "../screens/new-bot.js";
 import { NeedItem, NeedsRow } from "../screens/needs-you.js";
 import { RuleRow, RuleDetail } from "../components/rules.js";
-import { PausedLine, TaskGroup, TaskRow } from "../components/tasks.js";
+import { PausedLine, TaskChip, TaskGroup, TaskRow } from "../components/tasks.js";
 import { Markdown } from "../components/markdown.js";
 import { useStore, toast, saved, failed, confirmSheet } from "../lib/store.js";
 import { themeMode, setThemeMode } from "../lib/theme.js";
@@ -591,6 +591,9 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <div class="msg-row assistant"><div class="card"><div class="q-block"><div class="q">要用哪条线路？</div>
               <div class="opts"><button type="button" class="opt picked"><span class="letter">A</span><span>国内线路<span class="desc">延迟低</span></span></button>
               <button type="button" class="opt"><span class="letter">B</span><span>海外线路<span class="desc">模型更全</span></span></button></div></div></div></div>
+            <div class="msg-row assistant"><div class="card"><div class="meta"><span>「竞品周报」想问你</span></div><div class="q-block"><div class="q">报告用中文还是英文？</div><div class="q-detail">不回复就按中文做</div>
+              <div class="opts"><button type="button" class="opt"><span class="letter">A</span><span>中文</span></button>
+              <button type="button" class="opt"><span class="letter">B</span><span>英文</span></button></div></div></div></div>
             <div class="msg-row assistant"><div class="file-card"><${Icon} name="file" size="xl" /><div class="grow"><div class="fname">report.pdf</div><div class="fsub">已交付到机器人工作区</div></div></div></div>
           </div>
           <div class="composer"><textarea rows="1" placeholder="给「我的助手」发消息，/ 查看命令"></textarea>
@@ -607,7 +610,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <${NeedsRow} count=${3} onClick=${() => {}} /><${NeedsRow} count=${2} on onClick=${() => {}} /><${NeedsRow} count=${0} />
           </div>`}
         <//>
-        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天">
+        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天">
           ${() => html`<div class="list needs-list">${NEEDS.map((it) => html`<${NeedItem} item=${it} multiBot onAct=${async () => {}} />`)}</div>`}
         <//>
       <//>
@@ -631,10 +634,19 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
       <//>
 
       <${Section} id="tasks" title="任务" lead="信息面板的「任务」组就是一个机器人的全部任务和规则：进行中、等你的在前，规则其次，结束了的收在最后一行里，点开才列出来（留 30 天）。一个任务一行，点开是同一块里的详情：来自、最新进展、预算（可以改）、文件夹（大小、打开）、要清理时的日期和保留、每次运行折叠的处理过程。什么都没有时整组不画。">
-        <${Demo} title="「任务」组" note="TaskGroup：进行中 / 等你回答 / 规则 / 已结束 1（点开列出结束了的，那个文件夹 3 天后清理）">
+        <${Demo} title="「任务」组" note="TaskGroup：进行中 / 进行中，有个问题等你回答（问了个有默认回答的问题，接着在做）/ 等你回答 / 规则 / 已结束 1（点开列出结束了的，那个文件夹 3 天后清理）">
           ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
-            <${TaskGroup} botId="b" tasks=${TASKS} rules=${[RULES[0]]} ended=${ENDED} details=${{ t1: TASK_DETAIL, t2: ASK_DETAIL, t3: ENDED_DETAIL }} />
+            <${TaskGroup} botId="b" tasks=${TASKS} rules=${[RULES[0]]} ended=${ENDED} details=${{ t1: TASK_DETAIL, t4: ASKING_DETAIL, t2: ASK_DETAIL, t3: ENDED_DETAIL }} />
           </div>`}
+        <//>
+        <${Demo} title="问了还在做" note="TaskRow 展开：问题（下面一句不回复就按中文做）· 最新进展 · 预算 · 运行中；对话里的胶囊点开是同一份详情">
+          ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
+            <div class="list"><${TaskRow} task=${ASKING} open data=${ASKING_DETAIL} onToggle=${() => {}} onOpenConv=${() => {}} /></div>
+          </div>`}
+        <//>
+        <${Demo} col title="对话里的胶囊" note="TaskChip：进行中 / 进行中，有个问题等你回答；点开是详情（不写来自）">
+          ${() => html`<div class="gal-chat"><div class="msg-row assistant"><${TaskChip} task=${TASKS[0]} data=${TASK_DETAIL} /></div>
+            <div class="msg-row assistant"><${TaskChip} task=${ASKING} data=${ASKING_DETAIL} /></div></div>`}
         <//>
         <${Demo} title="详情" note="TaskRow 展开：来自 · 最新进展 · 预算 约 $0.08 / $1.00（改） · 文件夹 2.3 MB（打开） · 第 1 次 · 开始 · 停止 / 导出">
           ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
@@ -667,6 +679,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
 /** 「需要你」的样例（单人：一个人用自己的机器人） */
 const NEEDS = [
   { id: "q", kind: "question", botName: "小蓝", subject: "GPU 价格调研", status: "等你回答", line: "报告用中文还是英文？", since: Date.now() - 2 * 60_000, severity: "warn", questions: [{ id: "a", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }] },
+  { id: "qd", kind: "question", botName: "小蓝", subject: "竞品周报", status: "等你回答", line: "报告用中文还是英文？", note: "不回复就按中文做", since: Date.now() - 3 * 60_000, severity: "warn", taskId: "t4", questions: [{ id: "answer", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }], default: "中文" }] },
   { id: "a", kind: "approval", botName: "小蓝", subject: "清理旧构建", status: "等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
   { id: "bq", kind: "question", botName: "小蓝", subject: "季度报告 PPT", status: "预算用完", line: "已用约 $1.00，再给 $1 继续？", since: Date.now() - 8 * 60_000, severity: "warn", questions: [{ id: "budget", question: "已用约 $1.00，再给 $1 继续？", options: [{ label: "继续" }, { label: "停止" }] }] },
   { id: "d", kind: "delivery", botName: "小蓝", subject: "1 条结果未送达微信", status: "在微信里发条消息就能收到", line: "季度报告做好了，在 tasks 文件夹里。", since: Date.now() - 20 * 60_000, severity: "warn", actions: [] },
@@ -678,13 +691,15 @@ const NEEDS = [
   { id: "c", kind: "cleanup", botName: "小蓝", subject: "2 个任务文件夹 11月4日 删除", status: "", line: "整理下载目录和旧照片归档 · 30 天没动过", since: Date.now() - 5 * 3600_000, severity: "warn", actions: ["keep", "dismiss"] },
 ];
 
-/** 任务的样例（单人：自己的机器人小蓝）：在调研的、等你回答的、昨天做完的（文件夹 3 天后清理） */
+/** 任务的样例（单人：自己的机器人小蓝）：在调研的、问了个有默认回答的问题接着在做的、等你回答的、昨天做完的（文件夹 3 天后清理） */
 const ago = (min) => Date.now() - min * 60_000;
 const task = (o) => ({ botId: "b", conversationId: "b:weixin:me", channel: "weixin", latest: "", runs: 1, spentUsd: 0, budgetUsd: 1, cleanupAt: 0, endedAt: 0, ...o });
 const TASKS = [
   task({ id: "t1", title: "GPU 价格调研", stage: { key: "working", label: "进行中", group: "working" }, createdAt: ago(12), updatedAt: ago(1), spentUsd: 0.08, latest: "已比较 3 家，正在核对 B 云的包年价", folder: "tasks/gpu-prices-3f2a1c" }),
-  task({ id: "t2", title: "季度报告 PPT", stage: { key: "needs-you/answer", label: "等你回答", group: "needs" }, createdAt: ago(50), updatedAt: ago(5), spentUsd: 0.21, folder: "tasks/task-8c0d42" }),
+  task({ id: "t4", title: "竞品周报", stage: { key: "working/asking", label: "进行中，有个问题等你回答", group: "working" }, createdAt: ago(20), updatedAt: ago(3), spentUsd: 0.05, latest: "三家的更新都整理好了，在写对比", folder: "tasks/weekly-7d1e20", question: { text: "报告用中文还是英文？", note: "不回复就按中文做" } }),
+  task({ id: "t2", title: "季度报告 PPT", stage: { key: "needs-you/answer", label: "等你回答", group: "needs" }, createdAt: ago(50), updatedAt: ago(5), spentUsd: 0.21, folder: "tasks/task-8c0d42", question: { text: "PPT 要几页？" } }),
 ];
+const ASKING = TASKS[1];
 const ENDED = [
   task({ id: "t3", title: "整理下载目录", stage: { key: "ready", label: "已完成", group: "ended" }, createdAt: ago(27 * 1440), endedAt: ago(27 * 1440 - 20), updatedAt: ago(27 * 1440 - 20), spentUsd: 0.02, latest: "按类型分到 6 个文件夹，重复的 14 个放进了 duplicates", folder: "tasks/downloads-9b1e07", cleanupAt: Date.now() + 3 * 86_400_000 }),
 ];
@@ -696,8 +711,15 @@ const TASK_DETAIL = {
   canOpen: true,
   runs: [{ id: "r1", cause: "launch", state: "running", outcome: "", queuedAt: ago(12), startedAt: ago(12), endedAt: 0, steps: 3, stepList: [step("s1", "web_fetch", "x-cloud.example/pricing"), step("s2", "web_fetch", "b-cloud.example/gpu"), step("s3", "write", "prices.md")] }],
 };
+const ASKING_DETAIL = {
+  task: ASKING,
+  origin: { channel: "weixin", at: ago(20), text: "后台帮我把三家竞品这周的更新整理成周报" },
+  sizes: { folder: 640_000, sessions: 420_000 },
+  canOpen: true,
+  runs: [{ id: "r4", cause: "launch", state: "running", outcome: "", queuedAt: ago(20), startedAt: ago(20), endedAt: 0, steps: 2, stepList: [step("s4", "web_fetch", "a.example/changelog"), step("s5", "write", "weekly.md")] }],
+};
 const ASK_DETAIL = {
-  task: TASKS[1],
+  task: TASKS[2],
   origin: { channel: "weixin", at: ago(50), text: "后台帮我把季度数据做成 PPT" },
   sizes: { folder: 5_600_000, sessions: 900_000 },
   canOpen: true,

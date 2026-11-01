@@ -10,12 +10,15 @@ import { deferNotice, interruptedText, takeInterrupted, type Interrupted } from 
 import { Outbox } from "./core/outbox.js";
 import { Delivery, type DeliveryOptions } from "./core/delivery.js";
 import { AccessControl } from "./core/access.js";
-import type { ChannelStatus } from "./core/types.js";
+import { MESSENGERS, MESSENGER_LABEL, isMessenger, type ChannelStatus, type MessengerId } from "./core/types.js";
 import { MagpieSupervisor } from "./magpie/supervisor.js";
 import { FeishuChannel } from "./channels/feishu/channel.js";
 import { LarkTransport, type FeishuTransport } from "./channels/feishu/transport.js";
 import { WeixinChannel } from "./channels/weixin/channel.js";
 import { WeixinLogin } from "./channels/weixin/login.js";
+import { MessengerChannel } from "./channels/messenger/channel.js";
+import { MESSENGER_FIELDS, createTransport, telegramOffsetKey } from "./channels/messenger/index.js";
+import { PlatformError, type MessengerTransport } from "./channels/messenger/transport.js";
 import { startWebServer, type WebServer } from "./web/server.js";
 import { initFileLog, logFilePath, logger, mask, registerSecret } from "./log.js";
 import { AgentManager } from "./agent/manager.js";
@@ -100,6 +103,8 @@ export function appVersion(): string {
 export interface AppOptions {
   /** 测试注入：替换飞书传输层 */
   feishuTransport?: (bot: Bot) => FeishuTransport;
+  /** 测试用：替换 Telegram、Slack、Discord 的传输层 */
+  messengerTransport?: (id: MessengerId, botId: string, credentials: Record<string, string>) => MessengerTransport;
   /** 测试注入：替换 iLink 的 fetch */
   weixinFetch?: typeof fetch;
   weixinPollTimeoutMs?: number;
@@ -122,6 +127,10 @@ interface BotChannels {
   feishuError?: string;
   weixin?: WeixinChannel;
   weixinLogin?: WeixinLogin;
+  /** Telegram、Slack、Discord */
+  messengers?: Partial<Record<MessengerId, MessengerChannel>>;
+  /** 启动失败或凭据失效的原因（信息面板显示） */
+  messengerErrors?: Partial<Record<MessengerId, string>>;
 }
 
 export class App {
@@ -314,6 +323,7 @@ export class App {
     try {
       if (to.channel === "weixin") return !!ch?.weixin?.tell(to.peerId, text, id);
       if (to.channel === "feishu") return !!ch?.feishu?.notify(to.peerId, text, id);
+      if (isMessenger(to.channel)) return !!ch?.messengers?.[to.channel]?.notify(to.peerId, text, id);
     } catch (e) {
       log.warn("notify failed", { bot: to.botId, channel: to.channel, message: (e as Error).message });
     }
@@ -462,6 +472,11 @@ export class App {
         // 飞书：发给主人；还没设主人时发到最近的单聊
         const chat = ch?.feishu ? (this.access.owner(bot.id, "feishu")?.peerId ?? this.store.listConversations(bot.id).find((c) => c.channel === "feishu" && c.kind === "dm")?.peerId) : undefined;
         if (chat && ch?.feishu?.notify(chat, text)) return true;
+        // 其他平台：发给主人（连上之后第一个发消息的人）
+        for (const id of MESSENGERS) {
+          const owner = this.access.owner(bot.id, id)?.peerId;
+          if (owner && ch?.messengers?.[id]?.notify(owner, text)) return true;
+        }
       } catch (e) {
         log.warn("push to owner failed", { bot: bot.id, message: (e as Error).message.slice(0, 200) });
       }
@@ -634,6 +649,7 @@ export class App {
           sent = true;
         } else if (conv.channel === "weixin" && ch?.weixin) sent = await ch.weixin.notify(conv.peerId, text);
         else if (conv.channel === "feishu" && ch?.feishu) sent = await ch.feishu.notify(conv.peerId, text);
+        else if (isMessenger(conv.channel)) sent = !!ch?.messengers?.[conv.channel]?.notify(conv.peerId, text);
       } catch (e) {
         log.warn("restart notice failed", { conversationId: conv.id, message: (e as Error).message.slice(0, 200) });
       }
@@ -799,6 +815,81 @@ export class App {
       this.runtime.registerReplier(bot.id, "weixin", (conv, _handle, key) => ({ out: wx.followUp(conv.peerId, key) }));
       detached(() => wx.start());
     }
+    for (const id of MESSENGERS) this.startMessenger(bot, id, ch);
+  }
+
+  /** 填了凭据、还没在跑的平台：连上 */
+  private startMessenger(bot: Bot, id: MessengerId, ch: BotChannels): void {
+    const acct = this.store.getMessengerAccount(bot.id, id);
+    if (!acct || ch.messengers?.[id]) return;
+    for (const secret of Object.values(acct.credentials)) registerSecret(secret);
+    const transport = this.opts.messengerTransport?.(id, bot.id, acct.credentials) ?? createTransport(id, bot.id, acct.credentials, this.store);
+    const channel = new MessengerChannel(bot.id, transport, this.runtime, this.queue, this.outbox);
+    channel.delivery = this.delivery;
+    channel.onFatal = (detail) => {
+      (ch.messengerErrors ??= {})[id] = detail;
+      this.notice("warn", t("app.messenger_failed", { name: this.store.getBot(bot.id)?.name ?? bot.name, channel: MESSENGER_LABEL[id], message: detail }));
+    };
+    (ch.messengers ??= {})[id] = channel;
+    if (ch.messengerErrors) delete ch.messengerErrors[id];
+    // 代理自己醒来的一轮（后台命令结束）：经出站队列发到这个会话
+    this.runtime.registerReplier(bot.id, id, (conv, _handle, key) => ({ out: channel.followUp(conv.peerId, key) }));
+    detached(() => channel.start()).catch((e) => channel.onFatal?.((e as Error).message));
+    log.info(`bot ${bot.id}: ${id} starting`);
+  }
+
+  private async stopMessenger(botId: string, id: MessengerId): Promise<void> {
+    const ch = this.channels.get(botId);
+    this.runtime.registerReplier(botId, id, undefined);
+    await ch?.messengers?.[id]?.stop().catch(() => {});
+    if (ch?.messengers) delete ch.messengers[id];
+    if (ch?.messengerErrors) delete ch.messengerErrors[id];
+  }
+
+  /**
+   * 连接（或改凭据）：留空的凭据沿用已保存的。凭据被平台拒绝就报错、不保存；一时连不上平台照样保存，渠道自己会重试。
+   * 换了一个机器人（凭据变了）：主人对不上了，连上后第一个发消息的人成为主人；Telegram 的收取位置也作废。
+   */
+  async connectMessenger(botId: string, id: MessengerId, input: Record<string, unknown>): Promise<void> {
+    const old = this.store.getMessengerAccount(botId, id);
+    const credentials: Record<string, string> = {};
+    for (const field of MESSENGER_FIELDS[id]) {
+      credentials[field] = String(input[field] ?? "").trim() || (old?.credentials[field] ?? "");
+      if (!credentials[field]) throw new PlatformError(t("channel.messengerMissing", { channel: MESSENGER_LABEL[id] }), true);
+    }
+    const transport = this.opts.messengerTransport?.(id, botId, credentials) ?? createTransport(id, botId, credentials, this.store);
+    let name = old?.name ?? "";
+    try {
+      name = (await transport.verify?.())?.name ?? name;
+    } catch (e) {
+      if ((e as PlatformError).rejected) throw e;
+      log.warn("couldn't verify the credentials now, saving anyway", { channel: id, message: (e as Error).message.slice(0, 200) });
+    }
+    const changed = MESSENGER_FIELDS[id].some((f) => f !== "appToken" && credentials[f] !== old?.credentials[f]);
+    await this.stopMessenger(botId, id);
+    if (changed) {
+      this.access.resetOwner(botId, id);
+      if (id === "telegram") this.store.deleteKV(telegramOffsetKey(botId));
+    }
+    this.store.saveMessengerAccount({ botId, channel: id, credentials, name });
+    await this.startBot(botId);
+  }
+
+  async disconnectMessenger(botId: string, id: MessengerId): Promise<void> {
+    await this.stopMessenger(botId, id);
+    this.access.resetOwner(botId, id);
+    this.store.deleteMessengerAccount(botId, id);
+    if (id === "telegram") this.store.deleteKV(telegramOffsetKey(botId));
+  }
+
+  /** 信息面板的一行：状态、平台上的名字、已保存凭据的掩码（界面显示"留空不修改"） */
+  private messengerStatus(botId: string, id: MessengerId): ChannelStatus & { account?: { name: string; saved: Record<string, string> } } {
+    const acct = this.store.getMessengerAccount(botId, id);
+    if (!acct) return { state: "disabled", since: 0 };
+    const ch = this.channels.get(botId);
+    const error = ch?.messengerErrors?.[id];
+    const st: ChannelStatus = error ? { state: "error", detail: error, since: Date.now() } : ch?.messengers?.[id]?.status ?? { state: "disabled", since: 0 };
+    return { ...st, account: { name: acct.name, saved: Object.fromEntries(Object.entries(acct.credentials).map(([k, v]) => [k, mask(v)])) } };
   }
 
   async stopBot(botId: string): Promise<void> {
@@ -807,6 +898,7 @@ export class App {
     ch.weixinLogin?.cancel();
     this.runtime.registerReplier(botId, "feishu", undefined);
     this.runtime.registerReplier(botId, "weixin", undefined);
+    for (const id of MESSENGERS) await this.stopMessenger(botId, id);
     await ch.feishu?.stop().catch(() => {});
     await ch.weixin?.stop().catch(() => {});
     this.channels.delete(botId);
@@ -856,7 +948,7 @@ export class App {
     await this.startBot(botId);
   }
 
-  channelStatus(botId: string): { feishu: ChannelStatus; weixin: ChannelStatus & { login?: unknown; quota?: unknown } } {
+  channelStatus(botId: string): { feishu: ChannelStatus; weixin: ChannelStatus & { login?: unknown; quota?: unknown } } & Record<MessengerId, ChannelStatus> {
     const bot = this.store.getBot(botId);
     const ch = this.channels.get(botId);
     const feishu: ChannelStatus = !bot?.feishuAppId
@@ -877,6 +969,9 @@ export class App {
         login: ch?.weixinLogin?.snapshot,
         quota,
       },
+      telegram: this.messengerStatus(botId, "telegram"),
+      slack: this.messengerStatus(botId, "slack"),
+      discord: this.messengerStatus(botId, "discord"),
     };
   }
 }

@@ -2,6 +2,8 @@ import http from "node:http";
 import crypto from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { HistoryDenied, type FeishuMessageEvent, type FeishuTransport } from "../src/channels/feishu/transport.js";
+import { PlatformError, type MessengerMessage, type MessengerTransport, type StateFn } from "../src/channels/messenger/transport.js";
+import type { MessengerId } from "../src/core/types.js";
 
 export async function listen(handler: http.RequestListener): Promise<{ url: string; port: number; close: () => Promise<void>; server: http.Server }> {
   const server = http.createServer(handler);
@@ -416,4 +418,65 @@ export async function approveInBrowser(mf: Awaited<ReturnType<typeof mockModelfl
   const redirect = u.searchParams.get("redirect_uri")!;
   mf.s.pending.set(code, { challenge: u.searchParams.get("code_challenge")!, redirect });
   return fetch(`${redirect}?code=${code}&state=${encodeURIComponent(u.searchParams.get("state")!)}`);
+}
+
+/** 假的 Telegram / Slack / Discord 传输层：记下发出去的和改过的消息，按需让某一步失败 */
+export class FakeMessenger implements MessengerTransport {
+  readonly maxText: number;
+  sent: Array<{ chatId: string; text: string; id: string }> = [];
+  edits: Array<{ chatId: string; id: string; text: string }> = [];
+  files: Array<{ chatId: string; name: string }> = [];
+  typed = 0;
+  started = 0;
+  stopped = 0;
+  /** verify 时抛这个（凭据被拒） */
+  rejectVerify: string | undefined;
+  failEdit: Error | undefined;
+  onMessage: ((m: MessengerMessage) => void) | undefined;
+  onState: StateFn | undefined;
+  private n = 0;
+  constructor(
+    readonly id: MessengerId = "telegram",
+    maxText = 4000,
+  ) {
+    this.maxText = maxText;
+  }
+  async verify() {
+    if (this.rejectVerify) throw new PlatformError(this.rejectVerify, true);
+    return { name: "@fake_bot" };
+  }
+  async start(onMessage: (m: MessengerMessage) => void, onState: StateFn) {
+    this.started++;
+    this.onMessage = onMessage;
+    this.onState = onState;
+    onState("connected");
+  }
+  async stop() {
+    this.stopped++;
+  }
+  async sendText(chatId: string, text: string) {
+    const id = String(++this.n);
+    this.sent.push({ chatId, text, id });
+    return id;
+  }
+  async editText(chatId: string, id: string, text: string) {
+    if (this.failEdit) throw this.failEdit;
+    this.edits.push({ chatId, id, text });
+  }
+  async sendFile(chatId: string, _path: string, name: string) {
+    this.files.push({ chatId, name });
+  }
+  async typing() {
+    this.typed++;
+  }
+  /** 对方看到的最后一句：发出去的那条，或它改写后的样子 */
+  lastShown(chatId: string): string | undefined {
+    const last = this.sent.filter((s) => s.chatId === chatId).at(-1);
+    return last && (this.edits.filter((e) => e.id === last.id).at(-1)?.text ?? last.text);
+  }
+}
+
+/** 一条假的单聊消息 */
+export function messengerEvent(text: string, opts: Partial<MessengerMessage> = {}): MessengerMessage {
+  return { id: crypto.randomUUID(), chatId: "chat_1", dm: true, senderId: "user_1", senderName: "Ann", text, files: [], ...opts };
 }

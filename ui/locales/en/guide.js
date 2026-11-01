@@ -56,7 +56,7 @@ export default {
       title: "Connect {name} to WeChat",
       desc: "Scan a QR code, then message it directly in WeChat. No new app to install, and it's online whenever your computer is on.",
       how: ["Click the bot's name at the top to open the info panel", "Under “Channels”, click “WeChat” → “Scan to log in”", "Scan the code with WeChat and confirm on your phone"],
-      note: "WeChat's rule: for each message you send, it can reply up to 10 times within 24 hours. For Feishu, enter your Feishu app's App ID and App Secret in the same place.",
+      note: "WeChat's rule: for each message you send, it can reply up to 10 times within 24 hours. For Feishu, Telegram, Slack or Discord, enter its credentials in the same place.",
       doneText: "Send it a message in WeChat: same bot, same memory.",
     },
     hands: {

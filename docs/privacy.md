@@ -27,6 +27,7 @@
 | API Key | 内置网关的隔离配置 `magpie/config/` | 每次模型请求作为鉴权发给 Modelflare | Modelflare |
 | 微信登录态与同步游标 | 数据目录内（`weixin/` 等） | 与微信 iLink 接口通信时会 | 腾讯微信 |
 | 飞书 App ID / Secret | 数据目录内的配置 | 与飞书开放平台建立长连接时会 | 飞书 |
+| Telegram、Slack、Discord 的 token | `anymodel.db` | 与对应平台通信时会 | 你接入的平台 |
 | 允许名单与使用请求 | `anymodel.db`：谁能用哪个机器人、陌生人发来的第一条消息（截断，帮你认出是谁） | 不会 | — |
 | 待发送的回复 | `anymodel.db` 的出站队列：还没发出去的消息内容和原因，包括等对方下次发消息再发的微信消息（最多留 7 天；发出去的留 7 天、发不出去的留 30 天后删除） | 发送时会 | 微信 / 飞书 |
 | 后台任务和规则 | `anymodel.db`（任务、规则、运行记录，留 30 天）；任务文件夹在 `workspaces/<机器人>/tasks/`，30 天没动过会删除（先在「需要你」里告诉你）；它们的会话记录在 `dsh/<机器人>/sessions/`，随任务一起删除 | 运行时会 | 同对话：作为模型请求的上下文，经 Modelflare 发给你选定的供应商 |
@@ -69,6 +70,7 @@
 - 生成图片或视频时，从 docs.modelflare.dev 读取该模型的请求格式。
 - 微信渠道：与 `ilinkai.weixin.qq.com` 通信，并从微信 CDN 下载你发来的图片和文件。
 - 飞书渠道：与飞书开放平台保持长连接。
+- Telegram、Slack、Discord 渠道：接入后与 `api.telegram.org`、`slack.com`、`discord.com` 及其文件地址通信，用来收发消息和你发来的文件。
 - Windows 上开启代理模式且系统里没有可用的 PowerShell 7 时，从微软官方发布地址下载 PowerShell 7（可用 `AMB_PWSH_AUTO_INSTALL=0` 关闭，详见[开发文档](./development.md)）。
 
 ## 电脑操作与截图
@@ -79,7 +81,7 @@
 
 ## 渠道
 
-- 你在微信、飞书里和机器人收发的消息，会经过腾讯、飞书的服务器，受这两个平台各自的隐私政策约束。
+- 你在微信、飞书、Telegram、Slack、Discord 里和机器人收发的消息，会经过这些平台的服务器，受它们各自的隐私政策约束。
 - 默认只有主人和你允许的人能和机器人对话；其他人发来的消息不会交给模型，只登记成使用请求（见 [开发文档](./development.md#谁能使用机器人)）。
 
 ## 如何删除数据
@@ -87,4 +89,4 @@
 1. 退出 AnyModelBot（托盘菜单 → 退出）。
 2. 删除上面表格里的数据目录。Docker：`docker rm -f amb && docker volume rm amb-data`。
 3. 在 Modelflare 个人资料页的「已授权的应用」里撤销 AnyModelBot 的授权。
-4. 如有需要，在飞书开放平台停用你创建的应用，在微信里解除与机器人的绑定。
+4. 如有需要，在飞书开放平台停用你创建的应用，在微信里解除与机器人的绑定；在 Telegram（@BotFather）、Slack、Discord 上删除你创建的机器人。

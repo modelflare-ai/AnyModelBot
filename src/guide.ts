@@ -29,7 +29,8 @@ export function normalizeGuide(v: unknown): GuideState {
 export interface GuideFacts {
   conversations: Array<{ messageCount: number; model: string }>;
   bots: Array<{ id: string; defaultModel: string; feishuAppId: string }>;
-  weixinBound: (botId: string) => boolean;
+  /** 微信扫码绑定了，或者连上了 Telegram、Slack、Discord */
+  channelBound: (botId: string) => boolean;
   memoryCount: (botId: string) => number;
 }
 
@@ -38,7 +39,7 @@ export function deriveGuide(f: GuideFacts): GuideStep[] {
   // 一问一答至少两条消息
   if (f.conversations.some((c) => c.messageCount >= 2)) out.push("hello");
   if (f.conversations.some((c) => c.model) || f.bots.some((b) => b.defaultModel)) out.push("model");
-  if (f.bots.some((b) => b.feishuAppId || f.weixinBound(b.id))) out.push("weixin");
+  if (f.bots.some((b) => b.feishuAppId || f.channelBound(b.id))) out.push("weixin");
   if (f.bots.some((b) => f.memoryCount(b.id) > 0)) out.push("memory");
   return out;
 }

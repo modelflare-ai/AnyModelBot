@@ -1,7 +1,7 @@
 /**
  * 谁能和机器人对话：默认只有主人。代理跑在用户自己的电脑上（甚至可能是完全权限），陌生人找到机器人也不能驱动它。
  *
- * - 主人：微信 = 扫码登录的那个微信；飞书（以及没拿到扫码者的微信）= 连上之后第一个发单聊消息的人
+ * - 主人：微信 = 扫码登录的那个微信；飞书、Telegram、Slack、Discord（以及没拿到扫码者的微信）= 连上之后第一个发单聊消息的人
  *   （先到先得；这条消息照常处理）。机器人设置里可以「更换」：清掉主人，下一个发消息的人成为主人。
  * - 其他人发消息：登记成使用请求，只回一句"还没被允许"（同一个人每小时最多一次），不进队列、不碰模型、不花钱；
  *   请求出现在信息面板里，也会带配对码发给主人（每个机器人每小时最多 3 条），主人回复「同意 1234」即可。
@@ -9,8 +9,8 @@
  * - 本机网页控制台本来就可信；群聊目前没有渠道接入（飞书只收单聊，微信 iLink 没有群），保持原样不拦，接入群聊时再定规则。
  */
 import crypto from "node:crypto";
-import type { InboundEvent } from "./types.js";
-import { eventText } from "./types.js";
+import type { InboundEvent, PushChannel } from "./types.js";
+import { MESSENGERS, MESSENGER_LABEL, eventText, isMessenger } from "./types.js";
 import type { AccessEntry, Store } from "../store/db.js";
 import { logger } from "../log.js";
 import { t as tr } from "../i18n/index.js";
@@ -26,9 +26,9 @@ export const NOTICE_LIMIT = 3;
 const NOTICE_WINDOW_MS = 3600_000;
 export const approvedText = () => tr("access.approved");
 
-export type AccessChannel = "weixin" | "feishu";
-export const ACCESS_CHANNELS: AccessChannel[] = ["weixin", "feishu"];
-const channelLabel = (c: string) => (c === "weixin" ? tr("access.chWeixin") : c === "feishu" ? tr("access.chFeishu") : c === "web" ? tr("access.chWeb") : c);
+export type AccessChannel = PushChannel;
+export const ACCESS_CHANNELS: AccessChannel[] = ["weixin", "feishu", ...MESSENGERS];
+const channelLabel = (c: string) => (c === "weixin" ? tr("access.chWeixin") : c === "feishu" ? tr("access.chFeishu") : c === "web" ? tr("access.chWeb") : isMessenger(c) ? MESSENGER_LABEL[c] : c);
 
 /** 主动发一条通知（App 经渠道和出站队列发）；发不出去（对方 24 小时内没说过话、渠道没开）返回 false */
 export type Notify = (to: { botId: string; channel: string; peerId: string }, text: string, id: string) => boolean;
@@ -283,7 +283,8 @@ export class AccessControl {
   policyLine(botId: string): string {
     const v = this.view(botId);
     const allowed = v.entries.filter((e) => e.status === "allowed").length;
-    const owners = ACCESS_CHANNELS.map((ch) => tr("access.ownerOf", { channel: channelLabel(ch), who: v.owners[ch] ? ` ${shortPeer(v.owners[ch]!.peerId)}` : tr("access.notSet") })).join(tr("access.listSep"));
+    // 微信、飞书总列；其他平台有主人才列，免得这一行全是"未设置"
+    const owners = ACCESS_CHANNELS.filter((ch) => !isMessenger(ch) || v.owners[ch]).map((ch) => tr("access.ownerOf", { channel: channelLabel(ch), who: v.owners[ch] ? ` ${shortPeer(v.owners[ch]!.peerId)}` : tr("access.notSet") })).join(tr("access.listSep"));
     const req = v.requests.length ? tr("access.pendingRequests", { count: v.requests.length }) : "";
     return tr("access.policy", { owners, allowed, req });
   }

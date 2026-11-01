@@ -7,6 +7,7 @@
  * - 系统通知每一项最多一次（takeNew：记在 KV 里，重启也算）；问要不要改为执行的那种（suggest）不发。
  * 健康时什么都没有：没有行、没有角标、没有通知。
  */
+import { MESSENGER_LABEL, isMessenger } from "../core/types.js";
 import type { ApprovalRow, Store } from "../store/db.js";
 import { defaultLine, questionsOf, type QuestionItem } from "../agent/approvals.js";
 import type { AttentionItem as DeliveryItem } from "../core/delivery.js";
@@ -189,7 +190,7 @@ export class Attention {
   }
 }
 
-const channelLabel = (c: string) => (c === "weixin" ? tr("tasks.chWeixin") : c === "feishu" ? tr("tasks.chFeishu") : c === "web" ? tr("tasks.chWeb") : undefined);
+const channelLabel = (c: string) => (c === "weixin" ? tr("tasks.chWeixin") : c === "feishu" ? tr("tasks.chFeishu") : c === "web" ? tr("tasks.chWeb") : isMessenger(c) ? MESSENGER_LABEL[c] : undefined);
 
 /**
  * 审批中心那一份：还在等的提问和审批（聊天回合里的、后台任务的）。任务的以任务名为题，聊天里的以渠道为题：

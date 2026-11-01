@@ -1,6 +1,6 @@
 // access · zh-CN
 export default {
-  channel: { web: "网页", feishu: "飞书", weixin: "微信" },
+  channel: { web: "网页", feishu: "飞书", weixin: "微信", telegram: "Telegram", slack: "Slack", discord: "Discord" },
   source: {
     request: "你允许的",
     migration: "升级前已在使用",

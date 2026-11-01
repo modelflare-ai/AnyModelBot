@@ -5,7 +5,8 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { appVersion, type App } from "../app.js";
 import type { InboundEvent, OutboundOp, ReplySession } from "../core/types.js";
-import { eventText } from "../core/types.js";
+import { MESSENGERS, eventText, isMessenger, isPushChannel } from "../core/types.js";
+import type { PlatformError } from "../channels/messenger/transport.js";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { logFilePath, logger, mask, readLogTail, registerSecret } from "../log.js";
 import { diagnosticsReport, safeStatus, testAgent, testModel } from "../diagnostics.js";
@@ -22,7 +23,7 @@ import { defaultLine } from "../agent/approvals.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
 import { pwshProbe, type PwshMode, type PwshStatus } from "../agent/pwsh.js";
-import { peerName, shortPeer, whoText } from "../core/access.js";
+import { ACCESS_CHANNELS, peerName, shortPeer, whoText, type AccessChannel } from "../core/access.js";
 import type { AccessEntry, RuleMode } from "../store/db.js";
 import { normalizeSchedule, type Schedule } from "../tasks/schedule.js";
 import { exportFileName } from "../tasks/export.js";
@@ -719,7 +720,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       const derived = deriveGuide({
         conversations: app.store.listConversations(),
         bots,
-        weixinBound: (id) => !!app.store.getWeixinAccount(id),
+        channelBound: (id) => !!app.store.getWeixinAccount(id) || MESSENGERS.some((c) => !!app.store.getMessengerAccount(id, c)),
         // 机器人自己的记忆，或所有机器人共享的团队记忆，有一条就算记下过
         memoryCount: (id) =>
           [{ kind: "bot" as const, id }, { kind: "team" as const, id: "" }].reduce((n, s) => n + app.agent.memory.entries(s).length + app.agent.memory.topics(s).length, 0),
@@ -926,7 +927,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       // —— 谁能使用：主人、允许名单、使用请求 ——
       if (sub === "access" && m === "GET") {
         const v = app.access.view(id);
-        const owner = (ch: "weixin" | "feishu") => {
+        const owner = (ch: AccessChannel) => {
           const o = v.owners[ch];
           if (!o) return null;
           const e = (o.entryId ? app.store.getAccessById(o.entryId) : undefined) ?? { channel: ch, peerId: o.peerId, senderId: o.peerId, name: "" };
@@ -934,7 +935,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         };
         return send(res, 200, {
           policy: v.policy,
-          owners: { weixin: owner("weixin"), feishu: owner("feishu") },
+          owners: Object.fromEntries(ACCESS_CHANNELS.map((ch) => [ch, owner(ch)])),
           requests: v.requests.map(publicAccess),
           entries: v.entries.filter((e) => e.status !== "owner").map(publicAccess),
         });
@@ -951,7 +952,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       // 更换主人：清掉"第一个发消息"的主人，下一个发单聊消息的人成为主人（扫码登录的微信要重新扫码）
       if (seg[2] === "access" && seg[3] === "owner" && seg.length === 5 && m === "DELETE") {
         const ch = seg[4];
-        if (ch !== "weixin" && ch !== "feishu") throw new HttpError(404, tr("web.noSuchChannel"));
+        if (!isPushChannel(ch)) throw new HttpError(404, tr("web.noSuchChannel"));
         if (app.access.owner(id, ch)?.via === "login") throw new HttpError(409, tr("web.weixinOwnerRescan"));
         app.access.resetOwner(id, ch);
         return send(res, 200, { ok: true });
@@ -976,6 +977,19 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         app.access.resetOwner(id, "feishu");
         app.store.updateBot(id, { feishuAppId: "", feishuAppSecret: "" });
         await app.restartBot(id);
+        return send(res, 200, app.channelStatus(id));
+      }
+      if (isMessenger(sub) && m === "PUT") {
+        try {
+          await app.connectMessenger(id, sub, await readJson(req));
+        } catch (e) {
+          if ((e as PlatformError).rejected) throw new HttpError(400, (e as Error).message);
+          throw e;
+        }
+        return send(res, 200, app.channelStatus(id));
+      }
+      if (isMessenger(sub) && m === "DELETE") {
+        await app.disconnectMessenger(id, sub);
         return send(res, 200, app.channelStatus(id));
       }
       if (sub === "weixin" && m === "PUT") {

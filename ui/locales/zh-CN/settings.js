@@ -189,9 +189,9 @@ export default {
       none: "不提醒",
     },
     lowBalancePush: {
-      name: "提醒也发到微信 / 飞书",
-      sub: "由机器人发给你：微信发给扫码登录的人（需要他最近发过消息），飞书发到最近的单聊",
-      keys: "推送 提醒 微信 飞书",
+      name: "提醒也发到聊天软件",
+      sub: "由机器人发给你：微信发给扫码登录的人（需要他最近发过消息），飞书发到最近的单聊，Telegram、Slack、Discord 发给主人",
+      keys: "推送 提醒 微信 飞书 telegram slack discord",
     },
     usage: {
       name: "用量",

@@ -15,6 +15,7 @@ export const zh = {
   unsupported_message: "[暂不支持的消息类型：{type}]",
   // 渠道状态（信息面板）
   feishu_no_credentials: "未配置凭据",
+  messengerMissing: "{channel} 的凭据没有填全",
   wx_login_required: "尚未扫码登录",
   wx_expired: "登录已过期（-14），请在界面重新扫码",
   // 微信扫码登录
@@ -48,7 +49,7 @@ export const zh = {
   heldQuota: "本轮可发送条数已用完（对方每发一条消息，24 小时内最多回复 10 条），等他下次发消息时再发",
   heldReserved: "本轮剩下的条数留给后台任务的结果了，等他下次发消息时再发",
   fileFallback: "文件",
-  laterNotRunning: "微信渠道没有运行",
+  laterNotRunning: "渠道没有运行",
   laterExpired: "微信登录已过期，等重新扫码",
   feishuNoPush: "飞书传输层不支持主动发消息",
 } satisfies Catalog;
@@ -65,6 +66,7 @@ export const en: Catalog<typeof zh> = {
   card_action_failed: "Failed",
   unsupported_message: "[Unsupported message type: {type}]",
   feishu_no_credentials: "Credentials not configured",
+  messengerMissing: "{channel} credentials are incomplete",
   wx_login_required: "Not signed in yet: scan the QR code",
   wx_expired: "Sign-in expired (-14). Scan the QR code again in the app",
   login_cancelled: "Cancelled",
@@ -96,7 +98,7 @@ export const en: Catalog<typeof zh> = {
   heldQuota: "This turn's message allowance is used up (up to 10 replies within 24 hours of each message they send); it'll be sent next time they message",
   heldReserved: "The rest of this turn's allowance is reserved for background task results; it'll be sent next time they message",
   fileFallback: "file",
-  laterNotRunning: "The WeChat channel isn't running",
+  laterNotRunning: "The channel isn't running",
   laterExpired: "WeChat sign-in expired; waiting for a new QR scan",
   feishuNoPush: "The Feishu transport can't send messages on its own",
 };

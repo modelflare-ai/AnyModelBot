@@ -50,7 +50,7 @@ export default {
   minutes: "minutes",
   days: "Days",
   to: "Send to",
-  noConvs: "Message the bot on WeChat, Feishu or the web first",
+  noConvs: "Message the bot in a chat app or on the web first",
   weixinNote: "WeChat lets the bot message you only within 24 hours of your last message. Otherwise it arrives with your next message and shows on the desktop.",
   create: "Create",
   gone: "This rule was deleted",

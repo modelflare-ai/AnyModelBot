@@ -27,6 +27,7 @@ This document explains what AnyModelBot stores where, what leaves your device, a
 | API key | The gateway's isolated config in `magpie/config/` | As authentication on every model request to Modelflare | Modelflare |
 | WeChat sign-in state and sync cursor | Inside the data directory (`weixin/` and others) | When talking to the WeChat iLink API | Tencent WeChat |
 | Feishu App ID / Secret | Configuration inside the data directory | When opening the long connection to the Feishu Open Platform | Feishu |
+| Telegram, Slack and Discord tokens | `anymodel.db` | When talking to that platform | The platform you connected |
 | Allowlist and access requests | `anymodel.db`: who may use which bot, and the first message a stranger sent (truncated, so you can tell who it is) | No | — |
 | Replies waiting to be sent | `anymodel.db` outbox: unsent message content and the reason, including WeChat messages held until the person writes again (kept up to 7 days; sent ones are deleted after 7 days, undeliverable ones after 30) | When they are sent | WeChat / Feishu |
 | Background tasks and rules | `anymodel.db` (tasks, rules and run logs, kept 30 days); task folders in `workspaces/<bot>/tasks/`, deleted after 30 days unused (you are told first in Needs you); their session files in `dsh/<bot>/sessions/`, deleted with the task | While they run | As for chats: context in model requests, sent through Modelflare to the provider you chose |
@@ -69,6 +70,7 @@ Besides model requests, the app goes online to:
 - Read a model's request format from docs.modelflare.dev when generating images or video.
 - WeChat channel: talk to `ilinkai.weixin.qq.com` and download images and files you send from the WeChat CDN.
 - Feishu channel: keep a long connection to the Feishu Open Platform.
+- Telegram, Slack and Discord channels: once connected, talk to `api.telegram.org`, `slack.com`, `discord.com` and their file hosts to send and receive messages and the files you send.
 - On Windows, with agent mode on and no working PowerShell 7 on the system, download PowerShell 7 from Microsoft's official release location (turn this off with `AMB_PWSH_AUTO_INSTALL=0`; see the [development guide](./development_en.md)).
 
 ## Computer use and screenshots
@@ -79,7 +81,7 @@ Besides model requests, the app goes online to:
 
 ## Channels
 
-- Messages you exchange with a bot on WeChat or Feishu pass through Tencent's or Feishu's servers and are subject to those platforms' privacy policies.
+- Messages you exchange with a bot on WeChat, Feishu, Telegram, Slack or Discord pass through those platforms' servers and are subject to their privacy policies.
 - By default only the owner and people you allow can talk to a bot; messages from anyone else are not given to a model, only recorded as access requests (see the [developer guide](./development_en.md#who-can-use-a-bot)).
 
 ## Deleting your data
@@ -87,4 +89,4 @@ Besides model requests, the app goes online to:
 1. Quit AnyModelBot (tray menu → Quit).
 2. Delete the data directory from the table above. Docker: `docker rm -f amb && docker volume rm amb-data`.
 3. Revoke AnyModelBot under "Authorized apps" on your Modelflare profile page.
-4. If needed, disable the app you created on the Feishu Open Platform and unbind the bot in WeChat.
+4. If needed, disable the app you created on the Feishu Open Platform, unbind the bot in WeChat, and delete the bots you created on Telegram (@BotFather), Slack and Discord.

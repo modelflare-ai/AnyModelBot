@@ -75,7 +75,7 @@ export default {
     guideTitle: "Hi, I'm {name}",
     guideBody: "Take 5 minutes and walk through the checklist to see what I can do.",
     title: "Start chatting with {name}",
-    body: "Test your bot right here. Set up Feishu and WeChat channels in the info panel.",
+    body: "Test your bot right here. Connect WeChat, Feishu, Telegram, Slack or Discord in the info panel.",
     sample: "What can you help me with?",
     helpChip: "/help for commands",
   },

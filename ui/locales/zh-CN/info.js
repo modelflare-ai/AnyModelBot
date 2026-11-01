@@ -18,6 +18,9 @@ export default {
     web: "网页",
     feishu: "飞书",
     weixin: "微信",
+    telegram: "Telegram",
+    slack: "Slack",
+    discord: "Discord",
   },
   feishu: {
     bindHint: "用你自己的飞书给机器人发一句话，就完成绑定。",
@@ -29,6 +32,32 @@ export default {
     disconnectBody: "会清除这个机器人的飞书 App ID 与 App Secret。",
     /** {event} {p1} {p2} {p3} 是 <code> 包着的事件名 / 权限名 */
     setupHint: "在飞书开放平台启用「机器人」，事件订阅选「使用长连接接收事件」并订阅 {event}；权限：{p1}、{p2}、{p3}、{p4}。",
+  },
+  messenger: {
+    bindHint: "用你自己的账号给机器人发一句话，就完成绑定。",
+    secretSaved: "已保存 {masked}，留空则不修改",
+    saveConnect: "保存并连接",
+    disconnect: "断开",
+    disconnectTitle: "断开 {channel}？",
+    disconnectBody: "会清除这个机器人的 {channel} 凭据，之后连上时第一个发消息的人成为主人。",
+    telegram: {
+      sub: "长轮询接收消息",
+      token: "Bot Token",
+      /** {bot} {cmd} 是 <code> 包着的账号名 / 命令 */
+      setupHint: "在 Telegram 里找 {bot}，发 {cmd} 创建机器人，把它给的 token 填到这里。目前只处理单聊；应用没开时发来的消息，24 小时内都能补上。",
+    },
+    slack: {
+      sub: "Socket Mode 接收消息",
+      botToken: "Bot Token",
+      appToken: "App-Level Token",
+      /** {conn} {s1}…{s4} 是权限名，{event} 是事件名 */
+      setupHint: "在 api.slack.com/apps 创建应用，打开 Socket Mode，生成带 {conn} 的 App-Level Token；给 Bot Token 加 {s1}、{s2}、{s3}、{s4}，事件订阅 {event}，在 App Home 允许发消息，再安装到工作区。目前只处理单聊；应用没开时发来的消息收不到。",
+    },
+    discord: {
+      sub: "Gateway 长连接接收消息",
+      token: "Bot Token",
+      setupHint: "在 Discord Developer Portal 创建应用并添加 Bot，复制 token；用 OAuth2 的 URL Generator 勾选 bot，把它加到你所在的服务器，然后私聊它。目前只处理单聊；应用没开时发来的消息收不到。",
+    },
   },
   weixin: {
     sub: "iLink 官方通道",

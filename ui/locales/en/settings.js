@@ -189,9 +189,9 @@ export default {
       none: "Off",
     },
     lowBalancePush: {
-      name: "Also send alerts to WeChat / Feishu",
-      sub: "Sent by your bot: on WeChat to whoever scanned the login QR code (they need to have messaged recently), on Feishu to the most recent direct chat",
-      keys: "push alert wechat feishu lark",
+      name: "Also send alerts to your chat apps",
+      sub: "Sent by your bot: on WeChat to whoever scanned the login QR code (they need to have messaged recently), on Feishu to the most recent direct chat, on Telegram, Slack and Discord to the owner",
+      keys: "push alert wechat feishu lark telegram slack discord",
     },
     usage: {
       name: "Usage",

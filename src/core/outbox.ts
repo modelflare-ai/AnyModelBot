@@ -15,6 +15,7 @@
  */
 import crypto from "node:crypto";
 import type { OutboxBody, OutboxKind, OutboxPurpose, OutboxRow, Store } from "../store/db.js";
+import type { PushChannel } from "./types.js";
 import { logger } from "../log.js";
 import { t as tr } from "../i18n/index.js";
 
@@ -47,8 +48,8 @@ export const HOLD_TTL_MS = 7 * 86400_000;
 export interface OutboxInput {
   id: string;
   botId: string;
-  channel: "weixin" | "feishu";
-  /** 微信：用户 id；飞书：单聊 chat_id */
+  channel: PushChannel;
+  /** 微信：用户 id；飞书和其他平台：单聊的 chat id */
   peerId: string;
   kind: OutboxKind;
   body: OutboxBody;

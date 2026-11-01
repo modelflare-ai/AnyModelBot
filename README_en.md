@@ -45,7 +45,7 @@
 
 # 🤖 AnyModelBot
 
-AnyModelBot is a local-first AI agent app for Windows, macOS and Linux. A bot is a persona with its own default model, workspace and memory. Chat with it in the app, or reach it from WeChat and Feishu. Let it read and write files, run commands and operate your desktop, with an approval prompt whenever it steps outside its workspace.
+AnyModelBot is a local-first AI agent app for Windows, macOS and Linux. A bot is a persona with its own default model, workspace and memory. Chat with it in the app, or reach it from WeChat, Feishu, Telegram, Slack or Discord. Let it read and write files, run commands and operate your desktop, with an approval prompt whenever it steps outside its workspace.
 
 Your conversations, memory, files and API keys live on your device. Models come from [Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme): one account, any model, priced per token. AnyModelBot itself has no subscription.
 
@@ -189,7 +189,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 - **Three permission presets per bot.** *Read-only*, *Workspace* (the default: write inside the bot's own folder, ask before anything outside) and *Full access* (no sandbox; recursive deletes still ask first).
 - **Approval cards, not surprises.** Out-of-bounds actions stop and wait for your answer.
 - **Told after a restart.** A message still in progress when the app quit or crashed is flagged in its conversation at the next start, so you can send it again; nothing is redone on its own.
-- **Slash commands** such as `/model` and `/reset` work in the app and in WeChat and Feishu chats.
+- **Slash commands** such as `/model` and `/reset` work in the app and in every chat channel.
 
 <p align="center">
   <img src="docs/assets/features/agent-files.gif" alt="A bot tidies a messy folder: it lists the files, proposes a plan, and an approval card asks before moving files outside its workspace" width="100%">
@@ -201,7 +201,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 - **Follow-ups.** Quote the result in WeChat, or reply to it in Feishu, to keep talking to that task.
 - **Rules.** "Every morning at 8, check X's price and tell me if it drops below 200" becomes a rule that checks on schedule and tells you only when something matters. To see how it behaves first, say "observe first": it records what it would have said, and sends nothing and changes no files. Once it looks right, switch it to act.
 - **Needs you.** Everything any bot is waiting on you for, an answer, an approval or a retry, sits in one sidebar row that is only there when something needs you. The info panel's Tasks group lists the bot's tasks and rules, with every step visible.
-- **Quiet by default.** Only results, decisions and failures are pushed, never progress. Quiet hours are 22:00 to 08:00, and unprompted messages are capped per day (3 on WeChat, 5 on Feishu), with the rest merged into one.
+- **Quiet by default.** Only results, decisions and failures are pushed, never progress. Quiet hours are 22:00 to 08:00, and unprompted messages are capped per day (3 on WeChat, 5 on other channels), with the rest merged into one.
 - **Budgets.** Every task and rule has a budget (1 US dollar per task; 0.10 per rule run and 3 a month), and work stops and asks when it runs out. Change them in the task details and the rule editor.
 - **Pause anytime.** One switch in bot settings › Proactive messages pauses background work; chat carries on.
 - **Cleans up after itself.** Tasks and run logs are kept for 30 days. A task folder unused for 30 days is deleted without asking; the task details show the date, and Keep holds on to it. Run logs export as Markdown.
@@ -242,6 +242,7 @@ The full story, in Chinese: [AnyModelBot 超级智能体](./docs/blog/superagent
 - **Memory that carries over.** Bots keep Markdown memory at three levels (team, bot and group) and filter out anything that looks like a secret.
 - **Long chats stay usable.** A context steward compacts or starts a fresh segment with a hand-off summary before the window fills up.
 - **WeChat and Feishu.** Scan a QR code to connect WeChat, or connect a Feishu bot with streaming reply cards. WeChat also carries images and files.
+- **Telegram, Slack and Discord.** Paste a token in the info panel. No public address needed. Replies appear as they're written, and images and files work both ways. Direct messages only for now, and approvals and questions are answered by text.
 - **Four ways to run it.** Desktop app, command line, Docker, or the local web console at `127.0.0.1:3600`.
 
 <p align="center">
@@ -255,7 +256,7 @@ The full story, in Chinese: [AnyModelBot 超级智能体](./docs/blog/superagent
 ## 🔒 Local-first, and easy on the eyes
 
 - **Your data stays with you.** Conversations, memory, files and API keys are stored on your device. The local console listens on `127.0.0.1` only, and the desktop app generates a fresh access token on every launch.
-- **It answers to you.** By default a bot replies only to its owner (the WeChat account that scanned the QR code; on Feishu, the first person to message it after you connect it, which is you) and the people you allow. Anyone else gets a one-line notice and no model is called; you let them in from the info panel, or by replying `yes <code>` in chat.
+- **It answers to you.** By default a bot replies only to its owner (the WeChat account that scanned the QR code; on Feishu, Telegram, Slack and Discord, the first person to message it after you connect it, which is you) and the people you allow. Anyone else gets a one-line notice and no model is called; you let them in from the info panel, or by replying `yes <code>` in chat.
 - **Replies are not lost.** A reply is saved locally before it is sent; network errors are retried, sending resumes after a restart, and when WeChat's 24-hour window has closed the reply waits and arrives with your next message.
 - **Telemetry kept off.** Telemetry in the bundled computer-use driver is switched off, and the built-in gateway runs with auto-update disabled.
 - **Light, dark or follow the system.** Six bot characters, and their eyes follow your pointer.
@@ -278,10 +279,10 @@ In the second half of 2026, xAI's [Grok Bot](https://x.ai/bot), OpenAI's [dots](
 | Where the agent runs | Your own computer or server | xAI's cloud computer | OpenAI's cloud computer | Anthropic's cloud |
 | Models | GPT, Claude, Gemini, Grok, DeepSeek, Kimi, GLM and 70+ more (through Modelflare) | Mainly xAI's Grok models | OpenAI's models | Claude (Opus 5.5) |
 | Cost | Free app, models billed per token | Subscription | ChatGPT Pro / Business Premium subscription | Claude Pro / Max subscription |
-| Where you reach it | Desktop app (Windows, macOS, Linux), Docker, WeChat, Feishu | Desktop app, iPhone | ChatGPT, Slack, Teams | iOS, Android, claude.ai |
+| Where you reach it | Desktop app (Windows, macOS, Linux), Docker, WeChat, Feishu, Telegram, Slack, Discord | Desktop app, iPhone | ChatGPT, Slack, Teams | iOS, Android, claude.ai |
 | Availability | Download it now | Beta | Select markets | Research preview, US waitlist |
 
-AnyModelBot works in the background too: a task you hand over can finish in the background and send its result to WeChat or Feishu, and anything that needs your approval or answer shows up under "Needs you" in the sidebar. Every step a bot takes is visible, and anything outside its workspace asks you first.
+AnyModelBot works in the background too: a task you hand over can finish in the background and send its result to your chat app, and anything that needs your approval or answer shows up under "Needs you" in the sidebar. Every step a bot takes is visible, and anything outside its workspace asks you first.
 
 > [!NOTE]
 > Details about the other products come from public reports as of October 2026 and may have changed; check each vendor's official information. Grok Bot, dots and Claude Duet are products and trademarks of xAI, OpenAI and Anthropic respectively. AnyModelBot is not affiliated with them.
@@ -297,7 +298,7 @@ AnyModelBot works in the background too: a task you hand over can finish in the 
 | :--- | :--- |
 | Conversations and sessions (local SQLite database) | The prompts, files and tool results a model needs to answer, sent through Modelflare to the provider you chose |
 | Memory (Markdown files) | Screenshots, when you ask a bot to look at your screen with computer use |
-| Files in each bot's workspace | Messages you exchange over WeChat or Feishu, which pass through those platforms |
+| Files in each bot's workspace | Messages you exchange over chat channels, which pass through those platforms |
 | Your API key and sign-in tokens | Your sign-in with Modelflare, which happens at modelflare.dev |
 | Settings | |
 
@@ -316,7 +317,7 @@ Modelflare keeps request logs; its [Trust Center](https://modelflare.dev/trust?u
 | Model gateway | [magpie](https://github.com/yetone/magpie) (Go, MIT), bundled and started by the app |
 | Agent runtime | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT), run as a separate process |
 | Computer use | [Cua Driver](https://github.com/trycua/cua), bundled |
-| Channels | Feishu (long connection + streaming cards), WeChat (iLink) |
+| Channels | Feishu (long connection + streaming cards), WeChat (iLink), Telegram (long polling), Slack (Socket Mode), Discord (Gateway) |
 | Tests and CI | Vitest, GitHub Actions |
 
 # 📝 Roadmap
@@ -324,10 +325,10 @@ Modelflare keeps request logs; its [Trust Center](https://modelflare.dev/trust?u
 Directions we are exploring. They are not promises, and the order is not a schedule.
 
 - [x] **Scheduled tasks**: let a bot run work on a timer (shipped as rules, above).
-- [ ] **Group chats**: Feishu bots handle one-to-one chats today.
+- [ ] **Group chats**: chat channels handle one-to-one chats today.
 - [ ] **English interface**: the app UI is Simplified Chinese today.
 - [ ] **macOS computer use**: verify direct mode on more real machines and move it out of Beta.
-- [ ] **A standalone mobile app**: today you reach your bots from WeChat or Feishu.
+- [ ] **A standalone mobile app**: today you reach your bots from WeChat, Feishu, Telegram, Slack or Discord.
 
 Have a different idea? Open an [issue](https://github.com/modelflare-ai/AnyModelBot/issues) or start a [discussion](https://github.com/modelflare-ai/AnyModelBot/discussions). Items we pick up are tracked with the [`roadmap`](https://github.com/modelflare-ai/AnyModelBot/labels/roadmap) label.
 

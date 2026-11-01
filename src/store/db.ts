@@ -67,6 +67,15 @@ export interface WeixinAccount {
   updatedAt: number;
 }
 
+/** Telegram、Slack、Discord 的连接凭据（只在本机库里，不随机器人设置返回给界面） */
+export interface MessengerAccount {
+  botId: string;
+  channel: string;
+  credentials: Record<string, string>;
+  /** 平台上机器人的名字（连接时查到的），信息面板显示 */
+  name: string;
+  updatedAt: number;
+}
 export interface WeixinPeer {
   botId: string;
   userId: string;
@@ -160,6 +169,8 @@ export interface OutboxBody {
   name?: string;
   /** 飞书交互卡片 JSON（发不了时发 text） */
   card?: Record<string, unknown>;
+  /** 流式显示用的那条消息（Telegram、Slack、Discord）：最终回复的第一段改写它，改不了再发新的 */
+  editId?: string;
   /** 飞书流式卡片：最终回复先写进这张卡片，失败再发文本 */
   cardId?: string;
   cardSeq?: number;
@@ -452,6 +463,9 @@ CREATE TABLE IF NOT EXISTS weixin_peers (
   bot_id TEXT NOT NULL, user_id TEXT NOT NULL, context_token TEXT NOT NULL DEFAULT '',
   quota_remaining INTEGER NOT NULL DEFAULT 0, window_started_at INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (bot_id, user_id));
+CREATE TABLE IF NOT EXISTS messenger_accounts (
+  bot_id TEXT NOT NULL, channel TEXT NOT NULL, credentials TEXT NOT NULL, name TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL, PRIMARY KEY (bot_id, channel));
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS agent_sessions (
   conversation_id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, session_id TEXT NOT NULL, updated_at INTEGER NOT NULL);
@@ -691,6 +705,7 @@ export class Store {
     this.db.prepare("DELETE FROM conversations WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM weixin_accounts WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM weixin_peers WHERE bot_id = ?").run(id);
+    this.db.prepare("DELETE FROM messenger_accounts WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM agent_sessions WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM access WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM outbox WHERE bot_id = ?").run(id);
@@ -820,6 +835,30 @@ export class Store {
     }
     while (picked.length > 1 && picked[0].role !== "user") picked.shift();
     return picked;
+  }
+
+  // ---------- Telegram、Slack、Discord 的连接凭据 ----------
+  getMessengerAccount(botId: string, channel: string): MessengerAccount | undefined {
+    const r = this.db.prepare("SELECT * FROM messenger_accounts WHERE bot_id = ? AND channel = ?").get(botId, channel) as Row | undefined;
+    if (!r) return undefined;
+    let credentials: Record<string, string> = {};
+    try {
+      credentials = JSON.parse(String(r.credentials));
+    } catch {
+      /* 读不出来就当没填过，让用户重新填 */
+    }
+    return { botId, channel, credentials, name: String(r.name), updatedAt: Number(r.updated_at) };
+  }
+  saveMessengerAccount(a: Pick<MessengerAccount, "botId" | "channel" | "credentials" | "name">): void {
+    this.db
+      .prepare(
+        `INSERT INTO messenger_accounts(bot_id, channel, credentials, name, updated_at) VALUES(?, ?, ?, ?, ?)
+         ON CONFLICT(bot_id, channel) DO UPDATE SET credentials=excluded.credentials, name=excluded.name, updated_at=excluded.updated_at`,
+      )
+      .run(a.botId, a.channel, JSON.stringify(a.credentials), a.name, Date.now());
+  }
+  deleteMessengerAccount(botId: string, channel: string): void {
+    this.db.prepare("DELETE FROM messenger_accounts WHERE bot_id = ? AND channel = ?").run(botId, channel);
   }
 
   // ---------- weixin ----------

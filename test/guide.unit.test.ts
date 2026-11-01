@@ -18,14 +18,14 @@ describe("引导进度", () => {
   });
 
   it("推导：有过回复、换过模型、绑了渠道、记下过东西", () => {
-    const none = { conversations: [], bots: [], weixinBound: () => false, memoryCount: () => 0 };
+    const none = { conversations: [], bots: [], channelBound: () => false, memoryCount: () => 0 };
     expect(deriveGuide(none)).toEqual([]);
     expect(deriveGuide({ ...none, conversations: [{ messageCount: 1, model: "" }] })).toEqual([]);
     expect(
       deriveGuide({
         conversations: [{ messageCount: 2, model: "" }],
         bots: [{ id: "a", defaultModel: "gpt-x", feishuAppId: "" }, { id: "b", defaultModel: "", feishuAppId: "" }],
-        weixinBound: (id) => id === "b",
+        channelBound: (id) => id === "b",
         memoryCount: (id) => (id === "a" ? 1 : 0),
       }),
     ).toEqual(["hello", "model", "weixin", "memory"]);

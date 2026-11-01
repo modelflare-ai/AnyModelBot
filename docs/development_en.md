@@ -17,7 +17,7 @@ src/
     prompts/     every prompt the agent model reads: persona, chat rules, memory guide, a segment's first message, skills
   llm/           OpenAI-compatible client (model access interface)
   magpie/        magpie supervisor: isolated directories, free port, generated secret, health checks, crash restart, clean exit
-  channels/      feishu/ (long connection + CardKit)  weixin/ (iLink; MIT notice in LICENSE.openclaw-weixin)
+  channels/      feishu/ (long connection + CardKit)  weixin/ (iLink; MIT notice in LICENSE.openclaw-weixin)  messenger/ (Telegram, Slack, Discord, sharing one send and receive path)
   store/         SQLite (node:sqlite, no native build)
   account/       Modelflare account: PKCE loopback sign-in, token rotation, balance and reminders, per-bot budget keys, model capabilities and reference prices
   web/           console server (JSON API + streaming chat over SSE)

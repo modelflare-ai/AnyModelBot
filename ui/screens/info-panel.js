@@ -26,7 +26,69 @@ export function usePoll(fn, ms, deps = []) {
 }
 
 /** 渠道名（渲染时取，跟着界面语言）；不认识的渠道原样显示 id */
-const channelName = (c) => ({ web: t("info.channel.web"), feishu: t("info.channel.feishu"), weixin: t("info.channel.weixin") })[c];
+const channelName = (c) => ({ web: t("info.channel.web"), feishu: t("info.channel.feishu"), weixin: t("info.channel.weixin"), telegram: t("info.channel.telegram"), slack: t("info.channel.slack"), discord: t("info.channel.discord") })[c];
+
+/** Telegram、Slack、Discord：填 token 连上。key 和后端 MESSENGER_FIELDS 对应 */
+const MESSENGER_FIELDS = {
+  telegram: [{ key: "token", placeholder: "123456789:AA…" }],
+  slack: [{ key: "botToken", placeholder: "xoxb-…" }, { key: "appToken", placeholder: "xapp-…" }],
+  discord: [{ key: "token", placeholder: "" }],
+};
+/** 接入说明里 <code> 包着的权限名、事件名 */
+const code = (s) => html`<code>${s}</code>`;
+const MESSENGER_HINT = {
+  telegram: () => ({ bot: code("@BotFather"), cmd: code("/newbot") }),
+  slack: () => ({ conn: code("connections:write"), s1: code("chat:write"), s2: code("im:history"), s3: code("files:read"), s4: code("files:write"), event: code("message.im") }),
+  discord: () => ({}),
+};
+
+function MessengerRow({ bot, id, st, owner, reload }) {
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState({});
+  const [busy, setBusy] = useState(false);
+  const fields = MESSENGER_FIELDS[id];
+  const account = st.account;
+  const name = channelName(id);
+  // 第一次连接要填全；已保存的留空表示不改
+  const ready = account ? fields.some((f) => (values[f.key] || "").trim()) : fields.every((f) => (values[f.key] || "").trim());
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api(`/bots/${bot.id}/${id}`, { method: "PUT", body: values });
+      setValues({});
+      saved();
+      reload();
+    } catch (e) {
+      failed(e);
+    }
+    setBusy(false);
+  };
+  const clear = async () => {
+    if (!(await confirmSheet({ title: t("info.messenger.disconnectTitle", { channel: name }), body: t("info.messenger.disconnectBody", { channel: name }), confirmLabel: t("info.messenger.disconnect"), danger: true }))) return;
+    try {
+      await api(`/bots/${bot.id}/${id}`, { method: "DELETE" });
+      setValues({});
+      reload();
+    } catch (e) {
+      failed(e);
+    }
+  };
+  return html`<div class="row clickable" onClick=${() => setOpen((v) => !v)} role="button" tabindex="0" aria-expanded=${open}
+      onKeyDown=${(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen((v) => !v))}>
+      <div class="who"><div class="name">${name}</div><div class="sub">${st.detail || (account && account.name) || t(`info.messenger.${id}.sub`)}</div></div>
+      <${Badge} s=${st.state} />
+    </div>
+    ${open && html`<div class="row-edit">
+      ${fields.map((f) => html`<label key=${f.key}>${t(`info.messenger.${id}.${f.key}`)}${account && account.saved[f.key] && html`<span class="hint">${t("info.messenger.secretSaved", { masked: account.saved[f.key] })}</span>`}
+        <input class="field mono" type="password" autocomplete="off" placeholder=${f.placeholder} value=${values[f.key] || ""} onInput=${(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))} /></label>`)}
+      <div class="actions">
+        <button type="button" class="btn primary" disabled=${!ready || busy} onClick=${save}>${busy ? html`<${Spinner} />` : t("info.messenger.saveConnect")}</button>
+        ${account && html`<button type="button" class="text danger" onClick=${clear}>${t("info.messenger.disconnect")}</button>`}
+      </div>
+      ${account && owner === null && html`<p class="hint">${t("info.messenger.bindHint")}</p>`}
+      <p class="hint">${t(`info.messenger.${id}.setupHint`, MESSENGER_HINT[id]())}</p>
+    </div>`}`;
+}
 
 function FeishuRow({ bot, st, owner, reload }) {
   const [open, setOpen] = useState(false);
@@ -231,10 +293,10 @@ export function InfoPanel({ bot, leaving, onClose, onOpenBotSettings, onOpenChat
   // 任务来自的会话：网页的就是这里的对话，微信、飞书的在会话记录里看
   const openConv = (task) => (task.channel === "web" ? onOpenChat() : setViewing((convs?.conversations || []).find((c) => c.id === task.conversationId) || null));
   const pending = (appr && appr.approvals) || [];
-  // 上手清单：微信扫码绑定了，或飞书连上了，就算接好了渠道
+  // 上手清单：微信扫码绑定了，或飞书、Telegram、Slack、Discord 连上了，就算接好了渠道
   useEffect(() => {
     const ch = detail && detail.channels;
-    if (ch && (ch.weixin.account || ch.feishu.state === "connected")) markDone("weixin");
+    if (ch && (ch.weixin.account || ["feishu", "telegram", "slack", "discord"].some((c) => ch[c] && ch[c].state === "connected"))) markDone("weixin");
   }, [detail]);
   // leaving：关上后还在播滑出的那一小会儿（main.js 的 usePresence），不再接收操作
   return html`<aside class=${`panel${leaving ? " leaving" : ""}`} aria-label=${t("info.aria")} inert=${leaving || undefined}>
@@ -248,7 +310,7 @@ export function InfoPanel({ bot, leaving, onClose, onOpenBotSettings, onOpenChat
       <div class="list-head">${t("info.channels")}</div>
       <div class="list">
         ${detail && detail.bot
-          ? html`<${FeishuRow} bot=${detail.bot} st=${detail.channels.feishu} owner=${access ? access.owners.feishu : undefined} reload=${reloadDetail} /><${WeixinRow} bot=${detail.bot} st=${detail.channels.weixin} reload=${reloadDetail} />`
+          ? html`<${FeishuRow} bot=${detail.bot} st=${detail.channels.feishu} owner=${access ? access.owners.feishu : undefined} reload=${reloadDetail} /><${WeixinRow} bot=${detail.bot} st=${detail.channels.weixin} reload=${reloadDetail} />${["telegram", "slack", "discord"].map((id) => html`<${MessengerRow} key=${id} bot=${detail.bot} id=${id} st=${detail.channels[id]} owner=${access ? access.owners[id] : undefined} reload=${reloadDetail} />`)}`
           : html`<div class="row"><${Skeleton} w="50%" /></div><div class="row"><${Skeleton} w="40%" /></div>`}
       </div>
 

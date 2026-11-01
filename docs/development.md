@@ -17,7 +17,7 @@ src/
     prompts/     交给代理模型的全部提示词：人设、聊天规则、记忆说明、每段第一条消息、技能说明
   llm/           OpenAI 兼容客户端（模型接入接口）
   magpie/        内置 magpie 守护：隔离目录、空闲端口、自动生成密钥、健康检查、崩溃重启、干净退出
-  channels/      feishu/（长连接 + CardKit）  weixin/（iLink，MIT 声明见 LICENSE.openclaw-weixin）
+  channels/      feishu/（长连接 + CardKit）  weixin/（iLink，MIT 声明见 LICENSE.openclaw-weixin）  messenger/（Telegram、Slack、Discord，共用一套收发）
   store/         SQLite（node:sqlite，无需原生编译）
   account/       Modelflare 账户：PKCE 回环登录、令牌轮换、余额与提醒、机器人预算 Key、模型能力与参考价
   web/           管理界面服务（JSON API + 流式对话 SSE）

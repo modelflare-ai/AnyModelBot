@@ -40,6 +40,7 @@ import { sentText } from "../core/outbox.js";
 import { ActivityLog, type ActivityStep } from "../agent/activity.js";
 import { ResumeFailed, deliverables } from "../agent/host.js";
 import { answerLine, defaultLine, defaultOf, parseAnswer, promptButtons, questionsOf, taskPromptText, type ApprovalCenter, type ApprovalEvent, type QuestionItem, type ReplyContext } from "../agent/approvals.js";
+import { MESSENGER_LABEL, isMessenger, isPushChannel, type PushChannel } from "../core/types.js";
 import { actionCardSpec } from "../channels/feishu/transport.js";
 import { NUDGE, RULE_NUDGE, RULE_RERUN, RULE_RESULT_SYSTEM, attachmentsOf, rebrief, recoveryNote, resumeNote, retryNote, ruleBrief, ruleResultInput, ruleRules, taskBrief } from "../agent/prompts/index.js";
 import type { BotSettings } from "../agent/settings.js";
@@ -90,6 +91,9 @@ import {
 import { t as tr } from "../i18n/index.js";
 import { KEEP_MS, SWEEP_MS, WARN_MS, dirBytes, hasFiles, taskFolder } from "./retention.js";
 import { ruleMarkdown, taskMarkdown, type ExportedTaskRun } from "./export.js";
+
+/** 引用一条消息时，平台会把原文一起给我们的渠道：靠引用就认得出是哪个任务的结果 */
+const QUOTES_ORIGINAL: ReadonlySet<string> = new Set(["weixin", "telegram", "discord"]);
 
 const log = logger("tasks");
 
@@ -1192,10 +1196,10 @@ export class TaskService {
       return;
     }
     const msg = oneLine(report?.message ?? "");
-    const pushed = (conv.channel === "weixin" || conv.channel === "feishu") && !!this.o.delivery;
-    // 结果后面那句「引用这条消息可以继续问」（失败那句本来就说了怎么办）：微信总有；飞书只在结果回复在请求那条消息下时有
-    // （回复链对得上才认得出是哪个任务，见 followUp）。连它一起不超过 300 字
-    const hint = pushed && outcome === "done" ? (conv.channel === "weixin" ? tr("tasks.hintQuote") : task.originRef ? tr("tasks.hintReply") : "") : "";
+    const pushed = isPushChannel(conv.channel) && !!this.o.delivery;
+    // 结果后面那句「引用这条消息可以继续问」（失败那句本来就说了怎么办）：引用时能带上原文的平台（微信、Telegram、Discord）总有；
+    // 飞书只在结果回复在请求那条消息下时有（回复链对得上才认得出是哪个任务，见 followUp）；Slack 的回复不带原文，没有。连它一起不超过 300 字
+    const hint = pushed && outcome === "done" ? (QUOTES_ORIGINAL.has(conv.channel) ? tr("tasks.hintQuote") : task.originRef ? tr("tasks.hintReply") : "") : "";
     const text = outcome === "done" ? clip(msg, MESSAGE_MAX - (hint ? hint.length + 2 : 0)) || tr("tasks.done", { title: task.title }) : tr("tasks.notDone", { title: task.title, why: clip(msg || error || tr("tasks.noResult"), MESSAGE_MAX) });
     const files = outcome === "done" ? this.files(task, report?.files ?? []) : [];
     if (pushed) this.post(conv, task, id, purpose, text, files, hint);
@@ -1205,9 +1209,9 @@ export class TaskService {
     this.note(conv.id, outcome === "done" ? `[后台任务「${task.title}」已完成，已把结果发给用户] ${text}` : `[后台任务「${task.title}」失败了，已告诉用户] ${text}`);
   }
 
-  /** 微信、飞书：按主动消息的规则写进出站队列（同步落库；渠道没上线时等它上线） */
+  /** 聊天平台：按主动消息的规则写进出站队列（同步落库；渠道没上线时等它上线） */
   private post(conv: Conversation, task: TaskRow, id: string, purpose: "result" | "failure", text: string, files: string[], hint: string): void {
-    const channel = conv.channel as "weixin" | "feishu";
+    const channel = conv.channel as PushChannel;
     const replyTo = channel === "feishu" ? task.originRef || replyHandle(this.store, conv.id).messageId || "" : "";
     const notice = channel === "feishu" && !replyTo;
     this.o.delivery!.push({
@@ -1533,7 +1537,7 @@ export class TaskService {
     const delivery = this.o.delivery;
     if (!a || !delivery || !this.started) return;
     const conv = this.store.getConversation(conversationId);
-    if (!conv || (conv.channel !== "weixin" && conv.channel !== "feishu")) return;
+    if (!conv || !isPushChannel(conv.channel)) return;
     const rows = a.pending(conversationId).filter((r) => r.taskId).sort((x, y) => x.createdAt - y.createdAt);
     const pushed = (r: ApprovalRow) => this.store.getOutbox(askId(r));
     if (rows.some((r) => (pushed(r)?.status ?? "gone") !== "gone")) return;
@@ -1541,8 +1545,9 @@ export class TaskService {
     const task = row ? this.store.getTask(row.taskId) : undefined;
     if (!row || !task || task.endReason === "stopped") return;
     const text = taskPromptText(row, task.title);
-    const base = { id: askId(row), botId: task.botId, channel: conv.channel as "weixin" | "feishu", peerId: conv.peerId, purpose: "question" as const, subject: task.title, text, ref: `task:${task.id}` };
-    if (conv.channel === "weixin") delivery.push({ ...base, raw: true });
+    const base = { id: askId(row), botId: task.botId, channel: conv.channel, peerId: conv.peerId, purpose: "question" as const, subject: task.title, text, ref: `task:${task.id}` };
+    // 只有飞书有卡片按钮；其他平台发文字，回复编号
+    if (conv.channel !== "feishu") delivery.push({ ...base, raw: true });
     else {
       const replyTo = task.originRef || replyHandle(this.store, conv.id).messageId || "";
       const buttons = promptButtons(row);
@@ -2030,7 +2035,7 @@ export class TaskService {
       endedAt: r.endedAt,
       steps: this.activity(r.id),
     }));
-    const channel = ch === "weixin" ? tr("tasks.chWeixin") : ch === "feishu" ? tr("tasks.chFeishu") : ch ? tr("tasks.chWeb") : "";
+    const channel = ch === "weixin" ? tr("tasks.chWeixin") : ch === "feishu" ? tr("tasks.chFeishu") : ch && isMessenger(ch) ? MESSENGER_LABEL[ch] : ch ? tr("tasks.chWeb") : "";
     return { title: task.title, text: taskMarkdown(this.view(task), origin && { ...origin, channel }, runs, this.timeZone, this.now()) };
   }
 
@@ -2609,7 +2614,7 @@ export class TaskService {
     const conv = this.store.getConversation(rule.conversationId);
     if (!conv) return false;
     if (this.store.getOutbox(id)) return true;
-    if ((conv.channel === "weixin" || conv.channel === "feishu") && this.o.delivery) {
+    if (isPushChannel(conv.channel) && this.o.delivery) {
       this.o.delivery.push({
         id,
         botId: rule.botId,

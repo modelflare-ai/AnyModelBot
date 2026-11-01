@@ -16,6 +16,9 @@ export default {
     web: "Web",
     feishu: "Feishu",
     weixin: "WeChat",
+    telegram: "Telegram",
+    slack: "Slack",
+    discord: "Discord",
   },
   feishu: {
     bindHint: "Send the bot a message from your own Feishu account to finish binding.",
@@ -26,6 +29,30 @@ export default {
     disconnectTitle: "Disconnect Feishu?",
     disconnectBody: "This removes the bot's Feishu App ID and App Secret.",
     setupHint: "In the Feishu Open Platform, enable the Bot capability, set event subscription to “Receive events through long connection”, and subscribe to {event}. Permissions: {p1}, {p2}, {p3}, {p4}.",
+  },
+  messenger: {
+    bindHint: "Send the bot a message from your own account to finish binding.",
+    secretSaved: "Saved {masked}. Leave blank to keep it",
+    saveConnect: "Save & connect",
+    disconnect: "Disconnect",
+    disconnectTitle: "Disconnect {channel}?",
+    disconnectBody: "This removes the bot's {channel} credentials. After you reconnect, the first person to message it becomes the owner.",
+    telegram: {
+      sub: "Receives messages over long polling",
+      token: "Bot token",
+      setupHint: "In Telegram, message {bot}, send {cmd} to create a bot, and paste the token it gives you. Direct messages only for now. Messages sent while the app is closed are picked up for up to 24 hours.",
+    },
+    slack: {
+      sub: "Receives messages over Socket Mode",
+      botToken: "Bot token",
+      appToken: "App-level token",
+      setupHint: "At api.slack.com/apps, create an app, turn on Socket Mode and generate an app-level token with {conn}. Add the bot scopes {s1}, {s2}, {s3} and {s4}, subscribe to {event}, allow messages in App Home, then install it to your workspace. Direct messages only for now. Messages sent while the app is closed aren't received.",
+    },
+    discord: {
+      sub: "Receives messages over the Gateway",
+      token: "Bot token",
+      setupHint: "In the Discord Developer Portal, create an application, add a bot and copy its token. Under OAuth2 → URL Generator, tick bot and add it to a server you're in, then send it a direct message. Direct messages only for now. Messages sent while the app is closed aren't received.",
+    },
   },
   weixin: {
     sub: "Official iLink channel",

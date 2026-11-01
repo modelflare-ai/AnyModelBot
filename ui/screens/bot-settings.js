@@ -133,8 +133,7 @@ function AccessRows({ botId }) {
   return html`<div class="list-head">${t("botSettings.access.head")}</div>
     <div class="list">
       <${Row} id="access" name=${t("botSettings.access.policy")} />
-      ${owner("weixin")}
-      ${owner("feishu")}
+      ${["weixin", "feishu", "telegram", "slack", "discord"].map((ch) => owner(ch))}
     </div>
     ${allowed.length > 0 && html`<div class="list-head">${t("botSettings.access.allowed")}<span class="badge count">${allowed.length}</span></div>
       <div class="list">

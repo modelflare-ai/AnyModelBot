@@ -23,6 +23,7 @@ import type { HeldGroup, Outbox } from "./outbox.js";
 import { DEFAULT_QUIET, fmtWhen, inQuiet, minuteOf, nextAt, quietEnd, quietStart, startOfDay, systemTimeZone, type QuietHours } from "./quiet.js";
 import { QUOTA_WINDOW_MS, WeixinQuota } from "../channels/weixin/quota.js";
 import { combineHeld, filterMarkdown } from "../channels/weixin/channel.js";
+import { MESSENGER_LABEL, isMessenger, type PushChannel } from "./types.js";
 import { logger } from "../log.js";
 import { t as tr } from "../i18n/index.js";
 
@@ -58,8 +59,8 @@ export interface PushInput {
   /** 确定的 id（同一 id 只发一次），如 task:<任务>:result:<run> */
   id: string;
   botId: string;
-  channel: "weixin" | "feishu";
-  /** 微信：用户 id；飞书：chat_id */
+  channel: PushChannel;
+  /** 微信：用户 id；飞书和其他平台：chat id */
   peerId: string;
   purpose: PushPurpose;
   /** 是什么：任务标题、规则名（摘要、续期提醒、「需要你」里用） */
@@ -126,7 +127,7 @@ export interface AttentionItem {
   actions: Array<"retry" | "dismiss">;
 }
 
-const channelName = (c: string) => (c === "weixin" ? tr("delivery.chWeixin") : c === "feishu" ? tr("delivery.chFeishu") : c);
+const channelName = (c: string) => (c === "weixin" ? tr("delivery.chWeixin") : c === "feishu" ? tr("delivery.chFeishu") : isMessenger(c) ? MESSENGER_LABEL[c] : c);
 const ACK = /^(ok|okay|k|好|好的|好滴|嗯|嗯嗯|收到|行|可以)[\s!！。.~～]*$/i;
 
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();

@@ -11,7 +11,6 @@ export default {
   approveOnce: "Approve once",
   deny: "Deny",
   stop: "Stop",
-  seen: "Got it",
   relogin: "Scan again",
   answerPlaceholder: "Your answer",
   send: "Send",
@@ -19,7 +18,6 @@ export default {
   dismiss: "Don't show again",
   continue: "Continue",
   raiseBudget: "Change budget",
-  keep: "Keep",
   toAct: "Switch to act",
   keepObserving: "Keep observing",
 };

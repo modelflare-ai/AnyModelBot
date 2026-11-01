@@ -223,12 +223,12 @@ export default {
     },
     imageModel: {
       name: "默认图片模型",
-      sub: "机器人生成图片时默认选它，每次生成前都会让你确认",
+      sub: "机器人生成图片时默认选它",
       keys: "图片 生图 画图 image 模型",
     },
     videoModel: {
       name: "默认视频模型",
-      sub: "机器人生成视频时默认选它，每次生成前都会让你确认",
+      sub: "机器人生成视频时默认选它",
       keys: "视频 生视频 video 模型",
     },
     autoModel: "自动（{model}）",

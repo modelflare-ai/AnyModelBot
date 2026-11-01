@@ -162,8 +162,10 @@ const RULES: [rule: string, part: string, says: string[], gone?: string[]][] = [
   ["不逐步讲解：处理过程在界面里", "chat", ["之后不要逐步讲解", "「处理过程」"]],
   ["做完说清做了什么、结果在哪里", "chat", ["说清做了什么、结果在哪里", "present"]],
   ["如实报告：没做完就是没做完，失败就是失败", "chat", ["没做完就说没做完", "失败就说失败和原因", "没验证过的结果不要说成已完成"]],
-  ["一次只问一个具体问题，选项用 ask_user_question", "chat", ["一次只问一个具体问题", "ask_user_question"]],
-  ["已经让做的事不再确认", "chat", ["能自己判断的事不要问，已经让你做的事不要再确认"]],
+  // 产品负责人 2026-11-01：自动做，不要一直问。自己做决定并说一句选了什么；语言、格式、范围、风格从不问；只在三种情况问
+  ["自己做决定，说一句选了什么；语言、格式、范围、风格不问；已经让做的事不再确认", "chat", ["自己做决定，说一句选了什么", "语言、格式、范围、风格都不问", "已经让你做的事不要再确认"]],
+  ["只在猜错有代价、要用户才有的东西、不可撤回时问，一次一个问题，选项用 ask_user_question", "chat",
+    ["猜错会造成损失、花钱或白做大半", "登录、文件、密码", "不可撤回（付款、删除用户的数据、给别人发消息）", "一次一个具体问题", "ask_user_question"], ["需要用户决定时"]],
   ["不说空话", "chat", ["不说客套话和空话"]],
   ["IM 里回复要短", "chat", ["在微信、飞书里回复要短", "微信只显示纯文本"]],
   ["既不啰嗦也不沉默", "*", [], ["逐步汇报", "每一步都告诉用户", "详细说明每一步", "不要告诉用户你要做什么", "保持沉默"]],
@@ -177,20 +179,25 @@ const RULES: [rule: string, part: string, says: string[], gone?: string[]][] = [
   ["记忆：先 recall 再说不知道；不记密钥", "memory", ["先用 recall 查一下", "不要把密码、密钥、令牌、证件号写进记忆"]],
   ["每段第一条消息：渠道、记忆快照、交接、用户消息；人设和记忆说明不在这里", "segment",
     ["[对话渠道]\n微信私聊（手机上看，只显示纯文本）", "[长期记忆快照]", "- 用户叫小王", "[交接]", "[用户消息]\n继续"], ["[机器人设定]", "remember / forget / recall"]],
-  ["生图：只在需要时问", "skill media", ["only when", "`confirm: false` because the user named that model", "`confirm: true` because the request is ambiguous", "ask_user_question"],
-    ["so the user confirms the model before anything is generated", "they will be asked again"]],
-  ["生图工具：默认模型、花费不高直接生成", "tool generate_image", ["generates right away", "\"confirm\""], ["Before anything is generated the user is asked"]],
-  ["生视频工具：默认模型、花费不高直接生成", "tool generate_video", ["generates right away", "\"confirm\""], ["Before anything is generated the user is asked"]],
+  // 生图：直接生成，只在花费高（超过 $0.5）或设成每次都问时由应用问；不因为换了模型、要求不明确而问，代理自己也不问
+  ["生图：只在花费高或设成每次都问时问；代理按最合理的理解生成并说一句", "skill media", ["generates right away", "only when the estimated cost is high", "always ask", "most reasonable interpretation", "say in one line what you chose"],
+    ["confirm: true", "confirm: false", "ambiguous", "ask_user_question", "not the default one", "so the user confirms the model before anything is generated", "they will be asked again"]],
+  ["生图工具：直接生成，花费高才问；没有 confirm 参数", "tool generate_image", ["generates right away", "only a high estimated cost"], ["\"confirm\"", "With the default model", "Before anything is generated the user is asked"]],
+  ["生视频工具：直接生成，花费高才问；没有 confirm 参数", "tool generate_video", ["generates right away", "only a high estimated cost"], ["\"confirm\"", "With the default model", "Before anything is generated the user is asked"]],
   // —— 后台任务（3a）——
   ["聊天代理：长活或用户说后台做才开任务，能马上答的不开；开了只说一句，不自己做", "tool task_start", ["more than a few minutes or many steps", "后台做", "not for what you can answer now", "前台做", "in one sentence", "do not do the work yourself"]],
   ["用户提到某个任务、回答它的问题时把话转给它", "tool task_message", ["when they refer to it", "answer its question", "next step", "resumes"]],
-  // —— 任务的提问（3b）：先自己定，要问就一次一个。有合理默认的尽早问、带 default，接着只做不依赖回答的部分，没回答就按默认；
-  //    非用户定不可的先做完不依赖它的部分再问，问完结束这一轮 ——
-  ["任务规则优先于聊天规则；能自己定的自己定并说明；要问就一次一个", "task", ["优先于上面的聊天规则", "选一个合理的做法", "在结果里说明", "needs_you", "一个问题"], ["ask_user_question"]],
-  ["任务规则：有合理默认的尽早问、带 default，接着只做不依赖回答的部分，没回答就按默认", "task", ["有合理默认的尽早问", "default", "只做不依赖回答的部分", "做完还没回答就按默认"]],
-  ["任务规则：非用户定不可的先做完不依赖它的部分再问，然后结束这一轮", "task", ["非用户定不可", "付款", "先做完不依赖它的部分再问", "结束这一轮"]],
-  ["task_report：needs_you 马上问；带 default 接着做，先做完就按默认并说明；不带的回答是下一条消息，问完结束这一轮", "tool task_report",
-    ["needs_you", "the app asks the user question now", "With default, keep working on what does not depend on the answer", "use default and say so in message", "only the user can decide", "their answer is your next message", "After done, failed or needs_you without default, end your turn", '"default"', "Omit it when only the user can decide"]],
+  // —— 任务的提问（3b；产品负责人 2026-11-01 收紧）：自己做决定、在结果里说明；语言、格式、范围、风格从不问。只在猜错会造成损失、
+  //    花钱或白做大半，要用户才有的东西，或不可撤回时问，一次一个。猜错只会白做的尽早问、带 default，接着只做不依赖回答的部分，
+  //    没回答就按默认；其余的先做完不依赖回答的部分再问，问完结束这一轮 ——
+  ["任务规则优先于聊天规则；自己做决定并在结果里说明；语言、格式、范围、风格不问", "task",
+    ["优先于上面的聊天规则", "自己做决定", "在结果里说明选了什么", "语言、格式、范围、风格都不问", "用对话的语言", "选最合理的做法"], ["ask_user_question", "能自己定的就"]],
+  ["任务规则：只在三种情况报 needs_you 问一个问题", "task", ["needs_you", "一个问题", "猜错会造成损失、花钱或白做大半", "登录、文件、密码", "不可撤回（付款、删除用户的数据、给别人发消息）"]],
+  ["任务规则：猜错只会白做的尽早问、带 default，接着只做不依赖回答的部分，没回答就按默认", "task", ["猜错只会白做的", "尽早问", "default", "只做不依赖回答的部分", "做完还没回答就按默认"]],
+  ["任务规则：其余的先做完不依赖回答的部分再问，然后结束这一轮", "task", ["其余的先做完不依赖回答的部分再问", "结束这一轮"]],
+  ["task_report：needs_you 只在三种情况，其余自己定；马上问；带 default（少见）接着做，先做完就按默认并说明；不带的回答是下一条消息，问完结束这一轮", "tool task_report",
+    ["needs_you only if a wrong guess could cause harm, cost money or waste most of the work", "something only the user has", "the step cannot be undone", "decide everything else yourself", "what you chose",
+      "The app asks the user question now", "With default (rare), keep working on what does not depend on the answer", "use default and say so in message", "their answer is your next message", "After done, failed or needs_you without default, end your turn", '"default"', "Omit it when only the user can decide"]],
   ["任务：外部动作前后记日志（重启后靠它不重复做）", "task", [".task/journal.md"]],
   ["任务：做完或做不下去才说话，一句话，结果和在哪里；中途不汇报", "task", ["task_report", "done 或 failed", "不超过 300 字", "在哪里", "中途不用汇报", "不会发给用户"]],
   ["task_report：done / failed 的那句话是用户收到的，progress 不发；报完结束这一轮", "tool task_report", ["one line the user receives", "at most 300 characters", "never sent", "end your turn"]],
@@ -201,8 +208,9 @@ const RULES: [rule: string, part: string, says: string[], gone?: string[]][] = [
   ["预算用完、用户加了预算后接着做：上一步可能没做完，先查日志再重复外部动作", "task resume budget", ["used its budget", "the user has now added more", "sleep 600", "Before repeating any outside action", ".task/journal.md", "task_report"]],
   ["为聊天留预算暂停、恢复后接着做", "task resume reserve", ["keep the bot's remaining budget for chat", "stopped: none", ".task/journal.md", "task_report"]],
   ["没报告时提醒一次：done 带一句话、failed 带原因", "task nudge", ["task_report", "done", "failed"]],
-  // —— 规则（3d）：检查从观察开始，只在值得说时说一句；观察只看不动；执行最多可写工作区 ——
-  ["rule_create：用户原话原样；检查从观察开始只记录；提醒到点发那句；确认一句", "tool rule_create", ["verbatim", "starts in observe mode", "only recording what it would say", "kind remind", "Confirm in one sentence", "every 30m", "weekly mon,thu"]],
+  // —— 规则（3d）：检查直接执行（产品负责人 2026-11-01；用户说先观察才观察），只在值得说时说一句；观察只看不动；执行最多可写工作区 ——
+  ["rule_create：用户原话原样；检查直接执行，用户说先观察才观察；提醒到点发那句；确认一句", "tool rule_create",
+    ["verbatim", "it acts right away", "tells the user only when it matters", "observe only when the user wants to watch first", "先观察", "only records what it would say", "kind remind", "Confirm in one sentence", "every 30m", "weekly mon,thu"], ["starts in observe mode"]],
   ["rule_update：用户要求时改模式（执行才发）、原话、时间表或删掉", "tool rule_update", ["when the user asks", "mode act (results are sent)", "observe (only records)", "off", "delete"]],
   ["background_pause：用户要求时暂停或恢复全部后台工作；暂停时任务、规则不跑，主动消息等着，聊天照常", "tool background_pause", ["Pause or resume", "when the user asks", "no task or rule runs", "pushed messages wait", "chat still works", '"paused"']],
   ["规则段（观察）：优先于聊天规则；只看不动，本来要做的写进 would；值得说才说一句，只记下来；不报告就算失败", "rule observe",
@@ -223,10 +231,14 @@ describe.skipIf(!runtime)("提示词约定", () => {
     for (const words of gone) expect(text.toLowerCase()).not.toContain(words.toLowerCase());
   });
 
+  /**
+   * 产品负责人 2026-11-01（自动做，不要一直问）：聊天规则和任务规则写清什么时候才问（猜错有代价、要用户才有的东西、不可撤回），
+   * 聊天规则 395 → 469、任务规则 481 → 549，两个上限跟着调高；只为这几句，别的不要往里加。
+   */
   it("聊天规则、人设、任务规则和规则段都短", () => {
-    expect(CHAT_RULES.length).toBeLessThan(440);
+    expect(CHAT_RULES.length).toBeLessThan(490);
     expect(agentPersona({ computerUse: true }).length).toBeLessThan(180);
-    expect(TASK_RULES.length).toBeLessThan(500);
+    expect(TASK_RULES.length).toBeLessThan(570);
     expect(ruleRules("observe").length).toBeLessThan(300);
     expect(ruleRules("act").length).toBeLessThan(300);
   });
@@ -284,9 +296,11 @@ describe.skipIf(!runtime)("提示词约定", () => {
    * 3d 加上 rule_create（819）、rule_update（467）和 task_list 多一句「and rules」后 10,049（工具 9,142）。上限高约 5%。
    * 暂停开关 background_pause（280）之后 10,329（工具 9,422），还在上限之内，上限不变。
    * 3e：task_start 加上 budget_usd（116）之后 10,445（工具 9,538），还在上限之内，上限不变。
+   * 少问（产品负责人 2026-11-01）：生图、生视频去掉 confirm 参数，rule_create 加上 mode，聊天规则写清什么时候才问，
+   * 之后 10,145（提示词 981 + 工具 9,164），上限调低到 10,450。
    * 缩短了就调低；要调高，在提交说明里写清原因。
    */
-  const BUDGET = 10_550;
+  const BUDGET = 10_450;
   it("我们的提示词加工具定义不超过字符数上限", async () => {
     const prompt = agentPersona({ computerUse: true }).length + botPrompt({ name: "小蓝", persona: PERSONA, memory: true }).length;
     const tools = JSON.stringify(await ourTools()).length;
@@ -298,8 +312,10 @@ describe.skipIf(!runtime)("提示词约定", () => {
    * 3a 基线 1,255（规则 363 + task_report 892）；3b 加上提问（needs_you、question、options 和怎么问的那条规则）后 1,533（规则 399 + task_report 1,134）。
    * 问了还接着做（task_report 的 default，规则里有默认的尽早问、接着做，非用户定不可的先做完再问）之后 1,935
    * （规则 481 + task_report 1,454）：两种提问各一句是这个功能本身，上限跟着调高。
+   * 少问（产品负责人 2026-11-01）：规则和 task_report 写清只在哪几种情况才问、其余自己定并在结果里说明，之后 2,177
+   * （规则 549 + task_report 1,628），上限跟着调高到 2,280。
    */
-  const TASK_BUDGET = 2_030;
+  const TASK_BUDGET = 2_280;
   it("任务会话多出来的提示词和工具不超过字符数上限", async () => {
     const { task } = await loadPlugins();
     const extra = TASK_RULES.length + JSON.stringify(task.tools).length;

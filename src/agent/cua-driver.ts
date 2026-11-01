@@ -379,7 +379,10 @@ export function cuaConfig(st: CuaStatus, dir: string, opts: { readonly: boolean;
   };
 }
 
-/** 图形会话相关的环境变量（DSH 子进程的环境里没有这些，需要显式传给 MCP 子进程）。不含任何密钥。 */
+/**
+ * 图形会话相关的环境变量（DSH 子进程的环境里没有这些，需要显式传给 MCP 子进程）。不含任何密钥。
+ * 代理与证书不用在这里传：DSH 的 MCP 客户端把它自己的环境（去掉密钥样的变量）并在这些前面，代理变量已经在里面（host.ts env()）。
+ */
 export const CUA_PASS_ENV = [
   "DISPLAY",
   "WAYLAND_DISPLAY",

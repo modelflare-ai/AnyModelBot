@@ -1,8 +1,8 @@
 /**
  * 生图 / 生视频：代理的 media_models / media_docs / generate_image / generate_video 工具经内部 bridge 调到这里，
  * 由宿主带着该机器人用的 Key 直连 Modelflare（代理子进程拿不到任何密钥），结果存进机器人工作区的 media/，
- * 再由代理用 present 交付到聊天。生成前要不要先问用户由 AgentManager 决定（manager.ts mediaAsk）：模型不是默认的、
- * 预计花费超过上限、要求不明确或机器人设成每次都问时才问。
+ * 再由代理用 present 交付到聊天。生成前要不要先问用户由 AgentManager 决定（manager.ts mediaAsk）：只在预计花费超过上限
+ * 或机器人设成每次都问时问。
  * - 模型取自 GET /v1/models?scope=authorized&kind=image|video（这把 Key 真正能用的）；参数范围、是否必须带参考素材、
  *   参考价、推荐顺序取自公开价格目录 /api/pricing。
  * - 每个模型的请求格式都不一样，以 docs.modelflare.dev 上该模型的文档为准：代理先用 media_docs 读文档，按文档写
@@ -356,7 +356,7 @@ export class MediaService {
       const lines = list.map((m) => `- ${m.id}${m === def ? "（默认）" : ""}${[m.price, optionsNote(m)].filter(Boolean).map((s) => ` — ${s}`).join("")}`);
       blocks.push(`可用的${name}模型（按推荐顺序）：\n${lines.join("\n")}`);
     }
-    blocks.push("用默认模型、花费不高时直接生成；模型不是默认的（用户点名的除外）、预计花费较高或机器人设成每次都问时，程序会先问用户。要用参考图、比例、分辨率、时长等参数时，先用 media_docs 读该模型的文档，按文档写 body。");
+    blocks.push("调用后直接生成；只在预计花费较高或机器人设成每次都问时，程序会先问用户。要用参考图、比例、分辨率、时长等参数时，先用 media_docs 读该模型的文档，按文档写 body。");
     return blocks.join("\n\n");
   }
 

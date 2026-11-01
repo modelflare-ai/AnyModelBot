@@ -330,8 +330,6 @@ export interface RuleRow {
   kind: RuleKind;
   trigger: RuleTrigger;
   mode: RuleMode;
-  /** 改了规则原话后先观察几次再执行（产品负责人：观察 1 次） */
-  observeLeft: number;
   /** 相对工作区：rules/<slug>-<id6> */
   folder: string;
   /** 原话每改一次加 1；每个 run 记下它跑的是哪一版 */
@@ -421,7 +419,6 @@ const RULE_COLS: Record<string, string> = {
   kind: "kind",
   trigger: "trigger_spec",
   mode: "mode",
-  observeLeft: "observe_left",
   version: "version",
   nextRunAt: "next_run_at",
   failures: "failures",
@@ -515,6 +512,7 @@ CREATE TABLE IF NOT EXISTS rules (
   id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
   title TEXT NOT NULL, instruction TEXT NOT NULL, message TEXT NOT NULL DEFAULT '',
   kind TEXT NOT NULL DEFAULT 'check', trigger_spec TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'observe',
+  -- observe_left（改了原话后先观察几次）2026-11-01 起不再用，列留着
   observe_left INTEGER NOT NULL DEFAULT 0, folder TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
   next_run_at INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0, paused_reason TEXT NOT NULL DEFAULT '',
   anytime INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -1427,7 +1425,6 @@ export class Store {
       kind: String(r.kind) === "remind" ? "remind" : "check",
       trigger,
       mode: (["off", "observe", "act"].includes(String(r.mode)) ? String(r.mode) : "off") as RuleMode,
-      observeLeft: Number(r.observe_left),
       folder: String(r.folder),
       version: Number(r.version),
       nextRunAt: Number(r.next_run_at),
@@ -1441,14 +1438,14 @@ export class Store {
     };
   }
   insertRule(
-    r: Omit<RuleRow, "version" | "failures" | "pausedReason" | "observeLeft" | "runBudgetUsd" | "monthBudgetUsd"> & Partial<Pick<RuleRow, "version" | "observeLeft" | "runBudgetUsd" | "monthBudgetUsd">>,
+    r: Omit<RuleRow, "version" | "failures" | "pausedReason" | "runBudgetUsd" | "monthBudgetUsd"> & Partial<Pick<RuleRow, "version" | "runBudgetUsd" | "monthBudgetUsd">>,
   ): RuleRow {
     this.db
       .prepare(
-        `INSERT INTO rules(id, bot_id, conversation_id, title, instruction, message, kind, trigger_spec, mode, observe_left, folder, version, next_run_at, anytime, created_at, updated_at, run_budget_usd, month_budget_usd)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO rules(id, bot_id, conversation_id, title, instruction, message, kind, trigger_spec, mode, folder, version, next_run_at, anytime, created_at, updated_at, run_budget_usd, month_budget_usd)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(r.id, r.botId, r.conversationId, r.title, r.instruction, r.message, r.kind, JSON.stringify(r.trigger), r.mode, r.observeLeft ?? 0, r.folder, r.version ?? 1, r.nextRunAt, r.anytime ? 1 : 0, r.createdAt, r.updatedAt, r.runBudgetUsd ?? 0.1, r.monthBudgetUsd ?? 3);
+      .run(r.id, r.botId, r.conversationId, r.title, r.instruction, r.message, r.kind, JSON.stringify(r.trigger), r.mode, r.folder, r.version ?? 1, r.nextRunAt, r.anytime ? 1 : 0, r.createdAt, r.updatedAt, r.runBudgetUsd ?? 0.1, r.monthBudgetUsd ?? 3);
     return this.getRule(r.id)!;
   }
   /** 规则从 since 起（按该跑的时间）花了多少：本月的花费 */

@@ -11,7 +11,6 @@ export default {
   approveOnce: "批准一次",
   deny: "拒绝",
   stop: "停止",
-  seen: "知道了",
   relogin: "重新扫码",
   answerPlaceholder: "你的回答",
   send: "发送",
@@ -19,7 +18,6 @@ export default {
   dismiss: "不再提示",
   continue: "继续",
   raiseBudget: "调整预算",
-  keep: "保留",
   toAct: "改为执行",
   keepObserving: "继续观察",
 };

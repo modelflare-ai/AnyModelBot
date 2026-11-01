@@ -59,10 +59,8 @@ export const zh = {
   reserveStep: "预算留给聊天",
   reserveSubject: "后台工作已停",
   reserveLine: "机器人预算只剩约 {remain}（共 {limit}），留给聊天",
-  // 保留与清理（3f）：归档了的任务、「需要你」里清理文件夹那一行
+  // 保留与清理（3f）：归档了的任务
   archivedNoFollowup: "「{title}」已归档，不能再追加；需要的话开个新任务。",
-  cleanupSubject: { other: "{count} 个任务文件夹 {date} 删除" },
-  cleanupLine: { other: "{titles} 30 天没动过了" },
   // 导出成 Markdown（3f，tasks/export.ts）
   exportedAt: "导出于 {time}",
   exportLog: "运行记录",
@@ -149,8 +147,6 @@ export const en: Catalog<typeof zh> = {
   reserveSubject: "Background work stopped",
   reserveLine: "The bot's budget is down to about {remain} of {limit}; the rest is kept for chat",
   archivedNoFollowup: "\"{title}\" is archived and can't take follow-ups; start a new task if you need one.",
-  cleanupSubject: { one: "{count} task folder will be deleted {date}", other: "{count} task folders will be deleted {date}" },
-  cleanupLine: { one: "{titles} hasn't been used in 30 days", other: "{titles} haven't been used in 30 days" },
   exportedAt: "Exported {time}",
   exportLog: "Run log",
   exportNoRuns: "No runs yet.",

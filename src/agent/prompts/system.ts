@@ -57,6 +57,23 @@ export interface BotPromptInput {
   persona: string;
   /** 本机器人开着长期记忆 */
   memory: boolean;
+  /** 用户的其他机器人：用户问起时它要答得上来，也能指路 */
+  others?: Array<{ name: string; persona: string }>;
+}
+
+/** 其他机器人的名单和怎么切换。只有一个机器人时不写，免得系统提示词多一段没用的话 */
+export function botTeam(others: Array<{ name: string; persona: string }>): string {
+  if (!others.length) return "";
+  const lines = others.map((o) => {
+    const blurb = o.persona.trim().split("\n")[0].slice(0, 60);
+    return `- ${o.name.trim()}${blurb ? `：${blurb}` : ""}`;
+  });
+  return [
+    "# 其他机器人",
+    "用户还有这些机器人，各有各的人设和记忆，和你共用用户授权的账号：",
+    ...lines,
+    "用户问有哪些机器人、某件事该找谁、怎么换时，照这里回答。在微信、飞书这些聊天软件里，发一次 /bot 名字 就换过去了，之后这个会话一直和它聊，不用每句都带；只发 /bot 能看到列表。在 AnyModelBot 的窗口里，在左侧选机器人。你不能替用户切换。",
+  ].join("\n");
 }
 
 /** 机器人名字与用户写的人设：放在最后，和前面的聊天规则冲突时以人设为准 */
@@ -70,8 +87,8 @@ export function botIdentity(name: string, persona: string): string {
 /**
  * 机器人段的全文（宿主写进文件，amb-prompt 插件每次模型请求现读）。只放每个机器人固定的内容，
  * 同一机器人的所有会话共用一份系统提示词；按会话变化的（渠道、记忆快照、交接便条）放在每段的第一条消息里。
- * 顺序按变化频率从低到高：聊天规则（随应用升级）→ 记忆说明（随开关）→ 名字与人设（用户随时改）。
+ * 顺序按变化频率从低到高：聊天规则（随应用升级）→ 记忆说明（随开关）→ 其他机器人（增删或改名时）→ 名字与人设（用户随时改）。
  */
 export function botPrompt(o: BotPromptInput): string {
-  return [CHAT_RULES, o.memory ? MEMORY_GUIDE : "", botIdentity(o.name, o.persona)].filter(Boolean).join("\n\n");
+  return [CHAT_RULES, o.memory ? MEMORY_GUIDE : "", botTeam(o.others ?? []), botIdentity(o.name, o.persona)].filter(Boolean).join("\n\n");
 }

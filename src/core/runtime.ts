@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { ChannelId, InboundEvent, ReplySession } from "./types.js";
+import { findBot, setBotForPeer } from "./routes.js";
 import { KeyedQueue } from "./queue.js";
 import { eventText } from "./types.js";
 import { acceptsImages, type ModelClient, type ChatMessage } from "../llm/client.js";
@@ -206,10 +207,10 @@ export class BotRuntime {
     if (opts.agent) opts.agent.onWake = (botId, convId) => void this.wake(botId, convId).catch((e) => log.warn("wake-up turn failed", { message: (e as Error).message }));
   }
 
-  /** 渠道登记怎么主动往它的会话里发消息（代理自己醒来的一轮用）；botId 为 "*" 时对所有机器人有效 */
-  registerReplier(botId: string, channel: ChannelId, fn: Replier | undefined): void {
-    if (fn) this.repliers.set(`${botId}:${channel}`, fn);
-    else this.repliers.delete(`${botId}:${channel}`);
+  /** 渠道登记怎么主动往它的会话里发消息（代理自己醒来的一轮用）：按渠道账号；"*" 时对所有账号有效 */
+  registerReplier(account: string, channel: ChannelId, fn: Replier | undefined): void {
+    if (fn) this.repliers.set(`${account}:${channel}`, fn);
+    else this.repliers.delete(`${account}:${channel}`);
   }
 
   /** 应用退出前调用（App.stop）：之后失败的回合留下重启标记，由下次启动告诉用户 */
@@ -276,6 +277,8 @@ export class BotRuntime {
     const bot = store.getBot(ev.botId);
     if (!bot) throw new Error(`unknown bot ${ev.botId}`);
     const conv = store.ensureConversation(bot.id, ev.channel, ev.conversation.id, ev.sender.name || ev.sender.id, ev.conversation.kind === "group" ? "group" : "dm");
+    // 回复和之后的主动消息走这个账号
+    if (ev.account && conv.account !== ev.account) store.setConversationAccount(conv.id, ev.account);
     const t: Inflight = { botId: bot.id, since: Date.now(), abort: new AbortController(), release: KeyedQueue.releaser() };
     const link = () => t.abort.abort();
     if (opts.signal?.aborted) link();
@@ -467,6 +470,9 @@ export class BotRuntime {
     if (paired?.handled) return paired;
     const text = eventText(ev);
     const convId = `${ev.botId}:${ev.channel}:${ev.conversation.id}`;
+    // /bot：换这个会话和哪个机器人聊（渠道账号是全局的，所有机器人共用）。不碰模型，不进队列
+    const switching = ev.account ? /^\/bot(?:\s+(.+))?$/i.exec(text.trim()) : null;
+    if (switching && ev.account) return { handled: true, ack: this.switchBot(ev, ev.account, switching[1]) };
     // /status、/help 只读、不碰模型和代理进程：不进会话队列，不会排在一个卡住或正在启动代理的回合后面
     const cmd = text.trim().toLowerCase();
     if (cmd === "/status" || cmd === "/help") {
@@ -530,7 +536,7 @@ export class BotRuntime {
     const ps = a?.available ? pwshStatusLine(pwshProbe.snapshot()) : "";
     const turn = a?.turnsInProgress.get(convId);
     const busy = turn ? [busyLine(turn.since, turn.lastProgress, turn.activity.steps, !!a?.canSteer(convId))] : [];
-    const who = this.opts.access ? [this.opts.access.policyLine(botId)] : [];
+    const who = this.opts.access ? [this.opts.access.policyLine(this.opts.store.getConversation(convId)?.account || botId)] : [];
     // 这个会话有后台任务在进行时说一句（没有就不说）
     const working = a?.tasks?.working(convId) ?? [];
     const bg = working.length ? [t("runtime.backgroundTasks", { list: working.map((x) => t("runtime.backgroundTask", { title: x.title, stage: x.stage.label })).join(t("runtime.listSep")) })] : [];
@@ -552,7 +558,9 @@ export class BotRuntime {
   cardAction(botId: string, value: Record<string, string>, by: string): { toast: string; ok: boolean } {
     const agent = this.opts.agent;
     const row = agent && value?.id ? this.opts.store.getApproval(String(value.id)) : undefined;
-    if (!agent || !row || row.botId !== botId) return { toast: t("runtime.requestMissing"), ok: false };
+    // 卡片从渠道账号发回来：看这条请求所在的会话是不是走这个账号
+    const owner = row && (this.opts.store.getConversation(row.conversationId)?.account || row.botId);
+    if (!agent || !row || owner !== botId) return { toast: t("runtime.requestMissing"), ok: false };
     if (row.status !== "pending" && value.amb === "question" && row.taskId) {
       // 后台任务按默认回答先做完了、提问撤回了，卡片上的按钮还点得到：当作迟到的回答交给任务（同引用那条提问）
       const opt = (questionsOf(row)[0]?.options ?? [])[Number(value.option) - 1]?.label;
@@ -773,7 +781,7 @@ export class BotRuntime {
     } catch {
       handle = undefined;
     }
-    const r = (this.repliers.get(`${botId}:${conv.channel}`) ?? this.repliers.get(`*:${conv.channel}`))?.(conv, handle, `wake:${wakeId}`);
+    const r = (this.repliers.get(`${conv.account || botId}:${conv.channel}`) ?? this.repliers.get(`*:${conv.channel}`))?.(conv, handle, `wake:${wakeId}`);
     if (!r) log.warn("no way to reply in this conversation; the wake-up reply is only kept in its history", { bot: botId, conversationId: convId, channel: conv.channel });
     const out: ReplySession = r?.out ?? { apply: async () => undefined };
     const fl: Inflight = { botId, since: Date.now(), abort: new AbortController(), userStored: true };
@@ -842,6 +850,19 @@ export class BotRuntime {
   }
 
   /** 返回 null 表示不是已知命令，按普通消息处理。 */
+  private switchBot(ev: InboundEvent, account: string, wanted: string | undefined): string {
+    const { store } = this.opts;
+    if (!wanted?.trim()) {
+      const list = store.listBots().map((b, i) => `${i + 1}. ${b.name}${b.id === ev.botId ? t("runtime.botCurrent") : ""}`).join("\n");
+      return t("runtime.botList", { list });
+    }
+    const pick = findBot(store, wanted);
+    if (!pick) return t("runtime.botMissing", { name: wanted.trim().slice(0, 40) });
+    setBotForPeer(store, account, ev.channel, ev.conversation.id, pick.id);
+    log.info("conversation switched to another bot", { channel: ev.channel, bot: pick.id });
+    return t("runtime.botSwitched", { name: pick.name });
+  }
+
   private async command(text: string, convId: string, convModel: string, botModel: string, botId: string): Promise<string | null> {
     const [cmd, ...rest] = text.trim().split(/\s+/);
     const arg = rest.join(" ");

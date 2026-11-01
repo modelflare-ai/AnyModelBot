@@ -64,22 +64,22 @@ afterAll(async () => {
 describe("连接", () => {
   it("凭据被拒：报错、不保存", async () => {
     rejectNext = "telegram getMe: 401 Unauthorized";
-    const r = await api("/bots/default/telegram", { method: "PUT", body: { token: "bad" } });
+    const r = await api("/channel-accounts/default/telegram", { method: "PUT", body: { token: "bad" } });
     expect(r.status).toBe(400);
     expect(r.json.error ?? r.json.message).toContain("401");
     expect(app.store.getMessengerAccount("default", "telegram")).toBeUndefined();
   });
 
   it("没填全：报错", async () => {
-    const r = await api("/bots/default/slack", { method: "PUT", body: { botToken: "xoxb-1" } });
+    const r = await api("/channel-accounts/default/slack", { method: "PUT", body: { botToken: "xoxb-1" } });
     expect(r.status).toBe(400);
   });
 
   it("连上：状态在线、显示平台上的名字；状态里没有完整的 token", async () => {
-    const r = await api("/bots/default/telegram", { method: "PUT", body: { token: "123456:SECRETSECRETSECRET" } });
+    const r = await api("/channel-accounts/default/telegram", { method: "PUT", body: { token: "123456:SECRETSECRETSECRET" } });
     expect(r.status).toBe(200);
-    await until(async () => (await api("/bots/default/channels")).json.telegram.state === "connected");
-    const st = (await api("/bots/default/channels")).json;
+    await until(async () => (await api("/channel-accounts/default/channels")).json.telegram.state === "connected");
+    const st = (await api("/channel-accounts/default/channels")).json;
     expect(st.telegram.account.name).toBe("@fake_bot");
     expect(JSON.stringify(st)).not.toContain("SECRETSECRETSECRET");
     expect(st.discord.state).toBe("disabled");
@@ -88,11 +88,11 @@ describe("连接", () => {
   });
 
   it("不是平台的路径不受理；Slack 留空的 token 沿用已保存的", async () => {
-    await api("/bots/default/slack", { method: "PUT", body: { botToken: "xoxb-1", appToken: "xapp-1" } });
+    await api("/channel-accounts/default/slack", { method: "PUT", body: { botToken: "xoxb-1", appToken: "xapp-1" } });
     created.length = 0;
-    expect((await api("/bots/default/slack", { method: "PUT", body: { appToken: "xapp-2" } })).status).toBe(200);
+    expect((await api("/channel-accounts/default/slack", { method: "PUT", body: { appToken: "xapp-2" } })).status).toBe(200);
     expect(created.at(-1)).toMatchObject({ id: "slack", credentials: { botToken: "xoxb-1", appToken: "xapp-2" } });
-    await api("/bots/default/slack", { method: "DELETE" });
+    await api("/channel-accounts/default/slack", { method: "DELETE" });
   });
 
   it("重启后接着连（凭据在库里）；stopBot 会停掉", async () => {
@@ -106,10 +106,10 @@ describe("连接", () => {
 
 describe("对话", () => {
   it("第一个发消息的人成为主人，流式显示并写成最终回复", async () => {
-    expect((await api("/bots/default/access")).json.owners.telegram).toBeNull();
+    expect((await api("/channel-accounts/default/access")).json.owners.telegram).toBeNull();
     await say("telegram", "我是老板", { chatId: "boss", senderId: "boss", senderName: "Boss" });
     expect(fakes.get("telegram")!.lastShown("boss")).toBe("[mock-a] 你说：我是老板");
-    expect((await api("/bots/default/access")).json.owners.telegram).toEqual({ via: "first-message", peer: "boss", name: "Boss" });
+    expect((await api("/channel-accounts/default/access")).json.owners.telegram).toEqual({ via: "first-message", peer: "boss", name: "Boss" });
     const conv = app.store.getConversation("default:telegram:boss");
     expect(conv?.channel).toBe("telegram");
   });
@@ -157,30 +157,30 @@ describe("对话", () => {
     expect(await app.pushToOwner("余额不足")).toBe(true);
     await channel("telegram").idle();
     expect(f.lastShown("boss")).toContain("余额不足");
-    expect((await api("/bots/default/access/owner/telegram", { method: "DELETE" })).status).toBe(200);
+    expect((await api("/channel-accounts/default/access/owner/telegram", { method: "DELETE" })).status).toBe(200);
     await say("telegram", "换我", { chatId: "new", senderId: "new", senderName: "New" });
-    expect((await api("/bots/default/access")).json.owners.telegram).toMatchObject({ peer: "new" });
+    expect((await api("/channel-accounts/default/access")).json.owners.telegram).toMatchObject({ peer: "new" });
   });
 
   it("断开：渠道停下、凭据清掉、主人清掉", async () => {
     const f = fakes.get("telegram")!;
-    expect((await api("/bots/default/telegram", { method: "DELETE" })).status).toBe(200);
+    expect((await api("/channel-accounts/default/telegram", { method: "DELETE" })).status).toBe(200);
     expect(f.stopped).toBe(1);
     expect(app.store.getMessengerAccount("default", "telegram")).toBeUndefined();
-    const st = (await api("/bots/default/channels")).json;
+    const st = (await api("/channel-accounts/default/channels")).json;
     expect(st.telegram.state).toBe("disabled");
     expect(st.telegram.account).toBeUndefined();
-    expect((await api("/bots/default/access")).json.owners.telegram).toBeNull();
+    expect((await api("/channel-accounts/default/access")).json.owners.telegram).toBeNull();
   });
 });
 
 describe("连不上（凭据失效）", () => {
   it("信息面板显示原因", async () => {
-    await api("/bots/default/discord", { method: "PUT", body: { token: "t" } });
+    await api("/channel-accounts/default/discord", { method: "PUT", body: { token: "t" } });
     const f = fakes.get("discord")!;
     await until(() => !!f.onState);
     f.onState!("error", "the bot token was rejected", true);
-    const st = (await api("/bots/default/channels")).json.discord;
+    const st = (await api("/channel-accounts/default/channels")).json.discord;
     expect(st).toMatchObject({ state: "error", detail: "the bot token was rejected" });
   });
 });

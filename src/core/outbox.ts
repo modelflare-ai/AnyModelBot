@@ -48,6 +48,8 @@ export const HOLD_TTL_MS = 7 * 86400_000;
 export interface OutboxInput {
   id: string;
   botId: string;
+  /** 走哪个渠道账号；不给就用这个会话最近的账号（主动消息：任务结果、规则提醒） */
+  account?: string;
   channel: PushChannel;
   /** 微信：用户 id；飞书和其他平台：单聊的 chat id */
   peerId: string;
@@ -163,9 +165,9 @@ export class Outbox {
     return (this.opts.now ?? Date.now)();
   }
 
-  /** 渠道上线时登记自己的发送函数，返回注销函数（渠道停下时调用；没登记的消息等着） */
-  register(botId: string, channel: string, deliver: Deliver): () => void {
-    const key = `${botId}:${channel}`;
+  /** 渠道上线时登记自己的发送函数（按渠道账号），返回注销函数（渠道停下时调用；没登记的消息等着） */
+  register(account: string, channel: string, deliver: Deliver): () => void {
+    const key = `${account}:${channel}`;
     this.handlers.set(key, deliver);
     this.kick();
     return () => {
@@ -185,6 +187,7 @@ export class Outbox {
     const fresh = this.store.insertOutbox({
       id: input.id,
       botId: input.botId,
+      account: input.account ?? this.store.getConversation(conversationId)?.account ?? "",
       channel: input.channel,
       conversationId,
       peerId: input.peerId,
@@ -267,6 +270,13 @@ export class Outbox {
     if (live.length) log.info(`releasing ${live.length} waiting message(s)`, { bot: botId, channel });
     this.kick();
     return live.length;
+  }
+
+  /** 对方发消息了：他和所有机器人的留言都放回队列（用 /bot 切换过的话，留言可能属于别的机器人）。account 也试一遍：单元测试里可能没有机器人 */
+  releasePeer(channel: string, peerId: string, combine: ((rows: OutboxRow[]) => HeldGroup[]) | undefined, account: string): number {
+    let n = 0;
+    for (const id of new Set([...this.store.listBots().map((b) => b.id), account])) n += this.release(id, channel, peerId, combine);
+    return n;
   }
 
   /** 每组第一条放回队列（换成合并后的内容），其余标记 merged；排着的从现在起重新算有效期 */
@@ -352,7 +362,7 @@ export class Outbox {
         this.kick();
         continue;
       }
-      const deliver = this.handlers.get(`${row.botId}:${row.channel}`);
+      const deliver = this.handlers.get(`${row.account || row.botId}:${row.channel}`);
       if (row.due > now || !deliver) {
         // 渠道没上线：等它注册；到了过期时间也要醒来标记 gone
         next = Math.min(next, deliver ? row.due : row.expiresAt);

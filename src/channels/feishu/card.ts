@@ -93,6 +93,7 @@ export async function deliverFeishu(transport: FeishuTransport, row: OutboxRow, 
 export interface FeishuOutbox {
   outbox: Outbox;
   botId: string;
+  account?: string;
   chatId: string;
   key: string;
   ttlMs?: number;
@@ -166,8 +167,8 @@ export class FeishuReply implements ReplySession {
   /** 交给出站队列（先落库再发，等第一次发送结束）；没有队列就直接发 */
   private async post(kind: OutboxKind, body: OutboxBody, role: string, ttlMs?: number): Promise<void> {
     if (this.out) {
-      const { outbox, botId, chatId, key } = this.out;
-      await outbox.send({ id: `fs:${botId}:${key}:${role}`, botId, channel: "feishu", peerId: chatId, kind, body, replyTo: this.replyTo, ttlMs: ttlMs ?? this.out.ttlMs });
+      const { outbox, botId, account, chatId, key } = this.out;
+      await outbox.send({ id: `fs:${botId}:${key}:${role}`, botId, account, channel: "feishu", peerId: chatId, kind, body, replyTo: this.replyTo, ttlMs: ttlMs ?? this.out.ttlMs });
       return;
     }
     const row = { id: crypto.randomUUID(), kind, body, replyTo: this.replyTo, progress: 0, attempts: 0 } as OutboxRow;

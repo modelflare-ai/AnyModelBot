@@ -211,7 +211,8 @@ describe("App 启动时告诉用户", () => {
     await until(() => ilink.state.sent.length >= 1 && feishu.sent.length >= 1);
     expect(app.store.listMessages("default:web:console").map((m) => [m.role, m.content])).toEqual([["assistant", "上次的消息「网页里的长任务」因为应用重启没有处理完，请重新发送。"]]);
     expect(ilink.state.sent).toEqual([{ to: "alice@im.wechat", contextToken: "ctx-alice", text: "上次的消息「微信里的长任务」因为应用重启没有处理完，请重新发送。" }]);
-    expect(app.store.getWeixinPeer("default", "alice@im.wechat")!.quotaRemaining).toBe(9);
+    // 先发出去，再扣配额：等它扣完
+    await until(() => app.store.getWeixinPeer("default", "alice@im.wechat")!.quotaRemaining === 9);
     expect(feishu.sent).toEqual([{ chatId: "oc_x", text: "上次的消息「飞书里的长任务」因为应用重启没有处理完，请重新发送。" }]);
     expect(app.store.listKV("inflight:")).toEqual([]);
     expect(llm.calls).toEqual([]);

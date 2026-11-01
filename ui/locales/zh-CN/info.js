@@ -5,6 +5,9 @@ export default {
   closeTitle: "关闭（⌘⇧I）",
   closeAria: "关闭信息面板",
   channels: "渠道",
+  channelsDefault: "默认由这个机器人回复",
+  channelsManage: "管理聊天渠道",
+  channelsSub: "微信、飞书等账号所有机器人共用，在 设置 › 连接 里添加",
   approvals: "待审批",
   /** 审批卡片的截止时刻（HH:MM） */
   due: "截止 {time}",

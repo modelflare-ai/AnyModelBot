@@ -1037,7 +1037,8 @@ exec "$REAL" "$@"
    */
   syncPrompt(force = false): void {
     const bot = this.o.store.getBot(this.o.botId);
-    const text = botPrompt({ name: bot?.name ?? "", persona: bot?.systemPrompt ?? "", memory: this.settings().memory.enabled });
+    const others = this.o.store.listBots().filter((b) => b.id !== this.o.botId).map((b) => ({ name: b.name, persona: b.systemPrompt }));
+    const text = botPrompt({ name: bot?.name ?? "", persona: bot?.systemPrompt ?? "", memory: this.settings().memory.enabled, others });
     if (!force && text === this.promptText) return;
     try {
       fs.mkdirSync(path.dirname(this.promptFile), { recursive: true, mode: 0o700 });

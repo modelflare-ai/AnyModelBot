@@ -6,7 +6,7 @@
  * 令牌只留在宿主进程，代理进程经 bridge 调用（amb-connections 插件）。
  *
  * 这里抛出的 ConnectionError 的文字会直接给模型看：说清楚怎么办，不带令牌。
- * 飞书、微信等聊天渠道是另一回事：渠道是机器人自己的账号身份，还是每个机器人配一个。
+ * 这里是机器人能读写的数据账号。从哪里和机器人聊（微信、飞书等聊天渠道）也是全局账号，见 core/routes.ts。
  */
 import crypto from "node:crypto";
 import { registerSecret } from "../log.js";

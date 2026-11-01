@@ -55,8 +55,8 @@ beforeAll(async () => {
   delete process.env.FEISHU_APP_SECRET;
   base = app.web!.url.replace(/\/$/, "");
   // 扫码登录：扫码的是 owner@im.wechat
-  await api("/bots/default/weixin/login", { method: "POST", body: {} });
-  await until(async () => (await api("/bots/default/channels")).json.weixin.state === "connected", 8000);
+  await api("/channel-accounts/default/weixin/login", { method: "POST", body: {} });
+  await until(async () => (await api("/channel-accounts/default/channels")).json.weixin.state === "connected", 8000);
 });
 
 afterAll(async () => {
@@ -70,7 +70,7 @@ describe("微信：只有主人和允许的人", () => {
     ilink.push(OWNER, "你好");
     await until(() => to(OWNER).length >= 1, 8000);
     expect(to(OWNER)[0]).toBe("[mock-a] 你说：你好");
-    const acc = await api("/bots/default/access");
+    const acc = await api("/channel-accounts/default/access");
     expect(acc.json.owners.weixin).toMatchObject({ via: "login" });
     expect(acc.json.policy).toBe("owner-allowlist");
   });
@@ -85,11 +85,11 @@ describe("微信：只有主人和允许的人", () => {
     const notice = to(OWNER).at(-1)!;
     expect(notice).toContain("我是张三");
     code = /同意 (\d{4})/.exec(notice)![1];
-    const acc = await api("/bots/default/access");
+    const acc = await api("/channel-accounts/default/access");
     expect(acc.json.requests).toEqual([expect.objectContaining({ channel: "weixin", code, text: "我是张三，想借用一下", status: "pending", requests: 1 })]);
     // 再发：不再回复、不再通知主人，模型一直没被调用
     ilink.push("zhang@im.wechat", "在吗？");
-    await until(async () => (await api("/bots/default/access")).json.requests[0]?.requests === 2, 8000);
+    await until(async () => (await api("/channel-accounts/default/access")).json.requests[0]?.requests === 2, 8000);
     await app.channels.get("default")!.weixin!.idle();
     expect(to("zhang@im.wechat")).toHaveLength(1);
     expect(to(OWNER).at(-1)).toBe(notice);
@@ -106,7 +106,7 @@ describe("微信：只有主人和允许的人", () => {
     ilink.push("zhang@im.wechat", "现在呢");
     await until(() => to("zhang@im.wechat").length >= 3, 8000);
     expect(to("zhang@im.wechat")[2]).toBe("[mock-a] 你说：现在呢");
-    const acc = await api("/bots/default/access");
+    const acc = await api("/channel-accounts/default/access");
     expect(acc.json.requests).toEqual([]);
     expect(acc.json.entries).toEqual(expect.arrayContaining([expect.objectContaining({ channel: "weixin", status: "allowed", source: "request" })]));
   });
@@ -114,13 +114,13 @@ describe("微信：只有主人和允许的人", () => {
   it("在应用里拒绝：对方之后发什么都不回；在应用里批准、再移除：又被拦下", async () => {
     ilink.push("li@im.wechat", "hi");
     ilink.push("wang@im.wechat", "hello");
-    await until(async () => (await api("/bots/default/access")).json.requests.length === 2, 8000);
-    const reqs = (await api("/bots/default/access")).json.requests as any[];
+    await until(async () => (await api("/channel-accounts/default/access")).json.requests.length === 2, 8000);
+    const reqs = (await api("/channel-accounts/default/access")).json.requests as any[];
     const li = reqs.find((r) => r.text === "hi");
     const wang = reqs.find((r) => r.text === "hello");
-    expect((await api(`/bots/default/access/${li.id}/deny`, { method: "POST", body: {} })).json.entry.status).toBe("denied");
-    expect((await api(`/bots/default/access/${wang.id}/approve`, { method: "POST", body: {} })).json.entry.status).toBe("allowed");
-    expect((await api(`/bots/default/access/${wang.id}/approve`, { method: "POST", body: {} })).status).toBe(409);
+    expect((await api(`/channel-accounts/default/access/${li.id}/deny`, { method: "POST", body: {} })).json.entry.status).toBe("denied");
+    expect((await api(`/channel-accounts/default/access/${wang.id}/approve`, { method: "POST", body: {} })).json.entry.status).toBe("allowed");
+    expect((await api(`/channel-accounts/default/access/${wang.id}/approve`, { method: "POST", body: {} })).status).toBe(409);
     await until(() => to("wang@im.wechat").length >= 2, 8000);
     expect(to("wang@im.wechat")).toEqual([refusalText(), approvedText()]);
 
@@ -132,9 +132,9 @@ describe("微信：只有主人和允许的人", () => {
     expect(to("li@im.wechat")).toEqual([refusalText()]);
     expect(llm.calls.length).toBe(calls + 1);
 
-    expect((await api(`/bots/default/access/${wang.id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await api(`/channel-accounts/default/access/${wang.id}`, { method: "DELETE" })).status).toBe(200);
     ilink.push("wang@im.wechat", "还能用吗");
-    await until(async () => (await api("/bots/default/access")).json.requests.length === 1, 8000);
+    await until(async () => (await api("/channel-accounts/default/access")).json.requests.length === 1, 8000);
     await app.channels.get("default")!.weixin!.idle();
     expect(to("wang@im.wechat")).toHaveLength(4);
     expect(to("wang@im.wechat")[3]).toBe(refusalText());
@@ -148,7 +148,7 @@ describe("微信：只有主人和允许的人", () => {
   });
 
   it("升级：升级前已在对话的人自动在允许名单里，能继续用，可以移除", async () => {
-    const acc = await api("/bots/default/access");
+    const acc = await api("/channel-accounts/default/access");
     const old = acc.json.entries.filter((e: any) => e.source === "migration");
     expect(old.map((e: any) => e.channel).sort()).toEqual(["feishu", "weixin"]);
     ilink.push("old@im.wechat", "我还能用吗");
@@ -162,13 +162,13 @@ describe("飞书：第一个发消息的人成为主人", () => {
     // 模拟过了一小时：上面的请求通知不占这里的限额
     app.store.db.prepare("UPDATE access SET notified_at = 0").run();
     const ch = app.channels.get("default")!.feishu!;
-    expect((await api("/bots/default/access")).json.owners.feishu).toBeNull();
+    expect((await api("/channel-accounts/default/access")).json.owners.feishu).toBeNull();
     const texts = feishu.texts.length;
     feishu.onMessage!(feishuEvent("我是老板", { chatId: "oc_boss", senderOpenId: "ou_boss" }));
     await ch.idle();
     expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：我是老板");
     expect(feishu.texts.length).toBe(texts);
-    const acc = (await api("/bots/default/access")).json;
+    const acc = (await api("/channel-accounts/default/access")).json;
     expect(acc.owners.feishu).toEqual({ via: "first-message", peer: "oc_boss", name: "ou_boss" });
     expect(acc.requests.filter((r: any) => r.channel === "feishu")).toEqual([]);
 
@@ -193,13 +193,13 @@ describe("飞书：第一个发消息的人成为主人", () => {
 
   it("更换：清掉主人，下一个发消息的人成为主人；扫码登录的微信主人不能这样换", async () => {
     const ch = app.channels.get("default")!.feishu!;
-    expect((await api("/bots/default/access/owner/weixin", { method: "DELETE" })).status).toBe(409);
-    expect((await api("/bots/default/access/owner/feishu", { method: "DELETE" })).status).toBe(200);
-    expect((await api("/bots/default/access")).json.owners.feishu).toBeNull();
+    expect((await api("/channel-accounts/default/access/owner/weixin", { method: "DELETE" })).status).toBe(409);
+    expect((await api("/channel-accounts/default/access/owner/feishu", { method: "DELETE" })).status).toBe(200);
+    expect((await api("/channel-accounts/default/access")).json.owners.feishu).toBeNull();
     feishu.onMessage!(feishuEvent("这是我自己的飞书", { chatId: "oc_me", senderOpenId: "ou_me" }));
     await ch.idle();
     expect([...feishu.cards.values()].at(-1)).toBe("[mock-a] 你说：这是我自己的飞书");
-    expect((await api("/bots/default/access")).json.owners.feishu).toMatchObject({ via: "first-message", peer: "oc_me" });
+    expect((await api("/channel-accounts/default/access")).json.owners.feishu).toMatchObject({ via: "first-message", peer: "oc_me" });
     // 原来的主人要重新申请；被允许的同事照常能用
     feishu.onMessage!(feishuEvent("我还是主人吗", { chatId: "oc_boss", senderOpenId: "ou_boss" }));
     await ch.idle();

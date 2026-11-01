@@ -57,6 +57,9 @@ export function whoText(e: Pick<AccessEntry, "channel" | "peerId" | "senderId" |
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
+/** 名单和主人跟着渠道账号走（core/routes.ts）：能用这个账号的人，可以和任何一个机器人聊 */
+const accountOf = (ev: InboundEvent): string => ev.account ?? ev.botId;
+
 export class AccessControl {
   constructor(
     private store: Store,
@@ -79,7 +82,7 @@ export class AccessControl {
 
   private isOwner(ev: InboundEvent): boolean {
     if (ev.channel === "web") return true;
-    return this.owner(ev.botId, ev.channel)?.peerId === ev.conversation.id;
+    return this.owner(accountOf(ev), ev.channel)?.peerId === ev.conversation.id;
   }
 
   /** 只判断，不登记（runtime.handle 里的兜底检查） */
@@ -89,7 +92,7 @@ export class AccessControl {
     // 群聊：目前没有渠道接入群聊，保持原样；接入时要在这里加规则（例如只响应主人 @ 机器人）
     if (ev.conversation.kind === "group") return true;
     if (this.isOwner(ev)) return true;
-    const s = this.store.getAccess(ev.botId, ev.channel, ev.conversation.id)?.status;
+    const s = this.store.getAccess(accountOf(ev), ev.channel, ev.conversation.id)?.status;
     return s === "allowed" || s === "owner";
   }
 
@@ -100,12 +103,12 @@ export class AccessControl {
   admit(ev: InboundEvent): { ok: true } | { ok: false; reply?: string } {
     if (this.claimOwner(ev) || this.allowed(ev)) return { ok: true };
     const now = this.now();
-    let e = this.store.getAccess(ev.botId, ev.channel, ev.conversation.id);
+    let e = this.store.getAccess(accountOf(ev), ev.channel, ev.conversation.id);
     if (e?.status === "denied") return { ok: false };
     if (!e) {
       e = this.store.putAccess({
         id: crypto.randomUUID(),
-        botId: ev.botId,
+        botId: accountOf(ev),
         channel: ev.channel,
         peerId: ev.conversation.id,
         senderId: ev.sender.id,
@@ -137,8 +140,8 @@ export class AccessControl {
    * 他的这条消息照常处理。拒绝过的人不算。
    */
   private claimOwner(ev: InboundEvent): boolean {
-    if (ev.channel === "web" || ev.conversation.kind === "group" || this.owner(ev.botId, ev.channel)) return false;
-    const cur = this.store.getAccess(ev.botId, ev.channel, ev.conversation.id);
+    if (ev.channel === "web" || ev.conversation.kind === "group" || this.owner(accountOf(ev), ev.channel)) return false;
+    const cur = this.store.getAccess(accountOf(ev), ev.channel, ev.conversation.id);
     if (cur?.status === "denied") return false;
     const now = this.now();
     const decided = { status: "owner" as const, code: "", decidedAt: now, decidedBy: "first-message", updatedAt: now };
@@ -146,7 +149,7 @@ export class AccessControl {
     else
       this.store.putAccess({
         id: crypto.randomUUID(),
-        botId: ev.botId,
+        botId: accountOf(ev),
         channel: ev.channel,
         peerId: ev.conversation.id,
         senderId: ev.sender.id,
@@ -159,7 +162,7 @@ export class AccessControl {
         notifiedAt: 0,
         ...decided,
       });
-    log.info("access owner claimed by the first message", { bot: ev.botId, channel: ev.channel, peer: shortPeer(ev.conversation.id) });
+    log.info("access owner claimed by the first message", { bot: accountOf(ev), channel: ev.channel, peer: shortPeer(ev.conversation.id) });
     return true;
   }
 
@@ -172,7 +175,7 @@ export class AccessControl {
     }
     const bot = this.store.getBot(e.botId);
     const said = e.text ? tr("access.said", { text: clip(e.text, 60) }) : "";
-    const text = tr("access.ownerNotice", { bot: bot?.name ?? e.botId, who: whoText(e), said, code: e.code });
+    const text = tr("access.ownerNotice", { bot: this.store.getChannelAccount(e.botId, e.channel)?.label ?? bot?.name ?? e.botId, who: whoText(e), said, code: e.code });
     let sent = false;
     for (const ch of ACCESS_CHANNELS) {
       const o = this.owner(e.botId, ch);
@@ -198,7 +201,7 @@ export class AccessControl {
   handleReply(ev: InboundEvent): { handled: boolean; ack?: string } {
     const m = /^(同意|允许|批准|通过|y|yes|ok|拒绝|不同意|n|no)\s*[#:：]?\s*(\d{4})$/i.exec(eventText(ev).trim());
     if (!m || !this.isOwner(ev)) return { handled: false };
-    const e = this.store.pendingAccessByCode(ev.botId, m[2]);
+    const e = this.store.pendingAccessByCode(accountOf(ev), m[2]);
     if (!e) return { handled: false };
     const allow = !/^(拒绝|不同意|n|no)$/i.test(m[1]);
     this.decide(e.id, allow, `${ev.channel}:${ev.sender.id}`);

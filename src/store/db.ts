@@ -32,8 +32,24 @@ export interface Conversation {
   model: string;
   /** dm 或 group（群聊使用群记忆） */
   kind: "dm" | "group";
+  /** 最近一条消息从哪个渠道账号进来，回复和主动消息走它；空 = 账号 key 就是机器人 id（升级前的会话） */
+  account: string;
   createdAt: number;
   updatedAt: number;
+}
+
+/** 全局渠道账号（设置 › 连接），所有机器人共用；见 core/routes.ts */
+export interface ChannelAccount {
+  key: string;
+  channel: string;
+  /** 别名：同一个渠道里不重复 */
+  label: string;
+  /** 没用 /bot 选过时，消息交给哪个机器人 */
+  defaultBot: string;
+  enabled: boolean;
+  /** 飞书的 appId / appSecret；微信和其他平台的凭据在各自的表里 */
+  credentials: Record<string, string>;
+  createdAt: number;
 }
 
 export interface Message {
@@ -189,6 +205,8 @@ export interface OutboxRow {
   id: string;
   seq: number;
   botId: string;
+  /** 走哪个渠道账号；空 = 账号 key 就是 botId（升级前的消息） */
+  account: string;
   channel: string;
   /** 排序单位：同一会话按 seq 依次发送 */
   conversationId: string;
@@ -463,6 +481,10 @@ CREATE TABLE IF NOT EXISTS weixin_peers (
   bot_id TEXT NOT NULL, user_id TEXT NOT NULL, context_token TEXT NOT NULL DEFAULT '',
   quota_remaining INTEGER NOT NULL DEFAULT 0, window_started_at INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (bot_id, user_id));
+CREATE TABLE IF NOT EXISTS channel_accounts (
+  key TEXT NOT NULL, channel TEXT NOT NULL, label TEXT NOT NULL DEFAULT '', default_bot TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1, credentials TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL,
+  PRIMARY KEY (key, channel));
 CREATE TABLE IF NOT EXISTS messenger_accounts (
   bot_id TEXT NOT NULL, channel TEXT NOT NULL, credentials TEXT NOT NULL, name TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL, PRIMARY KEY (bot_id, channel));
@@ -539,6 +561,9 @@ CREATE INDEX IF NOT EXISTS run_inputs_run ON run_inputs(run_id, taken_at);
 const COLUMNS: Array<[string, string, string]> = [
   ["bots", "settings", "TEXT NOT NULL DEFAULT '{}'"],
   ["conversations", "kind", "TEXT NOT NULL DEFAULT 'dm'"],
+  // 全局渠道账号（core/routes.ts）
+  ["conversations", "account", "TEXT NOT NULL DEFAULT ''"],
+  ["outbox", "account", "TEXT NOT NULL DEFAULT ''"],
   // 代理回合的活动记录（JSON 数组，见 agent/activity.ts）；只在助手消息上
   ["messages", "activity", "TEXT NOT NULL DEFAULT ''"],
   // 模型在回合中间说的话、交付的文件（JSON 字符串数组）；只在助手消息上
@@ -703,11 +728,8 @@ export class Store {
     for (const c of convs) this.db.prepare("DELETE FROM messages WHERE conversation_id = ?").run(String(c.id));
     this.db.prepare("DELETE FROM agent_segments WHERE conversation_id IN (SELECT id FROM conversations WHERE bot_id = ?)").run(id);
     this.db.prepare("DELETE FROM conversations WHERE bot_id = ?").run(id);
-    this.db.prepare("DELETE FROM weixin_accounts WHERE bot_id = ?").run(id);
-    this.db.prepare("DELETE FROM weixin_peers WHERE bot_id = ?").run(id);
-    this.db.prepare("DELETE FROM messenger_accounts WHERE bot_id = ?").run(id);
+    // 渠道账号（登录态、名单）是全局的，不跟着机器人删；这个机器人原来的账号改由别的机器人回复（core/routes.ts）
     this.db.prepare("DELETE FROM agent_sessions WHERE bot_id = ?").run(id);
-    this.db.prepare("DELETE FROM access WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM outbox WHERE bot_id = ?").run(id);
     this.db.prepare("DELETE FROM run_inputs WHERE task_id IN (SELECT id FROM tasks WHERE bot_id = ?)").run(id);
     this.db.prepare("DELETE FROM run_inputs WHERE rule_id IN (SELECT id FROM rules WHERE bot_id = ?)").run(id);
@@ -720,6 +742,7 @@ export class Store {
   // ---------- conversations ----------
   private toConv(r: Row): Conversation {
     return {
+      account: String(r.account ?? ""),
       id: String(r.id),
       botId: String(r.bot_id),
       channel: String(r.channel),
@@ -746,6 +769,50 @@ export class Store {
       .run(id, botId, channel, peerId, title, kind, now, now);
     return this.getConversation(id)!;
   }
+  setConversationAccount(id: string, account: string): void {
+    this.db.prepare("UPDATE conversations SET account = ? WHERE id = ?").run(account, id);
+  }
+  /** 这个渠道账号上的会话（可能属于不同的机器人）；account 为空的是升级前的会话，账号 key 就是机器人 id */
+  listAccountConversations(account: string, channel: string): Conversation[] {
+    const rows = this.db.prepare("SELECT * FROM conversations WHERE channel = ? AND (account = ? OR (account = '' AND bot_id = ?)) ORDER BY updated_at DESC").all(channel, account, account) as Row[];
+    return rows.map((r) => this.toConv(r));
+  }
+
+  private toChannelAccount(r: Row): ChannelAccount {
+    let credentials: Record<string, string> = {};
+    try {
+      credentials = JSON.parse(String(r.credentials || "{}"));
+    } catch {
+      credentials = {};
+    }
+    return { key: String(r.key), channel: String(r.channel), label: String(r.label), defaultBot: String(r.default_bot), enabled: Number(r.enabled) === 1, credentials, createdAt: Number(r.created_at) };
+  }
+  listChannelAccounts(channel?: string): ChannelAccount[] {
+    const rows = (channel
+      ? this.db.prepare("SELECT * FROM channel_accounts WHERE channel = ? ORDER BY created_at, rowid").all(channel)
+      : this.db.prepare("SELECT * FROM channel_accounts ORDER BY created_at, rowid").all()) as Row[];
+    return rows.map((r) => this.toChannelAccount(r));
+  }
+  getChannelAccount(key: string, channel: string): ChannelAccount | undefined {
+    const r = this.db.prepare("SELECT * FROM channel_accounts WHERE key = ? AND channel = ?").get(key, channel) as Row | undefined;
+    return r ? this.toChannelAccount(r) : undefined;
+  }
+  saveChannelAccount(a: ChannelAccount): void {
+    this.db
+      .prepare(
+        `INSERT INTO channel_accounts(key, channel, label, default_bot, enabled, credentials, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(key, channel) DO UPDATE SET label = excluded.label, default_bot = excluded.default_bot, enabled = excluded.enabled, credentials = excluded.credentials`,
+      )
+      .run(a.key, a.channel, a.label, a.defaultBot, a.enabled ? 1 : 0, JSON.stringify(a.credentials), a.createdAt);
+  }
+  deleteChannelAccount(key: string, channel: string): void {
+    this.db.prepare("DELETE FROM channel_accounts WHERE key = ? AND channel = ?").run(key, channel);
+  }
+  /** 有微信联系人的账号（每个账号一份，续期提醒按它走） */
+  weixinPeerAccounts(): string[] {
+    return (this.db.prepare("SELECT DISTINCT bot_id FROM weixin_peers").all() as Row[]).map((r) => String(r.bot_id));
+  }
+
   getConversation(id: string): Conversation | undefined {
     const r = this.db.prepare("SELECT * FROM conversations WHERE id = ?").get(id) as Row | undefined;
     return r ? this.toConv(r) : undefined;
@@ -1133,22 +1200,23 @@ export class Store {
       ref: String(r.ref ?? ""),
       reason: String(r.reason ?? ""),
       mergedInto: String(r.merged_into ?? ""),
+      account: String(r.account ?? ""),
       seenAt: Number(r.seen_at ?? 0),
     };
   }
   /** 同一 id 只写一次；返回是否是新写入的 */
   insertOutbox(
     o: Pick<OutboxRow, "id" | "botId" | "channel" | "conversationId" | "peerId" | "kind" | "body" | "replyTo" | "due" | "createdAt" | "expiresAt"> &
-      Partial<Pick<OutboxRow, "status" | "purpose" | "subject" | "ref" | "reason">>,
+      Partial<Pick<OutboxRow, "status" | "purpose" | "subject" | "ref" | "reason" | "account">>,
   ): boolean {
     const res = this.db
       .prepare(
-        `INSERT OR IGNORE INTO outbox(id, seq, bot_id, channel, conversation_id, peer_id, kind, body, reply_to, due, created_at, updated_at, expires_at, status, purpose, subject, ref, reason)
-         VALUES(?, (SELECT IFNULL(MAX(seq), 0) + 1 FROM outbox), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO outbox(id, seq, bot_id, channel, conversation_id, peer_id, kind, body, reply_to, due, created_at, updated_at, expires_at, status, purpose, subject, ref, reason, account)
+         VALUES(?, (SELECT IFNULL(MAX(seq), 0) + 1 FROM outbox), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         o.id, o.botId, o.channel, o.conversationId, o.peerId, o.kind, JSON.stringify(o.body), o.replyTo, o.due, o.createdAt, o.createdAt, o.expiresAt,
-        o.status ?? "pending", o.purpose ?? "", o.subject ?? "", o.ref ?? "", o.reason ?? "",
+        o.status ?? "pending", o.purpose ?? "", o.subject ?? "", o.ref ?? "", o.reason ?? "", o.account ?? "",
       );
     return Number(res.changes) > 0;
   }

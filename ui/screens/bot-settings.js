@@ -7,8 +7,6 @@ import { api } from "../lib/api.js";
 import { confirmSheet, failed, saved } from "../lib/store.js";
 import { usd } from "../lib/links.js";
 import { perms, fullWarning, confirmPermission } from "../lib/perms.js";
-import { channelName, sourceLabel } from "../lib/access.js";
-import { fmtAgo } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { RuleEditor } from "../components/rules.js";
 
@@ -90,66 +88,6 @@ function BudgetRows({ bot, budget, account, onSaved, onOpenSettings }) {
  * 谁能使用：只有主人和允许名单里的人。主人 = 扫码登录的微信 / 连上之后第一个发消息的人，后者可以更换（下一个发消息的人成为主人）。
  * 允许名单和拒绝过的人可以移除（移除后他再发消息会重新申请）。没有的项不显示。
  */
-function AccessRows({ botId }) {
-  const [d, setD] = useState(null);
-  const load = () => api(`/bots/${botId}/access`).then(setD).catch(failed);
-  useEffect(() => {
-    load();
-  }, [botId]);
-  const call = async (path, method) => {
-    try {
-      await api(`/bots/${botId}/access/${path}`, method === "DELETE" ? { method } : { method, body: {} });
-      saved();
-      load();
-    } catch (e) {
-      failed(e);
-    }
-  };
-  const remove = async (e) => {
-    const denied = e.status === "denied";
-    if (!(await confirmSheet({
-      title: t(denied ? "botSettings.access.removeDeniedTitle" : "botSettings.access.revokeTitle", { who: e.who }),
-      body: t(denied ? "botSettings.access.removeDeniedBody" : "botSettings.access.revokeBody"),
-      confirmLabel: t("botSettings.access.remove"),
-      danger: !denied,
-    }))) return;
-    call(encodeURIComponent(e.id), "DELETE");
-  };
-  const resetOwner = async (ch, o) => {
-    const name = channelName(ch);
-    if (!(await confirmSheet({ title: t("botSettings.access.resetOwnerTitle", { channel: name }), body: t("botSettings.access.resetOwnerBody", { channel: name, who: o.name }), confirmLabel: t("botSettings.access.reset"), danger: true }))) return;
-    call(`owner/${ch}`, "DELETE");
-  };
-  if (!d) return html`<div class="list-head">${t("botSettings.access.head")}</div><div class="list"><div class="row"><${Skeleton} w="45%" /></div></div>`;
-  const allowed = d.entries.filter((e) => e.status === "allowed");
-  const denied = d.entries.filter((e) => e.status === "denied");
-  const owner = (ch) => {
-    const o = d.owners[ch];
-    return o && html`<${Row} id=${`access-${ch}`} name=${t("botSettings.access.owner", { channel: channelName(ch) })}>
-      <span class="val">${o.name}</span>
-      ${o.via !== "login" && html`<button type="button" class="text" onClick=${() => resetOwner(ch, o)}>${t("botSettings.access.reset")}</button>`}
-    <//>`;
-  };
-  return html`<div class="list-head">${t("botSettings.access.head")}</div>
-    <div class="list">
-      <${Row} id="access" name=${t("botSettings.access.policy")} />
-      ${["weixin", "feishu", "telegram", "slack", "discord"].map((ch) => owner(ch))}
-    </div>
-    ${allowed.length > 0 && html`<div class="list-head">${t("botSettings.access.allowed")}<span class="badge count">${allowed.length}</span></div>
-      <div class="list">
-        ${allowed.map((e) => html`<${Row} key=${e.id} id=${`access-${e.id}`} name=${e.who} sub=${[sourceLabel(e.source), e.decidedAt ? fmtAgo(e.decidedAt) : ""].filter(Boolean).join(" · ")}>
-          <button type="button" class="text danger" onClick=${() => remove(e)}>${t("botSettings.access.remove")}</button>
-        <//>`)}
-      </div>`}
-    ${denied.length > 0 && html`<div class="list-head">${t("botSettings.access.denied")}</div>
-      <div class="list">
-        ${denied.map((e) => html`<${Row} key=${e.id} id=${`access-${e.id}`} name=${e.who} sub=${t("botSettings.access.deniedSub", { when: fmtAgo(e.decidedAt) })}>
-          <button type="button" class="text accent" onClick=${() => call(`${encodeURIComponent(e.id)}/approve`, "POST")}>${t("botSettings.access.allow")}</button>
-          <button type="button" class="text" onClick=${() => remove(e)}>${t("botSettings.access.remove")}</button>
-        <//>`)}
-      </div>`}`;
-}
-
 export function BotSettingsScreen({ bot, section, models, modelsError, reloadModels, defaultModel, account, onOpenSettings, onBack, onBotUpdated, onDeleted }) {
   const [d, setD] = useState(null);
   const [name, setName] = useState(bot.name);
@@ -262,7 +200,6 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
         </div>
         ${s.permission === "full" && html`<${Notice} tone="red">${fullWarning()}<//>`}
 
-        <${AccessRows} botId=${bot.id} />
 
         <div class="list-head">${t("botSettings.memory.head")}</div>
         <div class="list">
@@ -297,9 +234,9 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
                 onChange=${(v) => put({ quietHours: { to: v } })} />`}
             <${Switch} label=${t("botSettings.proactive.quiet")} value=${s.quietHours.enabled} onChange=${(v) => put({ quietHours: { enabled: v } })} />
           <//>
-          ${bot.weixinEnabled && html`<${Row} id="nudge" name=${t("botSettings.proactive.nudge")} sub=${t("botSettings.proactive.nudgeSub")}>
+          <${Row} id="nudge" name=${t("botSettings.proactive.nudge")} sub=${t("botSettings.proactive.nudgeSub")}>
             <${Switch} label=${t("botSettings.proactive.nudge")} value=${s.nudge} onChange=${(v) => put({ nudge: v })} />
-          <//>`}
+          <//>
           <${Row} id="rules" name=${t("botSettings.proactive.rules")} sub=${rules && rules.length ? t("botSettings.proactive.rulesCount", { count: rules.length }) : t("botSettings.proactive.rulesSub")}>
             <button type="button" class="btn" onClick=${() => setNewRule(true)}>${t("botSettings.proactive.newRule")}</button>
           <//>

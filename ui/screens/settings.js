@@ -405,7 +405,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       { tab: "privacy", id: "sandbox", name: t("settings.rows.sandbox.name"), sub: t("settings.rows.sandbox.sub"), ctl: null, keys: t("settings.rows.sandbox.keys") },
       { tab: "privacy", id: "screens", name: t("settings.rows.screens.name"), sub: t("settings.rows.screens.sub"), ctl: null, keys: t("settings.rows.screens.keys") },
 
-      ...connectionRows(conn),
+      ...connectionRows(conn, bots),
       { tab: "network", id: "web-search", name: t("settings.rows.webSearch.name"), sub: t("settings.rows.webSearch.sub"), keys: t("settings.rows.webSearch.keys"),
         ctl: html`<${MenuButton} label=${t("settings.rows.webSearch.name")} value=${s.webSearch.provider} width=${200} options=${SEARCH_OPTIONS()} onChange=${(v) => putSearch({ provider: v })} />` },
       s.webSearch.provider === "searxng" && { tab: "network", id: "web-search-url", name: t("settings.rows.webSearchUrl.name"), keys: t("settings.rows.webSearchUrl.keys"),
@@ -437,7 +437,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       { tab: "about", id: "links", name: "Modelflare", sub: t("settings.rows.links.sub"),
         ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">modelflare.dev ↗</a><a class="text" href=${MF_DOCS_LINK} target="_blank" rel="noopener noreferrer">${t("settings.rows.links.docs")}</a>` },
     ].filter(Boolean);
-  }, [s, mf, mode, p, models, modelsError, cu, status, bots, acct, invite, unread, g, media, lang, langPref, conn.accounts]);
+  }, [s, mf, mode, p, models, modelsError, cu, status, bots, acct, invite, unread, g, media, lang, langPref, conn.accounts, conn.channelAccounts]);
 
   const needle = q.trim().toLowerCase();
   const shown = needle ? rows.filter((r) => `${r.name} ${r.sub || ""} ${r.keys || ""}`.toLowerCase().includes(needle)) : rows.filter((r) => r.tab === tab);
@@ -458,7 +458,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       <${KeyForm} line=${mf.line} showLine=${false} submitLabel=${t("settings.rekey.submit")} onConnected=${() => { setRekey(false); saved(); onMfChanged(); reloadModels(); }} />
     <//>`}
     ${notices && html`<${NoticesSheet} onClose=${() => setNotices(false)} />`}
-    <${ConnectionSheets} conn=${conn} />
+    <${ConnectionSheets} conn=${conn} bots=${bots} />
     ${sheet === "login" && html`<${LoginSheet} onClose=${() => setSheet("")} onSignedIn=${(r) => { onAccount(r); onMfChanged(); reloadModels(); }} />`}
     ${sheet === "usage" && html`<${UsageSheet} onClose=${() => setSheet("")} />`}
     ${sheet === "notifications" && html`<${NotificationsSheet} onClose=${() => { setSheet(""); setUnread(null); }} />`}

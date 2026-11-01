@@ -19,6 +19,7 @@
 import path from "node:path";
 import type { BotSettings } from "../agent/settings.js";
 import type { OutboxKind, OutboxPurpose, OutboxRow, Store } from "../store/db.js";
+import { botForPeer } from "./routes.js";
 import type { HeldGroup, Outbox } from "./outbox.js";
 import { DEFAULT_QUIET, fmtWhen, inQuiet, minuteOf, nextAt, quietEnd, quietStart, startOfDay, systemTimeZone, type QuietHours } from "./quiet.js";
 import { QUOTA_WINDOW_MS, WeixinQuota } from "../channels/weixin/quota.js";
@@ -311,7 +312,7 @@ export class Delivery {
   /** 用户刚发过消息（人醒着）：免打扰不拦 */
   private awake(p: Peer, now: number): boolean {
     let last = this.store.lastUserMessageAt(p.conversationId);
-    if (p.channel === "weixin") last = Math.max(last, this.store.getWeixinPeer(p.botId, p.peerId)?.windowStartedAt ?? 0);
+    if (p.channel === "weixin") last = Math.max(last, this.store.getWeixinPeer(this.store.getConversation(p.conversationId)?.account || p.botId, p.peerId)?.windowStartedAt ?? 0);
     return last > now - AWAKE_MS && last <= now + 1000;
   }
 
@@ -428,11 +429,15 @@ export class Delivery {
     const now = this.now();
     const tz = this.timeZone;
     let next = now + NUDGE_TICK_MS;
-    for (const bot of this.store.listBots()) {
-      const st = this.settingsOf(bot.id);
-      if (!bot.weixinEnabled || !st.nudge || this.paused(bot.id)) continue;
-      const quota = new WeixinQuota(this.store, bot.id, () => now);
-      for (const peer of this.store.listWeixinPeers(bot.id)) {
+    // 微信账号是全局的：按账号走一遍联系人，每个人的提醒看他现在在和哪个机器人聊（用它的免打扰和开关）
+    for (const account of this.store.weixinPeerAccounts()) {
+      const row = this.store.getChannelAccount(account, "weixin");
+      if (!(row ? row.enabled : this.store.getBot(account)?.weixinEnabled)) continue;
+      const quota = new WeixinQuota(this.store, account, () => now);
+      for (const peer of this.store.listWeixinPeers(account)) {
+        const botId = botForPeer(this.store, account, "weixin", peer.userId);
+        const st = this.settingsOf(botId);
+        if (!st.nudge || this.paused(botId)) continue;
         const close = peer.windowStartedAt + QUOTA_WINDOW_MS;
         if (!peer.contextToken || close <= now + NUDGE_LATEST_MS) continue;
         const at = nudgeAt(peer.windowStartedAt, close, st.quiet, tz);
@@ -441,15 +446,15 @@ export class Delivery {
           continue;
         }
         if (inQuiet(now, st.quiet, tz)) continue;
-        const id = Delivery.nudgeId(bot.id, peer.userId, peer.windowStartedAt);
+        const id = Delivery.nudgeId(botId, peer.userId, peer.windowStartedAt);
         if (this.store.getOutbox(id) || quota.remaining(peer.userId) <= 0) continue;
-        const p = peerOf(bot.id, "weixin", peer.userId);
+        const p = peerOf(botId, "weixin", peer.userId);
         const items = this.upcoming(p, close);
         if (!items.length) continue;
         const { text, noun } = nudgeText(items, now, tz);
-        void this.o.outbox.send({ id, botId: bot.id, channel: "weixin", peerId: peer.userId, kind: "text", body: { text, raw: true }, purpose: "nudge", subject: noun, ttlMs: close - now });
+        void this.o.outbox.send({ id, botId, account, channel: "weixin", peerId: peer.userId, kind: "text", body: { text, raw: true }, purpose: "nudge", subject: noun, ttlMs: close - now });
         if (this.store.getConversation(p.conversationId)) this.store.addMessage(p.conversationId, "assistant", text);
-        log.info("weixin window nudge", { bot: bot.id, items: items.length, closesInMin: Math.round((close - now) / 60_000) });
+        log.info("weixin window nudge", { bot: botId, items: items.length, closesInMin: Math.round((close - now) / 60_000) });
       }
     }
     this.arm(next - now);

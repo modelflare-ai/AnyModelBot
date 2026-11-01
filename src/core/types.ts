@@ -41,7 +41,10 @@ export interface InboundEvent {
   /** 平台消息 ID，用于去重 */
   id: string;
   channel: ChannelId;
+  /** 回复这条消息的机器人（渠道按 core/routes.ts 选好） */
   botId: string;
+  /** 消息从哪个全局渠道账号进来；网页没有 */
+  account?: string;
   conversation: { kind: "dm" | "group"; id: string };
   sender: { id: string; name?: string };
   parts: Part[];

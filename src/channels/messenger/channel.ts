@@ -68,6 +68,7 @@ export async function deliverMessenger(transport: MessengerTransport, row: Outbo
 export interface MessengerOutbox {
   outbox: Outbox;
   botId: string;
+  account?: string;
   key: string;
   ttlMs?: number;
 }
@@ -182,8 +183,8 @@ export class MessengerReply implements ReplySession {
   /** 交给出站队列（先落库再发，等第一次发送结束）；没有队列就直接发（单元测试） */
   private async post(kind: OutboxKind, body: OutboxBody, role: string, ttlMs?: number): Promise<void> {
     if (this.out) {
-      const { outbox, botId, key } = this.out;
-      await outbox.send({ id: `${this.transport.id}:${botId}:${key}:${role}`, botId, channel: this.transport.id, peerId: this.chatId, kind, body, ttlMs: ttlMs ?? this.out.ttlMs });
+      const { outbox, botId, account, key } = this.out;
+      await outbox.send({ id: `${this.transport.id}:${botId}:${key}:${role}`, botId, account, channel: this.transport.id, peerId: this.chatId, kind, body, ttlMs: ttlMs ?? this.out.ttlMs });
       return;
     }
     const row = { id: `${role}`, kind, body, peerId: this.chatId, replyTo: "", progress: 0, attempts: 0 } as OutboxRow;
@@ -232,7 +233,7 @@ export class MessengerChannel {
   private running = false;
 
   constructor(
-    private botId: string,
+    private account: string,
     private transport: MessengerTransport,
     private runtime: BotRuntime,
     private queue: KeyedQueue,
@@ -242,6 +243,12 @@ export class MessengerChannel {
     this.log = logger(transport.id);
   }
 
+  /** 这个会话的消息交给哪个机器人（app.ts 按 core/routes.ts 设置）；没设置时账号 key 就是机器人 id */
+  route: ((chatId: string) => string) | undefined;
+  private botOf(chatId: string): string {
+    return this.route?.(chatId) ?? this.account;
+  }
+
   private get id() {
     return this.transport.id;
   }
@@ -249,7 +256,7 @@ export class MessengerChannel {
   async start(): Promise<void> {
     this.running = true;
     // 上线：出站队列里这个机器人在这个平台上的消息（含上次没发完的）由这里发
-    this.unregister ??= this.outbox.register(this.botId, this.id, async (row, progress) => {
+    this.unregister ??= this.outbox.register(this.account, this.id, async (row, progress) => {
       if (!this.running) throw new Later(tr("channel.laterNotRunning"));
       await deliverMessenger(this.transport, row, progress);
     });
@@ -258,7 +265,7 @@ export class MessengerChannel {
       (state, detail, fatal) => {
         if (state === this.status.state && detail === this.status.detail) return;
         this.status = { state, detail, since: Date.now() };
-        this.log.info(`bot ${this.botId} ${state}`, detail ? { detail } : undefined);
+        this.log.info(`bot ${this.account} ${state}`, detail ? { detail } : undefined);
         if (fatal) this.onFatal?.(detail ?? "");
       },
     );
@@ -280,7 +287,8 @@ export class MessengerChannel {
     const ev: InboundEvent = {
       id: m.id,
       channel: this.id,
-      botId: this.botId,
+      botId: this.botOf(m.chatId),
+      account: this.account,
       conversation: { kind: "dm", id: m.chatId },
       sender: { id: m.senderId, ...(m.senderName ? { name: m.senderName } : {}) },
       parts: messengerParts(m),
@@ -289,7 +297,7 @@ export class MessengerChannel {
     };
     // 人在：排着的主动消息（免打扰、每天上限）不用再等，排在这次的回复前面
     const delivery = this.delivery;
-    if (delivery) this.outbox.release(this.botId, this.id, m.chatId, (rows) => delivery.combine(rows));
+    if (delivery) this.outbox.releasePeer(this.id, m.chatId, (rows) => delivery.combine(rows), this.account);
     // 审批/提问回复、准入在入队前处理（正在进行的回合正等着它）；没处理掉但带 ack 的：先说一声，消息照常入队
     const intercepted = this.runtime.interceptReply(ev);
     if (intercepted.ack) {
@@ -298,7 +306,7 @@ export class MessengerChannel {
     }
     if (intercepted.handled) return true;
     this.track(
-      this.queue.run(`${this.id}:${this.botId}:${m.chatId}`, async () => {
+      this.queue.run(`${this.id}:${this.account}:${m.chatId}`, async () => {
         const reply = this.reply(m.chatId, m.id);
         try {
           if (m.files.length) ev.parts = messengerParts(m, await this.download(m));
@@ -312,8 +320,8 @@ export class MessengerChannel {
     return true;
   }
 
-  private reply(chatId: string, key: string, ttlMs?: number): MessengerReply {
-    return new MessengerReply(this.transport, chatId, this.throttleMs, { outbox: this.outbox, botId: this.botId, key, ttlMs });
+  private reply(chatId: string, key: string, ttlMs?: number, botId?: string): MessengerReply {
+    return new MessengerReply(this.transport, chatId, this.throttleMs, { outbox: this.outbox, botId: botId ?? this.botOf(chatId), account: this.account, key, ttlMs });
   }
 
   private track(p: Promise<void>): void {
@@ -337,15 +345,15 @@ export class MessengerChannel {
   }
 
   /** 代理自己醒来的一轮（后台命令结束）：和普通回复一样经出站队列，id 由 key 推出 */
-  followUp(chatId: string, key: string): ReplySession {
-    return this.reply(chatId, key);
+  followUp(chatId: string, key: string, botId?: string): ReplySession {
+    return this.reply(chatId, key, undefined, botId);
   }
 
   /** 主动发一条通知到单聊（使用请求、批准结果、余额提醒）：进出站队列；id 不给时同样的内容一分钟内只发一次 */
   notify(chatId: string, text: string, id?: string): boolean {
     if (!chatId) return false;
-    const key = id ?? `notice:${this.botId}:${this.id}:${stableId(`${chatId}:${text}`, Math.floor(Date.now() / 60_000), 16)}`;
-    void this.outbox.send({ id: key, botId: this.botId, channel: this.id, peerId: chatId, kind: "notice", body: { text } });
+    const key = id ?? `notice:${this.account}:${this.id}:${stableId(`${chatId}:${text}`, Math.floor(Date.now() / 60_000), 16)}`;
+    void this.outbox.send({ id: key, botId: this.botOf(chatId), account: this.account, channel: this.id, peerId: chatId, kind: "notice", body: { text } });
     return true;
   }
 

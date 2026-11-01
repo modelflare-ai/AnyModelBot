@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { saveConfigFile, type AppConfig } from "./config.js";
-import { Store, type Bot } from "./store/db.js";
+import { Store, type Bot, type ChannelAccount } from "./store/db.js";
 import { OpenAICompatClient, type ModelClient } from "./llm/client.js";
 import { BotRuntime } from "./core/runtime.js";
 import { KeyedQueue } from "./core/queue.js";
@@ -11,6 +11,7 @@ import { Outbox } from "./core/outbox.js";
 import { Delivery, type DeliveryOptions } from "./core/delivery.js";
 import { AccessControl } from "./core/access.js";
 import { MESSENGERS, MESSENGER_LABEL, isMessenger, type ChannelStatus, type MessengerId } from "./core/types.js";
+import { botForPeer, defaultBotFor } from "./core/routes.js";
 import { MagpieSupervisor } from "./magpie/supervisor.js";
 import { FeishuChannel } from "./channels/feishu/channel.js";
 import { LarkTransport, type FeishuTransport } from "./channels/feishu/transport.js";
@@ -104,7 +105,7 @@ export function appVersion(): string {
 
 export interface AppOptions {
   /** 测试注入：替换飞书传输层 */
-  feishuTransport?: (bot: Bot) => FeishuTransport;
+  feishuTransport?: (account: { id: string; feishuAppId: string; feishuAppSecret: string }) => FeishuTransport;
   /** 测试用：替换 Telegram、Slack、Discord 的传输层 */
   messengerTransport?: (id: MessengerId, botId: string, credentials: Record<string, string>) => MessengerTransport;
   /** 测试注入：替换 iLink 的 fetch */
@@ -321,11 +322,11 @@ export class App {
   /** 渠道登录过期了（微信 -14）："需要你"里一行，去重新扫码 */
   private loginAttention(): AttentionItem[] {
     const out: AttentionItem[] = [];
-    for (const [botId, ch] of this.channels) {
+    for (const [key, ch] of this.channels) {
       const st = ch.weixin?.status;
       if (st?.state !== "expired") continue;
       const subject = tr("app.weixinExpiredSubject");
-      out.push({ id: `login:${botId}:weixin`, kind: "login", botId, botName: this.store.getBot(botId)?.name ?? botId, subject, status: "", head: subject, line: "", since: st.since, severity: "err", actions: ["relogin"], channel: "weixin" });
+      out.push({ id: `login:${key}:weixin`, kind: "login", botId: defaultBotFor(this.store, key, "weixin"), botName: this.store.getChannelAccount(key, "weixin")?.label ?? key, subject, status: "", head: subject, line: "", since: st.since, severity: "err", actions: ["relogin"], channel: "weixin" });
     }
     return out;
   }
@@ -478,20 +479,19 @@ export class App {
 
   /** 提醒经机器人发给你：用第一个能发出去的渠道（微信发给扫码的人，飞书发到最近的单聊） */
   async pushToOwner(text: string): Promise<boolean> {
-    for (const bot of this.store.listBots()) {
-      const ch = this.channels.get(bot.id);
+    for (const [key, ch] of this.channels) {
       try {
         if (ch?.weixin && (await ch.weixin.notifyOwner(text))) return true;
         // 飞书：发给主人；还没设主人时发到最近的单聊
-        const chat = ch?.feishu ? (this.access.owner(bot.id, "feishu")?.peerId ?? this.store.listConversations(bot.id).find((c) => c.channel === "feishu" && c.kind === "dm")?.peerId) : undefined;
+        const chat = ch?.feishu ? (this.access.owner(key, "feishu")?.peerId ?? this.store.listAccountConversations(key, "feishu").find((c) => c.kind === "dm")?.peerId) : undefined;
         if (chat && ch?.feishu?.notify(chat, text)) return true;
         // 其他平台：发给主人（连上之后第一个发消息的人）
         for (const id of MESSENGERS) {
-          const owner = this.access.owner(bot.id, id)?.peerId;
+          const owner = this.access.owner(key, id)?.peerId;
           if (owner && ch?.messengers?.[id]?.notify(owner, text)) return true;
         }
       } catch (e) {
-        log.warn("push to owner failed", { bot: bot.id, message: (e as Error).message.slice(0, 200) });
+        log.warn("push to owner failed", { account: key, message: (e as Error).message.slice(0, 200) });
       }
     }
     return false;
@@ -547,7 +547,7 @@ export class App {
   async deleteBot(botId: string): Promise<void> {
     const bot = this.store.getBot(botId);
     this.tasks.dropBot(botId);
-    await this.stopBot(botId);
+    // 渠道账号是全局的，不跟着机器人停：之后它们的消息交给别的机器人（core/routes.ts）
     await this.agent.stopBot(botId);
     if (bot?.settings.budget.enabled && this.account.signedIn) {
       await this.account.setBotBudget(botId, bot.name, { ...bot.settings.budget, enabled: false }).catch((e) => log.warn("remove bot key failed", { message: (e as Error).message }));
@@ -608,7 +608,8 @@ export class App {
     // 出站队列先开：渠道上线时登记发送函数，上次没发完的消息接着发
     this.outbox.start();
     this.delivery.start();
-    for (const bot of this.store.listBots()) await this.startBot(bot.id);
+    for (const bot of this.store.listBots()) this.adoptBotChannels(bot.id);
+    for (const key of new Set(this.store.listChannelAccounts().map((a) => a.key))) await this.startBot(key);
     if (interrupted.length) void this.tellInterrupted(interrupted);
     // 后台任务：上次没跑完的记为中断、带着恢复说明接着做（渠道已经上线，结果能发出去）；估算花费用的价格目录先读起来
     if (this.agent.available) {
@@ -654,7 +655,7 @@ export class App {
       const conv = this.store.getConversation(it.conversationId);
       if (!conv) continue;
       const text = interruptedText(it.preview);
-      const ch = this.channels.get(conv.botId);
+      const ch = this.channels.get(conv.account || conv.botId);
       let sent = false;
       try {
         if (conv.channel === "web") {
@@ -808,73 +809,124 @@ export class App {
     log.info(`created default bot ${bot.id}`, { feishuAppId: bot.feishuAppId || "(未配置)" });
   }
 
-  async startBot(botId: string): Promise<void> {
+  /**
+   * 旧版把渠道存在机器人身上：第一次见到就变成全局账号。key 沿用机器人 id，登录态、配额、名单、队列的数据都不用搬，
+   * 默认回复的还是原来的机器人（core/routes.ts）。飞书凭据搬进账号后清掉机器人上的，移除账号后不会又变回来。
+   */
+  private adoptBotChannels(botId: string): void {
     const bot = this.store.getBot(botId);
     if (!bot) return;
-    registerSecret(bot.feishuAppSecret);
-    registerSecret(this.store.getWeixinAccount(botId)?.botToken);
-    const ch: BotChannels = this.channels.get(botId) ?? {};
-    this.channels.set(botId, ch);
-    if (bot.feishuAppId && bot.feishuAppSecret && !ch.feishu) {
-      const transport = this.opts.feishuTransport?.(bot) ?? new LarkTransport(bot.feishuAppId, bot.feishuAppSecret);
-      ch.feishu = new FeishuChannel(bot.id, transport, this.runtime, this.queue, this.config.feishu.throttleMs, this.outbox, this.store);
+    if (bot.feishuAppId) {
+      const cur = this.store.getChannelAccount(botId, "feishu");
+      this.store.saveChannelAccount({
+        key: botId,
+        channel: "feishu",
+        label: cur?.label ?? this.freeChannelLabel("feishu", bot.name),
+        defaultBot: cur?.defaultBot ?? botId,
+        enabled: cur?.enabled ?? true,
+        credentials: { appId: bot.feishuAppId, appSecret: bot.feishuAppSecret },
+        createdAt: cur?.createdAt ?? Date.now(),
+      });
+      this.store.updateBot(botId, { feishuAppId: "", feishuAppSecret: "" });
+    }
+    if (this.store.getWeixinAccount(botId)) this.ensureChannelAccount(botId, "weixin", bot.name, bot.weixinEnabled);
+    for (const id of MESSENGERS) if (this.store.getMessengerAccount(botId, id)) this.ensureChannelAccount(botId, id, bot.name);
+  }
+
+  /** 新账号的默认名字：同一个渠道里不重复，也不能全是数字（用户说名字时要能选到唯一一个） */
+  private freeChannelLabel(channel: string, wanted: string): string {
+    const raw = wanted.trim().slice(0, 76);
+    const fallback = channel === "weixin" ? t("app.weixin_account_name") : channel === "feishu" ? t("app.feishu_account_name") : (MESSENGER_LABEL[channel as MessengerId] ?? channel);
+    const base = !raw || /^\d+$/.test(raw) ? fallback : raw;
+    const taken = new Set(this.store.listChannelAccounts(channel).map((a) => a.label.toLowerCase()));
+    if (!taken.has(base.toLowerCase())) return base;
+    for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
+  }
+
+  private ensureChannelAccount(key: string, channel: string, label: string, enabled = true): ChannelAccount {
+    const cur = this.store.getChannelAccount(key, channel);
+    if (cur) return cur;
+    const account: ChannelAccount = { key, channel, label: this.freeChannelLabel(channel, label), defaultBot: defaultBotFor(this.store, key, channel), enabled, credentials: {}, createdAt: Date.now() };
+    this.store.saveChannelAccount(account);
+    return account;
+  }
+
+  /** 启动一个 key 下的所有渠道账号（升级前同一个 key 可能有好几个渠道） */
+  async startBot(key: string): Promise<void> {
+    this.adoptBotChannels(key);
+    const ch: BotChannels = this.channels.get(key) ?? {};
+    this.channels.set(key, ch);
+    const route = (channel: string) => (peer: string) => botForPeer(this.store, key, channel, peer);
+    const nameOf = (channel: string) => this.store.getChannelAccount(key, channel)?.label ?? key;
+
+    const fsAccount = this.store.getChannelAccount(key, "feishu");
+    const { appId, appSecret } = fsAccount?.credentials ?? {};
+    if (fsAccount?.enabled && appId && appSecret && !ch.feishu) {
+      registerSecret(appSecret);
+      const transport = this.opts.feishuTransport?.({ id: key, feishuAppId: appId, feishuAppSecret: appSecret }) ?? new LarkTransport(appId, appSecret);
+      ch.feishu = new FeishuChannel(key, transport, this.runtime, this.queue, this.config.feishu.throttleMs, this.outbox, this.store);
       ch.feishu.delivery = this.delivery;
+      ch.feishu.route = route("feishu");
       // 读不了飞书的历史消息：离线时发来的补不上，提示一次
-      ch.feishu.onHistoryDenied = () => this.notice("warn", t("app.feishu_history_denied", { name: this.store.getBot(bot.id)?.name ?? bot.name }));
+      ch.feishu.onHistoryDenied = () => this.notice("warn", t("app.feishu_history_denied", { name: nameOf("feishu") }));
       // 代理自己醒来的一轮（后台命令结束）：经出站队列回复到这个会话最近收到的那条消息
       const fs = ch.feishu;
-      this.runtime.registerReplier(bot.id, "feishu", (conv, handle, key) => (handle?.messageId ? { out: fs.followUp(conv.peerId, handle.messageId, key) } : undefined));
+      this.runtime.registerReplier(key, "feishu", (conv, handle, wakeKey) => (handle?.messageId ? { out: fs.followUp(conv.peerId, handle.messageId, wakeKey, conv.botId) } : undefined));
       ch.feishuError = undefined;
       const feishu = ch.feishu;
       detached(() => feishu.start()).catch((e) => {
         ch.feishuError = (e as Error).message;
-        this.notice("warn", t("app.feishu_failed", { name: bot.name, message: ch.feishuError }));
+        this.notice("warn", t("app.feishu_failed", { name: nameOf("feishu"), message: ch.feishuError }));
       });
-      log.info(`bot ${bot.id}: feishu starting`, { appId: bot.feishuAppId, secret: mask(bot.feishuAppSecret) });
+      log.info(`account ${key}: feishu starting`, { appId, secret: mask(appSecret) });
     }
-    if (bot.weixinEnabled && !ch.weixin) {
-      ch.weixin = new WeixinChannel(bot.id, this.store, this.runtime, this.queue, {
+
+    registerSecret(this.store.getWeixinAccount(key)?.botToken);
+    if (this.store.getChannelAccount(key, "weixin")?.enabled && !ch.weixin) {
+      ch.weixin = new WeixinChannel(key, this.store, this.runtime, this.queue, {
         fetchImpl: this.opts.weixinFetch,
         cdnBaseUrl: this.config.weixin.cdnBaseUrl,
         pollTimeoutMs: this.opts.weixinPollTimeoutMs,
         outbox: this.outbox,
         delivery: this.delivery,
       });
+      ch.weixin.route = route("weixin");
       ch.weixin.onExpired = () => {
-        this.notice("warn", t("app.weixin_expired", { name: bot.name }));
+        this.notice("warn", t("app.weixin_expired", { name: nameOf("weixin") }));
         this.attention.kick();
       };
       const wx = ch.weixin;
       // 代理自己醒来的一轮：经出站队列发给这个微信用户（发送时才查 24 小时窗口和配额）
-      this.runtime.registerReplier(bot.id, "weixin", (conv, _handle, key) => ({ out: wx.followUp(conv.peerId, key) }));
+      this.runtime.registerReplier(key, "weixin", (conv, _handle, wakeKey) => ({ out: wx.followUp(conv.peerId, wakeKey, conv.botId) }));
       detached(() => wx.start());
     }
-    for (const id of MESSENGERS) this.startMessenger(bot, id, ch);
+    for (const id of MESSENGERS) this.startMessenger(key, id, ch);
   }
 
   /** 填了凭据、还没在跑的平台：连上 */
-  private startMessenger(bot: Bot, id: MessengerId, ch: BotChannels): void {
-    const acct = this.store.getMessengerAccount(bot.id, id);
-    if (!acct || ch.messengers?.[id]) return;
+  private startMessenger(key: string, id: MessengerId, ch: BotChannels): void {
+    const acct = this.store.getMessengerAccount(key, id);
+    if (!acct || ch.messengers?.[id] || this.store.getChannelAccount(key, id)?.enabled === false) return;
     for (const secret of Object.values(acct.credentials)) registerSecret(secret);
-    const transport = this.opts.messengerTransport?.(id, bot.id, acct.credentials) ?? createTransport(id, bot.id, acct.credentials, this.store);
-    const channel = new MessengerChannel(bot.id, transport, this.runtime, this.queue, this.outbox);
+    const transport = this.opts.messengerTransport?.(id, key, acct.credentials) ?? createTransport(id, key, acct.credentials, this.store);
+    const channel = new MessengerChannel(key, transport, this.runtime, this.queue, this.outbox);
     channel.delivery = this.delivery;
+    channel.route = (peer) => botForPeer(this.store, key, id, peer);
     channel.onFatal = (detail) => {
       (ch.messengerErrors ??= {})[id] = detail;
-      this.notice("warn", t("app.messenger_failed", { name: this.store.getBot(bot.id)?.name ?? bot.name, channel: MESSENGER_LABEL[id], message: detail }));
+      this.notice("warn", t("app.messenger_failed", { name: this.store.getChannelAccount(key, id)?.label ?? key, channel: MESSENGER_LABEL[id], message: detail }));
     };
     (ch.messengers ??= {})[id] = channel;
     if (ch.messengerErrors) delete ch.messengerErrors[id];
     // 代理自己醒来的一轮（后台命令结束）：经出站队列发到这个会话
-    this.runtime.registerReplier(bot.id, id, (conv, _handle, key) => ({ out: channel.followUp(conv.peerId, key) }));
+    this.runtime.registerReplier(key, id, (conv, _handle, wakeKey) => ({ out: channel.followUp(conv.peerId, wakeKey, conv.botId) }));
     detached(() => channel.start()).catch((e) => channel.onFatal?.((e as Error).message));
-    log.info(`bot ${bot.id}: ${id} starting`);
+    log.info(`account ${key}: ${id} starting`);
   }
 
-  private async stopMessenger(botId: string, id: MessengerId): Promise<void> {
-    const ch = this.channels.get(botId);
-    this.runtime.registerReplier(botId, id, undefined);
+  private async stopMessenger(key: string, id: MessengerId): Promise<void> {
+    const ch = this.channels.get(key);
+    this.runtime.registerReplier(key, id, undefined);
     await ch?.messengers?.[id]?.stop().catch(() => {});
     if (ch?.messengers) delete ch.messengers[id];
     if (ch?.messengerErrors) delete ch.messengerErrors[id];
@@ -884,14 +936,14 @@ export class App {
    * 连接（或改凭据）：留空的凭据沿用已保存的。凭据被平台拒绝就报错、不保存；一时连不上平台照样保存，渠道自己会重试。
    * 换了一个机器人（凭据变了）：主人对不上了，连上后第一个发消息的人成为主人；Telegram 的收取位置也作废。
    */
-  async connectMessenger(botId: string, id: MessengerId, input: Record<string, unknown>): Promise<void> {
-    const old = this.store.getMessengerAccount(botId, id);
+  async connectMessenger(key: string, id: MessengerId, input: Record<string, unknown>): Promise<void> {
+    const old = this.store.getMessengerAccount(key, id);
     const credentials: Record<string, string> = {};
     for (const field of MESSENGER_FIELDS[id]) {
       credentials[field] = String(input[field] ?? "").trim() || (old?.credentials[field] ?? "");
       if (!credentials[field]) throw new PlatformError(t("channel.messengerMissing", { channel: MESSENGER_LABEL[id] }), true);
     }
-    const transport = this.opts.messengerTransport?.(id, botId, credentials) ?? createTransport(id, botId, credentials, this.store);
+    const transport = this.opts.messengerTransport?.(id, key, credentials) ?? createTransport(id, key, credentials, this.store);
     let name = old?.name ?? "";
     try {
       name = (await transport.verify?.())?.name ?? name;
@@ -900,57 +952,134 @@ export class App {
       log.warn("couldn't verify the credentials now, saving anyway", { channel: id, message: (e as Error).message.slice(0, 200) });
     }
     const changed = MESSENGER_FIELDS[id].some((f) => f !== "appToken" && credentials[f] !== old?.credentials[f]);
-    await this.stopMessenger(botId, id);
+    await this.stopMessenger(key, id);
     if (changed) {
-      this.access.resetOwner(botId, id);
-      if (id === "telegram") this.store.deleteKV(telegramOffsetKey(botId));
+      this.access.resetOwner(key, id);
+      if (id === "telegram") this.store.deleteKV(telegramOffsetKey(key));
     }
-    this.store.saveMessengerAccount({ botId, channel: id, credentials, name });
-    await this.startBot(botId);
+    this.store.saveMessengerAccount({ botId: key, channel: id, credentials, name });
+    this.ensureChannelAccount(key, id, name || MESSENGER_LABEL[id]);
+    await this.startBot(key);
   }
 
-  async disconnectMessenger(botId: string, id: MessengerId): Promise<void> {
-    await this.stopMessenger(botId, id);
-    this.access.resetOwner(botId, id);
-    this.store.deleteMessengerAccount(botId, id);
-    if (id === "telegram") this.store.deleteKV(telegramOffsetKey(botId));
+  async disconnectMessenger(key: string, id: MessengerId): Promise<void> {
+    await this.stopMessenger(key, id);
+    this.access.resetOwner(key, id);
+    this.store.deleteMessengerAccount(key, id);
+    this.store.deleteChannelAccount(key, id);
+    if (id === "telegram") this.store.deleteKV(telegramOffsetKey(key));
   }
 
-  /** 信息面板的一行：状态、平台上的名字、已保存凭据的掩码（界面显示"留空不修改"） */
-  private messengerStatus(botId: string, id: MessengerId): ChannelStatus & { account?: { name: string; saved: Record<string, string> } } {
-    const acct = this.store.getMessengerAccount(botId, id);
+  /** 连接（或改凭据）飞书应用：Secret 留空沿用已保存的；App ID 留空就是移除。换了应用：单聊会话都是新的，连上后第一个发消息的人成为主人 */
+  async connectFeishu(key: string, appId: string, appSecret: string): Promise<void> {
+    if (!appId) return this.removeFeishu(key);
+    const cur = this.store.getChannelAccount(key, "feishu");
+    if (appId !== cur?.credentials.appId) this.access.resetOwner(key, "feishu");
+    const base = this.ensureChannelAccount(key, "feishu", t("app.feishu_account_name"));
+    this.store.saveChannelAccount({ ...base, credentials: { appId, appSecret: appSecret || cur?.credentials.appSecret || "" } });
+    await this.stopFeishu(key);
+    await this.startBot(key);
+  }
+
+  private async stopFeishu(key: string): Promise<void> {
+    const ch = this.channels.get(key);
+    this.runtime.registerReplier(key, "feishu", undefined);
+    await ch?.feishu?.stop().catch(() => {});
+    if (ch) {
+      ch.feishu = undefined;
+      ch.feishuError = undefined;
+    }
+  }
+
+  private async removeFeishu(key: string): Promise<void> {
+    await this.stopFeishu(key);
+    this.access.resetOwner(key, "feishu");
+    this.store.deleteChannelAccount(key, "feishu");
+  }
+
+  /** 全局渠道账号的列表（设置 › 连接）：别名、默认机器人、状态。序号按渠道数，和用户说的「第二个微信」一致 */
+  channelAccounts() {
+    const seen: Record<string, number> = {};
+    return this.store.listChannelAccounts().map((a) => {
+      seen[a.channel] = (seen[a.channel] ?? 0) + 1;
+      const status = this.channelStatus(a.key) as unknown as Record<string, ChannelStatus>;
+      return {
+        key: a.key,
+        channel: a.channel,
+        number: seen[a.channel],
+        label: a.label,
+        defaultBot: defaultBotFor(this.store, a.key, a.channel),
+        enabled: a.enabled,
+        status: status[a.channel],
+        requests: this.store.listAccess({ botId: a.key, channel: a.channel, status: "pending" }).length,
+      };
+    });
+  }
+
+  /** 改别名、默认机器人、开关。别名在同一个渠道里不能重复，也不能全是数字 */
+  async updateChannelAccount(key: string, channel: string, patch: { label?: string; defaultBot?: string; enabled?: boolean }): Promise<"ok" | "missing" | "invalid" | "taken" | "no-bot"> {
+    const cur = this.store.getChannelAccount(key, channel);
+    if (!cur) return "missing";
+    const next = { ...cur };
+    if (patch.label !== undefined) {
+      const name = patch.label.trim().slice(0, 80);
+      if (!name || /^\d+$/.test(name)) return "invalid";
+      if (this.store.listChannelAccounts(channel).some((a) => a.key !== key && a.label.toLowerCase() === name.toLowerCase())) return "taken";
+      next.label = name;
+    }
+    if (patch.defaultBot !== undefined) {
+      if (!this.store.getBot(patch.defaultBot)) return "no-bot";
+      next.defaultBot = patch.defaultBot;
+    }
+    if (patch.enabled !== undefined) next.enabled = patch.enabled;
+    this.store.saveChannelAccount(next);
+    if (patch.enabled !== undefined && patch.enabled !== cur.enabled) await this.restartBot(key);
+    return "ok";
+  }
+
+  /** 移除一个渠道账号：退出登录，删掉它的凭据和名单 */
+  async removeChannelAccount(key: string, channel: string): Promise<void> {
+    if (channel === "feishu") await this.removeFeishu(key);
+    else if (channel === "weixin") await this.weixinLogout(key);
+    else if (isMessenger(channel)) await this.disconnectMessenger(key, channel);
+    for (const e of this.store.listAccess({ botId: key, channel })) this.access.remove(e.id);
+  }
+
+  /** 设置页的一行：状态、平台上的名字、已保存凭据的掩码（界面显示"留空不修改"） */
+  private messengerStatus(key: string, id: MessengerId): ChannelStatus & { account?: { name: string; saved: Record<string, string> } } {
+    const acct = this.store.getMessengerAccount(key, id);
     if (!acct) return { state: "disabled", since: 0 };
-    const ch = this.channels.get(botId);
+    const ch = this.channels.get(key);
     const error = ch?.messengerErrors?.[id];
     const st: ChannelStatus = error ? { state: "error", detail: error, since: Date.now() } : ch?.messengers?.[id]?.status ?? { state: "disabled", since: 0 };
     return { ...st, account: { name: acct.name, saved: Object.fromEntries(Object.entries(acct.credentials).map(([k, v]) => [k, mask(v)])) } };
   }
 
-  async stopBot(botId: string): Promise<void> {
-    const ch = this.channels.get(botId);
+  async stopBot(key: string): Promise<void> {
+    const ch = this.channels.get(key);
     if (!ch) return;
     ch.weixinLogin?.cancel();
-    this.runtime.registerReplier(botId, "feishu", undefined);
-    this.runtime.registerReplier(botId, "weixin", undefined);
-    for (const id of MESSENGERS) await this.stopMessenger(botId, id);
+    this.runtime.registerReplier(key, "feishu", undefined);
+    this.runtime.registerReplier(key, "weixin", undefined);
+    for (const id of MESSENGERS) await this.stopMessenger(key, id);
     await ch.feishu?.stop().catch(() => {});
     await ch.weixin?.stop().catch(() => {});
-    this.channels.delete(botId);
+    this.channels.delete(key);
   }
 
-  async restartBot(botId: string): Promise<void> {
-    await this.stopBot(botId);
-    await this.startBot(botId);
+  async restartBot(key: string): Promise<void> {
+    await this.stopBot(key);
+    await this.startBot(key);
   }
 
   // ---------- 微信扫码 ----------
-  startWeixinLogin(botId: string): WeixinLogin {
-    const ch = this.channels.get(botId) ?? {};
-    this.channels.set(botId, ch);
+  startWeixinLogin(key: string): WeixinLogin {
+    const ch = this.channels.get(key) ?? {};
+    this.channels.set(key, ch);
     ch.weixinLogin?.cancel();
     const login = new WeixinLogin({
       apiBaseUrl: this.config.weixin.apiBaseUrl,
-      pngPath: path.join(this.config.dataDir, "weixin", `${botId}-login-qr.png`),
+      pngPath: path.join(this.config.dataDir, "weixin", `${key}-login-qr.png`),
       fetchImpl: this.opts.weixinFetch,
       printTerminal: this.opts.printQrToTerminal ?? true,
       pollDelayMs: this.opts.weixinFetch ? 50 : 1000,
@@ -958,42 +1087,44 @@ export class App {
     ch.weixinLogin = login;
     void login.run().then(async (res) => {
       if (!res) return;
-      // 换了一个微信扫码：原来的主人留在允许名单里（可在机器人设置里移除），不会被拦在外面
-      const prevOwner = this.store.getWeixinAccount(botId)?.ownerUserId;
-      this.store.saveWeixinAccount({ botId, botToken: res.botToken, ilinkBotId: res.ilinkBotId, baseUrl: res.baseUrl, ownerUserId: res.userId });
-      if (prevOwner && prevOwner !== res.userId) this.access.allow(botId, "weixin", prevOwner, "previous-owner");
+      // 换了一个微信扫码：原来的主人留在允许名单里（可以移除），不会被拦在外面
+      const prevOwner = this.store.getWeixinAccount(key)?.ownerUserId;
+      this.store.saveWeixinAccount({ botId: key, botToken: res.botToken, ilinkBotId: res.ilinkBotId, baseUrl: res.baseUrl, ownerUserId: res.userId });
+      if (prevOwner && prevOwner !== res.userId) this.access.allow(key, "weixin", prevOwner, "previous-owner");
       // 这次拿到了扫码者：之前没拿到时第一个发消息成为主人的人，也留在允许名单里
-      if (res.userId) this.access.resetOwner(botId, "weixin", { keep: true });
-      const bot = this.store.getBot(botId);
-      if (bot && !bot.weixinEnabled) this.store.updateBot(botId, { weixinEnabled: true });
+      if (res.userId) this.access.resetOwner(key, "weixin", { keep: true });
+      const account = this.ensureChannelAccount(key, "weixin", t("app.weixin_account_name"));
+      if (!account.enabled) this.store.saveChannelAccount({ ...account, enabled: true });
       await ch.weixin?.stop();
       ch.weixin = undefined;
-      await this.startBot(botId);
-      this.notice("info", t("app.weixin_connected", { name: bot?.name ?? botId }));
+      await this.startBot(key);
+      this.notice("info", t("app.weixin_connected", { name: account.label }));
     });
     return login;
   }
 
-  async weixinLogout(botId: string): Promise<void> {
-    const ch = this.channels.get(botId);
+  async weixinLogout(key: string): Promise<void> {
+    const ch = this.channels.get(key);
     await ch?.weixin?.stop();
     if (ch) ch.weixin = undefined;
-    this.store.deleteWeixinAccount(botId);
-    await this.startBot(botId);
+    this.runtime.registerReplier(key, "weixin", undefined);
+    this.store.deleteWeixinAccount(key);
+    this.store.deleteChannelAccount(key, "weixin");
   }
 
-  channelStatus(botId: string): { feishu: ChannelStatus; weixin: ChannelStatus & { login?: unknown; quota?: unknown } } & Record<MessengerId, ChannelStatus> {
-    const bot = this.store.getBot(botId);
-    const ch = this.channels.get(botId);
-    const feishu: ChannelStatus = !bot?.feishuAppId
+  channelStatus(key: string): { feishu: ChannelStatus; weixin: ChannelStatus & { login?: unknown; quota?: unknown } } & Record<MessengerId, ChannelStatus> {
+    const ch = this.channels.get(key);
+    const fsAccount = this.store.getChannelAccount(key, "feishu");
+    const feishu: ChannelStatus & { account?: { appId: string; saved: { appSecret: string } } } = !fsAccount?.credentials.appId
       ? { state: "disabled", detail: t("channel.feishu_no_credentials"), since: 0 }
       : ch?.feishuError
         ? { state: "error", detail: ch.feishuError, since: Date.now() }
         : ch?.feishu?.status ?? { state: "disabled", since: 0 };
-    const acct = this.store.getWeixinAccount(botId);
+    if (fsAccount?.credentials.appId) feishu.account = { appId: fsAccount.credentials.appId, saved: { appSecret: mask(fsAccount.credentials.appSecret) } };
+    const acct = this.store.getWeixinAccount(key);
     const wx = ch?.weixin?.status ?? (acct ? { state: "disabled" as const, since: 0 } : { state: "login_required" as const, detail: t("channel.wx_login_required"), since: 0 });
     const quota = ch?.weixin
-      ? this.store.listWeixinPeers(botId).map((p) => ({ userId: p.userId, remaining: ch.weixin!.quota.remaining(p.userId), windowStartedAt: p.windowStartedAt }))
+      ? this.store.listWeixinPeers(key).map((p) => ({ userId: p.userId, remaining: ch.weixin!.quota.remaining(p.userId), windowStartedAt: p.windowStartedAt }))
       : [];
     return {
       feishu,
@@ -1003,9 +1134,9 @@ export class App {
         login: ch?.weixinLogin?.snapshot,
         quota,
       },
-      telegram: this.messengerStatus(botId, "telegram"),
-      slack: this.messengerStatus(botId, "slack"),
-      discord: this.messengerStatus(botId, "discord"),
+      telegram: this.messengerStatus(key, "telegram"),
+      slack: this.messengerStatus(key, "slack"),
+      discord: this.messengerStatus(key, "discord"),
     };
   }
 }

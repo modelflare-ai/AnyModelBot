@@ -284,10 +284,7 @@ function App() {
   };
   const openNeeds = () => go("/needs");
   // 「需要你」里的重新扫码：去这个机器人的对话，打开信息面板（渠道在最上面）
-  const relogin = (id) => {
-    openChat(id);
-    setInfoOpen(true);
-  };
+  const relogin = () => openSettings("connections");
   useEffect(() => {
     if (route.view !== "settings") setSettingsQ("");
   }, [route.view]);
@@ -403,7 +400,7 @@ function App() {
       onCommit=${(v) => setPrefs({ panelW: v })} />`}
     ${shownPanel && html`<div class=${`panel-scrim${panelFx.leaving ? " leaving" : ""}`} onClick=${() => setInfoOpen(false)}></div>`}
     ${shownPanel && html`<${InfoPanel} key=${shownPanel.id} bot=${shownPanel} leaving=${panelFx.leaving} onClose=${() => setInfoOpen(false)}
-      onOpenBotSettings=${() => openBotSettings(shownPanel.id)} onOpenChat=${() => setInfoOpen(false)} />`}
+      onOpenBotSettings=${() => openBotSettings(shownPanel.id)} onOpenChat=${() => setInfoOpen(false)} onOpenConnections=${() => openSettings("connections")} />`}
     <${CoachMark} bot=${view === "chat" ? bot : null} view=${view} infoOpen=${!!panelBot} />
     ${palette && html`<${Palette} commands=${commands} onClose=${() => setPalette(false)} />`}
     <${DialogHost} />

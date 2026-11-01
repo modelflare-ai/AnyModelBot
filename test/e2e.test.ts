@@ -104,12 +104,12 @@ describe("飞书 E2E", () => {
 
 describe("微信 E2E", () => {
   it("界面扫码登录 → 长轮询收消息 → 输入状态 → 一次性回复", async () => {
-    const st0 = await api("/bots/default/channels");
+    const st0 = await api("/channel-accounts/default/channels");
     expect(st0.json.weixin.state).toBe("login_required");
-    const start = await api("/bots/default/weixin/login", { method: "POST", body: {} });
+    const start = await api("/channel-accounts/default/weixin/login", { method: "POST", body: {} });
     expect(start.status).toBe(200);
     expect(start.json.qrDataUrl).toMatch(/^data:image\/png;base64,/);
-    await until(async () => (await api("/bots/default/channels")).json.weixin.state === "connected", 8000);
+    await until(async () => (await api("/channel-accounts/default/channels")).json.weixin.state === "connected", 8000);
     expect(fs.existsSync(path.join(dataDir, "weixin", "default-login-qr.png"))).toBe(true);
     const acct = app.store.getWeixinAccount("default")!;
     expect(acct.ilinkBotId).toBe("bot@im.bot");
@@ -124,7 +124,7 @@ describe("微信 E2E", () => {
     expect(ilink.state.typing).toContain(1);
     await until(() => ilink.state.typing.includes(2));
     expect(ilink.state.authSeen).toContain("Bearer tok-secret-123");
-    const st = await api("/bots/default/channels");
+    const st = await api("/channel-accounts/default/channels");
     expect(st.json.weixin.quota[0]).toMatchObject({ userId: "alice@im.wechat", remaining: 9 });
     expect(app.store.getWeixinAccount("default")!.cursor).toMatch(/^cur-/);
   });
@@ -188,7 +188,7 @@ describe("微信 E2E", () => {
   });
   it("会话过期 -14 → 暂停并提示重新扫码", async () => {
     ilink.state.expireNext = true;
-    await until(async () => (await api("/bots/default/channels")).json.weixin.state === "expired", 8000);
+    await until(async () => (await api("/channel-accounts/default/channels")).json.weixin.state === "expired", 8000);
     expect(app.store.getWeixinAccount("default")!.pausedUntil).toBeGreaterThan(Date.now());
     const s = await api("/status");
     expect(s.json.notices.some((n: any) => n.text.includes("重新扫码"))).toBe(true);
@@ -230,11 +230,12 @@ describe("Web 界面 / API", () => {
     expect((await api(`/bots/${id}`)).json.bot.settings.paused).toBe(true);
     expect((await api(`/bots/${id}/settings`, { method: "PUT", body: { paused: false } })).json.settings.paused).toBe(false);
     expect((await api("/bots/default")).json.bot.settings.avatar).toBe("blue");
-    const f = await api(`/bots/${id}/feishu`, { method: "PUT", body: { appId: "cli_x", appSecret: "very-secret-value" } });
+    const f = await api(`/channel-accounts/${id}/feishu`, { method: "PUT", body: { appId: "cli_x", appSecret: "very-secret-value" } });
     expect(f.status).toBe(200);
-    const g = await api(`/bots/${id}`);
+    const g = await api(`/channel-accounts/${id}/channels`);
     expect(JSON.stringify(g.json)).not.toContain("very-secret-value");
-    expect(g.json.bot.feishuAppSecretMasked).toBe("****alue");
+    expect(g.json.feishu.account).toEqual({ appId: "cli_x", saved: { appSecret: "****alue" } });
+    expect(JSON.stringify((await api("/channel-accounts")).json)).not.toContain("very-secret-value");
     const chat = await api(`/bots/${id}/chat`, { method: "POST", body: { text: "hi" } });
     expect(chat.json.reply).toBe("[mock-b] 你说：hi");
     const convs = await api(`/conversations?bot=${id}`);

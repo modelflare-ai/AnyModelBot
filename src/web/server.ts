@@ -5,10 +5,10 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { appVersion, type App } from "../app.js";
 import type { InboundEvent, OutboundOp, ReplySession } from "../core/types.js";
-import { MESSENGERS, eventText, isMessenger, isPushChannel } from "../core/types.js";
+import { eventText, isMessenger, isPushChannel } from "../core/types.js";
 import type { PlatformError } from "../channels/messenger/transport.js";
 import { findAppRoot } from "../magpie/supervisor.js";
-import { logFilePath, logger, mask, readLogTail, registerSecret } from "../log.js";
+import { logFilePath, logger, readLogTail, registerSecret } from "../log.js";
 import { diagnosticsReport, safeStatus, testAgent, testModel } from "../diagnostics.js";
 import { ZOOMS, normalizeLowBalance, saveConfigFile } from "../config.js";
 import { ApiError } from "../account/client.js";
@@ -118,9 +118,6 @@ function publicBot(b: NonNullable<ReturnType<App["store"]["getBot"]>>) {
     name: b.name,
     systemPrompt: b.systemPrompt,
     defaultModel: b.defaultModel,
-    feishuAppId: b.feishuAppId,
-    feishuAppSecretMasked: mask(b.feishuAppSecret),
-    weixinEnabled: b.weixinEnabled,
     settings: b.settings,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
@@ -493,6 +490,117 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       return send(res, 200, { ...app.agent.status(), busy: [...new Set([...live.bots(), ...app.runtime.busyBots()])], background: app.tasks.background(), attention: items.length, needs: app.attention.byBot(items) });
     }
     // —— 需要你（3b）：所有机器人里在等人的事，和对它们的操作 ——
+    // 全局渠道账号（设置 › 连接）：所有机器人共用，消息交给哪个机器人见 core/routes.ts。key 只是账号的命名空间
+    if (seg[0] === "channel-accounts") {
+      if (seg.length === 1 && m === "GET") return send(res, 200, { accounts: app.channelAccounts() });
+      if (p === "/channel-accounts/new-key" && m === "POST") return send(res, 200, { key: `acct_${crypto.randomBytes(6).toString("hex")}` });
+      const id = decodeURIComponent(seg[1] ?? "");
+      if (!/^[\w-]{1,80}$/.test(id)) throw new HttpError(404, "not found");
+      const sub = seg.slice(2).join("/");
+      if (sub === "channels" && m === "GET") return send(res, 200, app.channelStatus(id));
+      if (seg.length === 4 && seg[3] === "settings" && m === "PUT") {
+        const b = await readJson(req);
+        const r = await app.updateChannelAccount(id, seg[2], {
+          ...(b.label !== undefined ? { label: String(b.label) } : {}),
+          ...(b.defaultBot !== undefined ? { defaultBot: String(b.defaultBot) } : {}),
+          ...(b.enabled !== undefined ? { enabled: !!b.enabled } : {}),
+        });
+        if (r === "taken") throw new HttpError(400, tr("web.accountNameTaken"));
+        if (r === "invalid") throw new HttpError(400, tr("web.badAccountName"));
+        if (r !== "ok") throw new HttpError(404, tr("web.recordNotFound"));
+        return send(res, 200, { accounts: app.channelAccounts() });
+      }
+      if (sub === "access" && m === "GET") {
+        const v = app.access.view(id);
+        const owner = (ch: AccessChannel) => {
+          const o = v.owners[ch];
+          if (!o) return null;
+          const e = (o.entryId ? app.store.getAccessById(o.entryId) : undefined) ?? { channel: ch, peerId: o.peerId, senderId: o.peerId, name: "" };
+          return { peer: shortPeer(o.peerId), name: peerName(e), via: o.via };
+        };
+        return send(res, 200, {
+          policy: v.policy,
+          owners: Object.fromEntries(ACCESS_CHANNELS.map((ch) => [ch, owner(ch)])),
+          requests: v.requests.map(publicAccess),
+          entries: v.entries.filter((e) => e.status !== "owner").map(publicAccess),
+        });
+      }
+      if (seg[2] === "access" && seg.length === 5 && m === "POST") {
+        const entry = app.store.getAccessById(decodeURIComponent(seg[3]));
+        if (!entry || entry.botId !== id) throw new HttpError(404, tr("web.recordNotFound"));
+        if (seg[4] === "approve" || seg[4] === "deny") {
+          const r = app.access.decide(entry.id, seg[4] === "approve", "web");
+          if (!r) throw new HttpError(409, tr("web.requestAlreadyHandled"));
+          return send(res, 200, { entry: publicAccess(r) });
+        }
+      }
+      // 更换主人：清掉"第一个发消息"的主人，下一个发单聊消息的人成为主人（扫码登录的微信要重新扫码）
+      if (seg[2] === "access" && seg[3] === "owner" && seg.length === 5 && m === "DELETE") {
+        const ch = seg[4];
+        if (!isPushChannel(ch)) throw new HttpError(404, tr("web.noSuchChannel"));
+        if (app.access.owner(id, ch)?.via === "login") throw new HttpError(409, tr("web.weixinOwnerRescan"));
+        app.access.resetOwner(id, ch);
+        return send(res, 200, { ok: true });
+      }
+      if (seg[2] === "access" && seg.length === 4 && m === "DELETE") {
+        const entry = app.store.getAccessById(decodeURIComponent(seg[3]));
+        if (!entry || entry.botId !== id) throw new HttpError(404, tr("web.recordNotFound"));
+        app.access.remove(entry.id);
+        return send(res, 200, { ok: true });
+      }
+      if (sub === "feishu" && m === "PUT") {
+        const b = await readJson(req);
+        await app.connectFeishu(id, String(b.appId ?? "").trim(), String(b.appSecret ?? "").trim());
+        return send(res, 200, app.channelStatus(id));
+      }
+      if (sub === "feishu" && m === "DELETE") {
+        await app.removeChannelAccount(id, "feishu");
+        return send(res, 200, app.channelStatus(id));
+      }
+      if (isMessenger(sub) && m === "PUT") {
+        try {
+          await app.connectMessenger(id, sub, await readJson(req));
+        } catch (e) {
+          if ((e as PlatformError).rejected) throw new HttpError(400, (e as Error).message);
+          throw e;
+        }
+        return send(res, 200, app.channelStatus(id));
+      }
+      if (isMessenger(sub) && m === "DELETE") {
+        await app.removeChannelAccount(id, sub);
+        return send(res, 200, app.channelStatus(id));
+      }
+      if (sub === "weixin" && m === "PUT") {
+        const b = await readJson(req);
+        await app.updateChannelAccount(id, "weixin", { enabled: !!b.enabled });
+        return send(res, 200, app.channelStatus(id));
+      }
+      if (sub === "weixin/login" && m === "POST") {
+        const login = app.startWeixinLogin(id);
+        // 等待二维码就绪（最多 10 秒）
+        const t0 = Date.now();
+        while (login.snapshot.state === "idle" || login.snapshot.state === "fetching") {
+          if (Date.now() - t0 > 10_000) break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return send(res, 200, login.snapshot);
+      }
+      if (sub === "weixin/login" && m === "GET") return send(res, 200, app.channels.get(id)?.weixinLogin?.snapshot ?? { state: "idle" });
+      if (sub === "weixin/verify" && m === "POST") {
+        const b = await readJson(req);
+        app.channels.get(id)?.weixinLogin?.submitVerifyCode(String(b.code ?? ""));
+        return send(res, 200, { ok: true });
+      }
+      if (sub === "weixin/cancel" && m === "POST") {
+        app.channels.get(id)?.weixinLogin?.cancel();
+        return send(res, 200, { ok: true });
+      }
+      if (sub === "weixin/logout" && m === "POST") {
+        await app.removeChannelAccount(id, "weixin");
+        return send(res, 200, app.channelStatus(id));
+      }
+      throw new HttpError(405, "method not allowed");
+    }
     // 已授权账号（设置 › 连接）：全局一份，所有机器人共用。令牌不出现在任何回复里
     if (seg[0] === "connections") {
       const c = app.connections;
@@ -790,7 +898,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       const derived = deriveGuide({
         conversations: app.store.listConversations(),
         bots,
-        channelBound: (id) => !!app.store.getWeixinAccount(id) || MESSENGERS.some((c) => !!app.store.getMessengerAccount(id, c)),
+        channelBound: () => app.store.listChannelAccounts().length > 0,
         // 机器人自己的记忆，或所有机器人共享的团队记忆，有一条就算记下过
         memoryCount: (id) =>
           [{ kind: "bot" as const, id }, { kind: "team" as const, id: "" }].reduce((n, s) => n + app.agent.memory.entries(s).length + app.agent.memory.topics(s).length, 0),
@@ -914,7 +1022,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       const bot = id ? app.store.getBot(id) : undefined;
       if (!bot) throw new HttpError(404, t("web.botNotFound"));
       if (seg.length === 2) {
-        if (m === "GET") return send(res, 200, { bot: publicBot(bot), channels: app.channelStatus(id) });
+        if (m === "GET") return send(res, 200, { bot: publicBot(bot) });
         if (m === "PUT") {
           const b = await readJson(req);
           const next = app.store.updateBot(id, {
@@ -930,7 +1038,6 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         }
       }
       const sub = seg.slice(2).join("/");
-      if (sub === "channels" && m === "GET") return send(res, 200, app.channelStatus(id));
       if (sub === "settings" && m === "GET") return send(res, 200, { settings: bot.settings, computerUse: app.agent.computerUse(id) });
       if (sub === "settings" && m === "PUT") {
         const b = await readJson(req);
@@ -995,103 +1102,6 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         }
       }
       // —— 谁能使用：主人、允许名单、使用请求 ——
-      if (sub === "access" && m === "GET") {
-        const v = app.access.view(id);
-        const owner = (ch: AccessChannel) => {
-          const o = v.owners[ch];
-          if (!o) return null;
-          const e = (o.entryId ? app.store.getAccessById(o.entryId) : undefined) ?? { channel: ch, peerId: o.peerId, senderId: o.peerId, name: "" };
-          return { peer: shortPeer(o.peerId), name: peerName(e), via: o.via };
-        };
-        return send(res, 200, {
-          policy: v.policy,
-          owners: Object.fromEntries(ACCESS_CHANNELS.map((ch) => [ch, owner(ch)])),
-          requests: v.requests.map(publicAccess),
-          entries: v.entries.filter((e) => e.status !== "owner").map(publicAccess),
-        });
-      }
-      if (seg[2] === "access" && seg.length === 5 && m === "POST") {
-        const entry = app.store.getAccessById(decodeURIComponent(seg[3]));
-        if (!entry || entry.botId !== id) throw new HttpError(404, tr("web.recordNotFound"));
-        if (seg[4] === "approve" || seg[4] === "deny") {
-          const r = app.access.decide(entry.id, seg[4] === "approve", "web");
-          if (!r) throw new HttpError(409, tr("web.requestAlreadyHandled"));
-          return send(res, 200, { entry: publicAccess(r) });
-        }
-      }
-      // 更换主人：清掉"第一个发消息"的主人，下一个发单聊消息的人成为主人（扫码登录的微信要重新扫码）
-      if (seg[2] === "access" && seg[3] === "owner" && seg.length === 5 && m === "DELETE") {
-        const ch = seg[4];
-        if (!isPushChannel(ch)) throw new HttpError(404, tr("web.noSuchChannel"));
-        if (app.access.owner(id, ch)?.via === "login") throw new HttpError(409, tr("web.weixinOwnerRescan"));
-        app.access.resetOwner(id, ch);
-        return send(res, 200, { ok: true });
-      }
-      if (seg[2] === "access" && seg.length === 4 && m === "DELETE") {
-        const entry = app.store.getAccessById(decodeURIComponent(seg[3]));
-        if (!entry || entry.botId !== id) throw new HttpError(404, tr("web.recordNotFound"));
-        app.access.remove(entry.id);
-        return send(res, 200, { ok: true });
-      }
-      if (sub === "feishu" && m === "PUT") {
-        const b = await readJson(req);
-        const appId = String(b.appId ?? "").trim();
-        const appSecret = String(b.appSecret ?? "").trim() || bot.feishuAppSecret;
-        // 换了一个飞书应用：单聊会话都是新的，原来的主人对不上了，连上后第一个发消息的人成为主人
-        if (appId !== bot.feishuAppId) app.access.resetOwner(id, "feishu");
-        app.store.updateBot(id, { feishuAppId: appId, feishuAppSecret: appId ? appSecret : "" });
-        await app.restartBot(id);
-        return send(res, 200, app.channelStatus(id));
-      }
-      if (sub === "feishu" && m === "DELETE") {
-        app.access.resetOwner(id, "feishu");
-        app.store.updateBot(id, { feishuAppId: "", feishuAppSecret: "" });
-        await app.restartBot(id);
-        return send(res, 200, app.channelStatus(id));
-      }
-      if (isMessenger(sub) && m === "PUT") {
-        try {
-          await app.connectMessenger(id, sub, await readJson(req));
-        } catch (e) {
-          if ((e as PlatformError).rejected) throw new HttpError(400, (e as Error).message);
-          throw e;
-        }
-        return send(res, 200, app.channelStatus(id));
-      }
-      if (isMessenger(sub) && m === "DELETE") {
-        await app.disconnectMessenger(id, sub);
-        return send(res, 200, app.channelStatus(id));
-      }
-      if (sub === "weixin" && m === "PUT") {
-        const b = await readJson(req);
-        app.store.updateBot(id, { weixinEnabled: !!b.enabled });
-        await app.restartBot(id);
-        return send(res, 200, app.channelStatus(id));
-      }
-      if (sub === "weixin/login" && m === "POST") {
-        const login = app.startWeixinLogin(id);
-        // 等待二维码就绪（最多 10 秒）
-        const t0 = Date.now();
-        while (login.snapshot.state === "idle" || login.snapshot.state === "fetching") {
-          if (Date.now() - t0 > 10_000) break;
-          await new Promise((r) => setTimeout(r, 50));
-        }
-        return send(res, 200, login.snapshot);
-      }
-      if (sub === "weixin/login" && m === "GET") return send(res, 200, app.channels.get(id)?.weixinLogin?.snapshot ?? { state: "idle" });
-      if (sub === "weixin/verify" && m === "POST") {
-        const b = await readJson(req);
-        app.channels.get(id)?.weixinLogin?.submitVerifyCode(String(b.code ?? ""));
-        return send(res, 200, { ok: true });
-      }
-      if (sub === "weixin/cancel" && m === "POST") {
-        app.channels.get(id)?.weixinLogin?.cancel();
-        return send(res, 200, { ok: true });
-      }
-      if (sub === "weixin/logout" && m === "POST") {
-        await app.weixinLogout(id);
-        return send(res, 200, app.channelStatus(id));
-      }
       if (sub === "chat" && m === "GET") {
         const conv = app.store.getConversation(consoleConvId(id));
         // 进行中的消息由 live 显示（用户消息、到目前为止的回复与步骤）；它开始之后存下的消息先不列，免得重复

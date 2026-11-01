@@ -4,7 +4,7 @@
 
 这份文档给想从源码运行、打包或参与开发的人看。普通用户直接从 [Releases](https://github.com/modelflare-ai/AnyModelBot/releases) 下载安装包即可，见 [README](../README.md#-下载)。
 
-- 一个机器人 = 人设 + 默认模型 + 渠道（飞书 / 微信）。定位：自用、单用户；每个机器人对应一个飞书应用。
+- 一个机器人 = 人设 + 默认模型 + 记忆。账号是全局的（设置 › 连接），所有机器人共用，同一个服务可以加多个。定位：自用、单用户。
 - 模型来自 [Modelflare](https://modelflare.dev/?utm_source=anymodelbot&utm_campaign=amb_readme)：首次启动登录（或注册）Modelflare 账户，模型自动列出；也可以直接粘贴一个 API Key。请求经过内置的 [magpie](https://github.com/yetone/magpie) 网关转发。
 - 三种运行方式，同一套代码：**桌面版（Electron）**、**命令行 `npm start`**、**Docker**。
 
@@ -84,7 +84,7 @@ docker run -d --name amb -p 3600:3600 -v amb-data:/data anymodel-bot
 docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令牌>
 ```
 
-容器内界面监听 0.0.0.0，因此强制令牌访问。不要把 3600 端口直接暴露到公网。微信扫码在对话页的信息面板（点顶部机器人名称）→「渠道」里完成。
+容器内界面监听 0.0.0.0，因此强制令牌访问。不要把 3600 端口直接暴露到公网。微信扫码在 设置 › 连接 里完成。
 
 ## 模型（Modelflare）
 
@@ -97,7 +97,8 @@ docker exec amb cat /data/ui-token     # 打开 http://<主机>:3600/?token=<令
 - 生图 / 生视频：代理模式下机器人有 `media_models`（可用模型、默认模型、参数范围、参考价）、`media_docs`（从 docs.modelflare.dev 实时读该模型的请求格式）、`generate_image`、`generate_video` 四个工具，并自带一份 media 技能说明。各模型的参数格式不同，机器人按文档写请求体，工作区里的参考图写成 `workspace:路径` 即可；Key 始终只在本程序里，由本程序带着该机器人用的 Key 调 Modelflare，结果存进机器人工作区的 `media/`，再交付到聊天。
 - 生成前确认：直接生成，不打扰你。机器人选了不是默认的模型、要求没说清，都不问：它按最合理的理解生成，再说一句用了什么。只在预计花费超过 $0.5 时（按参考价、张数、视频时长和分辨率估算；视频估不出来也算）先在聊天里问你这次用哪个模型（附提示词、参数、参考价和为什么问）。可以确认、换成别的模型或取消；微信回复编号或模型名，飞书 / 网页点选。10 分钟内没回答就不生成。想每次都确认：机器人设置 → 生图 / 生视频 → 生成前确认 →「每次都问」。
 - 联网搜索：代理的 `web_search` 不用 DeepSeek 自带的搜索（它要 DeepSeek 的 Key），经 `amb-web-search` 插件交给本程序搜。默认免费、不用设置：依次试 Exa 的公开 MCP、必应、DuckDuckGo，上次成功的先试，出错的（限流、验证页、必应给出不相干的结果）跳过 10 分钟。设置 → 网络与访问 → 联网搜索 可以换成 Tavily、Exa、博查、智谱（填 Key）或自己的 SearXNG，填了就先用它，出错时退回免费的。Key 和渠道令牌一样存在本机数据库里，代理进程拿不到。桌面版搜索走系统代理；命令行版用 Node 的 fetch（设 `NODE_USE_ENV_PROXY=1` 后认 `HTTPS_PROXY`）。
-- 已授权账号（`src/agent/accounts.ts`）：全局一份（设置 › 连接），所有机器人共用，同一个服务可以加多个账号，比如对任何机器人说「看我第一个飞书和第二个飞书的消息」。`amb-connections` 插件把每次工具调用经 bridge 交给本程序，令牌不进代理进程；账号用工具的 `account` 参数选（序号或名字），`connected_accounts` 列出来。有账号的服务才有工具。只读机器人和观察规则不能写，宿主也会再查一次。聊天渠道不在这里，还是每个机器人一个。
+- 聊天渠道账号（`src/core/routes.ts`）：微信、飞书、Telegram、Slack、Discord 的账号也是全局的，在设置 › 连接里添加，可以起别名。消息交给哪个机器人：这个人用 `/bot` 选过的 → 账号的默认机器人 → 第一个机器人。`/bot` 列出机器人，发一次 `/bot 名字` 就切换并记住，之后这个会话一直和它聊。每个机器人的系统提示词里都有其他机器人的名单和切换方法，用户问起时答得上来。名单和主人跟着账号走，能用这个账号的人可以和任何机器人聊。账号的 key 是命名空间：升级前的渠道 key 就是原来的机器人 id，登录态、配额、名单、队列都不用搬，默认机器人也是原来那个。删除机器人不影响账号。
+- 已授权账号（`src/agent/accounts.ts`）：全局一份（设置 › 连接），所有机器人共用，同一个服务可以加多个账号，比如对任何机器人说「看我第一个飞书和第二个飞书的消息」。`amb-connections` 插件把每次工具调用经 bridge 交给本程序，令牌不进代理进程；账号用工具的 `account` 参数选（序号或名字），`connected_accounts` 列出来。有账号的服务才有工具。只读机器人和观察规则不能写，宿主也会再查一次。聊天渠道账号见下一条。
   - **Notion**（`notion.ts`）：用户添加时选一键授权或令牌。令牌走 REST API；一键授权用 OAuth + PKCE + 动态注册，回调到本机 `/oauth/notion/callback`，再由本程序调官方远程 MCP（`mcp.notion.com`）的工具。模型看到的是同一套工具：`notion_search`、`notion_read_page`、`notion_query_database`，不是只读的机器人再加 `notion_create_page`、`notion_update_page`。没有删除页面的工具。
   - **飞书**（`feishu-account.ts`）：和官方 lark-cli 同一套流程：扫码创建个人应用（也可以填已有的自建应用），再设备授权拿用户令牌。只读，工具是 `feishu_list_chats`、`feishu_read_chat`、`feishu_search_messages`。
 - 默认图片 / 视频模型：首次设置时和默认文本模型一起选，之后在 设置 → Modelflare 修改；选「自动」时用推荐顺序里第一个不需要参考素材的模型。

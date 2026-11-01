@@ -242,8 +242,9 @@ The full story, in Chinese: [AnyModelBot 超级智能体](./docs/blog/superagent
 
 - **Memory that carries over.** Bots keep Markdown memory at three levels (team, bot and group) and filter out anything that looks like a secret.
 - **Long chats stay usable.** A context steward compacts or starts a fresh segment with a hand-off summary before the window fills up.
+- **Accounts shared by all bots.** Add WeChat, Feishu, Telegram, Slack, Discord and Notion accounts once in Settings. Every bot shares them, and each service can have several accounts with aliases. Send `/bot name` once in a chat app to talk to a different bot, or let a bot read your Notion and Feishu messages.
 - **WeChat and Feishu.** Scan a QR code to connect WeChat, or connect a Feishu bot with streaming reply cards. WeChat also carries images and files.
-- **Telegram, Slack and Discord.** Paste a token in the info panel. No public address needed. Replies appear as they're written, and images and files work both ways. Direct messages only for now, and approvals and questions are answered by text.
+- **Telegram, Slack and Discord.** Paste a token in Settings › Connections. No public address needed. Replies appear as they're written, and images and files work both ways. Direct messages only for now, and approvals and questions are answered by text.
 - **Four ways to run it.** Desktop app, command line, Docker, or the local web console at `127.0.0.1:3600`.
 
 <p align="center">

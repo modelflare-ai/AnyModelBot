@@ -191,6 +191,7 @@ export async function deliverWeixin(client: IlinkClient, quota: WeixinQuota, row
 export interface WeixinOutbox {
   outbox: Outbox;
   botId: string;
+  account?: string;
   key: string;
   ttlMs?: number;
 }
@@ -258,8 +259,8 @@ export class WeixinReply implements ReplySession {
       this.typingTimer = undefined;
     }
     if (this.out) {
-      const { outbox, botId, key } = this.out;
-      await outbox.send({ id: `wx:${botId}:${key}:${role}`, botId, channel: "weixin", peerId: this.userId, kind, body, ttlMs: ttlMs ?? this.out.ttlMs });
+      const { outbox, botId, account, key } = this.out;
+      await outbox.send({ id: `wx:${botId}:${key}:${role}`, botId, account, channel: "weixin", peerId: this.userId, kind, body, ttlMs: ttlMs ?? this.out.ttlMs });
       return;
     }
     const row = { id: crypto.randomUUID(), peerId: this.userId, kind, body, progress: 0, attempts: 0 } as OutboxRow;
@@ -317,21 +318,27 @@ export class WeixinChannel {
   onExpired: ((botId: string) => void) | undefined;
 
   constructor(
-    private botId: string,
+    private account: string,
     private store: Store,
     private runtime: BotRuntime,
     private queue: KeyedQueue,
     private opts: { fetchImpl?: typeof fetch; cdnBaseUrl?: string; pollTimeoutMs?: number; retryDelayMs?: number; backoffMs?: number; outbox?: Outbox; delivery?: Delivery } = {},
   ) {
-    this.quota = new WeixinQuota(store, botId);
+    this.quota = new WeixinQuota(store, account);
     // 聊天回复给主动消息（进行中的任务的结果等）留出配额
     const delivery = opts.delivery;
-    if (delivery) this.quota.reserver = (userId) => delivery.reserved(botId, "weixin", userId);
+    if (delivery) this.quota.reserver = (userId) => delivery.reserved(this.botOf(userId), "weixin", userId);
     if (opts.outbox) this.outbox = opts.outbox;
     else {
       this.outbox = new Outbox(store);
       this.outbox.start();
     }
+  }
+
+  /** 这个人的消息交给哪个机器人（app.ts 按 core/routes.ts 设置）；没设置时账号 key 就是机器人 id */
+  route: ((userId: string) => string) | undefined;
+  private botOf(userId: string): string {
+    return this.route?.(userId) ?? this.account;
   }
 
   get running(): boolean {
@@ -340,7 +347,7 @@ export class WeixinChannel {
 
   start(): void {
     if (this.loop) return;
-    const acct = this.store.getWeixinAccount(this.botId);
+    const acct = this.store.getWeixinAccount(this.account);
     if (!acct) {
       this.st = { state: "login_required", since: Date.now() };
       return;
@@ -349,12 +356,12 @@ export class WeixinChannel {
     this.abort = new AbortController();
     this.loop = this.run(this.abort.signal).finally(() => (this.loop = undefined));
     // 上线：出站队列里这个机器人的微信消息（含上次没发完的）由这里发
-    this.unregister = this.outbox.register(this.botId, "weixin", (row, progress) => this.deliver(row, progress));
+    this.unregister = this.outbox.register(this.account, "weixin", (row, progress) => this.deliver(row, progress));
   }
 
   private async deliver(row: OutboxRow, progress: (n: number) => void): Promise<void> {
     if (!this.client) throw new Later(tr("channel.laterNotRunning"));
-    if ((this.store.getWeixinAccount(this.botId)?.pausedUntil ?? 0) > Date.now()) throw new Later(tr("channel.laterExpired"));
+    if ((this.store.getWeixinAccount(this.account)?.pausedUntil ?? 0) > Date.now()) throw new Later(tr("channel.laterExpired"));
     try {
       await deliverWeixin(this.client, this.quota, row, progress);
     } catch (e) {
@@ -369,27 +376,27 @@ export class WeixinChannel {
    */
   tell(userId: string, text: string, id: string): boolean {
     if (!this.client || !this.quota.open(userId) || this.quota.remaining(userId) <= 0) return false;
-    void this.outbox.send({ id, botId: this.botId, channel: "weixin", peerId: userId, kind: "notice", body: { text, raw: true } });
+    void this.outbox.send({ id, botId: this.botOf(userId), account: this.account, channel: "weixin", peerId: userId, kind: "notice", body: { text, raw: true } });
     return true;
   }
 
   /** 主动发给某个微信用户（余额提醒、重启后的提醒）：同 tell；同样的内容一分钟内只发一次 */
   async notify(userId: string, text: string): Promise<boolean> {
-    return !!userId && this.tell(userId, text, `notice:${this.botId}:weixin:${stableId(`${userId}:${text}`, Math.floor(Date.now() / 60_000), 16)}`);
+    return !!userId && this.tell(userId, text, `notice:${this.account}:weixin:${stableId(`${userId}:${text}`, Math.floor(Date.now() / 60_000), 16)}`);
   }
 
   /** 主动提醒：发给扫码登录的那个微信用户 */
   async notifyOwner(text: string): Promise<boolean> {
-    return this.notify(this.store.getWeixinAccount(this.botId)?.ownerUserId ?? "", text);
+    return this.notify(this.store.getWeixinAccount(this.account)?.ownerUserId ?? "", text);
   }
 
   /**
    * 主动发到一个微信会话的回复（代理自己醒来的一轮：后台命令结束）：和普通回复一样经出站队列，id 由 key 推出；
    * 会话凭证、24 小时窗口和配额在发送时才查（deliverWeixin），发不出去就留着，等对方下次发消息时先发。
    */
-  followUp(userId: string, key: string): ReplySession {
-    const token = this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? "";
-    return new WeixinReply(this.client!, userId, token, this.quota, { outbox: this.outbox, botId: this.botId, key });
+  followUp(userId: string, key: string, botId?: string): ReplySession {
+    const token = this.store.getWeixinPeer(this.account, userId)?.contextToken ?? "";
+    return new WeixinReply(this.client!, userId, token, this.quota, { outbox: this.outbox, botId: botId ?? this.botOf(userId), account: this.account, key });
   }
 
   async stop(): Promise<void> {
@@ -415,7 +422,7 @@ export class WeixinChannel {
     let failures = 0;
     this.st = { state: "connecting", since: Date.now() };
     while (!signal.aborted) {
-      const acct = this.store.getWeixinAccount(this.botId);
+      const acct = this.store.getWeixinAccount(this.account);
       if (!acct) {
         this.st = { state: "login_required", since: Date.now() };
         return;
@@ -429,15 +436,15 @@ export class WeixinChannel {
         const resp = await this.client!.getUpdates(acct.cursor, this.opts.pollTimeoutMs ?? 35_000, signal);
         failures = 0;
         if (this.st.state !== "connected") this.st = { state: "connected", since: Date.now() };
-        if (resp.get_updates_buf) this.store.setWeixinCursor(this.botId, resp.get_updates_buf);
+        if (resp.get_updates_buf) this.store.setWeixinCursor(this.account, resp.get_updates_buf);
         for (const m of resp.msgs ?? []) this.onMessage(m);
       } catch (e) {
         if (signal.aborted) return;
         if (e instanceof WeixinApiError && e.sessionExpired) {
-          this.log.warn(`bot ${this.botId}: iLink session expired (-14), pausing 1h; re-login required`);
-          this.store.setWeixinPaused(this.botId, Date.now() + SESSION_PAUSE_MS);
+          this.log.warn(`bot ${this.account}: iLink session expired (-14), pausing 1h; re-login required`);
+          this.store.setWeixinPaused(this.account, Date.now() + SESSION_PAUSE_MS);
           this.st = { state: "expired", since: Date.now() };
-          this.onExpired?.(this.botId);
+          this.onExpired?.(this.account);
           continue;
         }
         failures++;
@@ -457,15 +464,16 @@ export class WeixinChannel {
     const delivery = this.opts.delivery;
     // 回的是续期提醒（「ok」）：先认出来（之后放出留着的消息，最近发的一条就不是提醒了）
     const said = weixinParts(m.item_list).map((p) => (p.type === "text" ? p.text : "")).join("").trim();
-    const ack = said ? delivery?.ack(this.botId, "weixin", userId, said) : undefined;
+    const ack = said ? delivery?.ack(this.botOf(userId), "weixin", userId, said) : undefined;
     const peer = this.quota.onInbound(userId, m.context_token ?? "");
     // 对方又发消息了（24 小时窗口和配额重新开始）：之前留着没发的、排着的主动消息先发，合成一条（「你不在时：…」或摘要），排在这次的回复前面
-    const released = this.outbox.release(this.botId, "weixin", userId, (rows) => (delivery ? delivery.combine(rows) : combineHeld(rows)));
+    const released = this.outbox.releasePeer("weixin", userId, (rows) => (delivery ? delivery.combine(rows) : combineHeld(rows)), this.account);
     if (ack) return this.acked(id, userId, peer.contextToken, said, released ? "" : ack);
     const ev: InboundEvent = {
       id,
       channel: "weixin",
-      botId: this.botId,
+      botId: this.botOf(userId),
+      account: this.account,
       conversation: { kind: "dm", id: userId },
       sender: { id: userId },
       parts: weixinParts(m.item_list),
@@ -476,15 +484,15 @@ export class WeixinChannel {
     // 没处理掉但带 ack 的（前一条还在处理）：先说一声，消息照常入队
     const intercepted = this.runtime.interceptReply(ev);
     if (intercepted.ack) {
-      const ack = new WeixinReply(this.client!, userId, peer.contextToken, this.quota, { outbox: this.outbox, botId: this.botId, key: `${id}:ack`, ttlMs: SHORT_TTL_MS });
+      const ack = new WeixinReply(this.client!, userId, peer.contextToken, this.quota, { outbox: this.outbox, botId: this.botOf(userId), account: this.account, key: `${id}:ack`, ttlMs: SHORT_TTL_MS });
       const p = ack.apply({ type: "text", text: intercepted.ack }).catch((e) => this.log.warn("ack failed", { message: (e as Error).message }));
       this.pending.add(p);
       void p.finally(() => this.pending.delete(p));
     }
     if (intercepted.handled) return;
     const media = mediaItems(m.item_list);
-    const p = this.queue.run(`weixin:${this.botId}:${userId}`, async () => {
-      const reply = new WeixinReply(this.client!, userId, this.store.getWeixinPeer(this.botId, userId)?.contextToken ?? peer.contextToken, this.quota, { outbox: this.outbox, botId: this.botId, key: id });
+    const p = this.queue.run(`weixin:${this.account}:${userId}`, async () => {
+      const reply = new WeixinReply(this.client!, userId, this.store.getWeixinPeer(this.account, userId)?.contextToken ?? peer.contextToken, this.quota, { outbox: this.outbox, botId: this.botOf(userId), account: this.account, key: id });
       try {
         if (media.length) ev.parts = weixinParts(m.item_list, await this.download(media));
         await this.runtime.handle(ev, reply);
@@ -501,11 +509,12 @@ export class WeixinChannel {
    * 对方回了续期提醒（「ok」）：窗口已经重新开始，不进模型；记进会话历史，回一句（留着的消息刚放出去时它们就是回应，不再多说）
    */
   private acked(id: string, userId: string, contextToken: string, said: string, text: string): void {
-    const conv = this.store.ensureConversation(this.botId, "weixin", userId);
+    const conv = this.store.ensureConversation(this.botOf(userId), "weixin", userId);
+    if (conv.account !== this.account) this.store.setConversationAccount(conv.id, this.account);
     this.store.addMessage(conv.id, "user", said);
     if (!text) return;
     this.store.addMessage(conv.id, "assistant", text);
-    const reply = new WeixinReply(this.client!, userId, contextToken, this.quota, { outbox: this.outbox, botId: this.botId, key: `${id}:ack` });
+    const reply = new WeixinReply(this.client!, userId, contextToken, this.quota, { outbox: this.outbox, botId: this.botOf(userId), account: this.account, key: `${id}:ack` });
     const p = reply.apply({ type: "text", text }).catch((e) => this.log.warn("nudge ack failed", { message: (e as Error).message }));
     this.pending.add(p);
     void p.finally(() => this.pending.delete(p));

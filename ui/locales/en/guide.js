@@ -55,9 +55,9 @@ export default {
     weixin: {
       title: "Connect {name} to WeChat",
       desc: "Scan a QR code, then message it directly in WeChat. No new app to install, and it's online whenever your computer is on.",
-      how: ["Click the bot's name at the top to open the info panel", "Under “Channels”, click “WeChat” → “Scan to log in”", "Scan the code with WeChat and confirm on your phone"],
-      note: "WeChat's rule: for each message you send, it can reply up to 10 times within 24 hours. For Feishu, Telegram, Slack or Discord, enter its credentials in the same place.",
-      doneText: "Send it a message in WeChat: same bot, same memory.",
+      how: ["Click the bot's name at the top to open the info panel, then “Manage chat channels”", "On the WeChat row, click “Add account” → “Scan to log in”", "Scan the code with WeChat and confirm on your phone"],
+      note: "WeChat's rule: for each message you send, it can reply up to 10 times within 24 hours. For Feishu, Telegram, Slack or Discord, add an account in the same place. All bots share accounts, and you can send /bot and a name in a chat to switch bots.",
+      doneText: "Send it a message in WeChat. To talk to a different bot, send /bot.",
     },
     hands: {
       title: "Put it to work",

@@ -186,9 +186,10 @@ export const BADGES: Badge[] = [
 </a>`,
   },
   {
+    // 链接必须指向我们在站方的产品页，否则验证不过。站方原码是浅色款 light.svg，这里按站方的说法换成了深色款 dark.svg
     name: "Aidirs",
-    html: `<a href="https://aidirs.best" target="_blank" rel="noopener">
-  <img src="https://aidirs.best/dark.svg" alt="Featured on Aidirs" width="200" height="56" />
+    html: `<a href="https://aidirs.best/item/any-model-bot" target="_blank" rel="noopener">
+  <img src="https://aidirs.best/dark.svg" alt="AnyModelBot | Aidirs" width="200" height="56" />
 </a>`,
   },
   {

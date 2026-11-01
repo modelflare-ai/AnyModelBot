@@ -18,6 +18,7 @@
     "preview": "astro preview",
     "og": "python3 scripts/make-og.py",
     "bots:avif": "tsx scripts/make-bot-avif.ts",
+    "badges:copies": "tsx scripts/make-badge-copies.ts",
     "releases": "tsx scripts/releases-from-github.ts",
     "releases:dir": "tsx scripts/releases-from-dir.ts"
   },

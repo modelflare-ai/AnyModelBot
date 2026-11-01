@@ -38,7 +38,7 @@ function stage(n) {
   }
   $$("#c-list li").forEach((li) => (li.style.opacity = Number(li.dataset.s) === n ? "1" : ".42"));
   if (n === 4) {
-    $("#c-title").textContent = "小蓝已经在微信里了";
+    $("#c-title").textContent = "天天已经在微信里了";
     $("#c-body").textContent = "在微信里给它发条消息试试：同一个机器人，同一份记忆。";
     $("#c-list").hidden = true;
     if (!$("#c-badge")) $("#c-kick").insertAdjacentHTML("beforeend", `<span id="c-badge" style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; background: #d7ff00; color: #161a00; ${MONO}; font-size: 11px; letter-spacing: 0">${P.ICON.check}完成</span>`);
@@ -107,7 +107,7 @@ async function connected() {
   P.setState(head, "idle");
   P.confetti(badgeEl, 36);
   P.playShot(head, "love");
-  P.stepDone(3, "把小蓝接到微信");
+  P.stepDone(3, "把天天接到微信");
   P.lastMessage("微信已连接");
   await P.wait(600);
   P.coach(coach, () => stage(4));

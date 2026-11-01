@@ -1,4 +1,4 @@
-// 01 上手清单：清单依次浮现 → 发出第一句 → 清单缩进左下角 → 小蓝思考、逐字回复 → 第 1 步完成
+// 01 上手清单：清单依次浮现 → 发出第一句 → 清单缩进左下角 → 天天思考、逐字回复 → 第 1 步完成
 import * as P from "./proto.js";
 
 P.init({ progress: 0 });
@@ -51,7 +51,7 @@ async function run(text) {
   if (!done) {
     done = true;
     await P.wait(300);
-    P.stepDone(1, "跟小蓝打个招呼", head);
+    P.stepDone(1, "跟天天打个招呼", head);
     await P.wait(800);
     P.coach(coach);
   }

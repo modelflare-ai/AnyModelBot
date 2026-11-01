@@ -4,14 +4,14 @@ export default {
   cancel: "取消（Esc）",
   firstTitle: "创建你的第一个机器人",
   title: "新建机器人",
-  lead: "挑一个伙伴，起个名字、写几句人设，或者从下面的模板开始。",
+  lead: "它是谁由你决定：起个名字，写几句人设。头像只管长相，不影响它能做什么。",
   name: "名称",
   namePlaceholder: "例如：群聊日报",
   persona: "人设",
   personaHint: "可选，之后在机器人设置里也能改",
   personaPlaceholder: "例如：你是一个乐于助人的中文助手，回答简洁准确。",
   create: "创建",
-  fromTemplate: "从模板开始",
+  fromTemplate: "不知道怎么写？从模板开始改",
   /** 模板：选中后 name 填进名称、prompt 填进人设 */
   tpl: {
     digest: {

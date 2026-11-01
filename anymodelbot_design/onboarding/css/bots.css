@@ -36,16 +36,16 @@
   --bf-hop: 2.4s;         /* 等你批准：跳两下停一下 */
   --bf-snore: 3.6s;       /* 睡觉 */
   --bf-perk: .9s;         /* 悬停时天线弹一下 */
-  --bf-ring: 1.5s;        /* 小蓝的天线信号 */
+  --bf-ring: 1.5s;        /* 天天的天线信号 */
   --bf-ring-gap: .5s;
   --bf-sway: .55s;        /* 天线、角左右晃 */
-  --bf-twinkle: 1.3s;     /* 小萌的星星、紫钻的闪光 */
-  --bf-flutter: .9s;      /* 绿草的叶子 */
-  --bf-beat: .6s;         /* 红魔的灯带节拍 */
-  --bf-spin: 3.2s;        /* 紫钻的宝石转动 */
-  --bf-float: 2.2s;       /* 紫钻的宝石悬浮 */
-  --bf-sweep: 2.2s;       /* 探险者护目镜的反光 */
-  --bf-scan: 1.6s;        /* 探险者四处搜寻 */
+  --bf-twinkle: 1.3s;     /* 闪闪的星星、晶晶的闪光 */
+  --bf-flutter: .9s;      /* 芽芽的叶子 */
+  --bf-beat: .6s;         /* 哒哒的灯带节拍 */
+  --bf-spin: 3.2s;        /* 晶晶的宝石转动 */
+  --bf-float: 2.2s;       /* 晶晶的宝石悬浮 */
+  --bf-sweep: 2.2s;       /* 飞飞护目镜的反光 */
+  --bf-scan: 1.6s;        /* 飞飞四处搜寻 */
   --bf-dot: 1.2s;         /* 思考气泡里的点 */
   --bf-bang: 1.2s;
   --bf-z: 3s;
@@ -78,7 +78,7 @@
 .bf-ear-r .bf-glow { background-position-x: calc(600% / 7); }
 .bf-top .bf-glow { background-position-x: 100%; }
 .bf-glow { opacity: 0; mix-blend-mode: plus-lighter; filter: drop-shadow(0 0 calc(var(--s) * .03) var(--bf-glow)); }
-.bot-face:not([data-char="red"], [data-char="purple"]) .bf-glow { display: none; }   /* 只有红魔、紫钻有发光层 */
+.bot-face:not([data-char="red"], [data-char="purple"]) .bf-glow { display: none; }   /* 只有哒哒、晶晶有发光层 */
 .bf-ear-l, .bf-ear-l .bf-pin { transform-origin: var(--o-el); }
 .bf-ear-r, .bf-ear-r .bf-pin { transform-origin: var(--o-er); }
 .bf-top, .bf-top .bf-pin, .bf-top .bf-img { transform-origin: var(--o-top); }
@@ -103,7 +103,7 @@
 }
 .bot-face:is([data-eyes="happy"], [data-eyes="heart"]) .bf-blush { opacity: .9; scale: 1; }
 
-/* 探险者的护目镜：镜片上扫过一道反光 */
+/* 飞飞的护目镜：镜片上扫过一道反光 */
 .bf-lens { position: absolute; width: var(--lens); aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; overflow: hidden; }
 .bf-lens::after {
   content: ""; position: absolute; inset: -30%; translate: -110% 0;
@@ -307,14 +307,14 @@
 .bot-face[data-shot="error"] .bf-top { rotate: 12deg; }
 
 /* —— 角色的招牌动作 —— */
-/* 小蓝：天线左右晃、天线球亮起来、一圈圈发出信号；完成时天线球闪一下 */
+/* 天天：天线左右晃、天线球亮起来、一圈圈发出信号；完成时天线球闪一下 */
 .bot-face[data-char="blue"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-sway var(--bf-sway) var(--ease-in-out) infinite alternate; }
 .bot-face[data-char="blue"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top .bf-img { animation: bf-bulb var(--bf-ring) var(--ease-in-out) infinite; }
 .bot-face[data-char="blue"]:is([data-shot="done"], [data-shot="hello"]) .bf-top .bf-img { animation: bf-bulb var(--bot-poke) var(--ease-out) 2; }
 @keyframes bf-sway { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
 @keyframes bf-bulb { 0%, 100% { filter: none; } 40% { filter: brightness(1.45) drop-shadow(0 0 calc(var(--s) * .05) var(--bf-glow)); } }
 
-/* 小萌：星星一闪一闪、身边冒小星星；完成时星星像硬币一样转两圈 */
+/* 闪闪：星星一闪一闪、身边冒小星星；完成时星星像硬币一样转两圈 */
 .bot-face[data-char="yellow"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-twinkle var(--bf-twinkle) var(--ease-in-out) infinite; }
 .bot-face[data-char="yellow"]:is([data-shot="done"], [data-shot="hello"], [data-shot="love"]) .bf-top .bf-pin { animation: bf-coin var(--bot-done) var(--ease-out); }
 @keyframes bf-twinkle {
@@ -328,7 +328,7 @@
   100% { transform: perspective(calc(var(--s) * 2)) translateY(0) rotateY(720deg); }
 }
 
-/* 绿草：叶子像被风吹一样扑簌；完成时嫩芽长高一截、飘下一片叶子；出错时蔫了 */
+/* 芽芽：叶子像被风吹一样扑簌；完成时嫩芽长高一截、飘下一片叶子；出错时蔫了 */
 .bot-face[data-char="green"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-flutter var(--bf-flutter) var(--ease-in-out) infinite; }
 .bot-face[data-char="green"]:is([data-shot="done"], [data-shot="hello"]) .bf-top .bf-pin { animation: bf-grow var(--bot-done) var(--ease-out); }
 .bot-face[data-char="green"][data-shot="error"] .bf-top { rotate: 22deg; scale: 1 .86; }
@@ -341,7 +341,7 @@
   84% { transform: scale(.98); }
 }
 
-/* 红魔：耳机灯带跟着节拍亮（左耳 → 角 → 右耳），耳机一下一下地震；完成时灯带闪三下；出错时灯带乱闪 */
+/* 哒哒：耳机灯带跟着节拍亮（左耳 → 角 → 右耳），耳机一下一下地震；完成时灯带闪三下；出错时灯带乱闪 */
 .bot-face[data-char="red"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-glow { animation: bf-beat var(--bf-beat) var(--ease-out) infinite; }
 .bot-face[data-char="red"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top .bf-glow { animation-delay: calc(var(--bf-beat) / 3); }
 .bot-face[data-char="red"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-ear-r .bf-glow { animation-delay: calc(var(--bf-beat) * 2 / 3); }
@@ -355,7 +355,7 @@
 @keyframes bf-flash3 { 0%, 30%, 62%, 100% { opacity: 0; } 14%, 46%, 78% { opacity: 1; } }
 @keyframes bf-flicker { 0%, 12%, 30%, 44%, 70% { opacity: 1; } 6%, 22%, 38%, 58%, 100% { opacity: 0; } }
 
-/* 紫钻：宝石浮起来慢慢转、霓虹线一明一暗、身边闪光；完成时宝石飞快转两圈；出错时霓虹乱闪 */
+/* 晶晶：宝石浮起来慢慢转、霓虹线一明一暗、身边闪光；完成时宝石飞快转两圈；出错时霓虹乱闪 */
 .bot-face[data-char="purple"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-levitate var(--bf-float) var(--ease-in-out) infinite alternate; }
 .bot-face[data-char="purple"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top .bf-img { animation: bf-gem var(--bf-spin) linear infinite; }
 .bot-face[data-char="purple"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-glow { animation: bf-neon var(--bf-float) var(--ease-in-out) infinite alternate; }
@@ -367,7 +367,7 @@
 @keyframes bf-gem { from { transform: perspective(calc(var(--s) * 2)) rotateY(0); } to { transform: perspective(calc(var(--s) * 2)) rotateY(360deg); } }
 @keyframes bf-neon { from { opacity: .15; } to { opacity: .9; } }
 
-/* 探险者：天线一蹦一蹦、眼睛大范围地左右搜寻、护目镜反光；完成时两只镜片一起闪 */
+/* 飞飞：天线一蹦一蹦、眼睛大范围地左右搜寻、护目镜反光；完成时两只镜片一起闪 */
 .bot-face[data-char="orange"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-top { animation: bf-sway var(--bf-sway) var(--ease-back) infinite alternate; }
 .bot-face[data-char="orange"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-glance { animation: bf-scan var(--bf-scan) var(--ease-in-out) infinite alternate; }
 .bot-face[data-char="orange"]:is([data-state="thinking"], [data-state="replying"], [data-state="working"]) .bf-lens::after { animation: bf-glint var(--bf-sweep) var(--ease-in-out) infinite; }
@@ -460,7 +460,7 @@
   100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--s) * -.62 * var(--far, 1))) scale(1) rotate(90deg); }
 }
 
-/* 绿草长高时飘下来的叶子 */
+/* 芽芽长高时飘下来的叶子 */
 .fx-leaf {
   left: var(--tip-x); top: var(--tip-y); width: calc(var(--s) * .12); height: calc(var(--s) * .07);
   border-radius: 0 100%; background: color-mix(in srgb, var(--bf-glow) 60%, var(--bf-eye));

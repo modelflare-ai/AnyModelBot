@@ -1,7 +1,7 @@
 // guide · zh-CN：新手引导（上手清单）。lib/guide.js 的步骤文案 + components/guide.js 的界面
 export default {
-  /** 文案里 {name} 的缺省值：主角机器人的名字 */
-  defaultBotName: "小蓝",
+  /** 文案里 {name} 的缺省值：默认机器人的名字 */
+  defaultBotName: "天天",
   /** 清单菜单里各步骤标题的 {name}（不针对某个机器人） */
   nameGeneric: "机器人",
   /** 完成一步时提示里的 {name} */

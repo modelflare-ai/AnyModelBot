@@ -1,5 +1,5 @@
 // 新建机器人（参考 Grok Bot 的创建页）：头像角色 + 名称 + 人设，下面是从模板开始。
-// 默认是主角小蓝；每个模板配了一个合适的角色（avatar），选模板时一起换，也可以自己挑。
+// 默认头像是天天。头像只管长相，选模板不会换头像：机器人做什么由人设决定。
 import { useEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, IconButton, Button, autoGrow } from "../components/ui.js";
 import { BotAvatar, AvatarPicker, MAIN_CHAR } from "../components/avatar.js";
@@ -8,10 +8,9 @@ import { failed } from "../lib/store.js";
 import { t } from "../lib/i18n.js";
 
 /** 模板。名称、简介和人设在词典 newBot.tpl.<key> 里，读的时候按当前语言翻译（选模板时按当时的语言填进表单） */
-const template = (key, icon, avatar) => ({
+const template = (key, icon) => ({
   key,
   icon,
-  avatar,
   get name() {
     return t(`newBot.tpl.${key}.name`);
   },
@@ -23,12 +22,12 @@ const template = (key, icon, avatar) => ({
   },
 });
 export const TEMPLATES = [
-  template("digest", "file", "green"),
-  template("support", "chat", "yellow"),
-  template("translate", "globe", "orange"),
-  template("minutes", "clock", "blue"),
-  template("writer", "compose", "purple"),
-  template("coder", "code", "red"),
+  template("digest", "file"),
+  template("support", "chat"),
+  template("translate", "globe"),
+  template("minutes", "clock"),
+  template("writer", "compose"),
+  template("coder", "code"),
 ];
 
 export function NewBotScreen({ first, onCreated, onCancel }) {
@@ -47,7 +46,6 @@ export function NewBotScreen({ first, onCreated, onCancel }) {
 
   const pick = (tp) => {
     setTpl(tp.key);
-    if (tp.avatar !== avatar) choose(tp.avatar);
     setName(tp.name);
     setPrompt(tp.prompt);
     requestAnimationFrame(() => (nameRef.current?.focus(), nameRef.current?.select()));

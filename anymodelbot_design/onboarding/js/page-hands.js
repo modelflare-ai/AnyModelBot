@@ -1,4 +1,4 @@
-// 04 让它动手：输入框里已替你写好一句 → 发送 → 小蓝思考、干活（头像上下浮动）→ 逐字回复、清单逐条出现 →
+// 04 让它动手：输入框里已替你写好一句 → 发送 → 天天思考、干活（头像上下浮动）→ 逐字回复、清单逐条出现 →
 // 文件卡片弹出、内容一行行写进去 → 余额扣一点 → 第 4 步完成
 import * as P from "./proto.js";
 
@@ -23,7 +23,7 @@ function stage(s) {
   $("#c-badge").hidden = !done;
   $("#c-list").hidden = !done;
   $("#c-title").textContent = done ? orig.title : "让它动手做件事";
-  $("#c-body").textContent = done ? orig.body : "小蓝能在自己的工作区里写文件、跑命令，做好的文件会交给你。输入框里已经替你写好了一句，点发送试试。";
+  $("#c-body").textContent = done ? orig.body : "天天能在自己的工作区里写文件、跑命令，做好的文件会交给你。输入框里已经替你写好了一句，点发送试试。";
 }
 setTimeout(() => P.coach(coach, () => stage("A")), 500);
 $("#c-later").addEventListener("click", () => P.leave(coach));

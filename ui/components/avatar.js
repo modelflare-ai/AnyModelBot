@@ -1,4 +1,4 @@
-// 机器人头像：6 个内置毛绒角色（蓝色"小蓝"是主角），每个机器人配一个；会看指针、眨眼，并对平台里发生的事做出反应。
+// 机器人头像：6 个内置毛绒角色（蓝色的"天天"是默认头像），每个机器人配一个，只决定长相，和它做什么无关；会看指针、眨眼，并对平台里发生的事做出反应。
 // 图层由 scripts/build-bot-avatars.py 从 anymodelbot_design/logo avator/ 生成（ui/design/bots/<key>.webp）；
 // 下面的几何是相对头像方框的百分比，和脚本输出的是同一套数，换图后要一起更新。
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -8,9 +8,9 @@ import { t } from "../lib/i18n.js";
 
 /**
  * 角色。eyes：两眼中心；r：眼睛半径；earL / earR / top：耳朵与头顶配件的转轴；tip：配件的中心（特效从这里发出）；
- * lens：护目镜镜片（只有探险者有）。
- * 名字 name、定位 role、介绍 pick（适合配给哪些机器人，新建页模板按这个配对）在词典 avatar.chars.<key> 里，
- * 用 charText(key) 取；BOT_CHARS[key].name / .role / .pick 也能读（getter，读的时候按当前语言翻译）。
+ * lens：护目镜镜片（只有飞飞有）。
+ * 名字 name、一句介绍 about 在词典 avatar.chars.<key> 里，用 charText(key) 取；BOT_CHARS[key].name / .about 也能读（getter，读的时候按当前语言翻译）。
+ * 角色没有定位：机器人做什么由人设决定，不要在这里给角色写岗位，也不要让模板绑定角色。
  */
 export const BOT_CHARS = {
   blue: {
@@ -36,10 +36,10 @@ export const BOT_CHARS = {
 export const CHAR_KEYS = Object.keys(BOT_CHARS);
 export const MAIN_CHAR = "blue";
 
-/** 角色的名字、定位和介绍（按当前语言） */
-export const charText = (key) => ({ name: t(`avatar.chars.${key}.name`), role: t(`avatar.chars.${key}.role`), pick: t(`avatar.chars.${key}.pick`) });
+/** 角色的名字和介绍（按当前语言） */
+export const charText = (key) => ({ name: t(`avatar.chars.${key}.name`), about: t(`avatar.chars.${key}.about`) });
 for (const k of CHAR_KEYS)
-  for (const f of ["name", "role", "pick"]) Object.defineProperty(BOT_CHARS[k], f, { get: () => t(`avatar.chars.${k}.${f}`), enumerable: true });
+  for (const f of ["name", "about"]) Object.defineProperty(BOT_CHARS[k], f, { get: () => t(`avatar.chars.${k}.${f}`), enumerable: true });
 
 function hash(s) {
   let h = 2166136261;
@@ -49,7 +49,7 @@ function hash(s) {
   }
   return h >>> 0;
 }
-/** 机器人用哪个角色：设置里选过的 > 默认机器人用主角 > 由 id 稳定地挑一个 */
+/** 机器人用哪个角色：设置里选过的 > 默认机器人用默认头像 > 由 id 稳定地挑一个 */
 export function charOf(bot) {
   const a = bot && bot.settings && bot.settings.avatar;
   if (a && BOT_CHARS[a]) return a;
@@ -233,7 +233,7 @@ export function AvatarPicker({ value, fallback, onChange, size = 44, label = t("
     ${CHAR_KEYS.map((k) => {
       const c = charText(k);
       return html`<button type="button" key=${k} class=${`avatar-opt${k === cur ? " on" : ""}`} role="radio" aria-checked=${k === cur}
-          title=${`${c.name} · ${c.pick}`} onClick=${() => k !== cur && onChange(k)}>
+          title=${`${c.name} · ${c.about}`} onClick=${() => k !== cur && onChange(k)}>
         <${BotAvatar} char=${k} size=${size} state=${k === cur ? "listening" : "idle"} />
         <span class="avatar-name">${c.name}</span>
       </button>`;

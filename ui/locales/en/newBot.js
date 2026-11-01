@@ -4,14 +4,14 @@ export default {
   cancel: "Cancel (Esc)",
   firstTitle: "Create your first bot",
   title: "New bot",
-  lead: "Pick a buddy, give it a name and a few lines of persona, or start from a template below.",
+  lead: "You decide who it is: give it a name and a few lines of persona. The avatar only changes its look, not what it can do.",
   name: "Name",
   namePlaceholder: "e.g. Group digest",
   persona: "Persona",
   personaHint: "Optional — you can change it later in bot settings",
   personaPlaceholder: "e.g. You are a helpful assistant. Keep answers concise and accurate.",
   create: "Create",
-  fromTemplate: "Start from a template",
+  fromTemplate: "Not sure what to write? Start from a template",
   tpl: {
     digest: {
       name: "Group digest",

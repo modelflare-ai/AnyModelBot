@@ -46,7 +46,7 @@ function stage(s) {
     l.hidden = false;
   } else {
     t.textContent = "换好了";
-    b.textContent = `现在小蓝用的是 ${model}，只对这段对话生效。问它一句试试，或者继续下一步。`;
+    b.textContent = `现在天天用的是 ${model}，只对这段对话生效。问它一句试试，或者继续下一步。`;
     l.hidden = true;
     if (!$("#c-badge")) kick.insertAdjacentHTML("beforeend", `<span id="c-badge" style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; background: #d7ff00; color: #161a00; ${MONO}; font-size: 11px; letter-spacing: 0">${P.ICON.check}完成</span>`);
   }
@@ -124,7 +124,7 @@ async function pick(opt) {
   }
 }
 
-$("#set-default").addEventListener("click", () => P.toast("已设为小蓝的默认模型", model));
+$("#set-default").addEventListener("click", () => P.toast("已设为天天的默认模型", model));
 
 // —— 换了模型后问一句 ——
 const chat = P.composer({ input: $("#input"), send: $("#send"), onSend: ask });
@@ -136,7 +136,7 @@ async function ask(text) {
   const r = P.botReply(log);
   await P.wait(900);
   P.setState(head, "replying");
-  await r.say(`现在是 ${model} 在回答你：我是住在你电脑里的小蓝，能聊、能写、能动手，还记得你交代过的事。`);
+  await r.say(`现在是 ${model} 在回答你：我是住在你电脑里的天天，能聊、能写、能动手，还记得你交代过的事。`);
   r.done(`${model} · `);
   P.setState(head, "idle");
   busy = false;

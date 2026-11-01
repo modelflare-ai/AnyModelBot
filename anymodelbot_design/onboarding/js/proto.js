@@ -11,9 +11,9 @@ export const wait = (ms) => new Promise((r) => setTimeout(r, reduce ? Math.min(m
 
 export const PAGES = ["Main.html", "Step2-Model.html", "Step3-Weixin.html", "Step4-Hands.html", "Step5-Memory.html", "Step6-Media.html", "Tips.html"];
 export const STEPS = [
-  ["跟小蓝打个招呼", "Main.html"],
+  ["跟天天打个招呼", "Main.html"],
   ["换个模型", "Step2-Model.html"],
-  ["把小蓝接到微信", "Step3-Weixin.html"],
+  ["把天天接到微信", "Step3-Weixin.html"],
   ["让它动手做件事", "Step4-Hands.html"],
   ["让它记住你", "Step5-Memory.html"],
   ["生成一张图", "Step6-Media.html"],

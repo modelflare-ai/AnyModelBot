@@ -2941,7 +2941,7 @@ function questionOf(b: any): TaskReport["question"] | undefined {
 
 /** 比引用时去掉空白、记号和末尾的省略号（引用可能被截短） */
 const normQuote = (s: string) => s.replace(/\s+/g, "").replace(/[❓⚠\uFE0F]/g, "").replace(/(…|\.\.\.)+$/, "");
-/** 前面可能带着发送者的名字（"小蓝："） */
+/** 前面可能带着发送者的名字（"天天："） */
 const unnamed = (q: string) => q.replace(/^[^:：「]{1,24}[:：]/, "");
 
 /** 引用的是不是推出去的那一条：去掉空白和记号再比；引用可能被截短（末尾省略号）、前面带名字 */

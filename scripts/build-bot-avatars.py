@@ -7,7 +7,7 @@
   1 earL      左耳（向头里多留一截，转动时不露缝；头那一层盖住多出来的部分）
   2 earR      右耳
   3 top       头顶配件（天线球 / 星星 / 嫩芽 / 角 / 宝石 / 天线），同样向头里多留一截
-  4–7         上面四层各自的"发光部分"（红魔的灯带、紫钻的霓虹线），没有就是空的
+  4–7         上面四层各自的"发光部分"（哒哒的灯带、晶晶的霓虹线），没有就是空的
 
 只用 numpy + Pillow：  python3 scripts/build-bot-avatars.py
 官网的 AVIF 版要从无损的精灵图编码（site/scripts/make-bot-avif.ts）：  python3 scripts/build-bot-avatars.py --out <目录> --png
@@ -24,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "anymodelbot_design", "logo avator")
 OUT = os.path.join(ROOT, "ui", "design", "bots")
 
-# 源图 1536×1024。取以 (767, 511) 为中心、边长 1290 的正方形（刚好装下最宽的红魔），缩到 CELL。
+# 源图 1536×1024。取以 (767, 511) 为中心、边长 1290 的正方形（刚好装下最宽的哒哒），缩到 CELL。
 SIDE, CX, CY = 1290, 767, 511
 CELL = 448
 QUALITY = 86
@@ -34,7 +34,7 @@ CHARS = {
     # visor: 面罩 x0, y0, x1, y1, 圆角（抹眼睛只在面罩里进行，不碰外圈绒毛）
     # ear: cutL/cutR 是头的侧边（耳朵和头的分界），y0–y1 是耳朵的纵向范围
     # top: x0–x1 × (0, cut) 是配件；stem 是配件插进头里的那一段（多留的部分只在这段宽度里）
-    # keep: 抹眼睛时要保住的椭圆（小萌面罩上的腮红）
+    # keep: 抹眼睛时要保住的椭圆（闪闪面罩上的腮红）
     # glow: 发光部分 = (通道, 从, 到, 出现在哪些层：h 头 / l 左耳 / r 右耳 / t 配件)
     "blue": dict(src="主-蓝色.png", eyes=[(622.7, 678.6), (906.6, 678.6)], er=44, patch=(1.5, 2.3), visor=(460, 532, 1075, 820, 140),
                  ear=dict(cutL=356, cutR=1179, y0=515, y1=822), top=dict(x0=630, x1=900, cut=276, stem=(718, 815))),

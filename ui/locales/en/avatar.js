@@ -2,11 +2,11 @@
 export default {
   label: "Avatar",
   chars: {
-    blue: { name: "Ping", role: "Lead · All-rounder", pick: "Its antenna pings the moment a message lands. Default assistant, meeting notes." },
-    yellow: { name: "Twinkle", role: "Support & chat", pick: "A little star on top — it blushes when it smiles. Support, Q&A, casual chat." },
-    green: { name: "Sprout", role: "Digests & tidying", pick: "Grows a little every day. Digests, memory tidying, knowledge base." },
-    red: { name: "Beat", role: "Code & automation", pick: "Headset on, it's in the zone. Coding, scripts, automation." },
-    purple: { name: "Crystal", role: "Writing & ideas", pick: "Ideas crystallize on top. Writing, polishing, brainstorming." },
-    orange: { name: "Pilot", role: "Translation & search", pick: "Goggles down, it scours the world for answers. Translation, search, computer use." },
+    blue: { name: "Ping", about: "Its antenna pings the moment a message lands." },
+    yellow: { name: "Twinkle", about: "A little star on top that twinkles when it smiles. It blushes, too." },
+    green: { name: "Sprout", about: "A sprout on top that grows a little every day." },
+    red: { name: "Beat", about: "Headset on, it moves to the beat." },
+    purple: { name: "Crystal", about: "A crystal on top that catches the light." },
+    orange: { name: "Pilot", about: "Goggles down, ready for takeoff." },
   },
 };

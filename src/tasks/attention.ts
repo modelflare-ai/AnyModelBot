@@ -43,7 +43,7 @@ export interface AttentionItem {
   status: string;
   /**
    * 界面上的那一句（不带机器人名）：「「GPU 价格调研」在等你回答」「微信登录已过期」。几个机器人时界面在前面加上名字
-   * （「小蓝的「GPU 价格调研」在等你回答」）；侧栏机器人行的第二行也是它
+   * （「天天的「GPU 价格调研」在等你回答」）；侧栏机器人行的第二行也是它
    */
   head: string;
   /** 第二行：问题、命令、失败原因、没送到的那句话 */
@@ -268,7 +268,7 @@ export function botLine(it: AttentionItem): string {
   return it.head;
 }
 
-/** 系统通知：标题「小蓝 需要你」，正文「GPU 价格调研：报告用中文还是英文？」（设计第 6 节）；没有第二行时是那一句 */
+/** 系统通知：标题「天天 需要你」，正文「GPU 价格调研：报告用中文还是英文？」（设计第 6 节）；没有第二行时是那一句 */
 export function notificationOf(it: AttentionItem): { title: string; body: string } {
   const body = it.line ? `${it.subject}：${it.line}` : botLine(it);
   return { title: tr("tasks.notifyTitle", { name: it.botName }), body: body.length > 120 ? body.slice(0, 119) + "…" : body };

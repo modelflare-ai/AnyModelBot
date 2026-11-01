@@ -1,13 +1,13 @@
-// avatar · zh-CN：机器人头像角色（components/avatar.js）
+// avatar · zh-CN：机器人头像角色（components/avatar.js）。名字和介绍与官网一致（site/src/i18n/zh.ts 的 bots.looks）
 export default {
   label: "头像",
-  /** 每个角色：name 名字、role 定位、pick 介绍（头像选择器的提示里显示） */
+  /** 每个角色：name 名字、about 一句介绍（头像选择器的提示里显示）。只讲长相和配饰，不写岗位：机器人做什么由人设决定 */
   chars: {
-    blue: { name: "小蓝", role: "主角 · 通用助手", pick: "天线一直在线，什么信号都接得住。默认助手、会议纪要。" },
-    yellow: { name: "小萌", role: "客服 · 陪聊", pick: "头顶一颗小星星，一笑就脸红。客服、答疑、陪聊。" },
-    green: { name: "绿草", role: "日报 · 整理", pick: "每天长高一点点。群聊日报、记忆整理、知识库。" },
-    red: { name: "红魔", role: "代码 · 自动化", pick: "戴上耳机就进入状态。写代码、跑脚本、自动化。" },
-    purple: { name: "紫钻", role: "写作 · 创意", pick: "灵感会在头顶结晶。写作、润色、出点子。" },
-    orange: { name: "探险者", role: "翻译 · 搜索", pick: "护目镜一戴，满世界找答案。翻译、搜索、操作电脑。" },
+    blue: { name: "天天", about: "头顶的天线天天在线，消息一到就接住。" },
+    yellow: { name: "闪闪", about: "头顶一颗小星星，一笑就闪闪发亮，还会脸红。" },
+    green: { name: "芽芽", about: "头顶一株嫩芽，每天都长高一点。" },
+    red: { name: "哒哒", about: "耳机一戴，节拍就哒哒哒响个不停。" },
+    purple: { name: "晶晶", about: "头顶结着一颗水晶，转起来亮晶晶。" },
+    orange: { name: "飞飞", about: "飞行护目镜一戴，随时准备起飞。" },
   },
 };

@@ -3,7 +3,6 @@ import { render, createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, ICONS, Button, IconButton, Seg, Switch, MenuButton, Menu, Badge, Notice, Skeleton, Spinner, CopyButton, Toasts, DialogHost, Splitter } from "../components/ui.js";
 import { BotAvatar, AvatarPicker, AppMark, BOT_CHARS, CHAR_KEYS, MAIN_CHAR } from "../components/avatar.js";
-import { TEMPLATES } from "../screens/new-bot.js";
 import { NeedItem, NeedsRow } from "../screens/needs-you.js";
 import { RuleRow, RuleDetail } from "../components/rules.js";
 import { PausedLine, TaskChip, TaskGroup, TaskRow } from "../components/tasks.js";
@@ -163,8 +162,8 @@ function AvatarCastDemo() {
   return html`<div class="cluster" style="--gap: var(--space-6); align-items: start">
     ${CHAR_KEYS.map((k) => html`<div class="stack" style="--gap: var(--space-1); justify-items: center; text-align: center; width: 120px">
       <${BotAvatar} char=${k} size=${96} lively pokeable greet />
-      <b class="t-title">${BOT_CHARS[k].name}${k === MAIN_CHAR ? " · 主角" : ""}</b>
-      <span class="t-meta">${BOT_CHARS[k].pick}</span>
+      <b class="t-title">${BOT_CHARS[k].name}${k === MAIN_CHAR ? " · 默认" : ""}</b>
+      <span class="t-meta">${BOT_CHARS[k].about}</span>
     </div>`)}
   </div>`;
 }
@@ -200,15 +199,9 @@ function AvatarSizeDemo() {
   </div>`;
 }
 
-function AvatarPairDemo() {
+function AvatarPickerDemo() {
   const [v, setV] = useState("");
-  return html`<div class="stack" style="--gap: var(--space-4)">
-    <div class="cluster" style="--gap: var(--space-4)">
-      ${[{ key: "", name: "空白新建", avatar: MAIN_CHAR }, ...TEMPLATES].map((t) => html`<div class="cluster" style="--gap: var(--space-2)">
-        <${BotAvatar} char=${t.avatar} size=${30} /><span class="t-body">${t.name}</span></div>`)}
-    </div>
-    <${AvatarPicker} value=${v} fallback=${MAIN_CHAR} onChange=${setV} />
-  </div>`;
+  return html`<${AvatarPicker} value=${v} fallback=${MAIN_CHAR} onChange=${setV} />`;
 }
 
 // —— 材质：环境光上叠几层玻璃，底下放有颜色的内容，才看得出透光和模糊 ——
@@ -411,7 +404,7 @@ function WinApp({ screen = "chat", open: initial = false }) {
           ? html`<button type="button" class="nav-item sel"><${Icon} name="sliders" size="md" /><span>常规</span></button>
             <button type="button" class="nav-item"><${Icon} name="palette" size="md" /><span>外观</span></button>`
           : html`<div class="thread sel"><${BotAvatar} char="blue" size=${38} /><span class="body">
-              <span class="line"><span class="title">小蓝</span><span class="when num">09:26</span></span>
+              <span class="line"><span class="title">天天</span><span class="when num">09:26</span></span>
               <span class="line"><span class="snip">整理好了，截图按日期分进了 3 个文件夹</span></span></span></div>`}
       </nav>
     </aside>
@@ -422,7 +415,7 @@ function WinApp({ screen = "chat", open: initial = false }) {
               <div class="row"><div class="who"><div class="name">开机自启</div><div class="sub">登录系统后在后台启动</div></div><div class="ctl"><${Switch} label="开机自启" value=${true} onChange=${() => {}} /></div></div>
             </div></div></section>`
         : html`<section class="chat"><header class="chat-head">
-              <button type="button" class="head-bot" aria-pressed=${open} onClick=${toggle}><${BotAvatar} char="blue" size=${22} /><span class="name">小蓝</span></button>
+              <button type="button" class="head-bot" aria-pressed=${open} onClick=${toggle}><${BotAvatar} char="blue" size=${22} /><span class="name">天天</span></button>
               <span class="grow"></span>
               <${IconButton} icon="compose" iconSize="md" label="新对话" />
               <${IconButton} icon="panel" iconSize="md" label="信息面板" on=${open} aria-pressed=${open} onClick=${toggle} />
@@ -434,7 +427,7 @@ function WinApp({ screen = "chat", open: initial = false }) {
     </main>
     ${fx.mounted && html`<div class=${`panel-scrim${fx.leaving ? " leaving" : ""}`} onClick=${() => setOpen(false)}></div>
       <aside class=${`panel${fx.leaving ? " leaving" : ""}`}>
-        <div class="panel-head"><span class="title">小蓝</span>
+        <div class="panel-head"><span class="title">天天</span>
           <${IconButton} icon="gear" iconSize="md" label="机器人设置" /><${IconButton} icon="close" iconSize="md" label="关闭" class="panel-close" onClick=${() => setOpen(false)} /></div>
         <div class="panel-body"><div class="list-head">渠道</div><div class="list">
           <div class="row compact"><div class="who"><div class="name">微信</div><div class="sub">已连接</div></div></div>
@@ -666,11 +659,11 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <//>
       <//>
 
-      <${Section} id="avatars" title="头像" lead="6 个内置毛绒角色，蓝色的小蓝是主角。每个机器人配一个：新建页和机器人设置里可以选，模板自带推荐，没选过时由 id 决定，默认机器人是小蓝。持续状态跟着平台走（你在输入、思考、回复、工作、等批准、睡觉），完成、出错、新建时播一次性反应；指针靠近时会看过去，大头像可以戳。">
+      <${Section} id="avatars" title="头像" lead="6 个内置毛绒角色，蓝色的天天是默认头像。每个机器人配一个，只决定长相，和它做什么无关：新建页和机器人设置里可以选，没选过时由 id 决定，默认机器人是天天。持续状态跟着平台走（你在输入、思考、回复、工作、等批准、睡觉），完成、出错、新建时播一次性反应；指针靠近时会看过去，大头像可以戳。">
         <${Demo} title="角色" note="96px · lively · 可以戳（连戳三下、六下试试）">${() => html`<${AvatarCastDemo} />`}<//>
         <${Demo} title="状态与反应" note="上面切持续状态，按钮播一次性反应；点右边的小头像换成主视图">${() => html`<${AvatarStateDemo} />`}<//>
         <${Demo} title="尺寸" note="22 顶栏 / 38 侧栏 / 56 / 96 空态；小于 36px 不画粒子。悬停 38px 那排，天线会弹一下">${() => html`<${AvatarSizeDemo} />`}<//>
-        <${Demo} title="配对" note="新建页的模板 → 角色；下面是选择器（AvatarPicker）">${() => html`<${AvatarPairDemo} />`}<//>
+        <${Demo} title="选择器" note="AvatarPicker：只选长相，和模板、人设无关">${() => html`<${AvatarPickerDemo} />`}<//>
       <//>
 
       <${Section} id="patterns" title="对话" lead="ui/css/chat.css 里的页面模式（顶栏参考 Grok Bot，对话流与输入框参考 Codex）：用户消息是浅灰气泡，回复是整列正文，上方一行工作状态，下方悬停出现操作。">
@@ -720,7 +713,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <${NeedsRow} count=${3} onClick=${() => {}} /><${NeedsRow} count=${2} on onClick=${() => {}} /><${NeedsRow} count=${0} />
           </div>`}
         <//>
-        <${Demo} flush col title="列表" note="NeedItem：标题行是一句话，几个机器人时带上名字（「小蓝的「GPU 价格调研」在等你回答」）。等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天 / 观察够了，要不要改为执行（不推送）">
+        <${Demo} flush col title="列表" note="NeedItem：标题行是一句话，几个机器人时带上名字（「天天的「GPU 价格调研」在等你回答」）。等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天 / 观察够了，要不要改为执行（不推送）">
           ${() => html`<div class="list needs-list">${NEEDS.map((it) => html`<${NeedItem} item=${it} multiBot onAct=${async () => {}} />`)}</div>`}
         <//>
       <//>
@@ -796,20 +789,20 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
 
 /** 「需要你」的样例（单人：一个人用自己的机器人） */
 const NEEDS = [
-  { id: "q", kind: "question", botName: "小蓝", subject: "GPU 价格调研", status: "等你回答", head: "「GPU 价格调研」在等你回答", line: "报告用中文还是英文？", since: Date.now() - 2 * 60_000, severity: "warn", questions: [{ id: "a", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }] },
-  { id: "qd", kind: "question", botName: "小蓝", subject: "竞品周报", status: "等你回答", head: "「竞品周报」在等你回答", line: "报告用中文还是英文？", note: "不回复就按中文做", since: Date.now() - 3 * 60_000, severity: "warn", taskId: "t4", questions: [{ id: "answer", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }], default: "中文" }] },
-  { id: "a", kind: "approval", botName: "小蓝", subject: "清理旧构建", status: "等你批准", head: "「清理旧构建」在等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
-  { id: "bq", kind: "question", botName: "小蓝", subject: "季度报告 PPT", status: "预算用完", head: "「季度报告 PPT」预算用完了", line: "已用约 $1.00，再给 $1 继续？", since: Date.now() - 8 * 60_000, severity: "warn", questions: [{ id: "budget", question: "已用约 $1.00，再给 $1 继续？", options: [{ label: "继续" }, { label: "停止" }] }] },
-  { id: "d", kind: "delivery", botName: "小蓝", subject: "1 条结果未送达微信", status: "在微信里发条消息就能收到", head: "1 条结果未送达微信，在微信里发条消息就能收到", line: "季度报告做好了，在 tasks 文件夹里。", since: Date.now() - 20 * 60_000, severity: "warn", actions: [] },
-  { id: "f", kind: "failed", botName: "红魔", subject: "季度报告", status: "失败", head: "「季度报告」失败了", line: "X 云的价格页要登录，我进不去", since: Date.now() - 40 * 60_000, severity: "err" },
-  { id: "r", kind: "rule", botName: "红魔", subject: "规则「每日 issue 巡检」", status: "连续失败 3 次，已暂停", head: "规则「每日 issue 巡检」连续失败 3 次，已暂停", line: "GitHub 返回 401：令牌可能过期了", since: Date.now() - 90 * 60_000, severity: "err", actions: ["retry"] },
-  { id: "rb", kind: "rule", botName: "小蓝", subject: "规则「看 X 价格」", status: "本月预算用完", head: "规则「看 X 价格」本月预算用完了", line: "已用约 $3.00，下月自动恢复。再给 $3 继续？", since: Date.now() - 2 * 3600_000, severity: "warn", actions: ["continue"] },
-  { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", head: "微信登录已过期", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
-  { id: "rs", kind: "budget", botName: "小蓝", subject: "后台工作已停", status: "", head: "后台工作已停", line: "机器人预算只剩约 $1.80（共 $10），留给聊天", since: Date.now() - 4 * 3600_000, severity: "warn", actions: ["open"] },
-  { id: "s", kind: "suggest", botName: "小蓝", subject: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", status: "", head: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", since: Date.now() - 6 * 3600_000, severity: "warn", actions: ["act", "dismiss"], ruleTitle: "看 X 价格" },
+  { id: "q", kind: "question", botName: "天天", subject: "GPU 价格调研", status: "等你回答", head: "「GPU 价格调研」在等你回答", line: "报告用中文还是英文？", since: Date.now() - 2 * 60_000, severity: "warn", questions: [{ id: "a", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }] },
+  { id: "qd", kind: "question", botName: "天天", subject: "竞品周报", status: "等你回答", head: "「竞品周报」在等你回答", line: "报告用中文还是英文？", note: "不回复就按中文做", since: Date.now() - 3 * 60_000, severity: "warn", taskId: "t4", questions: [{ id: "answer", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }], default: "中文" }] },
+  { id: "a", kind: "approval", botName: "天天", subject: "清理旧构建", status: "等你批准", head: "「清理旧构建」在等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
+  { id: "bq", kind: "question", botName: "天天", subject: "季度报告 PPT", status: "预算用完", head: "「季度报告 PPT」预算用完了", line: "已用约 $1.00，再给 $1 继续？", since: Date.now() - 8 * 60_000, severity: "warn", questions: [{ id: "budget", question: "已用约 $1.00，再给 $1 继续？", options: [{ label: "继续" }, { label: "停止" }] }] },
+  { id: "d", kind: "delivery", botName: "天天", subject: "1 条结果未送达微信", status: "在微信里发条消息就能收到", head: "1 条结果未送达微信，在微信里发条消息就能收到", line: "季度报告做好了，在 tasks 文件夹里。", since: Date.now() - 20 * 60_000, severity: "warn", actions: [] },
+  { id: "f", kind: "failed", botName: "哒哒", subject: "季度报告", status: "失败", head: "「季度报告」失败了", line: "X 云的价格页要登录，我进不去", since: Date.now() - 40 * 60_000, severity: "err" },
+  { id: "r", kind: "rule", botName: "哒哒", subject: "规则「每日 issue 巡检」", status: "连续失败 3 次，已暂停", head: "规则「每日 issue 巡检」连续失败 3 次，已暂停", line: "GitHub 返回 401：令牌可能过期了", since: Date.now() - 90 * 60_000, severity: "err", actions: ["retry"] },
+  { id: "rb", kind: "rule", botName: "天天", subject: "规则「看 X 价格」", status: "本月预算用完", head: "规则「看 X 价格」本月预算用完了", line: "已用约 $3.00，下月自动恢复。再给 $3 继续？", since: Date.now() - 2 * 3600_000, severity: "warn", actions: ["continue"] },
+  { id: "l", kind: "login", botName: "芽芽", subject: "微信登录已过期", status: "", head: "微信登录已过期", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
+  { id: "rs", kind: "budget", botName: "天天", subject: "后台工作已停", status: "", head: "后台工作已停", line: "机器人预算只剩约 $1.80（共 $10），留给聊天", since: Date.now() - 4 * 3600_000, severity: "warn", actions: ["open"] },
+  { id: "s", kind: "suggest", botName: "天天", subject: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", status: "", head: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", since: Date.now() - 6 * 3600_000, severity: "warn", actions: ["act", "dismiss"], ruleTitle: "看 X 价格" },
 ];
 
-/** 任务的样例（单人：自己的机器人小蓝）：在调研的、问了个有默认回答的问题接着在做的、等你回答的、昨天做完的（文件夹 3 天后清理） */
+/** 任务的样例（单人：自己的机器人天天）：在调研的、问了个有默认回答的问题接着在做的、等你回答的、昨天做完的（文件夹 3 天后清理） */
 const ago = (min) => Date.now() - min * 60_000;
 const task = (o) => ({ botId: "b", conversationId: "b:weixin:me", channel: "weixin", latest: "", runs: 1, spentUsd: 0, budgetUsd: 1, cleanupAt: 0, endedAt: 0, ...o });
 const TASKS = [
@@ -851,7 +844,7 @@ const ENDED_DETAIL = {
   runs: [{ id: "r2", cause: "launch", state: "ended", outcome: "done", queuedAt: ago(27 * 1440 + 10), startedAt: ago(27 * 1440 + 10), endedAt: ago(27 * 1440 - 20), steps: 0 }],
 };
 
-/** 规则的样例（单人：自己的机器人小蓝）：每天 8 点看 X 价格（观察中）、每周的 issue 周报、暂停了的巡检、一次性的提醒 */
+/** 规则的样例（单人：自己的机器人天天）：每天 8 点看 X 价格（观察中）、每周的 issue 周报、暂停了的巡检、一次性的提醒 */
 const at = (days, h, m = 0) => {
   const d = new Date();
   d.setDate(d.getDate() + days);

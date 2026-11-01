@@ -21,6 +21,10 @@ for (const f of fs.readdirSync(bots).filter((f) => f.endsWith(".webp"))) {
 fs.copyFileSync(path.join(app, "THIRD_PARTY_NOTICES.md"), path.join(site, "src/data/third-party.md"));
 // 英文页用英文译本（英文页整页不出现中文）；改了中文版记得同步改 THIRD_PARTY_NOTICES_en.md
 fs.copyFileSync(path.join(app, "THIRD_PARTY_NOTICES_en.md"), path.join(site, "src/data/third-party.en.md"));
+// 更新日志页：英文页不出现微信、飞书（用户 2026-11-01 定的），提到它们的行不带过去
+fs.copyFileSync(path.join(app, "CHANGELOG.md"), path.join(site, "src/data/changelog.md"));
+const changelogEn = fs.readFileSync(path.join(app, "CHANGELOG_en.md"), "utf8").split("\n").filter((line) => !/wechat|weixin|feishu/i.test(line)).join("\n");
+fs.writeFileSync(path.join(site, "src/data/changelog.en.md"), changelogEn);
 
 export function botCharsHash(src: string) {
   const m = src.match(/export const BOT_CHARS = (\{[\s\S]*?\n\});/);

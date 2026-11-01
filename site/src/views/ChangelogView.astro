@@ -2,15 +2,32 @@
 import Base from "../layouts/Base.astro";
 import { dict, fmt, fmtDate, type Lang } from "../i18n";
 import { releases, GITHUB_URL } from "../lib/site";
+import { parseChangelog } from "../lib/changelog";
+import changelogZh from "../data/changelog.md?raw";
+import changelogEn from "../data/changelog.en.md?raw";
+import "../styles/pages.css";
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const t = dict(lang);
 const c = t.changelog;
+// 内容来自仓库根目录的 CHANGELOG.md、CHANGELOG_en.md（sync-from-app 同步过来）；发版前写好，发版流程会检查
+const list = parseChangelog(lang === "en" ? changelogEn : changelogZh);
 ---
 <Base lang={lang} path="/changelog" title={c.title} description={c.description}>
   <article class="container page prose">
     <header class="page__head"><h1>{c.h1}</h1></header>
     <p>{fmt(c.current, { version: releases.version, publishedAt: fmtDate(releases.publishedAt, lang) })}</p>
+    {list.map((r) => (
+      <section>
+        <h2>{r.version}{r.date && <span class="muted"> · {fmtDate(r.date, lang)}</span>}</h2>
+        {r.groups.map((g) => (
+          <>
+            {g.title && <h3>{g.title}</h3>}
+            <ul class="ticks" role="list">{g.items.map((item) => <li set:html={item} />)}</ul>
+          </>
+        ))}
+      </section>
+    ))}
     <p>{c.body}</p>
     <p class="page__cta"><a class="btn btn--secondary" href={`${GITHUB_URL}/releases`} target="_blank" rel="noopener">{c.link}</a></p>
   </article>

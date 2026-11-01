@@ -1,5 +1,5 @@
 @layer tokens, base, components, app, utilities;
-/* 页脚（components/Footer.astro）：品牌（标记 + 一句话）｜ 三栏链接 → 版权行 → 眼睛田。
+/* 页脚（components/Footer.astro）：品牌（标记 + 一句话）｜ 三栏链接 → 收录徽章 → 版权行 → 眼睛田。
    眼睛田是页脚最下面的大字标：AnyModelBot 由几百枚迷你 Eyes 标记拼成，画在 canvas 上（scripts/eyefield.ts）。
    两个主题两种画法，画布只认下面这些变量（主题切换时脚本会重读）：
      深色 · 发光：统一的灰面罩 --field-plate + 角色色的眼睛（--lime、--bot-*-eye）+ 光晕 --field-glow。字形靠一排排发光的眼睛读出来。
@@ -19,6 +19,21 @@
   .footer__cols ul { display: grid; gap: 10px; font-size: var(--fs-sm); }
   .footer__cols a { color: var(--text-2); transition: color var(--dur-fast); }
   .footer__cols a:hover { color: var(--text); text-decoration: none; }
+  /* 收录徽章（data/badges.ts）：原码各带各的尺寸和内联样式，图片统一成一个高度才排得齐，所以这里要 !important 盖过内联。
+     44px 不要再往小改：Aura++ 这类站方要求徽章不小于 150×44 */
+  .footer__featured { margin-top: 40px; }
+  .footer__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+  .footer__badge { display: flex; }
+  [data-theme="dark"] .footer__badge[data-on="light"], [data-theme="light"] .footer__badge[data-on="dark"] { display: none; }
+  .footer__badge:not([data-kind]) img { display: block; width: auto !important; height: 44px !important; max-width: none !important; }
+  .footer__badge[data-kind="natural"] img { display: block; }
+  .footer__badge[data-kind="text"] a { display: inline-flex; align-items: center; height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--r-item); color: var(--text-2); font-size: var(--fs-xs); transition: color var(--dur-fast), border-color var(--dur-fast); }
+  .footer__badge[data-kind="text"] a:hover { color: var(--text); border-color: var(--line-strong); text-decoration: none; }
+  /* 手机上换行要占大半屏，改成贴边的一行横滑，右边露出半个徽章提示还能滑。只是摆放方式，HTML 不变，校验机器人照样读得到 */
+  @media (max-width: 767px) {
+    .footer__badges { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); }
+    .footer__badge { flex: none; }
+  }
   .footer__bottom { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: var(--fs-xs); color: var(--text-2); }
   .footer__switch { margin-left: auto; display: flex; gap: 16px; }
   .footer__switch a, .footer__switch button { color: var(--text-2); font-size: var(--fs-xs); transition: color var(--dur-fast); }

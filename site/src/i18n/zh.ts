@@ -399,6 +399,7 @@ export const zh = {
     copyright: "© 2026 AnyModelBot · MIT",
     art: "角色插画 © AnyModelBot 项目",
     tagline: "住在你电脑里的 AI 搭子。一个 Key，畅用主流模型，随时换脑。",
+    featured: "被收录于",
     // 页脚眼睛田：字标由一群机器人的脸拼成
     fieldHint: "点一下，给它们发条消息",
     fieldModel: "换脑",
@@ -463,7 +464,7 @@ export const zh = {
     body: [
       "本网站不使用 Cookie，不加载第三方追踪脚本。",
       "我们使用自托管、无 Cookie 的聚合统计（不记录 IP，不识别个人），并尊重浏览器的“请勿追踪”设置。",
-      "字体与图片均自托管。下载文件由 {domain} 提供。",
+      "字体与站内图片均自托管。例外是页脚的收录徽章：图片由各收录站点提供，浏览器在页脚快进入屏幕时向它们请求，对方能看到你的 IP 地址和本站域名。下载文件由 {domain} 提供。",
       "AnyModelBot 应用本身的数据处理见首页的“数据去向图”与安全说明页。",
     ],
     security: "安全说明 →",

@@ -1,8 +1,8 @@
 // 首页"在哪都能用"（sections/Devices.astro）里的聊天渠道：切换台里的入口和接入步骤都由这里生成。
 //
 // 不放在 i18n 里：中英文页面展示的渠道可以不同，不是同一份内容的两种语言——
-// 中文页面是微信、飞书；英文页面是 Slack、Telegram、Discord、WhatsApp（用户 2026-11-01 定的：英文页不出现微信 / 飞书，
-// 这四个直接按已支持来写；应用里目前只有 weixin、feishu 两个渠道，接入步骤照各平台的通用做法写，渠道做好后按真实界面核对）。
+// 中文页面是微信、飞书；英文页面是 Slack、Telegram、Discord（用户 2026-11-01 定的：英文页不出现微信 / 飞书）。
+// 接入步骤和应用信息面板里的说明一致（src/channels/messenger）。
 // 还没做好、要标出来的渠道写 soon（卡片和标签上标出来，接入指南里不放步骤），做好了再补步骤、去掉 soon。
 // 所以两边条数可以不同，check-i18n 的"结构一致"不适用；禁词扫描（scripts/banned.ts）照样覆盖这个文件。
 //
@@ -10,7 +10,7 @@
 // guide.qr 有值时，步骤下面附一张示意二维码（扫码登录类渠道用）。
 import type { Lang } from "../i18n";
 
-export type ChannelIcon = "chat" | "card" | "hash" | "send" | "headset" | "phone";
+export type ChannelIcon = "chat" | "card" | "hash" | "send" | "headset";
 export interface Channel {
   id: string;
   icon: ChannelIcon;
@@ -58,10 +58,11 @@ export const CHANNELS: Record<Lang, Channel[]> = {
       guide: {
         title: "Connect Slack",
         steps: [
-          "At api.slack.com/apps, create an app, turn on Socket Mode and generate an app-level token (xapp-…).",
-          "Add the bot scopes chat:write and im:history, subscribe to the message.im event and allow messages in App Home. Install the app to your workspace and copy the bot token (xoxb-…).",
+          "At api.slack.com/apps, create an app, turn on Socket Mode and generate an app-level token (xapp-…) with connections:write.",
+          "Add the bot scopes chat:write, im:history, files:read and files:write, subscribe to the message.im event and allow messages in App Home. Install the app to your workspace and copy the bot token (xoxb-…).",
           "Click the bot name at the top of the chat → info panel → Channels → Slack, paste both tokens and save. Then send the bot a direct message in Slack.",
         ],
+        limit: "Direct messages only for now. The app has to be running: messages sent while it's closed aren't received.",
       },
     },
     {
@@ -73,6 +74,7 @@ export const CHANNELS: Record<Lang, Channel[]> = {
           "Click the bot name at the top of the chat → info panel → Channels → Telegram, paste the token and save.",
           "Open your new bot in Telegram and send it a message. It connects over long polling, so your computer needs no public address.",
         ],
+        limit: "Direct messages only for now. Messages sent while the app is closed are picked up for up to 24 hours.",
       },
     },
     {
@@ -84,18 +86,7 @@ export const CHANNELS: Record<Lang, Channel[]> = {
           "Under OAuth2 → URL Generator, tick the bot scope and open the link to add the bot to a server you're in.",
           "Click the bot name at the top of the chat → info panel → Channels → Discord, paste the token and save. Then send the bot a direct message.",
         ],
-      },
-    },
-    {
-      id: "whatsapp", icon: "phone", title: "WhatsApp", body: "Link a number by QR code, then message it like any other contact.", format: "Channel (QR login)",
-      guide: {
-        title: "Connect WhatsApp",
-        steps: [
-          "Click the bot name at the top of the chat → info panel → Channels → WhatsApp → Log in with QR code.",
-          "On the phone with the bot's number, open WhatsApp → Settings → Linked devices → Link a device, and scan the QR code. A separate number for the bot works best.",
-          "Message that number from your own WhatsApp. The login is kept in your data directory and resumes after restarts; when it expires, the app asks you to scan again.",
-        ],
-        qr: "Sample QR code — not scannable",
+        limit: "Direct messages only for now. The app has to be running: messages sent while it's closed aren't received.",
       },
     },
   ],

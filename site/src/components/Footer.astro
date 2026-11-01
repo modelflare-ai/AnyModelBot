@@ -1,5 +1,6 @@
 ---
-// 页脚：品牌（标记 + 一句话）｜ 三栏链接 → 版权行 → 眼睛田。
+// 页脚：品牌（标记 + 一句话）｜ 三栏链接 → 收录徽章 → 版权行 → 眼睛田。
+// 收录徽章的原码和取舍见 data/badges.ts：要写进静态 HTML，校验机器人不跑 JS。
 // 眼睛田是页脚最下面的大字标：AnyModelBot 由几百枚迷你 Eyes 标记拼成，跟着指针看、点一下发消息、定时"换脑"（scripts/eyefield.ts）。
 // 纯装饰（aria-hidden），没有 JS 时整块不显示；样式在 styles/footer.css。
 import "../styles/footer.css";
@@ -8,6 +9,7 @@ import { dict, href, altLang, switchHref, type Lang } from "../i18n";
 import { GITHUB_URL, MF, pricing } from "../lib/site";
 import { docsUrl } from "../lib/docs";
 import { pickModels } from "../lib/eyefield";
+import { BADGES } from "../data/badges";
 interface Props { lang: Lang; path: string }
 const { lang, path } = Astro.props;
 const t = dict(lang);
@@ -23,6 +25,11 @@ const ext = (u: string) => /^https?:/.test(u);
 const other = altLang(lang);
 // 眼睛田"换脑"时轮流显示的模型：价格快照里每家厂商取一个
 const models = pickModels(pricing.rows);
+// 有深色款的徽章出两份，由 CSS 按主题显示一份。图片懒加载：被隐藏的那份不会发请求，页面也只在快到页脚时才请求这些外部图片
+const lazy = (html: string) => html.replace(/<img\b/g, '<img loading="lazy" decoding="async"');
+const badges = BADGES.flatMap(({ html, dark, kind }) => dark
+  ? [{ html: lazy(dark), kind, on: "dark" }, { html: lazy(html), kind, on: "light" }]
+  : [{ html: lazy(html), kind, on: undefined }]);
 ---
 <footer class="footer">
   <div class="container footer__inner">
@@ -42,6 +49,12 @@ const models = pickModels(pricing.rows);
         </div>
       ))}
     </div>
+  </div>
+  <div class="container footer__featured">
+    <h2 class="footer__title">{t.footer.featured}</h2>
+    <ul class="footer__badges" role="list">
+      {badges.map((b) => <li class="footer__badge" data-kind={b.kind} data-on={b.on} set:html={b.html} />)}
+    </ul>
   </div>
   <div class="container footer__bottom">
     <span>{t.footer.copyright}</span>

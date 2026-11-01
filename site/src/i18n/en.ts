@@ -6,7 +6,7 @@ export const en: Dict = {
     lang: "en",
     title: "AnyModelBot — Local AI bots, any model, pay per use",
     description:
-      "An open-source, local-first alternative to Grok Bot, OpenAI dots and Claude Duet. Run AI bots on your own computer or server. Chats, memory, files and keys stay on your device; one Modelflare key unlocks GPT, Claude, Gemini and more. The app is free and you pay per use, with a public price list. Desktop, Docker, Slack, Telegram, Discord and WhatsApp.",
+      "An open-source, local-first alternative to Grok Bot, OpenAI dots and Claude Duet. Run AI bots on your own computer or server. Chats, memory, files and keys stay on your device; one Modelflare key unlocks GPT, Claude, Gemini and more. The app is free and you pay per use, with a public price list. Desktop, Docker, Slack, Telegram and Discord.",
     ogImage: "/og/og-en.png",
   },
   nav: {
@@ -96,7 +96,7 @@ export const en: Dict = {
       console: { label: "Console: 127.0.0.1 + token", body: "Listens on 127.0.0.1 and checks the Host header by default; Docker mode requires an access token." },
       gateway: { label: "Modelflare gateway", sub: "Forwards this request · configurable log retention", body: "Forwards the request to the provider you choose; log retention follows Modelflare's “Data retention” doc." },
       vendors: { label: "OpenAI / Anthropic / Google …", body: "Receives what you send to the model, including screen content during computer use." },
-      channels: { label: "Chat apps", sub: "Slack · Telegram · Discord · WhatsApp", body: "Messages in these apps pass through their servers by nature." },
+      channels: { label: "Chat apps", sub: "Slack · Telegram · Discord", body: "Messages in these apps pass through their servers by nature." },
     },
     retentionLink: "Modelflare’s “Data retention” doc",
     retentionUrl: "https://docs.modelflare.dev/guides/features/data-retention/?utm_source=anymodelbot&utm_campaign=amb_homepage",
@@ -236,7 +236,7 @@ export const en: Dict = {
   devices: {
     h2: "Reachable everywhere.",
     h2dim: "One bot, one memory.",
-    lead: "Desktop, Docker and browser — plus Slack, Telegram, Discord and WhatsApp in your pocket.",
+    lead: "Desktop, Docker and browser — plus Slack, Telegram and Discord in your pocket.",
     items: {
       desktop: { title: "Desktop", sub: "Windows · macOS · Linux", body: "Windows, macOS and Linux — download and go.", more: "All downloads and checksums →" },
       docker: { title: "Docker", sub: "NAS / server", body: "Run it on a NAS or server, always on." },
@@ -249,8 +249,8 @@ export const en: Dict = {
     chatBody: "Message it from the chat apps you already use — on your phone, too.",
     howTo: "See the steps",
     guideTitle: "Setup guide",
-    note: "No standalone iOS/Android app yet; on your phone, chat with it in Slack, Telegram, Discord or WhatsApp. The web console is local or self-hosted — not a cloud web app.",
-    // Chat-app channels (Slack, Telegram, Discord, WhatsApp) live in data/channels.ts — each language shows its own set
+    note: "No standalone iOS/Android app yet; on your phone, chat with it in Slack, Telegram or Discord. The web console is local or self-hosted — not a cloud web app.",
+    // Chat-app channels (Slack, Telegram, Discord) live in data/channels.ts — each language shows its own set
     browserGuide: {
       title: "Local web console",
       steps: [
@@ -323,7 +323,7 @@ export const en: Dict = {
     cost: "≈ {amount} / mo",
     badge: { org: "AnyModelBot", staff: "Staff", no: "ID", skills: "Good at", model: "Model", salary: "Salary", salaryNote: "everyday use, estimated", onDuty: "On duty" },
     modelNote: "Example model — change it any time",
-    phoneNote: "Illustrative: chatting in Slack, Telegram, Discord or WhatsApp",
+    phoneNote: "Illustrative: chatting in Slack, Telegram or Discord",
     phoneInput: "Message…",
     phoneStatus: "Online · running on your computer",
     phoneDay: "Today 21:08",
@@ -331,7 +331,7 @@ export const en: Dict = {
     where: { pc: "Lives on your computer", phone: "Reach it from your phone" },
     link: "Slack, Telegram & more",
     perks: [
-      { title: "No new app to install", body: "Message it in Slack, Telegram, Discord or WhatsApp." },
+      { title: "No new app to install", body: "Message it in Slack, Telegram or Discord." },
       { title: "Same bot, same memory", body: "What you tell it on the go, it still knows back at your desk." },
       { title: "Hand off work on the go", body: "Online while your computer is on; for 24/7, run it in Docker." },
     ],
@@ -371,7 +371,7 @@ export const en: Dict = {
       { q: "How is it different from Grok Bot, OpenAI dots or Claude Duet?", a: "They are the same kind of always-on personal AI agent: it works for you in the background and checks in when a decision is yours. The difference: AnyModelBot is open source (MIT) and runs on your own computer or server. It works with GPT, Claude, Gemini, Grok and more; the app is free and models are billed per use, with no single vendor's subscription. The README on GitHub has a full comparison table. Grok Bot, dots and Claude Duet are products of xAI, OpenAI and Anthropic respectively; AnyModelBot is not affiliated with them." },
       { q: "Is my data uploaded to your servers?", a: "Chats, memory, files and keys are stored on your device. Model requests go through Modelflare to the provider you choose; log retention follows Modelflare's “Data retention” doc. Screen content seen during computer use is sent to the chosen model." },
       { q: "Does it work offline?", a: "No. Models come from Modelflare; local models aren't supported." },
-      { q: "Can I use it on my phone?", a: "There's no standalone app yet; chat with it in Slack, Telegram, Discord or WhatsApp." },
+      { q: "Can I use it on my phone?", a: "There's no standalone app yet; chat with it in Slack, Telegram or Discord." },
       { q: "I don't have a Modelflare account.", a: "At first launch, click Sign in / Sign up for Modelflare and sign up in your browser. The app connects itself when you come back, with no key to copy. On Docker or a remote server, paste an API key instead. In mainland China, pick the China-optimised route under Advanced." },
       { q: "Is computer use safe?", a: "Limited to 24 whitelisted actions; runs automatically by default, switchable to ask before UI-changing actions; screen content goes to the model; try it on a dedicated machine or account first." },
       { q: "How do I verify a download?", a: "Each download lists a SHA-256; use Get-FileHash on Windows, shasum -a 256 on macOS/Linux. GitHub releases also include a SHA256SUMS file you can check in one go with sha256sum -c." },
@@ -396,6 +396,7 @@ export const en: Dict = {
     copyright: "© 2026 AnyModelBot · MIT",
     art: "Character art © the AnyModelBot project",
     tagline: "AI teammates that live on your machine. One key for every major model — swap brains any time.",
+    featured: "Featured on",
     // Footer eye field: the wordmark is made of a crowd of bot faces
     fieldHint: "Click to message them all",
     fieldModel: "Brain",
@@ -441,7 +442,7 @@ export const en: Dict = {
     leavesItems: [
       "What you send to the model (including screen content during computer use) travels through the Modelflare gateway to the provider you choose.",
       "Modelflare keeps request logs for a retention period (you can pick 7–365 days in your profile) per its “Data retention” doc; when a request ultimately fails, or a route fails before a fallback succeeds, the gateway keeps one copy of the raw request (without the Authorization header) for troubleshooting and deletes it after 72 hours (same doc).",
-      "Messages in Slack, Telegram, Discord and WhatsApp pass through those platforms' servers by nature.",
+      "Messages in Slack, Telegram and Discord pass through those platforms' servers by nature.",
     ],
     guardsTitle: "Safeguards in the code",
     limitsTitle: "Limits and promises we don't make",
@@ -460,7 +461,7 @@ export const en: Dict = {
     body: [
       "This site uses no cookies and loads no third-party trackers.",
       "We use self-hosted, cookie-free aggregate analytics (no IP logging, no personal identification) and respect your browser's Do Not Track setting.",
-      "Fonts and images are self-hosted. Downloads are served from {domain}.",
+      "Fonts and on-site images are self-hosted. The exception is the “Featured on” badges in the footer: those images come from the listing sites, and your browser requests them as the footer nears the screen, so those sites can see your IP address and this site's domain. Downloads are served from {domain}.",
       "For how the app itself handles data, see the data-flow diagram on the homepage and the security page.",
     ],
     security: "Security →",
@@ -495,7 +496,7 @@ export const en: Dict = {
       { title: "Create a bot", caption: "Pick a plush character, give it a name, or start from a template. Each bot has its own persona, model and workspace." },
       { title: "Chat, and swap models any time", caption: "Replies stream in and can be stopped; click the model in the input box to switch." },
       { title: "Let it do the work", caption: "It reads and writes files and runs commands; anything outside its workspace waits for your OK in the chat." },
-      { title: "Find it in your chat apps", caption: "Connect it once, then chat with the same bot — and the same memory — from Slack, Telegram, Discord or WhatsApp." },
+      { title: "Find it in your chat apps", caption: "Connect it once, then chat with the same bot — and the same memory — from Slack, Telegram or Discord." },
     ],
     ui: {
       installing: "Installing AnyModelBot…",

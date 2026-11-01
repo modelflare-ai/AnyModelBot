@@ -1,7 +1,8 @@
 ---
-// 认识你的机器人（§6.9）：给它们发工牌，但岗位由你定。六个角色只有名字和长相不同，它做什么由你写的人设决定（和 App 的新建页一致）。
-// 工牌上的人设、模型和手机里的对话都是示例（i18n 的 bots.personas，对应关系在 lib/bots.ts 的 CHAR_PERSONA）。
-// 不要给角色写固定的岗位或擅长的事（用户 2026-11-01 纠正过）；这版工牌的版式也不要改（用户同一天要求退回这版，只调字段）。
+// 认识你的机器人（§6.9）："给每个机器人一份工作"——工作是用户给的，所以发工牌，右上角写"岗位自定"。六个角色只有名字和长相不同（和 App 的新建页一致）。
+// 工牌上的岗位、人设、模型和手机里的对话都是示例（i18n 的 bots.personas，对应关系在 lib/bots.ts 的 CHAR_PERSONA），舞台下面那行小字说明了这一点。
+// 一排角色下面只写英文名，不写岗位：那一排最容易读成"每个角色固定干什么"（用户 2026-11-01 纠正过）；也不写配饰，用户说过没有意义。
+// 这版工牌的版式不要改，字数也要合得上：每张工牌第一行各不相同、人设一行放下、不叠多行灰字（用户同一天觉得字多、千篇一律就没有原来好看）。
 // 章节头 → 一张大舞台卡：最上面一排六个角色（WAI-ARIA tabs，选中的那个"在岗"，其余几个转头看它）；
 // 细线下垂下一根挂绳，挂着当前角色的工牌（证件照是会动、能戳的大头像，月薪 = 日常用量的月估算）；
 // 右边是手机里的对话，中间一条电脑 ↔ 手机的连线（微信 / 飞书）。卡片下面三条手机端的好处。
@@ -56,7 +57,7 @@ const perkIcons = ["doc", "layers", "plus"] as const;
           <button type="button" role="tab" class="lineup__bot bot-hover" id={`bt-${k}`} aria-selected={i === 0 ? "true" : "false"} aria-controls={`bp-${k}`} tabindex={i === 0 ? 0 : -1} data-bot={k} style={`--c:var(--bot-${k}-glow)`}>
             <BotFace char={k} size={64} lively />
             <span class="lineup__name">{L[k].name}</span>
-            <span class="lineup__job" aria-hidden="true"><span>{L[k].tag}</span><span class="lineup__duty">{b.badge.onDuty}</span></span>
+            <span class="lineup__job" aria-hidden="true"><span lang="en">{L[k].alias}</span><span class="lineup__duty">{b.badge.onDuty}</span></span>
           </button>
         ))}
       </div>
@@ -77,12 +78,12 @@ const perkIcons = ["doc", "layers", "plus"] as const;
                     <BotFace char={k} size={176} lively pokeable />
                   </div>
                   <div class="badge-card__id">
-                    <p class="badge-card__job eyebrow">{b.badge.job}</p>
+                    <p class="badge-card__job eyebrow">{talk(k).job}</p>
                     <h3 class="badge-card__name subhead">{L[k].name}{L[k].alias && <> <span class="badge-card__alias" lang="en">{L[k].alias}</span></>}</h3>
                     <p class="badge-card__motto">{L[k].motto}</p>
                   </div>
                   <dl class="badge-card__fields">
-                    <div><dt>{b.badge.persona}</dt><dd><span>{talk(k).persona}</span><small>{b.personaNote}</small></dd></div>
+                    <div><dt>{b.badge.persona}</dt><dd>{talk(k).persona}</dd></div>
                     <div><dt>{b.badge.model}</dt><dd><span class="mono">{modelOf(k)}</span><small>{b.modelNote}</small></dd></div>
                     <div><dt>{b.badge.salary}</dt><dd>
                       <a class="mono" href={`${pricingPage}?m=${modelOf(k)}#calc`} data-track="bot_cost_click" data-track-bot_id={k} data-track-model_id={modelOf(k)}>{fmt(b.cost, { amount: cost(k) })}<Icon name="arrow" size={14} /></a>

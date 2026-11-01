@@ -97,7 +97,7 @@
   [data-theme="light"] .card { background: var(--grain), var(--glass); box-shadow: var(--glass-ring), var(--card-shadow); }
   [data-theme="light"] :is(.card--hover:hover, .card--hover:focus-within) { box-shadow: var(--glass-ring), inset 0 0 0 1px color-mix(in srgb, var(--accent-fg), transparent 60%), var(--card-shadow); }
   @media (max-width: 767px) { .card { padding: 20px; } }
-  /* 小标签（价格卡标签、章节头的"编号 / 名称"、工牌上的"岗位：你来定"）全站只有这一种：英文等宽大写，中文无衬线、不大写 */
+  /* 小标签（价格卡标签、章节头的"编号 / 名称"、工牌职位）全站只有这一种：英文等宽大写，中文无衬线、不大写 */
   .eyebrow { font-family: var(--font-mono); font-size: var(--fs-eyebrow); font-weight: 500; line-height: 1.4; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
   :lang(zh) .eyebrow { font-family: var(--font-sans); font-size: var(--fs-eyebrow-zh); letter-spacing: .04em; text-transform: none; }
 

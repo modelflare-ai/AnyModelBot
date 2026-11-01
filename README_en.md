@@ -190,7 +190,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 - **Three permission presets per bot.** *Read-only*, *Workspace* (the default: write inside the bot's own folder, ask before anything outside) and *Full access* (no sandbox; recursive deletes still ask first).
 - **Approval cards, not surprises.** Out-of-bounds actions stop and wait for your answer.
 - **Told after a restart.** A message still in progress when the app quit or crashed is flagged in its conversation at the next start, so you can send it again; nothing is redone on its own.
-- **Slash commands** such as `/model` and `/reset` work in the app and in every chat channel.
+- **Slash commands** such as `/model` and `/reset` work in the app and in every chat channel. In a chat channel, `/bot` switches to another bot.
 
 <p align="center">
   <img src="docs/assets/features/agent-files.gif" alt="A bot tidies a messy folder: it lists the files, proposes a plan, and an approval card asks before moving files outside its workspace" width="100%">
@@ -320,6 +320,7 @@ Modelflare keeps request logs; its [Trust Center](https://modelflare.dev/trust?u
 | Agent runtime | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT), run as a separate process |
 | Computer use | [Cua Driver](https://github.com/trycua/cua), bundled |
 | Channels | Feishu (long connection + streaming cards), WeChat (iLink), Telegram (long polling), Slack (Socket Mode), Discord (Gateway) |
+| Data accounts | Notion (REST API, official remote MCP), Feishu messages (user identity, read-only) |
 | Tests and CI | Vitest, GitHub Actions |
 
 # 📝 Roadmap

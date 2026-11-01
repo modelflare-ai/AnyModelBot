@@ -26,9 +26,9 @@ This document explains what AnyModelBot stores where, what leaves your device, a
 | Modelflare sign-in credential | `modelflare-account.json` (mode 600; encrypted with the system keychain in the desktop app) | Only to modelflare.dev when refreshing tokens | Modelflare |
 | API key | The gateway's isolated config in `magpie/config/` | As authentication on every model request to Modelflare | Modelflare |
 | WeChat sign-in state and sync cursor | Inside the data directory (`weixin/` and others) | When talking to the WeChat iLink API | Tencent WeChat |
-| Feishu App ID / Secret | Configuration inside the data directory | When opening the long connection to the Feishu Open Platform | Feishu |
+| App ID / Secret of Feishu chat accounts | `anymodel.db` | When opening the long connection to the Feishu Open Platform | Feishu |
 | Telegram, Slack and Discord tokens | `anymodel.db` | When talking to that platform | The platform you connected |
-| Allowlist and access requests | `anymodel.db`: who may use which bot, and the first message a stranger sent (truncated, so you can tell who it is) | No | — |
+| Allowlist and access requests | `anymodel.db`: who may use which channel account, and the first message a stranger sent (truncated, so you can tell who it is) | No | — |
 | Replies waiting to be sent | `anymodel.db` outbox: unsent message content and the reason, including WeChat messages held until the person writes again (kept up to 7 days; sent ones are deleted after 7 days, undeliverable ones after 30) | When they are sent | WeChat / Feishu |
 | Background tasks and rules | `anymodel.db` (tasks, rules and run logs, kept 30 days); task folders in `workspaces/<bot>/tasks/`, deleted after 30 days unused (you are told first in Needs you); their session files in `dsh/<bot>/sessions/`, deleted with the task | While they run | As for chats: context in model requests, sent through Modelflare to the provider you chose |
 | Settings | `config.json` | No | — |
@@ -91,4 +91,4 @@ Besides model requests, the app goes online to:
 1. Quit AnyModelBot (tray menu → Quit).
 2. Delete the data directory from the table above. Docker: `docker rm -f amb && docker volume rm amb-data`.
 3. Revoke AnyModelBot under "Authorized apps" on your Modelflare profile page.
-4. If needed, disable the app you created on the Feishu Open Platform, unbind the bot in WeChat, and delete the bots you created on Telegram (@BotFather), Slack and Discord.
+4. If needed, disable the apps you created on the Feishu Open Platform (including any created by scanning), unbind the bot in WeChat, delete the bots you created on Telegram (@BotFather), Slack and Discord, and in Notion disconnect AnyModelBot and delete any tokens you created.

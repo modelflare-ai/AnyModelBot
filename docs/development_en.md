@@ -122,7 +122,7 @@ Inside the container the console listens on 0.0.0.0, so token access is enforced
 ## Interface
 
 - Sidebar: bot list (avatar + name + latest message), ＋ New, right-click to rename / delete; the account button at the bottom-left opens Settings (`⌘/Ctrl+,`).
-- Chat screen: the floating bot-name pill at the top opens the info panel (`⌘/Ctrl+⇧+I`: channels, requests, pending approvals, tasks and rules, memory, recent sessions; ⚙ opens bot settings). Replies stream in (Markdown, one-click copy for code blocks) and can be stopped at any time (`Esc`). Approvals and questions appear as cards in the chat. Scrolling up is never yanked back to the bottom.
+- Chat screen: the floating bot-name pill at the top opens the info panel (`⌘/Ctrl+⇧+I`: channel accounts this bot answers by default, pending approvals, tasks and rules, memory, recent sessions; ⚙ opens bot settings). Replies stream in (Markdown, one-click copy for code blocks) and can be stopped at any time (`Esc`). Approvals and questions appear as cards in the chat. Scrolling up is never yanked back to the bottom.
 - Command palette `⌘/Ctrl+K`; appearance (system / light / dark) is in Settings → General.
 - Language: 简体中文 / English, in Settings → General → Language (also at the top-right of the onboarding screen and in the command palette). It follows the system by default (English when the system language is neither Chinese nor English). The preference is stored in `ui.lang` in config.json; the tray menu, server error and status messages, and system messages bots send to WeChat / Feishu (`/help`, approval prompts, …) all follow it. On the command line / Docker, "System" means `AMB_LANG`, then `LC_ALL` / `LANG`, falling back to Simplified Chinese. Logs, prompts sent to the model and bot names users chose are not translated.
   - UI strings live in `ui/locales/<lang>/<namespace>.js` and are used as `t("namespace.key", { params })` (`ui/lib/i18n.js`); server strings live in `src/i18n/messages/<namespace>.ts` with type-checked keys. Every UI request carries `x-amb-lang`, and the server answers that request in the same language.
@@ -151,11 +151,11 @@ In agent mode each bot has a file permission preset. Switch it with the permissi
 
 ## Who can use a bot
 
-The agent runs on your own computer (possibly with full access), so by default **only the owner and people you allow** can talk to a bot, per bot and per channel (`src/core/access.ts`):
+The agent runs on your own computer (possibly with full access), so by default **only the owner and people you allow** can talk to a bot. This is counted per channel account, and anyone allowed on an account can talk to any bot (`src/core/access.ts`):
 
-- **Owner**: on WeChat, the account that scanned the QR code. Feishu connects with an App ID and App Secret and no scan, so **the first person to message the bot one-to-one after it is connected** becomes the owner (trust on first use): once it is connected, send the bot one line from your own Feishu, and that message is answered as usual. A WeChat login that did not report the scanner's id works the same way. Bot settings → Who can use shows the Feishu owner; "Change" (after a confirmation) clears the owner so the next person to message becomes the owner. Switching to another Feishu app or disconnecting Feishu clears it too. People who were denied never become the owner. The local web chat is never restricted.
-- **Anyone else** gets a single line, "you are not allowed to use this bot yet, the owner has been told" (at most once an hour per person); the message is not queued, no model is called and nothing is spent. The request shows in the info panel (allow / deny) and is sent to the owner with a 4-digit pairing code (at most 3 per bot per hour, and only if the owner spoke on that channel in the last 24 hours); the owner replies `同意 1234` / `拒绝 1234` (or `yes 1234` / `no 1234`) in chat. Pairing codes never collide with tool-approval codes. People who were denied get no reply at all.
-- The allowlist is in Bot settings → Who can use; entries can be removed (they can ask again by sending a message). `/status` shows it too.
+- **Owner**: on WeChat, the account that scanned the QR code. Feishu has no sign-in of its own, whether you scan to create the app or enter an App ID and App Secret, so **the first person to message the bot one-to-one after it is connected** becomes the owner (trust on first use): once it is connected, send the bot one line from your own Feishu, and that message is answered as usual. A WeChat login that did not report the scanner's id works the same way. Bot settings → Who can use shows the Feishu owner; "Change" (after a confirmation) clears the owner so the next person to message becomes the owner. Switching to another Feishu app or disconnecting Feishu clears it too. People who were denied never become the owner. The local web chat is never restricted.
+- **Anyone else** gets a single line, "you are not allowed to use this bot yet, the owner has been told" (at most once an hour per person); the message is not queued, no model is called and nothing is spent. The request shows under Manage for that account in Settings › Connections (allow / deny) and is sent to the owner with a 4-digit pairing code (at most 3 per account per hour, and only if the owner spoke on that channel in the last 24 hours); the owner replies `同意 1234` / `拒绝 1234` (or `yes 1234` / `no 1234`) in chat. Pairing codes never collide with tool-approval codes. People who were denied get no reply at all.
+- The allowlist is under Manage for that account in Settings › Connections; entries can be removed (they can ask again by sending a message). `/status` shows it too.
 - On upgrade, everyone who already had a direct conversation with a bot is put on its allowlist (marked "used before the upgrade"), so nobody is cut off; re-scanning with another WeChat account keeps the previous owner on the list.
 - Group chats: no channel delivers them today (Feishu handles direct messages only, WeChat iLink has no groups), so group messages are left as they were; rules go into `access.ts` when a channel adds groups.
 
@@ -196,13 +196,17 @@ Each bot can turn computer use on or off, choose a backend and an approval mode 
 
 ## Feishu app setup
 
+The easiest way: Settings › Connections → Feishu → Add account, scan with Feishu to create the bot app, then send it a message in Feishu.
+
+To use a custom enterprise app you already have, choose "Use my own app" and set it up like this:
+
 1. Open the [Feishu Open Platform](https://open.feishu.cn/app) → create a custom enterprise app and add the Bot capability.
 2. Under Permissions, enable:
    - `im:message.p2p_msg:readonly` (read one-to-one messages users send to the bot)
    - `im:message:send_as_bot` (send messages as the app)
    - `cardkit:card:write` (create and update cards, used for streaming replies)
    - `im:message.history:readonly` (read chat history: the long connection doesn't re-push messages sent while the app was offline, so on start and after a reconnect the app catches up from history on chats active in the last 7 days, taking messages from the last 24 hours, at most 20 per chat. Without it everything else works, but nothing is caught up, and the app says so once)
-3. First enter the App ID / App Secret in this app's info panel → Channels → Feishu and save (the long connection must be online before the next step can be saved).
+3. First enter the App ID / App Secret in this app under Settings › Connections → Feishu → Add account → Use my own app, and save (the long connection must be online before the next step can be saved).
 4. Events & callbacks → subscription mode: "**Receive events through persistent connection**", and add the event `im.message.receive_v1`.
 5. Publish a version, add yourself to the availability scope, then send the bot one line from your own Feishu: the first person to message it after it is connected becomes its Feishu owner (see "Who can use a bot").
 
@@ -210,7 +214,7 @@ Note: only one-to-one (p2p) chats are handled for now; group messages are ignore
 
 ## WeChat (iLink)
 
-- Info panel → Channels → WeChat → "Scan to sign in", scan the QR code with WeChat and confirm; or run `npm run weixin:login` (the QR code is shown in the terminal and saved as a PNG in the data directory).
+- Settings › Connections → WeChat → Add account → "Scan to log in", scan the QR code with WeChat and confirm; or run `npm run weixin:login` (the QR code is shown in the terminal and saved as a PNG in the data directory).
 - Sign-in state, sync cursor and context_token are kept in the data directory and resume after a restart.
 - Platform limits: after each user message, at most 10 replies can be sent within 24 hours; replies are sent in one go once generation finishes and are split above 4000 characters; "typing…" is shown while generating.
 - Images, files, videos: whatever the user sends (or quotes) is downloaded from the WeChat CDN and decrypted (up to 50 MB each). In agent mode it is saved in the bot workspace's `inbox/` and the message names the path, so the agent can read it, process it or use it as a reference image for generation. Vision-capable models (Claude, GPT-5/6, Gemini, Grok 4, Kimi K3, Muse Spark and others) also receive the image itself; other models only get the path. On Linux the agent does not receive images directly yet (sharp crashes under Electron) and only gets the path. Files the bot delivers (present) go back to WeChat as images or files.

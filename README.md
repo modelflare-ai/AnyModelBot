@@ -190,7 +190,7 @@ npm start          # 本地管理界面：http://127.0.0.1:3600/
 - **每个机器人三档权限。** *只读*、*工作区*（默认：只能写自己的文件夹，越界先问你）、*完全权限*（不进沙箱；递归删除仍会先问）。
 - **审批卡片，没有意外。** 越界的操作会停下来，等你回答。
 - **重启了也会告诉你。** 应用退出或崩溃时还没处理完的消息，下次启动会在原对话里说一声，请你重新发送，不会自动重做。
-- **斜杠命令**，如 `/model`、`/reset`，在应用和各个聊天渠道里都能用。
+- **斜杠命令**，如 `/model`、`/reset`，在应用和各个聊天渠道里都能用；在聊天渠道里发 `/bot` 可以换机器人。
 
 <p align="center">
   <img src="docs/assets/features/agent-files.gif" alt="机器人整理一个杂乱的文件夹：先列出文件、给出方案，移动工作区之外的文件前弹出审批卡片" width="100%">
@@ -320,6 +320,7 @@ Modelflare 会保留请求日志；保留什么、保留多久，见它的[信�
 | 智能体运行时 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT），作为独立进程运行 |
 | 电脑操作 | [Cua Driver](https://github.com/trycua/cua)，随应用打包 |
 | 渠道 | 飞书（长连接 + 流式卡片）、微信（iLink）、Telegram（长轮询）、Slack（Socket Mode）、Discord（Gateway） |
+| 数据账号 | Notion（REST API、官方远程 MCP）、飞书消息（用户身份，只读） |
 | 测试与 CI | Vitest、GitHub Actions |
 
 # 📝 路线图

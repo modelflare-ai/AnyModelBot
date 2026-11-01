@@ -456,6 +456,7 @@ export const en: Dict = {
       "What you send to the model (including screen content during computer use) travels through the Modelflare gateway to the provider you choose.",
       "Modelflare keeps request logs for a retention period (you can pick 7–365 days in your profile) per its “Data retention” doc; when a request ultimately fails, or a route fails before a fallback succeeds, the gateway keeps one copy of the raw request (without the Authorization header) for troubleshooting and deletes it after 72 hours (same doc).",
       "Messages in Slack, Telegram and Discord pass through those platforms' servers by nature.",
+      "If you add a Notion account, what bots read and write goes to Notion, and what they read also goes into model requests.",
     ],
     guardsTitle: "Safeguards in the code",
     limitsTitle: "Limits and promises we don't make",

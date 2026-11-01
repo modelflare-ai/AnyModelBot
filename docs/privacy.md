@@ -26,9 +26,9 @@
 | Modelflare 登录凭据 | `modelflare-account.json`（权限 600；桌面版用系统钥匙串加密） | 只在刷新令牌时发给 modelflare.dev | Modelflare |
 | API Key | 内置网关的隔离配置 `magpie/config/` | 每次模型请求作为鉴权发给 Modelflare | Modelflare |
 | 微信登录态与同步游标 | 数据目录内（`weixin/` 等） | 与微信 iLink 接口通信时会 | 腾讯微信 |
-| 飞书 App ID / Secret | 数据目录内的配置 | 与飞书开放平台建立长连接时会 | 飞书 |
+| 飞书聊天账号的 App ID / Secret | `anymodel.db` | 与飞书开放平台建立长连接时会 | 飞书 |
 | Telegram、Slack、Discord 的 token | `anymodel.db` | 与对应平台通信时会 | 你接入的平台 |
-| 允许名单与使用请求 | `anymodel.db`：谁能用哪个机器人、陌生人发来的第一条消息（截断，帮你认出是谁） | 不会 | — |
+| 允许名单与使用请求 | `anymodel.db`：谁能用哪个渠道账号、陌生人发来的第一条消息（截断，帮你认出是谁） | 不会 | — |
 | 待发送的回复 | `anymodel.db` 的出站队列：还没发出去的消息内容和原因，包括等对方下次发消息再发的微信消息（最多留 7 天；发出去的留 7 天、发不出去的留 30 天后删除） | 发送时会 | 微信 / 飞书 |
 | 后台任务和规则 | `anymodel.db`（任务、规则、运行记录，留 30 天）；任务文件夹在 `workspaces/<机器人>/tasks/`，30 天没动过会删除（先在「需要你」里告诉你）；它们的会话记录在 `dsh/<机器人>/sessions/`，随任务一起删除 | 运行时会 | 同对话：作为模型请求的上下文，经 Modelflare 发给你选定的供应商 |
 | 设置 | `config.json` | 不会 | — |
@@ -91,4 +91,4 @@
 1. 退出 AnyModelBot（托盘菜单 → 退出）。
 2. 删除上面表格里的数据目录。Docker：`docker rm -f amb && docker volume rm amb-data`。
 3. 在 Modelflare 个人资料页的「已授权的应用」里撤销 AnyModelBot 的授权。
-4. 如有需要，在飞书开放平台停用你创建的应用，在微信里解除与机器人的绑定；在 Telegram（@BotFather）、Slack、Discord 上删除你创建的机器人。
+4. 如有需要，在飞书开放平台停用你创建的应用（包括扫码时自动创建的），在微信里解除与机器人的绑定；在 Telegram（@BotFather）、Slack、Discord 上删除你创建的机器人；在 Notion 的设置里断开 AnyModelBot 的连接，删除你创建的令牌。

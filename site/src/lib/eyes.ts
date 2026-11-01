@@ -1,5 +1,6 @@
 // Eyes 标记与毛绒机器人的"看"（§7.7、§7.9）。一个全局 pointermove + rAF 合并；IntersectionObserver 管可见性；
 // 先统一读 getBoundingClientRect，再统一写 --look-x/--look-y。无依赖。
+import { eyeShapes } from "./eye-shapes";
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -318,3 +319,9 @@ export function mountEyes(root: ParentNode = document) {
     reduce.addEventListener("change", () => location.reload());
   }
 }
+
+// HTML 里每只眼睛只有睁眼的圆，这里补上其余表情（原因见 lib/eye-shapes.ts）。切换 data-eyes 的代码都在这个模块里，所以放在模块加载时做
+document.querySelectorAll(".bf-lid").forEach((lid) => {
+  const r = Number(lid.querySelector("circle")?.getAttribute("r"));
+  if (r) lid.insertAdjacentHTML("beforeend", eyeShapes(r));
+});

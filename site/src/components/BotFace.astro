@@ -16,12 +16,8 @@ const style = [
   `--tip-x:${c.tip[0]}%`, `--tip-y:${c.tip[1]}%`,
   `--bf-seed:${(seed ?? (char.charCodeAt(0) * 37 + char.length * 101) % 1000 / 1000).toFixed(3)}`,
 ].join(";");
-const R = c.r;
-const f = (n: number) => +(n * R).toFixed(2);
-const spiral = Array.from({ length: 29 }, (_, i) => {
-  const t = (i / 28) * Math.PI * 4.2, rr = (0.12 + (0.9 * i) / 28) * R;
-  return `${i ? "L" : "M"}${(Math.cos(t) * rr).toFixed(2)} ${(Math.sin(t) * rr).toFixed(2)}`;
-}).join("");
+// 只有哒哒、晶晶有发光层（styles/bots.css），别的角色不输出空节点
+const glow = char === "red" || char === "purple";
 const parts = ["ear-l", "ear-r", "top"];
 ---
 <div class:list={["bot-face", { lively, pokeable, sm: size < 36 }, cls]} style={style} data-char={char} data-state={state} data-eyes="open" aria-hidden="true" {...rest}>
@@ -30,23 +26,16 @@ const parts = ["ear-l", "ear-r", "top"];
   <div class="bf-body">
     <div class="bf-shot">
       <div class="bf-look">
-        {parts.map((k) => <i class={`bf-part bf-${k}`}><i class="bf-pin"><b class="bf-img"></b><b class="bf-glow"></b></i></i>)}
-        <i class="bf-part bf-head"><b class="bf-img"></b><b class="bf-glow"></b></i>
+        {parts.map((k) => <i class={`bf-part bf-${k}`}><i class="bf-pin"><b class="bf-img"></b>{glow && <b class="bf-glow"></b>}</i></i>)}
+        <i class="bf-part bf-head"><b class="bf-img"></b>{glow && <b class="bf-glow"></b>}</i>
         {c.lens && c.lens.slice(0, 2).map((l) => <i class="bf-lens" style={`left:${(l as number[])[0]}%;top:${(l as number[])[1]}%;--lens:${c.lens![2] * 2}%`}></i>)}
         {c.eyes.map((e) => <i class="bf-blush" style={`left:${(e[0] + (e[0] < 50 ? -5.6 : 5.6)).toFixed(2)}%;top:${(e[1] + 6.2).toFixed(2)}%`}></i>)}
         <svg class="bf-eyes" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
           <g class="bf-gaze"><g class="bf-glance">
             {c.eyes.map((e, i) => (
               <g transform={`translate(${e[0]} ${e[1]})${i ? " scale(-1 1)" : ""}`}>
-                <g class="bf-lid">
-                  <circle class="e e-open" r={R} />
-                  <path class="e e-happy line" d={`M${f(-1.05)} ${f(0.45)}Q0 ${f(-1.3)} ${f(1.05)} ${f(0.45)}`} />
-                  <path class="e e-closed line" d={`M${f(-1.05)} ${f(-0.15)}Q0 ${f(0.8)} ${f(1.05)} ${f(-0.15)}`} />
-                  <path class="e e-sad" d={`M${f(-1.05)} 0L${f(1.05)} 0A${f(1.05)} ${f(1.05)} 0 0 1 ${f(-1.05)} 0Z`} />
-                  <path class="e e-x line" d={`M${f(-0.8)} ${f(-0.8)}L${f(0.8)} ${f(0.8)}M${f(0.8)} ${f(-0.8)}L${f(-0.8)} ${f(0.8)}`} />
-                  <path class="e e-spiral line thin" d={spiral} />
-                  <path class="e e-heart" d={`M0 ${f(1.05)}C${f(-1.7)} ${f(-0.05)} ${f(-1)} ${f(-1.4)} 0 ${f(-0.5)}C${f(1)} ${f(-1.4)} ${f(1.7)} ${f(-0.05)} 0 ${f(1.05)}Z`} />
-                </g>
+                {/* 其余表情由 lib/eyes.ts 补上，原因见 lib/eye-shapes.ts */}
+                <g class="bf-lid"><circle class="e e-open" r={c.r} /></g>
               </g>
             ))}
           </g></g>

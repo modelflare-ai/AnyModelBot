@@ -1,8 +1,10 @@
 // 后台任务（3a，3f 补全）：对话里请求那条消息下面的任务胶囊「后台任务 · 标题 · 进行中 ›」，点开是任务的详情；
 // 信息面板的「任务」组（TaskGroup）是一个机器人的全部任务和规则：进行中、等你的、规则，结束了的收在最后一行「已结束 3」里，
 // 点开才列出来。一个任务一行，点开是同一块里的详情（和规则一样，像普通的折叠一样展开）。
-// 详情：来自（渠道、时间、原话）、最新进展、预算（约 $0.08 / $1.00，可以改）、文件夹（大小、打开）、要清理时的日期和保留、
-// 每次运行折叠的处理过程，以及停止 / 导出 / 删除。状态是"点 + 文字"：绿 = 进行中，黄 = 等你，红 = 失败，灰 = 已完成 / 已停止。
+// 详情：来自（渠道、时间、原话）、它问你的问题（有默认回答时下面一句「不回复就按中文做」）、最新进展、预算（约 $0.08 / $1.00，
+// 可以改）、文件夹（大小、打开）、要清理时的日期和保留、每次运行折叠的处理过程，以及停止 / 导出 / 删除。
+// 状态是"点 + 文字"：绿 = 进行中（问了个有默认回答的问题、接着在做的也是：「进行中，有个问题等你回答」），黄 = 等你，
+// 红 = 失败，灰 = 已完成 / 已停止。
 // 健康时不多占地方：花费有了才写，清理只在定了日期时出现。
 import { useEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, Notice } from "./ui.js";
@@ -55,10 +57,11 @@ export const exportUrl = (kind, id) => `/amb/api/${kind}/${encodeURIComponent(id
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
 /**
- * 任务的详情：来自、最新进展、预算、文件夹、清理、每次运行（折叠的处理过程）、停止 / 导出 / 删除。working 时每 3 秒刷新。
- * origin=false 时不写来自（对话里的胶囊就在请求那条消息下面）；onOpenConv 给了，来自那一行点开会话；data 给了就不去取（样例页）
+ * 任务的详情：来自、问题、最新进展、预算、文件夹、清理、每次运行（折叠的处理过程）、停止 / 导出 / 删除。working 时每 3 秒刷新。
+ * origin=false 时不写来自（对话里的胶囊就在请求那条消息下面）；question=false 时不写问题（「需要你」里那一行就是它）；
+ * onOpenConv 给了，来自那一行点开会话；data 给了就不去取（样例页）
  */
-export function TaskDetail({ task, onChanged, origin = true, onOpenConv, data }) {
+export function TaskDetail({ task, onChanged, origin = true, question = true, onOpenConv, data }) {
   const [d, setD] = useState(data || null);
   const [busy, setBusy] = useState("");
   const [editing, setEditing] = useState(false);
@@ -120,9 +123,12 @@ export function TaskDetail({ task, onChanged, origin = true, onOpenConv, data })
   const o = origin && d?.origin;
   const from = o && t("tasks.originLine", { where: channelName(o.channel), when: fmtSep(o.at), text: clip(o.text.replace(/\s+/g, " "), 60) });
   const budget = hasCost(view.spentUsd) ? t("tasks.costOf", { spent: money(view.spentUsd), budget: money(view.budgetUsd) }) : money(view.budgetUsd);
+  const asked = question && view.question;
   return html`<div class="task-detail">
     ${from && html`<div class="task-line"><span class="t-label">${t("tasks.origin")}</span>
       ${onOpenConv ? html`<button type="button" class="v task-origin" title=${t("tasks.openConv")} onClick=${onOpenConv}>${from}</button>` : html`<span class="v selectable">${from}</span>`}</div>`}
+    ${asked && html`<div class="task-line"><span class="t-label">${t("tasks.question")}</span>
+      <span class="v selectable">${asked.text}${asked.note && html`<span class="task-note">${asked.note}</span>`}</span></div>`}
     ${view.latest && html`<div class="task-line"><span class="t-label">${t("tasks.latest")}</span><span class="v selectable">${view.latest}</span></div>`}
     ${(!ended || hasCost(view.spentUsd)) && html`<div class="task-line"><span class="t-label">${t("tasks.budget")}</span>
       ${editing
@@ -149,8 +155,8 @@ export function TaskDetail({ task, onChanged, origin = true, onOpenConv, data })
   </div>`;
 }
 
-/** 对话里的任务胶囊：「后台任务 · 标题 · 进行中 ›」，点开看详情 */
-export function TaskChip({ task, onChanged }) {
+/** 对话里的任务胶囊：「后台任务 · 标题 · 进行中 ›」，点开看详情（data 给了就不去取：样例页） */
+export function TaskChip({ task, onChanged, data }) {
   const [open, setOpen] = useState(false);
   const dot = stageDot(task.stage);
   return html`<div class=${`task-chip${open ? " open" : ""}`}>
@@ -159,7 +165,7 @@ export function TaskChip({ task, onChanged }) {
       <span class="k">${t("tasks.chip")}</span><span class="sep">·</span><span class="t">${task.title}</span><span class="sep">·</span><span class="st">${task.stage.label}</span>
       <${Icon} name="chevRight" size=${12} class="chev" />
     </button>
-    ${open && html`<${TaskDetail} task=${task} origin=${false} onChanged=${onChanged} />`}
+    ${open && html`<${TaskDetail} task=${task} origin=${false} onChanged=${onChanged} data=${data} />`}
   </div>`;
 }
 

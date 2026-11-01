@@ -129,5 +129,21 @@ describe("Attention", () => {
     expect(items.find((x) => x.id === `approval:${a.id}`)).toMatchObject({ kind: "approval", subject: "清理旧构建", status: "等你批准", line: "rm -rf build/", actions: ["approve", "deny"], taskId: "t_1", code: a.code, channel: "weixin" });
     expect(items.find((x) => x.id === `approval:${q.id}`)).toMatchObject({ kind: "question", subject: "微信", status: "等你回答", line: "继续吗？", actions: ["answer"], questions: [{ id: "q", question: "继续吗？" }] });
     expect(items.find((x) => x.id === `approval:${q.id}`)!.taskId).toBeUndefined();
+    expect(items.find((x) => x.id === `approval:${q.id}`)!.note).toBeUndefined();
+  });
+
+  it("任务问的有默认回答的问题：多一句不回复会怎样（任务接着在做）；没有默认的没有这一句", () => {
+    store.createBot({ id: "b", name: "小蓝" });
+    store.ensureConversation("b", "weixin", "owner", "owner");
+    const c = new ApprovalCenter(store);
+    const now = Date.now();
+    store.insertTask({ id: "t_1", botId: "b", conversationId: "b:weixin:owner", originMessageId: 0, originRef: "", title: "竞品周报", brief: "", sessionId: "task-t_1", folder: "tasks/x", model: "m", permission: "workspace", budgetUsd: 1, createdAt: now, updatedAt: now });
+    const ask = (question: string, dflt?: string) =>
+      c.create({ kind: "question", botId: "b", conversationId: "b:weixin:owner", sessionId: "task-t_1", tool: "task_report", detail: question, reason: "", taskId: "t_1", blocking: false, ttlMs: 0, payload: JSON.stringify([{ id: "answer", question, options: [{ label: "中文" }, { label: "英文" }], ...(dflt ? { default: dflt } : {}) }]) });
+    const d = ask("报告用中文还是英文？", "中文");
+    const m = ask("用哪个账号付款？");
+    const items = approvalItems(store, c.pendingAll());
+    expect(items.find((x) => x.id === `approval:${d.id}`)).toMatchObject({ kind: "question", subject: "竞品周报", status: "等你回答", line: "报告用中文还是英文？", note: "不回复就按中文做", actions: ["answer"] });
+    expect(items.find((x) => x.id === `approval:${m.id}`)!.note).toBeUndefined();
   });
 });

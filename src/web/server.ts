@@ -17,6 +17,7 @@ import { SseReply } from "./sse-reply.js";
 import { LiveTurns, type LiveTurn } from "./live.js";
 import { connectionFromPids } from "../agent/peer-guard.js";
 import type { ApprovalRow, Store } from "../store/db.js";
+import { defaultLine } from "../agent/approvals.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
 import { pwshProbe, type PwshMode, type PwshStatus } from "../agent/pwsh.js";
@@ -146,7 +147,7 @@ function webEvent(botId: string, text: string): InboundEvent {
 }
 const consoleConvId = (botId: string) => `${botId}:web:console`;
 
-/** 审批 / 提问给界面的字段；后台任务的带上任务名（卡片上「GPU 价格调研」想问你） */
+/** 审批 / 提问给界面的字段；后台任务的带上任务名（卡片上「GPU 价格调研」想问你），有默认回答的带上「不回复就按中文做」 */
 function publicApproval(r: ApprovalRow, store?: Store) {
   const { payload, result, ...rest } = r;
   let questions: unknown = undefined;
@@ -158,7 +159,8 @@ function publicApproval(r: ApprovalRow, store?: Store) {
     }
   }
   const taskTitle = r.taskId ? store?.getTask(r.taskId)?.title : undefined;
-  return { ...rest, questions, ...(taskTitle ? { taskTitle } : {}) };
+  const note = r.taskId && r.status === "pending" ? defaultLine(r) : undefined;
+  return { ...rest, questions, ...(taskTitle ? { taskTitle } : {}), ...(note ? { note } : {}) };
 }
 
 /** 允许名单 / 使用请求：界面要的字段（平台 id 只给末尾几位，界面不需要完整的） */

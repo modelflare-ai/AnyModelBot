@@ -10,7 +10,7 @@ import { describeStep, fmtSecs, type ActivityStep } from "../agent/activity.js";
 import type { Store } from "../store/db.js";
 import { logger } from "../log.js";
 import type { AgentManager } from "../agent/manager.js";
-import { promptButtons, promptText } from "../agent/approvals.js";
+import { promptButtons, promptText, questionsOf } from "../agent/approvals.js";
 import { segmentInput, type ChatPlace } from "../agent/prompts/index.js";
 import { clearInflight, markInflight, takeNotice } from "./recovery.js";
 import { pwshProbe, pwshStatusLine } from "../agent/pwsh.js";
@@ -507,6 +507,12 @@ export class BotRuntime {
     const agent = this.opts.agent;
     const row = agent && value?.id ? this.opts.store.getApproval(String(value.id)) : undefined;
     if (!agent || !row || row.botId !== botId) return { toast: t("runtime.requestMissing"), ok: false };
+    if (row.status !== "pending" && value.amb === "question" && row.taskId) {
+      // 后台任务按默认回答先做完了、提问撤回了，卡片上的按钮还点得到：当作迟到的回答交给任务（同引用那条提问）
+      const opt = (questionsOf(row)[0]?.options ?? [])[Number(value.option) - 1]?.label;
+      const late = opt ? agent.tasks?.answerWithdrawn(row.id, opt) : undefined;
+      if (late?.handled) return { toast: late.ack ?? t("runtime.submitted"), ok: true };
+    }
     if (row.status !== "pending") return { toast: t("runtime.requestDone", { code: row.code }), ok: false };
     if (value.amb === "approval") {
       const allow = value.decision === "allow";

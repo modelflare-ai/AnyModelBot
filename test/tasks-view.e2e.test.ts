@@ -3,6 +3,8 @@
  * GET /tasks?group= 按进行中 / 等你 / 结束了分组（归档了的不列，组名不对 400）；详情里有来自、大小；改预算（加多少、改成多少、
  * 不对的金额、停了的任务）；删除连同文件夹；保留文件夹（详情里、「需要你」里）；打开文件夹只在桌面版；规则编辑器的预算；
  * 规则运行记录和任务导出成 Markdown（下载的文件名、按 ?lang= 的语言）。
+ * 问了个有默认回答的问题、接着在做的任务：在进行中那组，「进行中，有个问题等你回答」；详情、「需要你」、对话里的卡片都有那一句
+ * 「不回复就按中文做」（按界面的语言）。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -148,5 +150,27 @@ describe("任务视图的接口", () => {
     expect(app.store.listRuns({ taskId: failed })).toEqual([]);
     expect(fs.existsSync(dir)).toBe(false);
     expect((await api(`/tasks/${failed}`)).status).toBe(404);
+  });
+});
+
+describe("问了还在做：有默认回答的提问", () => {
+  it("任务在进行中那组（进行中，有个问题等你回答）；详情、「需要你」和提问卡片都有不回复会怎样；回答了就回到进行中", async () => {
+    const id = task("竞品周报", "queued");
+    const runId = `r_${id.slice(2)}`;
+    app.store.updateRun(runId, { state: "running", startedAt: Date.now() });
+    const payload = JSON.stringify([{ id: "answer", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }], default: "中文" }]);
+    const q = app.agent.approvals.create({ kind: "question", botId: "default", conversationId: CONV, sessionId: `task-${id}`, tool: "task_report", detail: "报告用中文还是英文？", reason: "", payload, taskId: id, runId, blocking: false, ttlMs: 0 });
+    const list = (await api("/tasks?bot=default&group=working")).data.tasks;
+    expect(list.find((t: any) => t.id === id)).toMatchObject({ stage: { key: "working/asking", label: "进行中，有个问题等你回答", group: "working" }, question: { text: "报告用中文还是英文？", note: "不回复就按中文做" } });
+    expect((await api(`/tasks/${id}`, { lang: "en" })).data.task).toMatchObject({ stage: { label: "In progress, with a question for you" }, question: { note: "If you don't reply, it goes with 中文" } });
+    const item = (await api("/attention")).data.items.find((i: any) => i.id === `approval:${q.id}`);
+    expect(item).toMatchObject({ kind: "question", subject: "竞品周报", status: "等你回答", line: "报告用中文还是英文？", note: "不回复就按中文做", actions: ["answer"], taskId: id });
+    expect((await api(`/approvals/${q.id}`)).data.approval).toMatchObject({ taskTitle: "竞品周报", note: "不回复就按中文做", questions: [{ default: "中文" }] });
+    // 在「需要你」里回答了：回到进行中，卡片上不再有那一句
+    expect((await api(`/attention/approval:${q.id}/answer`, { method: "POST", body: { text: "2" } })).status).toBe(200);
+    expect((await api(`/tasks/${id}`)).data.task).toMatchObject({ stage: { key: "working", label: "进行中" } });
+    expect((await api(`/tasks/${id}`)).data.task.question).toBeUndefined();
+    expect((await api(`/approvals/${q.id}`)).data.approval).toMatchObject({ status: "answered" });
+    expect((await api(`/approvals/${q.id}`)).data.approval.note).toBeUndefined();
   });
 });

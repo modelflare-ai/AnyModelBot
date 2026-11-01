@@ -376,6 +376,7 @@ button.act-head:active { background: var(--pill-hover); }
 .task-line .v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .task-line .v.mono { font-family: var(--code); font-size: var(--fs-xs); }
 .task-line .n { flex: none; font-size: var(--fs-xs); color: var(--muted); }
+.task-line .task-note { display: block; color: var(--muted); }   /* 问题下面那一句：不回复就按中文做 */
 .task-line .text { flex: none; margin: calc(-1 * var(--space-1)) 0; }   /* 文字按钮的悬停底不把行撑高 */
 button.task-origin { text-align: left; font-size: inherit; color: inherit; border-radius: var(--r-sm); transition: color var(--t-fast); }
 button.task-origin:hover { color: var(--fg); }

@@ -3,6 +3,8 @@
  * TaskService 对着一个假的宿主：建任务与第一条输入、一轮结束与收尾、Report、提醒、出错重试、追加、停止、
  * 重启恢复（恢复说明在前、没收下的输入再交一次）、送达（出站队列 id 固定，只交一次）、/tasks 与 /stop 编号。
  * 3b：任务的提问（needs_you → 不阻塞的提问 → 推给会话、一次一个 → 回答成为新输入）、任务会话里的审批、「需要你」。
+ * 提问马上问（报 needs_you 时，不等这一轮结束、不等收尾）；带默认回答的任务接着做，回答并进去，先做完就按默认、撤回提问，
+ * 之后引用那条提问回答照样交给任务；没带默认的这一轮结束等着，收尾时到的回答交给会话。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -12,6 +14,7 @@ import { taskStage, type StageInput } from "../src/tasks/stage.js";
 import { byPriority, pickRuns, priorityOf, type Waiting } from "../src/tasks/slots.js";
 import { TaskService, askId, quotes, slugOf, takeTaskNotes, type TaskHost, type TaskNotification } from "../src/tasks/service.js";
 import { ApprovalCenter } from "../src/agent/approvals.js";
+import { approvalItems } from "../src/tasks/attention.js";
 import { AgentHost, ResumeFailed } from "../src/agent/host.js";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/agent/settings.js";
 import { NUDGE, TASK_RULES, recoveryNote, taskBrief } from "../src/agent/prompts/index.js";
@@ -158,7 +161,10 @@ class FakeHost implements TaskHost {
   async cancel(_botId: string, sessionId: string) {
     this.cancels.push(sessionId);
   }
+  /** 给了就等它（问插件的时候来了输入） */
+  quietGate: Promise<void> | undefined;
   async quiet() {
+    await this.quietGate;
     return this.quiets.shift() ?? { quiet: true };
   }
 }
@@ -935,6 +941,305 @@ describe("TaskService（假宿主）", () => {
     expect(store.getOutbox(row.id)!.seenAt).toBeGreaterThan(0);
     expect(svc.get(t.id)!.stage.group).toBe("working");
     expect(delivery.reserved("b", "weixin", "owner")).toBe(1);
+  });
+
+  // —— 问了还接着做：带默认回答的提问马上问、任务不停；没带默认的马上问、这一轮结束等着 ——
+
+  /** 会话收下最近一次交给它的输入、开始跑一轮（不结束） */
+  const begin = (sessionId: string) => {
+    const p = host.prompts.filter((x) => x.sessionId === sessionId).at(-1)!;
+    svc.onEvent("b", sessionId, status(sessionId, "running"));
+    svc.onEvent("b", sessionId, ev(sessionId, "turn/start", { turn: 1 }));
+    svc.onEvent("b", sessionId, ev(sessionId, "user/message", { id: p.id }));
+  };
+  /** 这一轮结束、会话空了 */
+  const finishTurn = async (sessionId: string) => {
+    svc.onEvent("b", sessionId, ev(sessionId, "turn/end", { turn: 1, reason: { kind: "completed" } }));
+    svc.onEvent("b", sessionId, status(sessionId, "idle"));
+    await flush();
+  };
+  /** 并进去的输入被会话收下 */
+  const takeSteered = (sessionId: string) => svc.onEvent("b", sessionId, ev(sessionId, "user/message", { id: host.steers.at(-1)!.id }));
+  /** 代理报 needs_you 带默认回答（接着做，不结束这一轮） */
+  const askDefault = (sessionId: string, question = "报告用中文还是英文？", options: string[] | undefined = ["中文", "英文"], dflt = "中文") =>
+    svc.report({ sessionId, state: "needs_you", summary: "先写正文，差语言", question, ...(options ? { options } : {}), default: dflt });
+  const PUSHED_DEFAULT = "❓「GPU 价格调研」想问你：报告用中文还是英文？\n1. 中文\n2. 英文\n不回复就按中文做\n（回复编号，或引用这条消息回答）";
+
+  it("有默认回答的提问：报了就推出去，这一轮不结束；阶段进行中，有个问题等你回答（进行中那组）；「需要你」里有问题、选项和不回复会怎样", async () => {
+    const t = start();
+    await flush();
+    begin(t.sessionId);
+    // 默认回答要是选项之一；写成编号的换成那个选项
+    expect(askDefault(t.sessionId, "报告用中文还是英文？", ["中文", "英文"], "日文").error).toBe("default must be one of the options: 中文 / 英文.");
+    expect(approvals.pendingForTask(t.id)).toEqual([]);
+    const r = askDefault(t.sessionId);
+    expect(r.text).toBe('Asked the user. Keep working on what does not depend on the answer; if they answer, it arrives as a message at your next step. If you finish first, use "中文", say so in your message, and report done.');
+    const [q] = approvals.pendingForTask(t.id);
+    expect(q).toMatchObject({ kind: "question", blocking: false, expiresAt: 0, tool: "task_report", runId: store.listRuns({ taskId: t.id })[0].id });
+    // 马上推（不等这一轮结束），选项后面多一行「不回复就按中文做」
+    expect(asks().map((x) => [x.id, x.body.text, x.body.raw])).toEqual([[askId(q), PUSHED_DEFAULT, true]]);
+    expect(runs(t.id)).toEqual([["launch", "running", ""]]);
+    expect(svc.get(t.id)!.stage).toMatchObject({ key: "working/asking", label: "进行中，有个问题等你回答", group: "working" });
+    expect(svc.get(t.id)!.question).toEqual({ text: "报告用中文还是英文？", note: "不回复就按中文做" });
+    expect(svc.working(CONV).map((x) => x.id)).toEqual([t.id]);
+    const [item] = approvalItems(store, approvals.pendingAll());
+    expect(item).toMatchObject({ kind: "question", subject: "GPU 价格调研", status: "等你回答", line: "报告用中文还是英文？", note: "不回复就按中文做", actions: ["answer"], taskId: t.id });
+    expect(item.questions![0].options!.map((o) => o.label)).toEqual(["中文", "英文"]);
+    expect(takeTaskNotes(store, CONV)).toBe("[后台任务「GPU 价格调研」问了用户：报告用中文还是英文？（中文 / 英文），没回答就按「中文」做，任务照常在做。用户在聊天里回答它时，用 task_message 转给这个任务]");
+    // 同一个问题又报了一遍：不再问；编号写的默认回答换成选项
+    askDefault(t.sessionId);
+    expect(approvals.pendingForTask(t.id)).toHaveLength(1);
+    const u = start("季度报告");
+    await flush();
+    begin(u.sessionId);
+    askDefault(u.sessionId, "PPT 要几页？", ["10 页", "20 页"], "2");
+    expect(svc.get(u.id)!.question).toEqual({ text: "PPT 要几页？", note: "不回复就按20 页做" });
+  });
+
+  it("有默认回答的提问被回答了：回答并进在跑的这一轮（同追加），任务接着做完；不开新 run", async () => {
+    const t = start();
+    await flush();
+    begin(t.sessionId);
+    askDefault(t.sessionId);
+    const [q] = approvals.pendingForTask(t.id);
+    // 提问是机器人最后一条消息：光回编号就是回答
+    expect(reply("2")).toEqual({ handled: true, ack: "收到，「GPU 价格调研」继续。" });
+    await flush();
+    expect(store.getApproval(q.id)).toMatchObject({ status: "answered" });
+    expect(host.steers).toEqual([{ sessionId: t.sessionId, id: expect.stringMatching(/^i_/), text: "[用户回答了你的问题]\n问题：报告用中文还是英文？\n回答：英文" }]);
+    expect(svc.get(t.id)!.stage.key).toBe("working");
+    expect(svc.get(t.id)!.question).toBeUndefined();
+    takeSteered(t.sessionId);
+    expect(report(t.sessionId, "done", "报告写好了（英文），在 report.md。").text).toMatch(/^Recorded/);
+    await finishTurn(t.sessionId);
+    expect(runs(t.id)).toEqual([["launch", "ended", "done"]]);
+    expect(store.listOutbox({ limit: 50 }).find((r) => r.id.includes(":result:"))!.body.text).toBe("报告写好了（英文），在 report.md。");
+    expect(store.getApproval(q.id)!.status).toBe("answered");
+  });
+
+  it("任务先做完了：按默认做，提问从「需要你」、审批中心和出站队列里撤回（免打扰时排着的那条不会早上再问）", async () => {
+    const at = Date.UTC(2026, 10, 6, 23, 0);
+    const delivery = new Delivery({ store, outbox, timeZone: "UTC", now: () => at });
+    svc.stop();
+    svc = new TaskService({ store, host, delivery, approvals, defaultModel: () => "mock-model", retryDelaysMs: [5, 5, 5], maxBackground: 4 });
+    svc.start();
+    const t = start();
+    await flush();
+    await turn(t.sessionId, () => {
+      askDefault(t.sessionId);
+      expect(asks()[0]).toMatchObject({ status: "scheduled", reason: "quiet_hours", purpose: "question" });
+      expect(svc.get(t.id)!.stage.key).toBe("working/asking");
+      report(t.sessionId, "done", "报告写好了，按中文做的；要英文的话引用这条说一声。");
+    });
+    expect(runs(t.id)).toEqual([["launch", "ended", "done"]]);
+    const [q] = store.listApprovals({ taskId: t.id });
+    expect(q).toMatchObject({ status: "cancelled", decidedBy: "default" });
+    expect(approvals.pendingAll()).toEqual([]);
+    expect(approvalItems(store, approvals.pendingAll())).toEqual([]);
+    expect(svc.attention()).toEqual([]);
+    expect(store.getOutbox(askId(q))).toMatchObject({ status: "gone", error: "已处理" });
+    expect(store.getOutbox(askId(q))!.seenAt).toBeGreaterThan(0);
+    expect(svc.get(t.id)!.stage.key).toBe("ready");
+    expect(svc.get(t.id)!.question).toBeUndefined();
+    // 结果照常（免打扰时排到早上）；不再占微信配额
+    expect(store.listOutbox({ limit: 50 }).find((r) => r.id.includes(":result:"))).toMatchObject({ status: "scheduled", body: { text: "报告写好了，按中文做的；要英文的话引用这条说一声。" } });
+    expect(delivery.reserved("b", "weixin", "owner")).toBe(1);
+  });
+
+  it("迟到的回答：引用撤回了的提问（已经发出去了）交给任务、在同一个任务里接着做；光回编号是普通聊天；停了的照旧", async () => {
+    const t = start();
+    await flush();
+    begin(t.sessionId);
+    askDefault(t.sessionId);
+    const [q] = approvals.pendingForTask(t.id);
+    // 提问已经发到微信了：撤不回来
+    store.updateOutbox(askId(q), { status: "sent", sentAt: Date.now() });
+    report(t.sessionId, "done", "报告写好了，按中文做的；要英文的话引用这条说一声。");
+    await finishTurn(t.sessionId);
+    expect(store.getApproval(q.id)).toMatchObject({ status: "cancelled", decidedBy: "default" });
+    expect(store.getOutbox(askId(q))!.status).toBe("sent");
+    const sent = store.getOutbox(askId(q))!.body.text!;
+    // 光回编号（不引用）：普通聊天
+    expect(reply("2")).toEqual({ handled: false });
+    expect(svc.followUp(CONV, { text: "2" })).toEqual({ handled: false });
+    // 引用那条提问回答（审批中心认不出了：它已经不在等），交给任务
+    expect(reply("> 2", { quote: sent, plain: "2" })).toEqual({ handled: false });
+    expect(svc.followUp(CONV, { text: "2", quote: `小蓝: ${sent.slice(0, 24)}…` })).toEqual({ handled: true, ack: "收到，「GPU 价格调研」继续。" });
+    await flush();
+    expect(runs(t.id)).toEqual([
+      ["launch", "ended", "done"],
+      ["answer", "running", ""],
+    ]);
+    expect(host.prompts.at(-1)).toMatchObject({ sessionId: t.sessionId, resume: true, text: "[用户回答了你之前问的问题（你已经按「中文」做完了）]\n问题：报告用中文还是英文？\n回答：英文" });
+    expect(svc.get(t.id)!.stage.key).toBe("working");
+    // 引用结果照旧是追加
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "改成英文了。"));
+    await svc.stopTask(t.id, "web");
+    expect(svc.followUp(CONV, { text: "还是中文吧", quote: sent })).toEqual({ handled: true, ack: "「GPU 价格调研」已停止，不能再追加；需要的话开个新任务。" });
+  });
+
+  it("没有默认回答的提问：报了就推出去，后台命令让 run 收尾时也一样；收尾时到的回答交给会话、接着做完", async () => {
+    const t = start();
+    await flush();
+    host.quiets.push({ quiet: false, jobs: ["bash-1"] });
+    await turn(t.sessionId, () => {
+      expect(svc.report({ sessionId: t.sessionId, state: "needs_you", summary: "差付款账号", question: "用哪个账号付款？", options: ["个人", "公司"] }).text).toBe(
+        "Recorded. End your turn now: the app asks the user, and their answer arrives as your next message.",
+      );
+      // 不等这一轮结束
+      expect(asks().map((x) => x.body.text)).toEqual(["❓「GPU 价格调研」想问你：用哪个账号付款？\n1. 个人\n2. 公司\n（回复编号，或引用这条消息回答）"]);
+      expect(svc.get(t.id)!.stage.key).toBe("needs-you/answer");
+    });
+    // 后台命令还在跑：收尾，提问早就推出去了
+    expect(runs(t.id)).toEqual([["launch", "settling", ""]]);
+    expect(svc.get(t.id)!.stage.key).toBe("needs-you/answer");
+    expect(asks()).toHaveLength(1);
+    expect(reply("2")).toEqual({ handled: true, ack: "收到，「GPU 价格调研」继续。" });
+    await flush();
+    // 回答是会话的下一条输入（同一个 run，又在跑了）
+    expect(host.prompts.at(-1)).toMatchObject({ sessionId: t.sessionId, text: "[用户回答了你的问题]\n问题：用哪个账号付款？\n回答：公司" });
+    expect(runs(t.id)).toEqual([["launch", "running", ""]]);
+    expect(svc.get(t.id)!.stage.key).toBe("working");
+    // 插件这时才报安静：交出去的回答还没被收下，不结束
+    svc.settled({ sessionId: t.sessionId });
+    expect(runs(t.id)).toEqual([["launch", "running", ""]]);
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "用公司账号付好了。"));
+    expect(runs(t.id)).toEqual([["launch", "ended", "done"]]);
+    expect(asks()).toHaveLength(1);
+  });
+
+  it("问插件还有没有后台命令时来了回答：先交给会话，不以 needs_you 结束；插件报安静时有没交出去的回答也一样", async () => {
+    const t = start();
+    await flush();
+    let open!: () => void;
+    host.quietGate = new Promise<void>((r) => (open = r));
+    await turn(t.sessionId, () => void svc.report({ sessionId: t.sessionId, state: "needs_you", summary: "", question: "用哪个账号付款？", options: ["个人", "公司"] }));
+    // 正在问插件：回答排着
+    expect(reply("1").handled).toBe(true);
+    await flush();
+    expect(host.prompts.at(-1)!.text).not.toContain("回答：个人");
+    host.quietGate = undefined;
+    open();
+    await flush();
+    expect(host.prompts.at(-1)!.text).toBe("[用户回答了你的问题]\n问题：用哪个账号付款？\n回答：个人");
+    expect(runs(t.id)).toEqual([["launch", "running", ""]]);
+    await turn(t.sessionId, () => void report(t.sessionId, "done", "好了"));
+    expect(runs(t.id)).toEqual([["launch", "ended", "done"]]);
+  });
+
+  it("一个会话同时只推一个：有默认回答的提问推出去了，别的任务的提问在「需要你」里等；它按默认做完（撤回）才推下一个", async () => {
+    host.settingsValue = normalizeSettings({ taskSlots: 4 });
+    const a = start("A 任务");
+    const b = start("B 任务");
+    await flush();
+    begin(a.sessionId);
+    askDefault(a.sessionId, "A 用哪个？");
+    await ask(b.sessionId, "B 用哪个？");
+    const qa = approvals.pendingForTask(a.id)[0];
+    const qb = approvals.pendingForTask(b.id)[0];
+    expect(asks().map((r) => r.id)).toEqual([askId(qa)]);
+    expect([svc.get(a.id)!.stage.key, svc.get(b.id)!.stage.key]).toEqual(["working/asking", "needs-you/answer"]);
+    report(a.sessionId, "done", "A 按中文做好了。");
+    await finishTurn(a.sessionId);
+    expect(store.getApproval(qa.id)!.status).toBe("cancelled");
+    expect(asks().map((r) => [r.id, r.status])).toEqual([
+      [askId(qa), "gone"],
+      [askId(qb), "pending"],
+    ]);
+    // B 的提问现在是机器人最后一条消息：光回编号就是回答它
+    expect(reply("1")).toEqual({ handled: true, ack: "收到，「B 任务」继续。" });
+  });
+
+  it("重启：有默认回答的提问留着、不再推一遍；恢复的 run 收到回答（并进去）", async () => {
+    const t = start();
+    await flush();
+    begin(t.sessionId);
+    askDefault(t.sessionId);
+    svc.stop();
+    approvals = new ApprovalCenter(store);
+    approvals.start();
+    approvals.stop();
+    svc = make();
+    svc.start();
+    await flush();
+    const [q] = approvals.pendingForTask(t.id);
+    expect(q).toMatchObject({ status: "pending", tool: "task_report" });
+    expect(asks()).toHaveLength(1);
+    expect(runs(t.id)).toEqual([
+      ["launch", "ended", "interrupted"],
+      ["recover", "running", ""],
+    ]);
+    expect(host.prompts.at(-1)!.text).toMatch(/^The app restarted while you were working on this task/);
+    expect(svc.get(t.id)!.stage.key).toBe("working/asking");
+    begin(t.sessionId);
+    // 恢复的 run 又问了一遍同一个问题：还开着，不再问、不再推
+    askDefault(t.sessionId);
+    expect(approvals.pendingForTask(t.id).map((r) => r.id)).toEqual([q.id]);
+    expect(asks()).toHaveLength(1);
+    // 换了默认回答：以新的为准（旧的作废），新的推出去
+    askDefault(t.sessionId, "报告用中文还是英文？", ["中文", "英文"], "英文");
+    const [q2] = approvals.pendingForTask(t.id);
+    expect([store.getApproval(q.id)!.status, store.getApproval(q.id)!.decidedBy, q2.id !== q.id]).toEqual(["cancelled", "superseded", true]);
+    expect(svc.get(t.id)!.question).toEqual({ text: "报告用中文还是英文？", note: "不回复就按英文做" });
+    expect(asks().map((r) => r.status)).toEqual(["gone", "pending"]);
+    expect(reply("2")).toEqual({ handled: true, ack: "收到，「GPU 价格调研」继续。" });
+    await flush();
+    expect(store.getApproval(q2.id)!.status).toBe("answered");
+    expect(host.steers.at(-1)).toMatchObject({ sessionId: t.sessionId, text: "[用户回答了你的问题]\n问题：报告用中文还是英文？\n回答：英文" });
+    takeSteered(t.sessionId);
+    report(t.sessionId, "done", "英文报告写好了。");
+    await finishTurn(t.sessionId);
+    expect(runs(t.id).at(-1)).toEqual(["recover", "ended", "done"]);
+  });
+
+  it("重启：没有默认回答的提问问了、run 还在收尾：run 记为 needs_you，不排恢复；回答到了，恢复说明跟着回答交给新的 run", async () => {
+    const t = start();
+    await flush();
+    host.quiets.push({ quiet: false, jobs: ["bash-1"] });
+    await turn(t.sessionId, () => void svc.report({ sessionId: t.sessionId, state: "needs_you", summary: "", question: "用哪个账号付款？", options: ["个人", "公司"] }));
+    expect(runs(t.id)).toEqual([["launch", "settling", ""]]);
+    svc.stop();
+    svc = make();
+    svc.start();
+    await flush();
+    expect(runs(t.id)).toEqual([["launch", "ended", "needs_you"]]);
+    expect(svc.get(t.id)!.stage.key).toBe("needs-you/answer");
+    expect(approvals.pendingForTask(t.id)).toHaveLength(1);
+    expect(asks()).toHaveLength(1);
+    const before = host.prompts.length;
+    expect(reply("2").handled).toBe(true);
+    await flush();
+    expect(host.prompts).toHaveLength(before + 1);
+    expect(host.prompts.at(-1)!.text).toMatch(/^The app restarted while you were working on this task[\s\S]*\n\n\[用户回答了你的问题\]\n问题：用哪个账号付款？\n回答：公司$/);
+    expect(runs(t.id).at(-1)).toEqual(["answer", "running", ""]);
+  });
+
+  it("飞书：有默认回答的提问卡片里有那一行；撤回之后卡片上的按钮当作迟到的回答交给任务", async () => {
+    const fs1 = store.ensureConversation("b", "feishu", "oc_1", "主人");
+    store.addMessage(fs1.id, "user", "后台调研一下 GPU 价格");
+    store.setKV(`reply-to:${fs1.id}`, JSON.stringify({ messageId: "om_req", chatId: "oc_1" }));
+    const f = svc.create({ botId: "b", conversationId: fs1.id, title: "GPU", brief: "" }).task!;
+    await flush();
+    begin(f.sessionId);
+    askDefault(f.sessionId);
+    const [q] = approvals.pendingForTask(f.id);
+    const row = asks()[0];
+    expect(row).toMatchObject({ channel: "feishu", kind: "card", replyTo: "om_req" });
+    expect(JSON.stringify(row.body.card)).toContain(JSON.stringify("报告用中文还是英文？\n不回复就按中文做"));
+    store.updateOutbox(row.id, { status: "sent", sentAt: Date.now() });
+    report(f.sessionId, "done", "按中文做好了。");
+    await finishTurn(f.sessionId);
+    expect(store.getApproval(q.id)!.status).toBe("cancelled");
+    const agent = { available: true, approvals, tasks: svc, turnsInProgress: new Map(), canSteer: () => false } as unknown as AgentManager;
+    const rt = new BotRuntime({ store, models: {} as any, defaultModel: () => "m", contextMessages: 20, contextChars: 20_000, agent });
+    expect(rt.cardAction("b", { amb: "question", id: q.id, option: "2" }, "feishu:ou_1")).toEqual({ toast: "收到，「GPU」继续。", ok: true });
+    await flush();
+    expect(host.prompts.at(-1)).toMatchObject({ sessionId: f.sessionId, text: "[用户回答了你之前问的问题（你已经按「中文」做完了）]\n问题：报告用中文还是英文？\n回答：英文" });
+    // 回答过的（不是撤回的）照旧说已经处理了
+    await turn(f.sessionId, () => void report(f.sessionId, "done", "改成英文了。"));
+    const other = approvals.create({ kind: "question", botId: "b", conversationId: fs1.id, sessionId: f.sessionId, tool: "task_report", detail: "要几页？", reason: "", payload: JSON.stringify([{ id: "answer", question: "要几页？", options: [{ label: "10" }] }]), taskId: f.id, blocking: false, ttlMs: 0 });
+    approvals.answerText(other.id, "1", "web");
+    expect(rt.cardAction("b", { amb: "question", id: other.id, option: "1" }, "feishu:ou_1").ok).toBe(false);
   });
 
   it("任务会话里阻塞着的审批：阶段是等你批准", async () => {

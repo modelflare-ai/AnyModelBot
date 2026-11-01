@@ -12,8 +12,11 @@
  *   跑着的 run 记为 interrupted，给任务排一个恢复 run：先交一条恢复说明，没被会话收下的输入再交一次，收下过的不再交。
  * - 停止只停这个任务（指令通道：取消这一轮、停它的后台命令、之后的工具调用一律拒绝），聊天和别的任务照常。
  *
- * - 提问（3b）：代理报 needs_you 带一个问题，这一轮结束时变成审批中心里一条不阻塞、不过期的提问，推给请求它的会话
- *   （一个会话同时只推一个）；回答成为任务的新输入，任务在人的名额里接着做。任务会话里的审批也推过去（阻塞、12 小时）。
+ * - 提问（3b）：代理报 needs_you 带一个问题，马上变成审批中心里一条不阻塞、不过期的提问，推给请求它的会话
+ *   （一个会话同时只推一个）；回答成为任务的新输入（同追加：在跑就并进去，结束了就在人的名额里接着做）。
+ *   带默认回答的问题不停下来等：代理接着做不依赖回答的部分，先做完就按默认做、在结果里说一声，提问随之撤回（「需要你」、
+ *   推送都撤）；之后引用那条提问回答，同引用结果一样交给任务接着做。没带默认的（非用户定不可）这一轮结束、任务等着。
+ *   任务会话里的审批也推过去（阻塞、12 小时）。
  *
  * - 规则（3d）：一条规则每次运行开一个新会话（rule-<规则>-<run>，工作目录是 rules/<slug>-<id6>/），和任务的 run 走同一套
  *   排队、名额、收尾、提醒、重试；不同的是结束之后（见「规则」一节）：观察只记「本会发送」，执行时那一句经出站队列发出去，
@@ -36,7 +39,7 @@ import { needsPerson, type Delivery } from "../core/delivery.js";
 import { sentText } from "../core/outbox.js";
 import { ActivityLog, type ActivityStep } from "../agent/activity.js";
 import { ResumeFailed, deliverables } from "../agent/host.js";
-import { answerLine, promptButtons, questionsOf, taskPromptText, type ApprovalCenter, type ApprovalEvent, type QuestionItem, type ReplyContext } from "../agent/approvals.js";
+import { answerLine, defaultLine, defaultOf, parseAnswer, promptButtons, questionsOf, taskPromptText, type ApprovalCenter, type ApprovalEvent, type QuestionItem, type ReplyContext } from "../agent/approvals.js";
 import { actionCardSpec } from "../channels/feishu/transport.js";
 import { NUDGE, RULE_NUDGE, RULE_RERUN, RULE_RESULT_SYSTEM, attachmentsOf, rebrief, recoveryNote, resumeNote, retryNote, ruleBrief, ruleResultInput, ruleRules, taskBrief } from "../agent/prompts/index.js";
 import type { BotSettings } from "../agent/settings.js";
@@ -196,6 +199,8 @@ export interface TaskView {
   budgetUsd: number;
   /** 3f：文件夹定在什么时候清理（30 天没动过、告诉过用户）；0 = 没定 */
   cleanupAt: number;
+  /** 它问用户的、还没回答的问题；note：有默认回答时那一句「不回复就按中文做」 */
+  question?: { text: string; note?: string };
   /** 正在跑的那个 run：开始时间与步数 */
   live?: { runId: string; since: number; steps: number; current?: ActivityStep };
 }
@@ -444,7 +449,12 @@ export class TaskService {
       if (!task || task.endedAt) continue;
       const jobs = steps.filter((s) => s.kind === "job" && s.status === "running").map((s) => clip(oneLine(s.summary || s.title), 120));
       this.addInput(task.id, "recovery", recoveryNote(jobs), false);
-      if (!this.queuedRun(task.id)) this.enqueue(task, "recover");
+      // 这一轮已经报了 needs_you（没有默认回答）、问题还开着（收尾时重启的）：它本来就在等回答，run 记为 needs_you，不排恢复；
+      // 恢复说明跟着回答交给下一个 run。带默认回答的照常恢复：问题开着，回答到了交给恢复的 run
+      const final = l?.final ?? run.report;
+      const waits = final?.state === "needs_you" && !final.question?.default && (this.o.approvals?.pendingForTask(task.id) ?? []).some((a) => a.kind === "question" && a.tool === "task_report" && !defaultOf(a));
+      if (waits) this.store.updateRun(run.id, { outcome: "needs_you", error: "" });
+      else if (!this.queuedRun(task.id)) this.enqueue(task, "recover");
       this.changed(task.id);
     }
   }
@@ -731,7 +741,11 @@ export class TaskService {
     const task = l.ruleId ? undefined : this.store.getTask(l.taskId);
     if (!task && !l.ruleId) return;
     l.starting = true;
-    l.settling = false;
+    if (l.settling) {
+      // 收尾中又有输入（回答、追加）：又在跑了
+      l.settling = false;
+      this.store.updateRun(l.runId, { state: "running" });
+    }
     if (inputs.some((i) => i.fromPerson)) this.reopen(l);
     const text = inputs.map((i) => i.text).join("\n\n");
     const folder = task ? path.join(this.o.host.workspace(task.botId), task.folder) : l.folder;
@@ -1074,6 +1088,9 @@ export class TaskService {
       l.checking = false;
     }
     if (this.live.get(l.runId) !== l || l.busy || l.starting) return;
+    // 问插件的时候来了输入（回答、追加）：先交给会话，不结束
+    const late = this.inputsOf(l).filter((i) => !i.deliveredAt);
+    if (late.length) return void this.deliver_(l, late);
     if (q.quiet) return this.finish(l);
     l.settling = true;
     this.store.updateRun(l.runId, { state: "settling" });
@@ -1084,7 +1101,14 @@ export class TaskService {
   settled(b: any): { ok: true } {
     const l = this.bySession.get(String(b?.sessionId ?? ""));
     if (!l || l.busy || l.starting || l.checking) return { ok: true };
-    if (this.inputsOf(l).some((i) => i.deliveredAt && i.runId === l.runId)) return { ok: true };
+    const open = this.inputsOf(l);
+    if (open.some((i) => i.deliveredAt && i.runId === l.runId)) return { ok: true };
+    // 收尾时来了还没交出去的输入（回答、追加）：交给会话，接着做，不结束
+    const waiting = open.filter((i) => !i.deliveredAt);
+    if (waiting.length) {
+      void this.deliver_(l, waiting);
+      return { ok: true };
+    }
     const killed = Array.isArray(b?.killedJobs) ? b.killedJobs.map(String) : [];
     if (killed.length) log.info("task settling timed out; background jobs were stopped", { task: l.taskId || l.ruleId, jobs: killed });
     this.finish(l);
@@ -1131,6 +1155,9 @@ export class TaskService {
     if (task && outcome === "done") this.store.updateTask(task.id, { endedAt: now, endReason: "done", updatedAt: now });
     else if (task) this.store.updateTask(task.id, { updatedAt: now });
     if (task && (outcome === "done" || outcome === "failed")) this.deliver(task, l.runId, outcome, report, error);
+    // 做完了还没回答的提问：有默认回答的就是按默认做了（结果里说了），作废、撤回；失败了也一样（重试时它会再问）
+    if (task && (outcome === "done" || outcome === "failed")) this.withdrawQuestions(task, outcome === "done" ? "default" : "failed");
+    // 报 needs_you 时已经问了（report）；这里只是兜底（同一个 run 同一个问题不会问两次）
     if (task && outcome === "needs_you" && report?.question) this.ask(task, l.runId, report.question);
     if (task && outcome === "budget") this.askBudget(task, l.runId);
     log.info("background task run ended", { task: l.taskId, run: l.runId, outcome, ...(error ? { error } : {}) });
@@ -1226,7 +1253,10 @@ export class TaskService {
 
   // ---------- 插件经 bridge 来的 ----------
 
-  /** task_report：记下 Report；done / failed 在这一轮结束、会话安静后发给用户，needs_you 的问题那时问用户 */
+  /**
+   * task_report：记下 Report；done / failed 在这一轮结束、会话安静后发给用户。needs_you 的问题马上问用户（推出去、进「需要你」）：
+   * 带默认回答的，代理接着做（回答在它的下一步到，同追加）；没带的，代理结束这一轮，安静后 run 以 needs_you 结束、任务等着回答。
+   */
   report(b: any): { text?: string; error?: string } {
     const l = this.bySession.get(String(b?.sessionId ?? ""));
     if (!l) return { error: "This background task is not running any more (it was stopped or has ended). Stop working on it." };
@@ -1235,6 +1265,7 @@ export class TaskService {
     if (state !== "progress" && state !== "done" && state !== "failed" && state !== "needs_you") return { error: "state must be progress, needs_you, done or failed" };
     const question = state === "needs_you" ? questionOf(b) : undefined;
     if (state === "needs_you" && !question) return { error: "needs_you needs a question: one question for the user, with options when there are clear choices." };
+    if (question?.default && question.options?.length && !question.options.includes(question.default)) return { error: `default must be one of the options: ${question.options.join(" / ")}.` };
     if (state === "needs_you" && !this.o.approvals) return { error: "The app cannot ask the user right now. Decide yourself and say so in the result." };
     const message = typeof b?.message === "string" ? oneLine(b.message) : "";
     const report: TaskReport = {
@@ -1247,9 +1278,16 @@ export class TaskService {
     };
     this.store.updateRun(l.runId, { report });
     this.store.updateTask(l.taskId, { report, updatedAt: this.now() });
-    if (state !== "progress") l.final = report;
+    // 带默认回答的问题不结束这个 run（代理接着做），其余的 done / failed / needs_you 是这一轮的结果
+    if (state !== "progress" && !question?.default) l.final = report;
+    const task = question ? this.store.getTask(l.taskId) : undefined;
+    if (task && question) this.ask(task, l.runId, question);
     this.changed(l.taskId);
     if (state === "progress") return { text: "Progress recorded (it is not sent to the user). Continue the task." };
+    if (question?.default)
+      return {
+        text: `Asked the user. Keep working on what does not depend on the answer; if they answer, it arrives as a message at your next step. If you finish first, use "${question.default}", say so in your message, and report done.`,
+      };
     if (state === "needs_you") return { text: "Recorded. End your turn now: the app asks the user, and their answer arrives as your next message." };
     return { text: `Recorded. End your turn now: the app sends your message to the user${state === "done" && !message ? " (you gave no message, so the user only hears that the task is done)" : ""}.` };
   }
@@ -1337,14 +1375,42 @@ export class TaskService {
 
   // ---------- 提问与审批（3b） ----------
 
-  /** 代理报了 needs_you、这一轮结束了：问题记成一条不阻塞、不过期的提问（每个 run 只问一次），给聊天代理留张便条 */
+  /**
+   * 代理报了 needs_you：马上把问题记成一条不阻塞、不过期的提问（审批中心建好就推，见 onApproval），给聊天代理留张便条。
+   * 同一个问题只问一次：还开着的（重启后恢复的 run 又问一遍），或这个 run 里问过的（重启后补问）都不再问；
+   * 同一个问题换了默认回答（或去掉了默认），开着的那个作废、以新的为准。
+   */
   private ask(task: TaskRow, runId: string, q: NonNullable<TaskReport["question"]>): void {
     const a = this.o.approvals;
-    if (!a || this.store.listApprovals({ runId, limit: 5 }).some((r) => r.kind === "question" && r.taskId === task.id)) return;
-    const item: QuestionItem = { id: "answer", question: q.question, ...(q.options?.length ? { options: q.options.map((label) => ({ label })) } : {}), ...(q.multiSelect ? { multiSelect: true } : {}) };
+    if (!a) return;
+    const same = this.store.listApprovals({ taskId: task.id, limit: 100 }).filter((r) => r.kind === "question" && r.tool === "task_report" && r.detail === q.question);
+    if (same.some((r) => (r.status === "pending" || r.runId === runId) && (defaultOf(r) ?? "") === (q.default ?? ""))) return;
+    for (const r of same) if (r.status === "pending") a.cancel(r.id, "superseded");
+    const item: QuestionItem = {
+      id: "answer",
+      question: q.question,
+      ...(q.options?.length ? { options: q.options.map((label) => ({ label })) } : {}),
+      ...(q.multiSelect ? { multiSelect: true } : {}),
+      ...(q.default ? { default: q.default } : {}),
+    };
     a.create({ kind: "question", botId: task.botId, conversationId: task.conversationId, sessionId: task.sessionId, tool: "task_report", detail: q.question, reason: "", payload: JSON.stringify([item]), taskId: task.id, runId, blocking: false, ttlMs: 0 });
-    log.info("background task asks the user", { task: task.id, run: runId });
-    this.note(task.conversationId, `[后台任务「${task.title}」在等用户回答：${q.question}${q.options?.length ? `（${q.options.join(" / ")}）` : ""}。用户在聊天里回答它时，用 task_message 转给这个任务]`);
+    log.info("background task asks the user", { task: task.id, run: runId, ...(q.default ? { keepsWorking: true } : {}) });
+    const opts = q.options?.length ? `（${q.options.join(" / ")}）` : "";
+    this.note(
+      task.conversationId,
+      q.default
+        ? `[后台任务「${task.title}」问了用户：${q.question}${opts}，没回答就按「${q.default}」做，任务照常在做。用户在聊天里回答它时，用 task_message 转给这个任务]`
+        : `[后台任务「${task.title}」在等用户回答：${q.question}${opts}。用户在聊天里回答它时，用 task_message 转给这个任务]`,
+    );
+  }
+
+  /** 任务做完了（按默认回答做的，或做不下去了）：它还开着的提问作废，「需要你」里的、推给用户还没发出去的随之撤回（onApproval） */
+  private withdrawQuestions(task: TaskRow, by: "default" | "failed"): void {
+    for (const r of this.o.approvals?.pendingForTask(task.id) ?? []) {
+      if (r.kind !== "question" || r.tool !== "task_report") continue;
+      this.o.approvals!.cancel(r.id, by);
+      log.info("withdrew a background task's open question", { task: task.id, by, ...(defaultOf(r) ? { usedDefault: by === "default" } : {}) });
+    }
   }
 
   /** 审批中心有新的、或有了决定：任务的提问有了回答就交给任务；更新阶段；同一会话的下一个提问可以推了 */
@@ -1481,7 +1547,8 @@ export class TaskService {
       const replyTo = task.originRef || replyHandle(this.store, conv.id).messageId || "";
       const buttons = promptButtons(row);
       const title = row.kind === "approval" ? tr("tasks.approvalTitle", { title: task.title }) : tr("tasks.questionTitle", { title: task.title });
-      const body = row.kind === "approval" ? (row.detail ? "`" + row.detail.slice(0, 300) + "`" : row.tool) : (questionsOf(row)[0]?.question ?? row.detail);
+      const fallback = defaultLine(row);
+      const body = row.kind === "approval" ? (row.detail ? "`" + row.detail.slice(0, 300) + "`" : row.tool) : `${questionsOf(row)[0]?.question ?? row.detail}${fallback ? `\n${fallback}` : ""}`;
       if (replyTo && buttons) delivery.push({ ...base, replyTo, card: actionCardSpec(title, body, buttons) });
       else delivery.push({ ...base, replyTo, kind: replyTo ? "text" : "notice" });
     }
@@ -1514,40 +1581,81 @@ export class TaskService {
   followUp(conversationId: string, m: { text: string; quote?: string; rootId?: string; parentId?: string }): { handled: boolean; ack?: string } {
     const text = m.text.trim();
     if (!text || text.startsWith("/")) return { handled: false };
-    const task = this.followTarget(conversationId, m);
-    if (!task) return { handled: false };
+    const hit = this.followTarget(conversationId, m);
+    if (!hit) return { handled: false };
+    const { task, asked } = hit;
     if (task.endReason === "stopped") return { handled: true, ack: tr("tasks.stoppedNoFollowup", { title: task.title }) };
+    if (asked) return this.lateAnswer(task, asked, text);
     log.info("a follow-up goes straight to its background task", { task: task.id, by: m.quote ? "quote" : "thread" });
     void this.message(task.id, text).catch((e) => log.warn("follow-up to a background task failed", { task: task.id, message: (e as Error).message.slice(0, 200) }));
     return { handled: true, ack: tr("tasks.continuing", { title: task.title }) };
   }
 
   /**
-   * 引用的是哪个任务推出去的结果或失败那句（按发出去的原文比，取最像的，见 quoteScore）；飞书按回复链的根、直接回复的那条比请求那条消息。
+   * 引用的是哪个任务推出去的结果或失败那句（按发出去的原文比，取最像的，见 quoteScore），或它推出去、之后撤回了的提问
+   * （任务按默认回答先做完了，asked 是那一条）；飞书按回复链的根、直接回复的那条比请求那条消息。
    * 对上不止一个（引用了合成的摘要、一条消息开了两个任务）就不算
    */
-  private followTarget(conversationId: string, m: { quote?: string; rootId?: string; parentId?: string }): TaskRow | undefined {
+  private followTarget(conversationId: string, m: { quote?: string; rootId?: string; parentId?: string }): { task: TaskRow; asked?: ApprovalRow } | undefined {
     const tasks = this.store.listTasks({ conversationId, limit: 50 });
-    let hits: TaskRow[] = [];
+    let hits: Array<{ task: TaskRow; asked?: ApprovalRow }> = [];
     if (m.quote) {
       const quote = m.quote;
-      const score = (t: TaskRow) =>
-        Math.max(
-          0,
-          ...this.store.listRuns({ taskId: t.id }).map((r) => {
-            if (!/^task:[^:]+:(result|failure):/.test(r.delivery) || r.delivery.endsWith(":dropped")) return 0;
-            const row = this.store.getOutbox(r.delivery);
-            return row ? quoteScore(sentText(row.body), row.body.text ?? "", quote) : 0;
-          }),
-        );
-      const scored = tasks.map((t) => ({ t, s: score(t) }));
+      const score = (t: TaskRow): { s: number; asked?: ApprovalRow } => {
+        let best: { s: number; asked?: ApprovalRow } = { s: 0 };
+        for (const r of this.store.listRuns({ taskId: t.id })) {
+          if (!/^task:[^:]+:(result|failure):/.test(r.delivery) || r.delivery.endsWith(":dropped")) continue;
+          const row = this.store.getOutbox(r.delivery);
+          const s = row ? quoteScore(sentText(row.body), row.body.text ?? "", quote) : 0;
+          if (s > best.s) best = { s };
+        }
+        for (const a of this.withdrawnAsks(t.id)) {
+          const row = this.store.getOutbox(askId(a));
+          if (row?.status !== "sent") continue;
+          const s = Math.max(quoteScore(sentText(row.body), row.body.text ?? "", quote), quotes(row.body.text ?? "", quote, questionsOf(a)[0]?.question ?? a.detail) ? 2 : 0);
+          if (s > best.s) best = { s, asked: a };
+        }
+        return best;
+      };
+      const scored = tasks.map((t) => ({ task: t, ...score(t) }));
       const best = Math.max(0, ...scored.map((x) => x.s));
-      hits = best ? scored.filter((x) => x.s === best).map((x) => x.t) : [];
+      hits = best ? scored.filter((x) => x.s === best).map((x) => ({ task: x.task, asked: x.asked })) : [];
     } else {
       const refs = [m.rootId, m.parentId].filter(Boolean);
-      if (refs.length) hits = tasks.filter((t) => !!t.originRef && refs.includes(t.originRef));
+      if (refs.length) hits = tasks.filter((t) => !!t.originRef && refs.includes(t.originRef)).map((task) => ({ task }));
     }
     return hits.length === 1 ? hits[0] : undefined;
+  }
+
+  /** 任务问过、因为它先做完了（按默认回答）或失败了而撤回的提问（新的在前） */
+  private withdrawnAsks(taskId: string): ApprovalRow[] {
+    return this.store.listApprovals({ taskId, status: "cancelled", limit: 20 }).filter((a) => a.kind === "question" && a.tool === "task_report" && (a.decidedBy === "default" || a.decidedBy === "failed"));
+  }
+
+  /**
+   * 撤回了的提问又被回答了（微信引用那条提问、飞书点了卡片上的按钮）：任务已经按默认做完（或失败了），这个回答作为追加交给它，
+   * 在同一个任务里接着做（人的唤醒），回一句收到。编号按那个问题的选项认。
+   */
+  private lateAnswer(task: TaskRow, asked: ApprovalRow, text: string): { handled: boolean; ack?: string } {
+    if (task.endReason === "stopped") return { handled: true, ack: tr("tasks.stoppedNoFollowup", { title: task.title }) };
+    if (task.endReason === "archived") return { handled: true, ack: tr("tasks.archivedNoFollowup", { title: task.title }) };
+    const qs = questionsOf(asked);
+    const a = parseAnswer(qs, text).answers[0];
+    const said = a ? [...a.selected, ...(a.custom ? [a.custom] : [])].join("、") : text;
+    const used = asked.decidedBy === "default" ? defaultOf(asked) : undefined;
+    const head = used ? `[用户回答了你之前问的问题（你已经按「${used}」做完了）]` : "[用户回答了你之前问的问题]";
+    const input = this.addInput(task.id, "answer", `${head}\n问题：${qs[0]?.question ?? asked.detail}\n回答：${said || text}`, true);
+    log.info("a late answer to a withdrawn question goes to its background task", { task: task.id });
+    void this.wake(task, input, "answer").catch((e) => log.warn("late answer to a background task failed", { task: task.id, message: (e as Error).message.slice(0, 200) }));
+    return { handled: true, ack: tr("tasks.continuing", { title: task.title }) };
+  }
+
+  /** 飞书卡片上的按钮：提问已经撤回（任务按默认先做完了），按钮还点得到——当作迟到的回答（同引用那条提问） */
+  answerWithdrawn(approvalId: string, text: string): { handled: boolean; ack?: string } {
+    const row = this.store.getApproval(approvalId);
+    const task = row?.taskId ? this.store.getTask(row.taskId) : undefined;
+    if (!row || !task || !this.withdrawnAsks(task.id).some((a) => a.id === row.id)) return { handled: false };
+    return this.lateAnswer(task, row, text);
   }
 
   /**
@@ -1620,8 +1728,11 @@ export class TaskService {
     const rows = this.store
       .listApprovals({ status: "pending", botId: task.botId, limit: 200 })
       .filter((a) => (a.taskId === task.id || a.sessionId === task.sessionId) && a.tool !== BUDGET_TOOL && (a.expiresAt === 0 || a.expiresAt > now));
-    const waiting = rows.some((a) => a.kind === "approval") ? "approval" : rows.length ? "answer" : undefined;
-    return taskStage({ stopped: task.endReason === "stopped", undelivered: needsPerson(delivery), waiting, run });
+    // 有默认回答的提问不算等你：任务接着做（进行中，有个问题等你回答）
+    const blocking = rows.filter((a) => a.kind === "approval" || !defaultOf(a));
+    const waiting = blocking.some((a) => a.kind === "approval") ? "approval" : blocking.length ? "answer" : undefined;
+    const asking = rows.some((a) => a.kind === "question" && !!defaultOf(a));
+    return taskStage({ stopped: task.endReason === "stopped", undelivered: needsPerson(delivery), waiting, asking, run });
   }
 
   view(task: TaskRow): TaskView {
@@ -1646,8 +1757,17 @@ export class TaskService {
       spentUsd: task.spentUsd,
       budgetUsd: task.budgetUsd,
       cleanupAt: task.cleanupAt,
+      ...this.openQuestion(task),
       ...(l && run ? { live: { runId: run.id, since: run.startedAt, steps: l.activity.steps.length, current: l.activity.steps.findLast((s) => s.status === "running") } } : {}),
     };
+  }
+
+  /** 任务问用户的、还没回答的那个问题（最新的；预算的那个不算，它有自己的阶段） */
+  private openQuestion(task: TaskRow): Pick<TaskView, "question"> {
+    const row = this.o.approvals?.pendingForTask(task.id).find((r) => r.kind === "question" && r.tool === "task_report");
+    if (!row) return {};
+    const note = defaultLine(row);
+    return { question: { text: questionsOf(row)[0]?.question ?? row.detail, ...(note ? { note } : {}) } };
   }
 
   /** 任务列表：进行中、等你的在前，再按新旧；group 只要这几组的（GET /tasks?group=，3f）。归档了的不列 */
@@ -2796,7 +2916,10 @@ export class TaskService {
   }
 }
 
-/** task_report 的 question：一句问题（字符串或 {question, options, multiSelect}），选项最多 6 个 */
+/**
+ * task_report 的 question：一句问题（字符串或 {question, options, multiSelect, default}），选项最多 6 个；
+ * default：用户没回答时按它做（有选项时要是其中一个，report 里查）
+ */
 function questionOf(b: any): TaskReport["question"] | undefined {
   const raw = b?.question;
   const obj = typeof raw === "object" && raw ? raw : undefined;
@@ -2806,7 +2929,15 @@ function questionOf(b: any): TaskReport["question"] | undefined {
   const label = (o: unknown) => clip(oneLine(String(typeof o === "object" && o ? ((o as { label?: unknown }).label ?? "") : (o ?? ""))), 60);
   const options = [...new Set(list.map(label).filter(Boolean))].slice(0, OPTIONS_MAX);
   const multi = obj?.multiSelect === true || b?.multi_select === true;
-  return { question: clip(text, QUESTION_MAX), ...(options.length ? { options } : {}), ...(multi && options.length > 1 ? { multiSelect: true } : {}) };
+  const given = clip(oneLine(String(obj?.default ?? b?.default ?? "")), 60);
+  // 写成了选项编号（"1"）：换成那个选项
+  const fallback = !options.includes(given) && /^\d+$/.test(given) && Number(given) >= 1 && Number(given) <= options.length ? options[Number(given) - 1] : given;
+  return {
+    question: clip(text, QUESTION_MAX),
+    ...(options.length ? { options } : {}),
+    ...(multi && options.length > 1 ? { multiSelect: true } : {}),
+    ...(fallback ? { default: fallback } : {}),
+  };
 }
 
 /** 比引用时去掉空白、记号和末尾的省略号（引用可能被截短） */

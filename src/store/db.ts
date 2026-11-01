@@ -213,8 +213,10 @@ export interface TaskReport {
   /** 3d 规则：观察时本会做的事（执行时做了的事） */
   would?: string;
   files?: string[];
-  /** 3b：要问用户的一个问题 */
-  question?: { question: string; options?: string[]; multiSelect?: boolean };
+  /**
+   * 3b：要问用户的一个问题。default：有合理默认的问题（用户没回答就按它做，任务不停下来等）；没有 = 非用户定不可，这一轮结束、任务等着
+   */
+  question?: { question: string; options?: string[]; multiSelect?: boolean; default?: string };
   at: number;
 }
 export interface TaskRow {

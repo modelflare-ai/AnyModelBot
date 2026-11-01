@@ -67,9 +67,10 @@ describe("control channel (host → amb-control plugin over the bridge)", () => 
     const polling = post("/dsh/control/poll", { botId: "b", controlId: id });
     await sleep(50);
     expect(ch.connected).toBe(true);
-    const sent = ch.send("steer", { sessionId: "s1", text: "hi" }, 5000);
+    // 插话带的是我们的消息 id（messageId，会话里的用户消息用它）；id 是这条指令自己的，两个不能混
+    const sent = ch.send("steer", { sessionId: "s1", messageId: "i_1", text: "hi" }, 5000);
     const got = (await (await polling).json()) as any;
-    expect(got.commands).toEqual([{ sessionId: "s1", text: "hi", id: expect.any(String), op: "steer" }]);
+    expect(got.commands).toEqual([{ sessionId: "s1", messageId: "i_1", text: "hi", id: expect.stringMatching(/^c\d+$/), op: "steer" }]);
     expect(JSON.stringify(got)).not.toContain(bridge!.token);
     expect((await post("/dsh/control/result", { botId: "b", controlId: id, id: got.commands[0].id, ok: true, result: { accepted: true } })).status).toBe(200);
     expect(await sent).toEqual({ accepted: true });

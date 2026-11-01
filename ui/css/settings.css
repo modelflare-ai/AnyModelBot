@@ -102,6 +102,8 @@ button.need-head:hover, button.need-head:hover .need-who b { color: var(--fg); }
 .need.open .need-head .chev { transform: rotate(90deg); }
 .need-line { font-size: var(--fs-lg); font-weight: var(--fw-medium); color: var(--fg); line-height: var(--lh-snug); overflow-wrap: anywhere; }
 .need-line.mono { font-family: var(--code); font-size: var(--fs-sm); font-weight: var(--fw-regular); }
+/* 有默认回答的提问：不回复会怎样，贴着问题 */
+.need-note { margin-top: calc(-1 * var(--space-1)); font-size: var(--fs-sm); color: var(--fg-2); }
 .need-actions { display: flex; align-items: center; gap: var(--ctl-gap); flex-wrap: wrap; }
 .need-actions:empty { display: none; }
 .need-reply { display: flex; align-items: center; gap: var(--ctl-gap); }

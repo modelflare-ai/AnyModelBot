@@ -8,7 +8,7 @@
  * 健康时什么都没有：没有行、没有角标、没有通知。
  */
 import type { ApprovalRow, Store } from "../store/db.js";
-import { questionsOf, type QuestionItem } from "../agent/approvals.js";
+import { defaultLine, questionsOf, type QuestionItem } from "../agent/approvals.js";
 import type { AttentionItem as DeliveryItem } from "../core/delivery.js";
 import { logger } from "../log.js";
 import { t as tr } from "../i18n/index.js";
@@ -40,6 +40,8 @@ export interface AttentionItem {
   status: string;
   /** 第二行：问题、命令、失败原因、没送到的那句话 */
   line: string;
+  /** 有默认回答的提问：不回答会怎样（「不回复就按中文做」）；任务这时还在做 */
+  note?: string;
   since: number;
   severity: "warn" | "err";
   actions: AttentionAction[];
@@ -188,6 +190,7 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
     const channel = store.getConversation(r.conversationId)?.channel ?? r.conversationId.split(":")[1] ?? "";
     const qs = questionsOf(r);
     const line = r.kind === "approval" ? r.detail || r.reason || r.tool : qs.map((q) => q.question).join(" / ") || r.detail;
+    const note = r.kind === "question" ? defaultLine(r) : undefined;
     return {
       id: `approval:${r.id}`,
       kind: r.kind,
@@ -197,6 +200,7 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       // 任务预算用完时问的那个：状态是预算用完（第二行就是「已用约 $1.00，再给 $1 继续？」）
       status: r.kind === "approval" ? tr("tasks.stageApproval") : r.tool === BUDGET_TOOL ? tr("tasks.stageBudget") : tr("tasks.stageAnswer"),
       line: line.length > 300 ? line.slice(0, 299) + "…" : line,
+      ...(note ? { note } : {}),
       since: r.createdAt,
       severity: "warn",
       actions: r.kind === "approval" ? ["approve", "deny"] : ["answer"],

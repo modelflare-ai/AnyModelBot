@@ -2,6 +2,7 @@
 import { z } from "zod";
 import releasesJson from "../data/releases.json";
 import snapshotJson from "../data/pricing.snapshot.json";
+import githubJson from "../data/github.json";
 import type { Snapshot } from "./pricing";
 
 const env = (k: string) => (import.meta.env[k] as string | undefined) || process.env[k] || `{${k}}`;
@@ -14,6 +15,8 @@ const optional = (k: string) => (import.meta.env[k] as string | undefined) || pr
 export const ANALYTICS_SCRIPT_URL = optional("ANALYTICS_SCRIPT_URL");
 export const ANALYTICS_SITE_ID = optional("ANALYTICS_SITE_ID");
 export const ORIGIN = `https://${SITE_DOMAIN}`;
+/** GitHub 星数：构建时取（scripts/fetch-github-stars.ts），不在浏览器里请求 */
+export const githubStars = z.object({ stars: z.number().int().nonnegative() }).parse(githubJson).stars;
 
 /** 跳到 Modelflare 的链接都带来源参数：全项目统一 utm_source=anymodelbot&utm_campaign=amb_<位置>，官网是 amb_homepage */
 export const MF_UTM = "utm_source=anymodelbot&utm_campaign=amb_homepage";

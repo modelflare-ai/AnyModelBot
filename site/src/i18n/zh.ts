@@ -47,6 +47,7 @@ export const zh = {
     h1b: "",
     lead: "几句人设，决定它做什么、怎么说话。整理文件、跑命令、记住你的习惯，一个 Key 畅用主流模型。",
     demo: "看演示",
+    github: "在 GitHub 上查看，{stars} 颗星",
     trust: ["App 免费开源", "模型按量付费", "Windows / macOS / Linux"],
     appUiNote: "",
     // 标题上方的小胶囊（链到"认识你的机器人"）

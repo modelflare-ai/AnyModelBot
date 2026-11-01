@@ -1,7 +1,7 @@
 ---
 // 首页第一屏（动效参考 bevel.health，窗口照 App 的原生界面 ui/design 来）。四周留 8px 的圆角大卡片，从上到下——
 //   小胶囊（六个角色头像 + 一句话，链到"认识你的机器人"）→ 标题（逐字由虚变实升起；第一行渐变字，行尾蹲着会看你、能戳的天天；
-//   关键词品牌色 + 光晕，入场后一道亮光从左到右扫过）→ 一句说明 → 下载 / 演示 → 三条要点 → 舞台。
+//   关键词品牌色 + 光晕，入场后一道亮光从左到右扫过）→ 一句说明 → 下载 / 演示 / GitHub（带星数）→ 三条要点 → 舞台。
 // 背景克制、全部静止：一层很淡的中性顶光（顶边淡入，不切出硬边）+ 顶部一层极淡的星空（小星点往下渐隐，少数几颗慢慢闪，偶尔划过一颗流星）→ 舞台后面一层极淡的机器人色 →
 //   托住窗口的弧形"地平线"（一线淡亮边、正中稍亮）→ App 同款磨砂颗粒。颜色只在舞台换机器人时微微变（--hero-hue / --hz-glow），不用品牌黄绿。
 // 舞台：一台 App 窗口（毛玻璃侧栏 + 浮起的主面板 + 玻璃输入框）+ 压在右下角的手机，循环 18 秒三幕，每幕换一个机器人：
@@ -17,6 +17,8 @@ import Icon from "../components/Icon.astro";
 import BotFace from "../components/BotFace.astro";
 import HeroLogos from "../components/HeroLogos.astro";
 import { dict, fmt, buildVars, type Lang } from "../i18n";
+import { GITHUB_URL, githubStars } from "../lib/site";
+import { fmtStars } from "../lib/stars";
 import { CHAR_KEYS, type CharKey, type PersonaKey } from "../lib/bots";
 import { personaModels } from "../data/pricing.config";
 interface Props { lang: Lang }
@@ -176,7 +178,12 @@ const ic = (d: string, size = 16, cls = "aic") => `<svg class="${cls}" width="${
     <p class="lead hero__lead">{fmt(t.hero.lead, v)}</p>
     <div class="hero__cta">
       <DownloadButton lang={lang} placement="hero" id="cta-hero">
-        <button slot="after" class="btn btn--secondary" type="button" data-open-dialog="demo-tour" data-track="video_play" data-track-video_id="overview"><Icon name="play" />{t.hero.demo}</button>
+        <Fragment slot="after">
+          <button class="btn btn--secondary" type="button" data-open-dialog="demo-tour" data-track="video_play" data-track-video_id="overview"><Icon name="play" />{t.hero.demo}</button>
+          <a class="btn btn--secondary hero__gh" href={GITHUB_URL} target="_blank" rel="noopener" aria-label={githubStars ? fmt(t.hero.github, { stars: githubStars }) : t.nav.github} data-track="github_click" data-track-location="hero">
+            <Icon name="github" size={18} />{t.nav.github}{githubStars > 0 && <span class="hero__gh-stars"><Icon name="star" size={14} />{fmtStars(githubStars)}</span>}
+          </a>
+        </Fragment>
       </DownloadButton>
     </div>
     <ul class="hero__meta" role="list">{meta.map((x) => <li><Icon name="check" size={14} />{x}</li>)}</ul>

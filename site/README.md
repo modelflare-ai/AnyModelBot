@@ -157,7 +157,7 @@ Astro 5 静态站，Preact 只用在价格表、计算器（含可搜索的模�
 - **Hero**（`sections/Hero.astro`，样式在 `home.css` 的"1 Hero"）：
   - 四周留 8px 的圆角大卡片（手机 6px）。背景要克制、除顶部天空外全部静止，颜色只有很弱的变化（舞台换机器人时跟着微微变色，`--hero-hue` / `--hz-glow`），不用品牌黄绿、不加装饰图形：底色渐变（深色下顶上偏一点点夜空蓝）→ 一层很淡的中性顶光（顶上 160px 淡入，不在卡片顶边切出亮带）+ 顶部的天空（`Hero.astro` 里伪随机生成，标题背后稀一些，往下渐隐）：深色是星空——约 340 颗冷白小星（少数偏蓝 / 偏暖，几颗亮星带一圈光），约五分之一慢慢闪，偶尔划过一颗流星；浅色是晴空——顶上一片清透的浅天蓝（往下渐淡，到说明文字附近回到卡片的白；这是浅色"只用中性白灰"的例外，用户 2026-11-01 要的）+ 三朵很软的白云（纯 CSS，底下压一层极淡的中性灰影子，极慢地飘）+ 四十来个四角形的细小闪光（颜色跟着当前机器人的色调），约六成偶尔亮起、转一下再隐去，不放流星（见上面的例外）→ 舞台后面一层极淡的机器人色 → 一道巨大的弧形地平线托住窗口（整圈一线淡亮边、正中稍亮），上方一层很淡的光晕 → App 同款磨砂颗粒。不画线框、网格、点阵、放射光束。
   - 舞台的遮罩只负责把底边淡进地面；遮罩会裁掉盒子外的一切，所以 `.hstage` 往上多留了 `--bleed`（220px），窗口四周的光晕不会在舞台顶边被切平。倾斜的滚动进度挂在 `.hstage__devices` 上。
-  - 文字居中一列：小胶囊（六个角色头像 + 一句话，链到"认识你的机器人"）→ 标题 → 一句说明（两行以内）→ 下载 / 演示 → 三条要点（每条前面一个勾，颜色跟着当前机器人）。
+  - 文字居中一列：小胶囊（六个角色头像 + 一句话，链到"认识你的机器人"）→ 标题 → 一句说明（两行以内）→ 下载 / 演示 / GitHub（带星数）→ 三条要点（每条前面一个勾，颜色跟着当前机器人）。
   - 标题在 Hero 里放大一档（英 46–88、中 42–84）。中文逐字、英文逐词由虚变实升起；第一行是渐隐的渐变字，行尾蹲着会看指针、能戳的天天；关键词深色下是黄绿渐变字，浅色下改用当前机器人的颜色（深一档，跟着换幕渐变；黄绿在浅底上发脏），底下垫一团同色的光，字出齐后一道亮光从左到右扫过。不铺荧光底、不加下划线。
   - 间距只取 4px 尺度：胶囊 → 标题 24、标题 → 说明 24、说明 → 按钮 32、按钮 → 要点 24（手机 16 / 16 / 24 / 16）。
   - 舞台是一台照 App 原生界面（`ui/design`、`ui/css/shell.css`、`chat.css`）做的窗口：环境光 + 毛玻璃侧栏（红绿灯、搜索、机器人行、账户）+ 浮起的主面板（顶栏、气泡、"思考中 → 用时"、代码块、审批卡、文件卡）+ 玻璃输入框（权限、模型、发送）。App 的语义 token 抄在 `.hstage` 的 `--a-*` 上，深浅两套，字体也用 App 的系统字体。
@@ -191,6 +191,7 @@ npx astro check        # 类型检查
 npm run build:draft    # 草稿构建：部署占位符只警告
 npm run build          # 生产构建：同步素材 → 抓价格 → 构建 → 禁词 → 站内链接 → 占位符（有残留即失败）
 npm run fetch:pricing  # 只更新价格快照（失败即退出码 1）
+npm run fetch:github   # 只更新 GitHub 星数（取不到就沿用上一个值）
 npm run releases       # 从 GITHUB_URL 的最新 Release 生成 src/data/releases.json（下载直达 GitHub）
 npm run releases:dir   # 改为从 DOWNLOADS_DIR 里的安装包生成（自己提供下载时用）
 npm run og             # 重新生成 favicon / App 图标 / OG 图（Python + Pillow + Noto Sans SC）
@@ -226,6 +227,7 @@ docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build
 ## 数据从哪来
 
 - **价格**：构建时请求 `https://modelflare.dev/api/pricing`，用 `src/lib/pricing.ts` 算出默认线路价、分档、条件价线路和官方价（规则与 modelflare.dev/pricing 前端一致：有 `official_input_price` 用它，否则用基础价），写入 `src/data/pricing.snapshot.json`。抓取失败或数据异常时沿用快照，页面显示快照日期。
+- **GitHub 星数**：`scripts/fetch-github-stars.ts` 在 `npm run build` 时取，写进 `src/data/github.json`，所以数字最多晚一天（每天 04:00 构建一次，部署时也会构建）；取不到就沿用上一个值，不影响构建。不在浏览器里请求 GitHub：不把访客 IP 发给第三方。
 - **机器人**：`scripts/sync-from-app.ts` 从 `../ui/design/bots/*.webp` 复制精灵图、从 `../THIRD_PARTY_NOTICES.md` 同步许可（Docker 构建上下文里没有应用目录，用已提交的副本）；几何（`src/lib/bots.ts`）与 `../ui/components/avatar.js` 的 `BOT_CHARS` 不一致时会警告。头像样式 `src/styles/bots.css` 移植自 `../ui/design/components/avatar.css`。
   - 精灵图另有同分辨率的 AVIF 版（`public/bots/*.avif`，约为 WebP 的一半），支持的浏览器经 `image-set()` 优先用它，其他照旧用 WebP。AVIF 必须从原图编码（`npm run bots:avif`：重跑 `../scripts/build-bot-avatars.py --png` 拿无损精灵图，q58 的画质按 PSNR 不低于 WebP q86），不能拿 WebP 再转。生成时把对应 WebP 的哈希记在 `src/data/bots-avif.json`；WebP 更新了而 AVIF 没重做，`check-images` 会失败。
 - **演示**：Hero 的"看演示"和"它能动手"都是动画（`src/components/DemoTour.astro`、`src/scripts/tour.ts`），不依赖视频文件。"看演示"点开就自动轮播、播完从头循环，没有播放 / 暂停 / 翻页按钮，底部进度条可点跳步。

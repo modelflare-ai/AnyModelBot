@@ -47,6 +47,7 @@ export const en: Dict = {
     h1b: ".",
     lead: "A few lines of persona decide what it does and how it talks. It sorts files, runs commands and remembers how you work. One key for every major model.",
     demo: "Watch demo",
+    github: "View on GitHub, {stars} stars",
     trust: ["Free, open-source app", "Pay-per-use models", "Windows / macOS / Linux"],
     appUiNote: "",
     eyebrow: "You decide who it is",

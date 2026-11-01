@@ -2,20 +2,48 @@
 /* 附属页的专用版式：下载、安全说明、开源许可、404。页面骨架（.page、.page__head、.page__section）在 components.css。 */
 @layer app {
   /* —— 下载 —— */
-  .dl-page { position: relative; }
-  .dl-page__mark { position: absolute; top: clamp(48px, 8vw, 96px); right: 0; }
-  .dl-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
-  .dl-cards > * { min-width: 0; }
-  .dl-card { display: grid; align-content: start; gap: 12px; transition: box-shadow var(--dur-base) var(--ease-out); }
-  .dl-card[data-dl-recommended] { box-shadow: inset 0 0 0 1.5px var(--accent-fg), var(--card-shadow); }
-  .dl-card__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .dl-card__head .muted { font-weight: 400; }
-  .dl-card > .btn { justify-self: start; }
-  .dl-card__label { margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--line); margin-bottom: -4px; }
-  .dl-verify { display: grid; gap: 12px; margin: 0; }
-  .dl-verify > div { display: grid; gap: 6px; }
+  /* 平台是一张卡片里的四行：名称、完整校验值、大小、下载，第二行放首次运行的提示。识别出的平台描边，按钮换成主按钮（DownloadView 的脚本）。
+     校验值在桌面上能完整显示；窄屏放不下时截断，复制按钮拿到的还是完整的值 */
+  .dl-page { position: relative; padding-block: clamp(32px, 4vw, 48px); }
+  .dl-page__mark { position: absolute; top: clamp(32px, 4vw, 48px); right: 0; }
+  .dl-page .page__head { gap: 8px; margin-bottom: 20px; padding-right: 80px; }
+  .dl-page h1 { font-size: clamp(26px, 2.6vw, 34px); line-height: 1.2; }
+  .dl-page .lead { font-size: var(--fs-body); }
+  .dl-page .code { align-items: center; gap: 8px; padding: 3px 3px 3px 10px; border-radius: var(--r-item); }
+  .dl-page .code code { padding-top: 0; }
+  .dl-page .copy-btn { height: 26px; padding: 0 6px; box-shadow: none; }
+  .dl-page .warnbar { padding: 6px 10px; font-size: var(--fs-xs); }
+
+  .card.dl-rows { display: grid; padding: 6px; }
+  .dl-row { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(0, 600px) 72px auto; grid-template-areas: "name sha size btn" "hint hint hint btn"; align-items: center; gap: 4px 16px; padding: 10px 14px; border-radius: var(--r-field); }
+  .dl-row + .dl-row { box-shadow: 0 -1px 0 var(--line); }
+  .dl-row[data-dl-recommended] { box-shadow: inset 0 0 0 1.5px var(--accent-fg); }
+  .dl-row__name { grid-area: name; font-size: var(--fs-body-sm); font-weight: 600; line-height: 1.3; letter-spacing: 0; }
+  .dl-row__name .muted { font-weight: 400; }
+  .dl-row__sha { grid-area: sha; }
+  .dl-row__sha code { font-size: 12px; }
+  .dl-row .code code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dl-row__size { grid-area: size; text-align: right; white-space: nowrap; }
+  .dl-row__btn { grid-area: btn; }
+  .dl-row__hint { grid-area: hint; }
+  .code.dl-row__hint { justify-self: start; max-width: 100%; }
+
+  /* 校验、Docker、命令行、发布页：次要信息，两栏排，小标题 */
+  .dl-more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; margin-top: 28px; }
+  .dl-more > section { display: grid; align-content: start; gap: 8px; }
+  .dl-more h2 { font-size: var(--fs-body-sm); font-weight: 600; line-height: 1.3; letter-spacing: 0; }
+  .dl-verify { display: grid; gap: 6px; margin: 0; }
+  .dl-verify > div { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 8px; }
   .dl-verify dd { margin: 0; }
-  @media (max-width: 767px) { .dl-cards { grid-template-columns: 1fr; } .dl-page__mark { display: none; } }
+
+  @media (max-width: 1023px) {
+    .dl-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name size btn" "sha sha sha" "hint hint hint"; gap: 6px 12px; }
+  }
+  @media (max-width: 767px) {
+    .dl-more { grid-template-columns: minmax(0, 1fr); }
+    .dl-page__mark { display: none; }
+    .dl-page .page__head { padding-right: 0; }
+  }
 
   /* —— 安全说明：对照表里 AnyModelBot 一列用正文色，最后两行（出网、可审计）加重 —— */
   .compare td:nth-child(2) { color: var(--text); }

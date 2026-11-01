@@ -19,67 +19,71 @@ const mono = (x: string | number) => `<span class="mono">${String(x).replace(/[&
 ---
 <Base lang={lang} path="/download" title={`${d.pageTitle} — AnyModelBot`} description={d.pageDescription}>
   <div class="container page dl-page">
-    <EyesMark size={96} class="dl-page__mark" lookAt="[data-dl-recommended]" />
+    <EyesMark size={64} class="dl-page__mark" lookAt="[data-dl-recommended]" />
     <header class="page__head">
       <h1>{d.pageTitle}</h1>
       <p class="lead">{d.pageLead}</p>
+      <p class="small muted" set:html={fmt(d.meta, { version: mono(releases.version), publishedAt: mono(published) })} />
       {t.hero.appUiNote && <p class="small muted">{t.hero.appUiNote}</p>}
     </header>
 
-    <ul class="dl-cards" role="list" data-placement="download-page">
+    <ul class="card dl-rows" role="list" data-placement="download-page">
       {PLATFORMS.map((p) => {
         const b = releases.platforms[p];
         return (
-          <li class="card dl-card" data-dl-card={p}>
-            <div class="dl-card__head">
-              <h2 class="h3">{d.platform[p]} <span class="muted">· {d.arch[p]}</span></h2>
-            </div>
-            <a class="btn btn--primary" href={b.url} download data-dl-platform={p} data-on="accent"><Icon name="download" />{d.items[p]}</a>
-            <p class="small muted" set:html={fmt(d.meta, { version: mono(releases.version), sizeMB: mono(b.sizeMB), publishedAt: mono(published) })} />
-            <p class="small muted dl-card__label">{d.sha}</p>
-            <div class="code"><code data-dl-sha>{b.sha256}</code><button type="button" class="copy-btn" data-copy-code><Icon name="copy" />{t.ui.copy}</button></div>
-            {p.startsWith("linux") && <div class="code"><code>{d.linuxHint}</code><button type="button" class="copy-btn" data-copy-code><Icon name="copy" />{t.ui.copy}</button></div>}
+          <li class="dl-row" data-dl-card={p}>
+            <h2 class="dl-row__name">{d.platform[p]} <span class="muted">· {d.arch[p]}</span></h2>
+            <div class="code dl-row__sha"><span class="small muted">{d.sha}</span><code data-dl-sha>{b.sha256}</code><button type="button" class="copy-btn" data-copy-code aria-label={t.ui.copy} title={t.ui.copy}><Icon name="copy" /></button></div>
+            <span class="small muted mono dl-row__size">{b.sizeMB} MB</span>
+            <a class="btn btn--secondary btn--sm dl-row__btn" href={b.url} download data-dl-platform={p} aria-label={`${d.generic} ${d.items[p]}`}><Icon name="download" />{d.generic}</a>
+            {p.startsWith("linux") && <div class="code dl-row__hint"><code>{d.linuxHint}</code><button type="button" class="copy-btn" data-copy-code aria-label={t.ui.copy} title={t.ui.copy}><Icon name="copy" /></button></div>}
+            {p.startsWith("win") && <p class="small muted dl-row__hint">{d.winHint}</p>}
+            {p.startsWith("mac") && <p class="small muted dl-row__hint">{d.macHint}</p>}
           </li>
         );
       })}
     </ul>
     <p class="small muted page__aside">{d.macNote}</p>
 
-    <section class="page__section" aria-labelledby="verify-h">
-      <h2 id="verify-h">{d.verifyTitle}</h2>
-      <dl class="dl-verify">
-        {verify.map((x) => (
-          <div>
-            <dt class="small muted">{x.label}</dt>
-            <dd class="code"><code>{x.cmd}</code><button type="button" class="copy-btn" data-copy-code><Icon name="copy" />{t.ui.copy}</button></dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+    <div class="dl-more">
+      <section aria-labelledby="verify-h">
+        <h2 id="verify-h">{d.verifyTitle}</h2>
+        <dl class="dl-verify">
+          {verify.map((x) => (
+            <div>
+              <dt class="small muted">{x.label}</dt>
+              <dd class="code"><code>{x.cmd}</code><button type="button" class="copy-btn" data-copy-code aria-label={t.ui.copy} title={t.ui.copy}><Icon name="copy" /></button></dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
-    <section class="page__section" id="docker" aria-labelledby="docker-h">
-      <h2 id="docker-h">{d.dockerTitle}</h2>
-      <div class="code"><code>{releases.platforms.docker.command}</code><button type="button" class="copy-btn" data-copy-code data-track="docker_cmd_copy" data-track-command="docker-run"><Icon name="copy" />{t.ui.copy}</button></div>
-      <p class="small muted">{d.dockerToken}</p>
-      <p class="warnbar"><b>⚠</b><span>{d.warn}</span></p>
-    </section>
+      <section id="docker" aria-labelledby="docker-h">
+        <h2 id="docker-h">{d.dockerTitle}</h2>
+        <div class="code"><code>{releases.platforms.docker.command}</code><button type="button" class="copy-btn" data-copy-code data-track="docker_cmd_copy" data-track-command="docker-run" aria-label={t.ui.copy} title={t.ui.copy}><Icon name="copy" /></button></div>
+        <p class="small muted">{d.dockerToken}</p>
+        <p class="warnbar"><b>⚠</b><span>{d.warn}</span></p>
+      </section>
 
-    <section class="page__section" aria-labelledby="cli-h">
-      <h2 id="cli-h">{d.cliTitle}</h2>
-      <p>{d.cliBody}</p>
-    </section>
+      <section aria-labelledby="cli-h">
+        <h2 id="cli-h">{d.cliTitle}</h2>
+        <p class="small muted">{d.cliBody}</p>
+      </section>
 
-    <section class="page__section" aria-labelledby="rel-h">
-      <h2 id="rel-h">{d.releases}</h2>
-      <p><a href={`${GITHUB_URL}/releases`} target="_blank" rel="noopener">{GITHUB_URL}/releases</a> · <a href={href(lang, "/changelog")}>{d.changelog}</a></p>
-    </section>
+      <section aria-labelledby="rel-h">
+        <h2 id="rel-h">{d.releases}</h2>
+        <p class="small"><a href={`${GITHUB_URL}/releases`} target="_blank" rel="noopener">{GITHUB_URL}/releases</a> · <a href={href(lang, "/changelog")}>{d.changelog}</a></p>
+      </section>
+    </div>
   </div>
   <script>
-    // 推荐平台的卡片：给 Eyes 标记一个看的目标，卡片描边高亮
+    // 推荐平台的那一行：给 Eyes 标记一个看的目标，描边高亮，下载按钮换成主按钮
     import { detectPlatform } from "../lib/platform";
     detectPlatform().then((p) => {
       const id = p.os === "win" ? "win-x64" : p.os === "mac" ? (p.arch === "x64" ? "mac-x64" : "mac-arm64") : p.os === "linux" ? "linux-x64" : null;
-      if (id) document.querySelector(`[data-dl-card="${id}"]`)?.setAttribute("data-dl-recommended", "");
+      const row = id ? document.querySelector(`[data-dl-card="${id}"]`) : null;
+      row?.setAttribute("data-dl-recommended", "");
+      row?.querySelector(".btn")?.classList.replace("btn--secondary", "btn--primary");
     });
   </script>
 </Base>

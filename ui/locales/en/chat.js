@@ -39,7 +39,9 @@ export default {
     submit: "Submit",
   },
   file: {
-    delivered: "Delivered to the bot's workspace; on WeChat and Feishu it's sent directly",
+    open: "Open {name}",
+    reveal: "Show in folder",
+    gone: "File not found",
   },
   work: {
     stopping: "Stopping…",

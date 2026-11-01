@@ -100,6 +100,7 @@ export interface FeishuOutbox {
 
 /**
  * 飞书回复会话：CardKit 流式卡片（~400ms 节流，单卡 ≤10 次/秒），结束时关闭 streaming_mode。
+ * 模型在回合中间说的话（interim）一段段写进卡片，最终回复接在它们后面，卡片上留着全部。
  * 卡片创建/发送失败或中途失败 → 降级为纯文本回复。
  * 最终回复、文件、审批卡片先写进出站队列（持久化、按会话排队、失败重试）；流式的中间内容不经过它。没给队列时（单元测试）直接发。
  */
@@ -108,6 +109,8 @@ export class FeishuReply implements ReplySession {
   private seq = 0;
   private latest = "";
   private flushed = "";
+  /** 模型在回合中间说的话：卡片上显示在最终回复前面 */
+  private interim: string[] = [];
   private timer: NodeJS.Timeout | undefined;
   private inflight: Promise<void> = Promise.resolve();
   private fallback = false;
@@ -134,6 +137,12 @@ export class FeishuReply implements ReplySession {
         return this.start();
       case "stream.update":
         this.latest = op.text;
+        this.schedule();
+        return;
+      case "interim":
+        // 说了话，等代理启动时的临时文字就不要了
+        this.interim.push(op.text);
+        this.latest = this.interim.join("\n\n");
         this.schedule();
         return;
       case "stream.finish":
@@ -201,8 +210,11 @@ export class FeishuReply implements ReplySession {
     }
   }
 
-  /** 最终回复：写进卡片并收尾（卡片不可用时发文本）——这一步经出站队列，崩溃重启后会补发 */
-  private async finish(text: string): Promise<void> {
+  /** 最终回复（接在回合中间说的话后面）：写进卡片并收尾（卡片不可用时发文本）——这一步经出站队列，崩溃重启后会补发 */
+  private async finish(answer: string): Promise<void> {
+    // 最后没再说话时，回复就是中间说的最后一句：不重复
+    const before = this.interim.at(-1) === answer ? this.interim.slice(0, -1) : this.interim;
+    const text = [...before, answer].filter(Boolean).join("\n\n");
     this.closed = true;
     if (this.timer) {
       clearTimeout(this.timer);

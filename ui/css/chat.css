@@ -241,13 +241,31 @@ button.act-head:active { background: var(--pill-hover); }
   white-space: pre-wrap; word-break: break-all; color: var(--fg-2); max-height: 160px; overflow: auto;
 }
 .card .answer { display: flex; gap: var(--ctl-gap); }
+/* 交付的文件（components/files.js）：按交付的顺序挂在回复的文字下面，放得下就排在一行。
+   文件卡片是一块 --well，整块可点（打开），悬停深一级；桌面版右边一个「在文件夹中显示」。找不到的文件不能点 */
+.msg-files { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2); }
+.msg-row .msg + .msg-files { margin-top: var(--space-3); }
+.msg-row :is(.msg, .msg-files) + .notice { margin-top: var(--space-3); }
+/* 回合中交付的：轻轻浮起（已经在的不重播） */
+.msg-row.live .msg-files > * { --rise: 6px; animation: rise-in var(--dur-moderate) var(--ease-out); }
 .file-card {
   display: flex; align-items: center; gap: var(--space-3); width: min(360px, 100%); padding: var(--space-2-5) var(--space-3-5) var(--space-2-5) var(--space-2-5);
-  background: var(--well); border-radius: var(--r-well);
+  background: var(--well); border-radius: var(--r-well); color: var(--fg); text-align: left; transition: background var(--t-fast);
 }
-.file-card > .ic { --ic-size: var(--ic-xl); margin: var(--space-2); color: var(--fg-2); }   /* 24px 图标 + 四周 8 = 40 见方，和两行文字等高 */
+a.file-card:hover { text-decoration: none; }
+a.file-card:hover, .file-card:has(> .file-open:hover) { background: var(--well-hover); }
+a.file-card:active, .file-card:has(> .file-open:active) { background: var(--well-press); }
+.file-card:has(> .file-open) { padding-right: var(--space-2); }
+.file-open { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; text-align: left; border-radius: var(--r-sm); }
+.file-card .fic { flex: none; --ic-size: var(--ic-xl); margin: var(--space-2); color: var(--fg-2); }   /* 24px 图标 + 四周 8 = 40 见方，和两行文字等高 */
+.file-card .grow { display: grid; min-width: 0; }
 .file-card .fname { font-size: var(--fs-lg); font-weight: var(--fw-medium); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .file-card .fsub { margin-top: var(--space-0-5); font-size: var(--fs-xs); color: var(--muted); }
+.file-card.off .fname { color: var(--muted); }
+/* 图片直接显示：缩略图保持比例，限宽限高（读出来之前先占一小块 --well）；点开看大图 */
+.msg-img { display: block; max-width: 100%; overflow: hidden; border-radius: var(--r-well); background: var(--well); cursor: zoom-in; transition: transform var(--t-fast); }
+.msg-img:active { transform: scale(var(--press)); }
+.msg-img img { display: block; width: auto; height: auto; min-width: 48px; min-height: 48px; max-width: min(320px, 100%); max-height: 240px; }
 .msg-row .notice { max-width: min(var(--bubble-w), 100%); }
 
 .chat-empty { margin: auto; padding-top: 16vh; display: grid; justify-items: center; gap: var(--space-2-5); text-align: center; color: var(--muted); }

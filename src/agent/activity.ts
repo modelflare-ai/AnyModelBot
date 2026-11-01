@@ -63,10 +63,14 @@ function prettyArgs(args: string): string {
 export class ActivityLog {
   readonly steps: ActivityStep[] = [];
 
-  /** model：这一轮用的模型（DSH 只在会话第一次请求时报 request/context，之后的回合靠它起名） */
+  /**
+   * model：这一轮用的模型（DSH 只在会话第一次请求时报 request/context，之后的回合靠它起名）。
+   * chat：聊天回合——模型说的话（回复和回合中间说的话）进了对话，模型那一步不再重复这些文字，只留调用了什么和思考
+   */
   constructor(
     private onChange?: (step: ActivityStep) => void,
     private model = "",
+    private opts: { chat?: boolean } = {},
   ) {}
 
   get last(): ActivityStep | undefined {
@@ -103,12 +107,15 @@ export class ActivityLog {
         const prev = this.find(id);
         const at = prev?.at ?? time;
         const u = data.usage ?? {};
+        // 聊天里已经显示了这段话（被打断的那一步除外，它的话不进对话）
+        const said = this.opts.chat && !data.interrupted ? text : "";
+        const callLine = calls.length ? tr("activity.calls", { list: calls.join(tr("activity.listSep")) }) : "";
         this.put({
           id,
           kind: "model",
           title: model || tr("activity.model"),
-          summary: text ? oneLine(text) : calls.length ? tr("activity.calls", { list: calls.join(tr("activity.listSep")) }) : thinking ? tr("activity.thinkingOnly") : tr("activity.emptyReply"),
-          output: clip([thinking && `${tr("activity.thinkingTag")}\n${thinking}`, text].filter(Boolean).join("\n\n"), MAX_OUTPUT) || undefined,
+          summary: said ? callLine || undefined : text ? oneLine(text) : callLine || (thinking ? tr("activity.thinkingOnly") : tr("activity.emptyReply")),
+          output: clip([thinking && `${tr("activity.thinkingTag")}\n${thinking}`, said ? "" : text].filter(Boolean).join("\n\n"), MAX_OUTPUT) || undefined,
           status: "ok",
           at,
           ms: Math.max(0, time - at),

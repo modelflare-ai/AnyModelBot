@@ -133,6 +133,52 @@ export const stoppedText = (ms: number) => t("runtime.stopped", { d: fmtSecs(ms)
 /** 处理中又发来一句、并进正在进行的回合时回的那句（按当前语言） */
 export const steerAck = () => t("runtime.steerAck");
 
+/** 一条回复最多显示几个交付的文件（同 deliverables） */
+const MAX_SHOWN_FILES = 8;
+
+/**
+ * 一轮里模型说的话和交付的文件：回合中间说的话一段一段交给渠道（网页、飞书卡片显示，微信不发），
+ * present 交付的文件马上给网页看（文件本身照旧在回复之后发）；回合结束时随回复存进历史。
+ */
+export class TurnSaid {
+  readonly interim: string[] = [];
+  readonly presented: string[] = [];
+  /** 等代理启动时显示过的临时文字（「代理已就绪，正在处理…」）：第一段话来了就换掉 */
+  provisional = false;
+
+  constructor(private out: ReplySession) {}
+
+  readonly observer = {
+    onInterim: (text: string) => {
+      // 不 await：几个操作按调用顺序交给渠道
+      if (this.provisional) {
+        this.provisional = false;
+        void this.out.apply({ type: "stream.update", text: "" });
+      }
+      this.interim.push(text);
+      void this.out.apply({ type: "interim", text });
+    },
+    onPresent: (files: string[]) => {
+      for (const f of files) {
+        if (this.presented.includes(f) || this.presented.length >= MAX_SHOWN_FILES) continue;
+        this.presented.push(f);
+        void this.out.apply({ type: "presented", path: f, name: path.basename(f) });
+      }
+    },
+  };
+
+  /**
+   * 回合结束时的回复：模型最后的回答；最后没再说话时，回合中间说的最后一句就是回复（不再算在中间说的话里），
+   * 什么都没说时用 empty。interim 是显示在回复前面的那些话
+   */
+  reply(answer: string, empty: string): { text: string; interim: string[] } {
+    const text = answer.trim();
+    if (text) return { text, interim: this.interim.filter((x, i, a) => !(i === a.length - 1 && x === text)) };
+    if (this.interim.length) return { text: this.interim.at(-1)!, interim: this.interim.slice(0, -1) };
+    return { text: empty, interim: [] };
+  }
+}
+
 /**
  * 不是回复某条消息、而是主动发到会话里（代理自己醒来的一轮：后台命令结束）：渠道给出这个会话的出站会话。
  * 微信、飞书的回复会话经出站队列发（和普通回复同一条路：落库、按会话排队、重试、发送时才查微信的窗口和配额）。
@@ -553,14 +599,17 @@ export class BotRuntime {
       visible = true;
       await out.apply(interactiveOp(row));
     });
+    // 模型在回合中间说的话、交付的文件：马上显示，结束时随回复存下
+    const said = new TurnSaid(out);
     await out.apply({ type: "typing", on: true });
     await out.apply({ type: "stream.start" });
-    // 代理进程还没就绪（第一次启动可能要几分钟）：先说清楚在等什么，而不是一直"思考中"。最终回复会替换这段文字
+    // 代理进程还没就绪（第一次启动可能要几分钟）：先说清楚在等什么，而不是一直"思考中"。模型说的第一段话或最终回复会替换这段文字
     const host = agent.host(botId);
     let startup: NodeJS.Timeout | undefined;
     if (host.state !== "running") {
       const since = Date.now();
       const show = () => {
+        said.provisional = true;
         if (host.state === "running") {
           clearInterval(startup);
           return void out.apply({ type: "stream.update", text: t("runtime.agentReady") });
@@ -627,6 +676,7 @@ export class BotRuntime {
               inflight.userStored = true;
               inflight.release?.();
             },
+            ...said.observer,
           },
         });
         const halt = () => agent.stopTurn(convId);
@@ -646,9 +696,9 @@ export class BotRuntime {
         .finally(() => clearInterval(startup));
       if (!inflight.userStored) store.addMessage(convId, "user", text);
       inflight.userStored = true;
-      const finalText = r.text.trim() || t("runtime.doneNoText");
-      store.addMessage(convId, "assistant", finalText, [...steps.values()]);
-      await out.apply({ type: "stream.finish", text: finalText });
+      const reply = said.reply(r.text, t("runtime.doneNoText"));
+      store.addMessage(convId, "assistant", reply.text, [...steps.values()], { interim: reply.interim, files: r.files });
+      await out.apply({ type: "stream.finish", text: reply.text });
       for (const f of r.files ?? []) {
         try {
           await out.apply({ type: "file", path: f, name: path.basename(f) });
@@ -673,7 +723,8 @@ export class BotRuntime {
       const msg = turnFailedText(err, [...steps.values()]);
       if (!inflight.userStored) store.addMessage(convId, "user", text);
       inflight.userStored = true;
-      store.addMessage(convId, "assistant", msg, [...steps.values()]);
+      // 出错、中止之前说过的话和交付过的文件留在历史里（文件不再发到其它渠道）
+      store.addMessage(convId, "assistant", msg, [...steps.values()], { interim: said.interim, files: said.presented });
       await out.apply({ type: "stream.finish", text: msg });
       this.answered(convId, inflight);
       return true;
@@ -731,6 +782,7 @@ export class BotRuntime {
     const asked = store.listMessages(convId, 20).filter((m) => m.role === "user").at(-1)?.content;
     markInflight(store, convId, asked || t("runtime.jobResult"));
     const steps = new Map<string, ActivityStep>();
+    const said = new TurnSaid(out);
     const unbind = agent.approvals.bindSink(convId, async (row) => void (await out.apply(interactiveOp(row))));
     const halt = () => agent.stopTurn(convId);
     fl.abort.signal.addEventListener("abort", halt, { once: true });
@@ -744,6 +796,7 @@ export class BotRuntime {
         res = await agent.followTurn(botId, {
           conversationId: convId,
           model: routed,
+          observer: said.observer,
           onStep: (step) => {
             steps.set(step.id, step);
             void out.apply({ type: "activity", step });
@@ -756,14 +809,14 @@ export class BotRuntime {
           return;
         }
         const msg = turnFailedText(e as Error, [...steps.values()]);
-        store.addMessage(convId, "assistant", msg, [...steps.values()]);
+        store.addMessage(convId, "assistant", msg, [...steps.values()], { interim: said.interim, files: said.presented });
         await out.apply({ type: "stream.finish", text: msg });
         this.answered(convId, fl);
         return;
       }
-      const finalText = res.text.trim() || t("runtime.jobDoneNoText");
-      store.addMessage(convId, "assistant", finalText, [...steps.values()]);
-      await out.apply({ type: "stream.finish", text: finalText });
+      const reply = said.reply(res.text, t("runtime.jobDoneNoText"));
+      store.addMessage(convId, "assistant", reply.text, [...steps.values()], { interim: reply.interim, files: res.files });
+      await out.apply({ type: "stream.finish", text: reply.text });
       for (const f of res.files ?? []) {
         try {
           await out.apply({ type: "file", path: f, name: path.basename(f) });

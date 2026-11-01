@@ -60,8 +60,10 @@ export interface DesktopHooks {
   /** Windows 桌面版：窗口右上角的最小化 / 最大化 / 关闭由系统画在界面上，符号颜色跟界面主题（主题只存在界面里） */
   setTitleBarTheme?(dark: boolean): void;
   openDataDir(): void;
-  /** 在系统的文件管理器里打开一个文件夹（任务详情里的「打开」，3f） */
+  /** 用系统的默认程序打开一个文件或文件夹（任务详情里的「打开」，3f；对话里交付的文件） */
   openPath?(p: string): void;
+  /** 在系统的文件管理器里显示一个文件（选中它） */
+  showItemInFolder?(p: string): void;
   openInBrowser(): void;
   /** 在系统浏览器里打开外部链接（Modelflare 登录、充值） */
   openExternal(url: string): void;

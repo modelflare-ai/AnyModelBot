@@ -15,8 +15,9 @@ import { OAuthError } from "../account/oauth.js";
 import { normalizeLine } from "../modelflare.js";
 import { SseReply } from "./sse-reply.js";
 import { LiveTurns, type LiveTurn } from "./live.js";
+import { botWorkspace, describeFile, resolveFile, runnable, sendFile } from "./files.js";
 import { connectionFromPids } from "../agent/peer-guard.js";
-import type { ApprovalRow, Store } from "../store/db.js";
+import type { ApprovalRow, Message, Store } from "../store/db.js";
 import { defaultLine } from "../agent/approvals.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { scopeLabel } from "../agent/memory.js";
@@ -118,6 +119,11 @@ function publicBot(b: NonNullable<ReturnType<App["store"]["getBot"]>>) {
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };
+}
+
+/** 历史消息给界面：交付的文件带上名字、大小、是不是直接显示的图片、还在不在 */
+function publicMessage(m: Message) {
+  return m.files ? { ...m, files: m.files.map((p) => describeFile(p)) } : m;
 }
 
 /** 网页“测试对话”渠道：收集输出 */
@@ -779,7 +785,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       if (seg.length === 3 && seg[2] === "messages" && m === "GET") {
         const conv = app.store.getConversation(decodeURIComponent(seg[1]));
         if (!conv) throw new HttpError(404, t("web.conversationNotFound"));
-        return send(res, 200, { conversation: conv, messages: app.store.listMessages(conv.id) });
+        return send(res, 200, { conversation: conv, messages: app.store.listMessages(conv.id).map(publicMessage), canOpen: !!app.desktop?.openPath });
       }
       // 一条回复的代理活动记录（展开时才取）
       if (seg.length === 5 && seg[2] === "messages" && seg[4] === "activity" && m === "GET") {
@@ -788,11 +794,32 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       // 正在处理的回合：处理了多久、最近一次进展、到目前为止的步骤（信息面板轮询）
       if (seg.length === 3 && seg[2] === "turn" && m === "GET") {
         const t = app.agent.turnsInProgress.get(decodeURIComponent(seg[1]));
-        return send(res, 200, { turn: t ? { since: t.since, lastProgress: t.lastProgress, steps: t.activity.steps } : null });
+        return send(res, 200, { turn: t ? { since: t.since, lastProgress: t.lastProgress, steps: t.activity.steps, interim: t.interim } : null });
       }
       // 停止：网页消息（排队的也算）、纯对话、还在等代理启动的、代理回合，都在这里停
       if (seg.length === 3 && seg[2] === "stop" && m === "POST") {
         return send(res, 200, { stopped: stopConversation(decodeURIComponent(seg[1])) });
+      }
+      // 交付的文件（web/files.ts）：GET file?path= 发给浏览器（图片、PDF、纯文本直接显示，其余下载）；
+      // 桌面版 POST file/open 用系统的默认程序打开（打开就会运行的只在文件夹中显示），file/reveal 在文件夹中显示。
+      // 只给这个会话交付过的文件和这个机器人工作区里的文件
+      if (seg[2] === "file" && (seg.length === 3 ? m === "GET" : seg.length === 4 && (seg[3] === "open" || seg[3] === "reveal") && m === "POST")) {
+        const conv = app.store.getConversation(decodeURIComponent(seg[1]));
+        if (!conv) throw new HttpError(404, t("web.conversationNotFound"));
+        const desktop = app.desktop;
+        if (m === "POST" && !desktop?.openPath) throw new HttpError(400, t("web.desktopOnly"));
+        const input = m === "GET" ? url.searchParams.get("path") : (await readJson(req)).path;
+        const ws = botWorkspace(cfg.dataDir, conv.botId);
+        const f = ws ? resolveFile(String(input ?? ""), { workspace: ws, dataDir: cfg.dataDir, delivered: app.store.deliveredFiles(conv.id) }) : undefined;
+        if (!f) throw new HttpError(404, t("web.fileNotFound"));
+        if (m === "GET") return sendFile(req, res, f);
+        if (seg[3] === "open" && !runnable(f)) {
+          desktop!.openPath!(f.path);
+          return send(res, 200, { ok: true });
+        }
+        if (desktop!.showItemInFolder) desktop!.showItemInFolder(f.path);
+        else desktop!.openPath!(path.dirname(f.path));
+        return send(res, 200, { ok: true, revealed: true });
       }
     }
     if (seg[0] === "bots") {
@@ -988,9 +1015,11 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         return send(res, 200, {
           conversationId: consoleConvId(id),
           model: conv?.model ?? "",
-          messages: conv ? app.store.listMessages(conv.id, 200).filter((x) => x.id <= cut) : [],
+          messages: conv ? app.store.listMessages(conv.id, 200).filter((x) => x.id <= cut).map(publicMessage) : [],
           pending: app.store.listApprovals({ status: "pending", conversationId: consoleConvId(id), limit: 50 }).map((r) => publicApproval(r, app.store)),
           live: turns.map((t) => t.snapshot()),
+          // 桌面版：交付的文件用系统程序打开；网页里在新标签页打开
+          canOpen: !!app.desktop?.openPath,
         });
       }
       // 接上进行中的消息（切走再切回、刷新后）：先发 snapshot，再转发之后的事件（同 chat/stream），最后 done / error。

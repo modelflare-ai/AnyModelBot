@@ -1,7 +1,8 @@
 // 新手引导的界面：对话空状态里的「上手清单」卡、侧栏左下角的清单入口、指着要点的地方的引导卡片、全部完成时的彩带。
 // 状态与文案在 lib/guide.js；样式在 css/guide.css。
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { html, Badge, Icon, IconButton, Menu } from "./ui.js";
+import { html, Icon, IconButton, Menu } from "./ui.js";
+import { ActivityLine } from "./activity.js";
 import { BotAvatar } from "./avatar.js";
 import { useStore } from "../lib/store.js";
 import { ms, reducedMotion } from "../design/motion.js";
@@ -286,59 +287,36 @@ export function CoachMark({ bot, view, infoOpen }) {
 }
 
 /**
- * 生图的预置演示：和真的一样先问你用哪个模型（同一种提问卡片）→ 生成中 → 出图；
- * 不发给机器人、不调用模型、不扣费，图是客户端自带的示例（assets/guide-demo.svg）。看完就算做完了这一步。
+ * 生图的预置演示：和真的默认流程一样，说一句就直接生成：工作状态行（正在生成）→ 图片交付在对话里（同一种缩略图）。
+ * 不发给机器人、不调用模型、不扣费，图是客户端自带的示例（assets/guide-demo.svg），下面一行说明这一点。看完就算做完了这一步。
+ * 自带的图不在会话的文件里，桌面版没法交给系统程序打开：点开是在原地放大。
  */
-export function MediaDemo({ prompt }) {
+export function MediaDemo({ onLoad }) {
   const g = useStore(guide);
-  const [stage, setStage] = useState("ask"); // ask → gen → done；或 cancel
-  const [pct, setPct] = useState(0);
+  const [done, setDone] = useState(false);
+  const [big, setBig] = useState(false);
+  // 生成用时是模拟的，不是动画：文字微光扫一遍的时长（关闭动画时也不变）
   useEffect(() => {
-    if (stage !== "gen") return;
-    let k = 0;
-    const timer = setInterval(() => {
-      k += 1;
-      setPct(Math.min(100, k * 12));
-      if (k >= 9) {
-        clearInterval(timer);
-        setStage("done");
-        markDone("media");
-      }
-    }, ms("--dur-slow", 360));
-    return () => clearInterval(timer);
-  }, [stage]);
-  const asking = stage === "ask";
-  const picked = stage === "gen" || stage === "done";
-  const text = (prompt || "").replace(/[。.]$/, ""); // i18n-ignore：去掉句末的中英文句号
-  const detail = t("guide.demo.detail", { prompt: text });
+    const timer = setTimeout(() => {
+      setDone(true);
+      markDone("media");
+    }, ms("--dur-sheen", 2400));
+    return () => clearTimeout(timer);
+  }, []);
+  // 放大 / 缩小后，本来跟着底部的对话再贴一次底
+  useEffect(() => {
+    if (done) onLoad?.();
+  }, [big]);
   return html`<div class="guide-demo">
-    <div class=${`card${asking ? "" : " done"}`}>
-      <div class="meta"><span class="t-label">${t("guide.demo.label")}</span></div>
-      <div class="q-block">
-        <div class="q">${t("guide.demo.question")}</div>
-        <div class="q-detail">${detail}</div>
-      </div>
-      <div class="opts" role="radiogroup" aria-label=${t("guide.demo.pickModel")}>
-        <button type="button" class=${`opt${picked ? " picked" : ""}`} role="radio" aria-checked=${picked} disabled=${!asking} onClick=${() => setStage("gen")}>
-          <span class="letter">A</span><span>${t("guide.demo.sampleModel")}<span class="desc">${t("guide.demo.sampleDesc")}</span></span>
-        </button>
-        <button type="button" class=${`opt${stage === "cancel" ? " picked" : ""}`} role="radio" aria-checked=${stage === "cancel"} disabled=${!asking} onClick=${() => setStage("cancel")}>
-          <span class="letter">B</span><span>${t("common.cancel")}<span class="desc">${t("guide.demo.cancelDesc")}</span></span>
+    <${ActivityLine} label=${done ? t("guide.demo.label") : t("guide.demo.generating")} phase=${done ? "done" : "gen"} live=${!done} />
+    ${done && html`<div class="msg-files anim-rise-in">
+        <button type="button" class=${`msg-img${big ? " big" : ""}`} aria-expanded=${big} title=${big ? t("guide.demo.zoomOut") : t("guide.demo.zoomIn")} onClick=${() => setBig((v) => !v)}>
+          <img src="/amb/static/assets/guide-demo.svg" alt=${t("guide.demo.alt")} onLoad=${onLoad} />
         </button>
       </div>
-      ${!asking && html`<div class="meta"><${Badge} s=${stage === "cancel" ? "cancelled" : "answered"} /></div>`}
-    </div>
-    ${picked && html`<figure class="guide-demo-figure anim-rise-in">
-      <div class="guide-demo-img">
-        ${stage === "gen"
-          ? html`<span class="skel"></span><span class="guide-demo-bar" aria-hidden="true"><i style=${{ width: `${pct}%` }}></i></span>`
-          : html`<img src="/amb/static/assets/guide-demo.svg" alt=${t("guide.demo.alt")} />`}
-      </div>
-      <figcaption class="t-meta" role="status">
-        ${stage === "gen" ? t("guide.demo.generating") : t("guide.demo.caption")}
-        ${stage === "done" && !g.media && html` <a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">${t("guide.demo.enable")}</a>`}
-      </figcaption>
-    </figure>`}
-    ${stage === "cancel" && html`<p class="t-meta">${t("guide.demo.cancelled")} <button type="button" class="text" onClick=${() => setStage("ask")}>${t("guide.demo.again")}</button></p>`}
+      <p class="guide-demo-note t-meta">
+        ${t("guide.demo.caption")}
+        ${!g.media && html` <a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">${t("guide.demo.enable")}</a>`}
+      </p>`}
   </div>`;
 }

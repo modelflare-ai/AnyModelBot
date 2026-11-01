@@ -111,15 +111,11 @@ button.guide-step > .ic { color: var(--muted); }
 .row.guide-spot { outline-offset: calc(-1 * var(--space-0-5)); animation: none; }
 .composer.guide-spot { --composer-edge: var(--accent); --composer-edge-w: 1.5px; --composer-shadow: var(--ring), var(--shadow-md); --composer-tint: var(--accent-wash); }
 
-/* —— 生图的预置演示（MediaDemo）：提问卡片用对话里的 .card，下面是生成中 → 出图 —— */
-.guide-demo { display: grid; gap: var(--space-3); justify-items: start; }
-.guide-demo-figure { margin: 0; display: grid; gap: var(--space-1-5); }
-.guide-demo-img { position: relative; width: min(320px, 100%); aspect-ratio: 1; border-radius: var(--r-well); overflow: hidden; background: var(--well); }
-.guide-demo-img .skel { position: absolute; inset: 0; height: auto; border-radius: 0; }
-.guide-demo-img img { display: block; width: 100%; height: 100%; object-fit: cover; animation: guide-reveal calc(var(--dur-slower) * 2) var(--ease-out) both; }
-@keyframes guide-reveal { from { opacity: 0; filter: blur(calc(16px * var(--motion))); transform: scale(calc(1 + .04 * var(--motion))); } }
-.guide-demo-bar { position: absolute; left: var(--space-5); right: var(--space-5); bottom: var(--space-5); height: 4px; border-radius: 2px; background: var(--pill-hover); overflow: hidden; }
-.guide-demo-bar i { display: block; height: 100%; background: var(--primary); transition: width var(--t-moderate); }
+/* —— 生图的预置演示（MediaDemo）：和真的回复同一套样子（工作状态行、chat.css 的 .msg-files / .msg-img），
+   下面一行说明是自带的示例图；点开在原地放大（限高，放大后仍在一屏里） —— */
+.guide-demo-note { margin-top: var(--space-1-5); }
+.guide-demo .msg-img.big { cursor: zoom-out; }
+.guide-demo .msg-img.big img { max-width: 100%; max-height: 60vh; }
 
 /* —— 全部完成的彩带（颜色由 JS 取机器人眼睛色的 token） —— */
 .guide-confetti { position: fixed; inset: 0; z-index: var(--z-toast); pointer-events: none; overflow: hidden; }

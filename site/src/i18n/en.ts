@@ -276,7 +276,7 @@ export const en: Dict = {
     more: {
       h3: "And there's more.",
       items: [
-        { title: "Images and video", body: "Before each run it shows you the model and the prompt, and you can switch models on the spot." },
+        { title: "Images and video", body: "Just ask and it generates. It checks the model with you only when a run would cost over $0.5." },
         { title: "Three permission levels", body: "Read-only, workspace or full access, set per bot. Even with full access, recursive deletes ask first." },
         { title: "Slash commands", body: "/model, /reset and more work in the app and in WeChat and Feishu chats." },
         { title: "Spending at a glance", body: "Balance, low-balance alerts and daily usage live in the app, and each bot can get its own spending cap." },

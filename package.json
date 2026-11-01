@@ -1,7 +1,7 @@
 {
   "name": "anymodel-bot",
   "productName": "anymodel bot",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "private": true,
   "description": "anymodel bot：任意模型的个人 AI 助手（飞书 + 微信 iLink），内置 magpie 模型网关",
   "license": "MIT",

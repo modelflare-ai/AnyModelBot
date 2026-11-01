@@ -324,7 +324,7 @@ Modelflare keeps request logs; its [Trust Center](https://modelflare.dev/trust?u
 
 # 📝 Roadmap
 
-Directions we are exploring. They are not promises, and the order is not a schedule.
+Directions we are exploring. They are not promises, and the order is not a schedule. For what changed in each version, see the [changelog](./CHANGELOG_en.md).
 
 - [x] **Scheduled tasks**: let a bot run work on a timer (shipped as rules, above).
 - [ ] **Group chats**: chat channels handle one-to-one chats today.

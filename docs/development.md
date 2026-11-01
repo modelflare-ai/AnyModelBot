@@ -71,7 +71,7 @@ npm run test:dsh-bundle  # 用 Electron 跑真实 DSH 集成测试，加载打�
 - 界面只监听 127.0.0.1，且每次启动生成随机访问令牌，其他本机程序无法直接调用管理接口。
 - 退出时先停渠道、再停 magpie；若上次被强杀残留 magpie 进程，下次启动会自动清理（Linux/macOS）。
 
-发布：改 `package.json` 的版本号并提交，推送 `v<版本>` 标签，`.github/workflows/release.yml` 会在六种系统 / 架构上各自打包，并把安装包和 `SHA256SUMS` 发到 GitHub Release。签名与公证所需的仓库密钥见该文件开头的注释。同一个标签还会触发 `.github/workflows/docker.yml`，把 x64 + arm64 镜像发布到 `ghcr.io/modelflare-ai/anymodel-bot`（`<版本>` 和 `latest` 两个标签）。
+发布：在 `CHANGELOG.md` 和 `CHANGELOG_en.md` 写好这个版本的更新日志（用户能感受到的变化，不写网站和内部改动。官网英文页不显示提到微信、飞书的行），改 `package.json` 的版本号并提交，推送 `v<版本>` 标签。这个版本没写更新日志时，发布流程开始就会失败；写了就作为 GitHub Release 的说明，官网更新日志页也显示它。`.github/workflows/release.yml` 会在六种系统 / 架构上各自打包，并把安装包和 `SHA256SUMS` 发到 GitHub Release。签名与公证所需的仓库密钥见该文件开头的注释。同一个标签还会触发 `.github/workflows/docker.yml`，把 x64 + arm64 镜像发布到 `ghcr.io/modelflare-ai/anymodel-bot`（`<版本>` 和 `latest` 两个标签）。
 
 ## Docker
 

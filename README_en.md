@@ -204,6 +204,8 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 - **Pause anytime.** One switch in bot settings › Proactive messages pauses background work; chat carries on.
 - **Cleans up after itself.** Tasks and run logs are kept for 30 days. A task folder unused for 30 days is deleted without asking; the task details show the date, and Keep holds on to it. Run logs export as Markdown.
 
+The full story, in Chinese: [AnyModelBot 超级智能体](./docs/blog/superagent.md).
+
 ## 🖥️ Operates your computer, and makes images and video
 
 - **Computer use** is powered by the bundled [Cua Driver](https://github.com/trycua/cua). By default, actions run automatically. Switch a bot to *ask before changing the screen* and every click and keystroke waits for you. Reading the screen never needs approval. On macOS, computer use is a Beta feature.

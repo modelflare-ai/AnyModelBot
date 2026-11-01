@@ -5,6 +5,7 @@
  * 规则运行记录和任务导出成 Markdown（下载的文件名、按 ?lang= 的语言）。
  * 问了个有默认回答的问题、接着在做的任务：在进行中那组，「进行中，有个问题等你回答」；详情、「需要你」、对话里的卡片都有那一句
  * 「不回复就按中文做」（按界面的语言）。
+ * 观察够了的规则：「需要你」里问要不要改为执行；改为执行（同 PUT /rules/:id 切模式）、继续观察（这一版不再问）。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -115,7 +116,8 @@ describe("任务视图的接口", () => {
   it("保留文件夹：详情里的保留、「需要你」里的保留和知道了", async () => {
     app.store.updateTask(done, { cleanupAt: Date.now() + 3 * 86400_000 });
     const item = (await api("/attention")).data.items.find((i: any) => i.id === "cleanup:default");
-    expect(item).toMatchObject({ kind: "cleanup", actions: ["keep", "dismiss"], line: "整理下载目录 · 30 天没动过" });
+    expect(item).toMatchObject({ kind: "cleanup", actions: ["keep", "dismiss"], line: "整理下载目录 30 天没动过了" });
+    expect(item.head).toBe(item.subject);
     expect((await api("/attention/cleanup:default/dismiss", { method: "POST", body: {} })).data.items.find((i: any) => i.kind === "cleanup")).toBeUndefined();
     app.store.updateTask(failed, { cleanupAt: Date.now() + 4 * 86400_000 });
     expect((await api("/attention")).data.items.filter((i: any) => i.kind === "cleanup")).toHaveLength(1);
@@ -172,5 +174,80 @@ describe("问了还在做：有默认回答的提问", () => {
     expect((await api(`/tasks/${id}`)).data.task.question).toBeUndefined();
     expect((await api(`/approvals/${q.id}`)).data.approval).toMatchObject({ status: "answered" });
     expect((await api(`/approvals/${q.id}`)).data.approval.note).toBeUndefined();
+  });
+});
+
+describe("观察够了的规则：「需要你」里问要不要改为执行", () => {
+  /** 一条观察中的检查和它这一版的 n 次好好观察（直接写库；最近那次「本会发送」） */
+  const observed = async (title: string, n: number): Promise<string> => {
+    const rule = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", title, instruction: `每天看看${title}`, schedule: { kind: "daily", time: "08:00" } } })).data.rule;
+    for (let i = 0; i < n; i++) {
+      const at = Date.now() - (n - i) * 86400_000;
+      const id = `r_${rule.id.slice(3, 9)}${String(i).padStart(6, "0")}`;
+      app.store.insertEndedRun({ id, botId: "default", ruleId: rule.id, ruleVersion: 1, mode: "observe", cause: "schedule", outcome: "done", error: "", queuedAt: at, endedAt: at + 60_000 });
+      app.store.updateRun(id, { report: { state: "done", summary: "X 现在 ¥259", message: i === n - 1 ? "X 降到 199 了" : "", at } });
+    }
+    return rule.id;
+  };
+  const find = async (id: string, lang?: string) => (await api("/attention", { lang })).data.items.find((i: any) => i.id === `suggest:${id}`);
+
+  it("改为执行和规则详情里切模式一样，那一行随之消失；继续观察了这一版不再问；英文", async () => {
+    const few = await observed("Y 价格", 2);
+    expect(await find(few)).toBeUndefined();
+    const id = await observed("X 价格", 3);
+    expect(await find(id)).toMatchObject({ kind: "suggest", subject: "规则「X 价格」已观察 3 次，需要你来决定是否执行", status: "", line: "本会发送：“X 降到 199 了”", actions: ["act", "dismiss"], ruleId: id, ruleTitle: "X 价格" });
+    expect((await find(id, "en")).subject).toBe("Rule “X 价格” has run 3 times in observe mode; decide whether it should act");
+    // 算在侧栏的件数里
+    expect((await api("/agent")).data.attention).toBeGreaterThan(0);
+    const r = await api(`/attention/suggest:${id}/act`, { method: "POST", body: {} });
+    expect(r.status).toBe(200);
+    expect(r.data.items.find((i: any) => i.id === `suggest:${id}`)).toBeUndefined();
+    expect((await api(`/rules/${id}`)).data.rule).toMatchObject({ mode: "act", state: { key: "act", label: "执行中" } });
+    // 已经处理掉了：再点是 409
+    expect((await api(`/attention/suggest:${id}/act`, { method: "POST", body: {} })).status).toBe(409);
+    // 继续观察：这一版不再问，模式不变
+    const keep = await observed("Z 价格", 3);
+    expect(await find(keep)).toBeDefined();
+    expect((await api(`/attention/suggest:${keep}/dismiss`, { method: "POST", body: {} })).status).toBe(200);
+    expect(await find(keep)).toBeUndefined();
+    expect((await api(`/rules/${keep}`)).data.rule).toMatchObject({ mode: "observe" });
+    // 不支持的操作
+    const other = await observed("W 价格", 3);
+    expect((await api(`/attention/suggest:${other}/retry`, { method: "POST", body: {} })).status).toBe(400);
+    for (const x of [few, id, keep, other]) await api(`/rules/${x}`, { method: "DELETE" });
+  });
+});
+
+describe("界面：任务那一行、每次运行、胶囊都是一句话", () => {
+  it("进行中说做了多久、花了多少；等你的、结束了的说什么时候怎么了；每次运行说用了多久；英文同样是一句话", async () => {
+    (globalThis as any).window ??= { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} };
+    // @ts-expect-error 界面代码是不经构建的 JS
+    const { taskSub, runLabel } = await import("../ui/components/tasks.js");
+    // @ts-expect-error 同上
+    const ui = await import("../ui/lib/i18n.js");
+    const now = new Date(2026, 10, 2, 15, 30).getTime();
+    const MIN = 60_000;
+    const task = (key: string, group: string, o: Record<string, unknown> = {}) => ({ stage: { key, label: "?", group }, createdAt: now - 12 * MIN, updatedAt: now - 5 * MIN, endedAt: 0, spentUsd: 0, ...o });
+    ui.setLangPref("zh-CN");
+    expect(taskSub(task("working", "working"), now)).toBe("已进行 12 分钟");
+    expect(taskSub(task("working", "working", { spentUsd: 0.08 }), now)).toBe("已进行 12 分钟，花了约 $0.08");
+    expect(taskSub(task("working/asking", "working", { spentUsd: 0.05 }), now)).toBe("已进行 12 分钟，有个问题等你回答");
+    expect(taskSub(task("working/queued", "working", { stage: { key: "working/queued", label: "排队中", group: "working" } }), now)).toBe("排队中");
+    expect(taskSub(task("needs-you/answer", "needs", { spentUsd: 0.21 }), now)).toBe("5 分钟前问了你一个问题");
+    expect(taskSub(task("failed", "needs", { updatedAt: now - 20_000 }), now)).toBe("刚刚失败了");
+    expect(taskSub(task("ready", "ended", { endedAt: new Date(2026, 10, 2, 9, 5).getTime(), spentUsd: 0.02 }), now)).toBe("09:05 完成，花了约 $0.02");
+    expect(taskSub(task("stopped", "ended", { endedAt: new Date(2026, 9, 26, 9, 5).getTime() }), now)).toBe("10月26日停止了");
+    const run = (o: Record<string, unknown>) => ({ state: "ended", queuedAt: now - 20 * MIN, startedAt: now - 20 * MIN, endedAt: now - 8 * MIN, ...o });
+    expect(runLabel(run({}), 0, now)).toBe("第 1 次运行，用了 12 分 0 秒");
+    expect(runLabel(run({ state: "running", endedAt: 0, startedAt: now - 34_000 }), 1, now)).toBe("第 2 次运行，已进行 34 秒");
+    expect(runLabel(run({ state: "queued", startedAt: 0, endedAt: 0 }), 2, now)).toBe("第 3 次运行，排队中");
+    ui.setLangPref("en");
+    expect(taskSub(task("working", "working", { spentUsd: 0.08 }), now)).toBe("Running for 12 min, about $0.08 so far");
+    expect(taskSub(task("needs-you/approval", "needs"), now)).toBe("Asked for your approval 5 min ago");
+    expect(taskSub(task("ready", "ended", { endedAt: new Date(2026, 10, 2, 9, 5).getTime(), spentUsd: 0.02 }), now)).toBe("Finished at 09:05, about $0.02");
+    expect(taskSub(task("stopped", "ended", { endedAt: new Date(2026, 9, 26, 9, 5).getTime() }), now)).toBe("Stopped on Oct 26");
+    expect(runLabel(run({}), 0, now)).toBe("Run 1 took 12m 0s");
+    expect(runLabel(run({ state: "queued", startedAt: 0, endedAt: 0 }), 1, now)).toBe("Run 2 is queued");
+    ui.setLangPref("zh-CN");
   });
 });

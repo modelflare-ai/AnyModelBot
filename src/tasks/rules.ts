@@ -14,8 +14,8 @@ import { describe } from "./schedule.js";
 export const RULE_FAILS_TO_PAUSE = 3;
 /** 连续失败几次出现在「需要你」里 */
 export const RULE_FAILS_TO_SHOW = 2;
-/** 观察几次好的之后提示改为执行 */
-export const RULE_HINT_AFTER = 3;
+/** 这一版好好观察了几次（做完了的；失败、跳过的不算）之后，「需要你」里问要不要改为执行 */
+export const RULE_SUGGEST_AFTER = 3;
 /** 改了原话之后先观察几次（产品负责人：1 次） */
 export const RULE_OBSERVE_AFTER_EDIT = 1;
 /** 每个机器人最多几条规则 */
@@ -85,10 +85,6 @@ export interface RuleView {
   nextRunAt: number;
   /** 最近一次：时间、结果、一行 */
   last?: { at: number; outcome: string; line: string };
-  /** 已观察 3 次（这一版）、可以改为执行 */
-  hint: boolean;
-  /** 这一版好好观察过几次 */
-  observed: number;
   failures: number;
   /** 暂停的原因：failures / budget；空 = 没暂停 */
   pausedReason: string;

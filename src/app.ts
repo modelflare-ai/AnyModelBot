@@ -296,7 +296,8 @@ export class App {
     for (const [botId, ch] of this.channels) {
       const st = ch.weixin?.status;
       if (st?.state !== "expired") continue;
-      out.push({ id: `login:${botId}:weixin`, kind: "login", botId, botName: this.store.getBot(botId)?.name ?? botId, subject: tr("app.weixinExpiredSubject"), status: "", line: "", since: st.since, severity: "err", actions: ["relogin"], channel: "weixin" });
+      const subject = tr("app.weixinExpiredSubject");
+      out.push({ id: `login:${botId}:weixin`, kind: "login", botId, botName: this.store.getBot(botId)?.name ?? botId, subject, status: "", head: subject, line: "", since: st.since, severity: "err", actions: ["relogin"], channel: "weixin" });
     }
     return out;
   }

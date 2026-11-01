@@ -38,7 +38,7 @@ export default {
   },
   model: {
     /** n 是带样式的数字，count 用来选单复数 */
-    found: "已连接 · 找到 {n} 个模型",
+    found: "已连接，找到 {n} 个模型",
     hint: "选一个默认模型，之后随时可在对话里切换。",
     filter: "筛选模型",
     default: "默认模型",

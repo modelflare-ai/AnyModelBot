@@ -72,7 +72,7 @@ export default {
   turn: {
     stopFailed: "中止失败：{error}",
     processing: "正在处理 {d}",
-    waitingAgent: " · 等代理进程接手",
+    waitingAgent: "等代理进程接手",
     idle: "{d}没有新进展",
     stop: "中止",
     activity: "处理过程",

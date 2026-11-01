@@ -1,6 +1,8 @@
 // needs · zh-CN（screens/needs-you.js：「需要你」）
 export default {
   title: "需要你",
+  head: "{bot}的{what}",
+  headSpaced: "{bot}的 {what}",
   collapse: "收起",
   viewTask: "查看任务",
   viewRule: "查看规则",
@@ -18,4 +20,6 @@ export default {
   continue: "继续",
   raiseBudget: "调整预算",
   keep: "保留",
+  toAct: "改为执行",
+  keepObserving: "继续观察",
 };

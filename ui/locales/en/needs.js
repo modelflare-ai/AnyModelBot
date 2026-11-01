@@ -1,6 +1,8 @@
 // needs · en
 export default {
   title: "Needs you",
+  head: "{bot}: {what}",
+  headSpaced: "{bot}: {what}",
   collapse: "Collapse",
   viewTask: "View task",
   viewRule: "View rule",
@@ -18,4 +20,6 @@ export default {
   continue: "Continue",
   raiseBudget: "Change budget",
   keep: "Keep",
+  toAct: "Switch to act",
+  keepObserving: "Keep observing",
 };

@@ -156,7 +156,7 @@ export default {
     account: {
       name: "Modelflare account",
       signedIn: "Signed in",
-      enterprise: "{name} · Billed to your organization's wallet",
+      enterprise: "{name}'s usage is billed to your organization's wallet",
       signedOut: "Sign in to see usage, notifications and your invite link, and to set budgets for individual bots",
       keys: "account sign in sign up log in log out login",
       logout: "Sign out",

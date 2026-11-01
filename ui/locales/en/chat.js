@@ -39,11 +39,11 @@ export default {
     submit: "Submit",
   },
   file: {
-    delivered: "Delivered to the bot's workspace · sent directly on WeChat/Feishu",
+    delivered: "Delivered to the bot's workspace; on WeChat and Feishu it's sent directly",
   },
   work: {
-    stopping: "Stopping…{extra}",
-    processedFor: " · ran for {d}",
+    stopping: "Stopping…",
+    stoppingAfter: "Stopping after {d}…",
     process: "Activity",
     done: "Worked for {d}",
     replying: "Replying for {d}",

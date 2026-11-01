@@ -39,12 +39,12 @@ export default {
     submit: "提交",
   },
   file: {
-    delivered: "已交付到机器人工作区 · 微信/飞书会直接发送",
+    delivered: "已交付到机器人工作区，微信和飞书会直接发送",
   },
   /** 回复上方的工作状态；{d} 是 fmtDur 的用时 */
   work: {
-    stopping: "正在停止…{extra}",
-    processedFor: " 已处理 {d}",
+    stopping: "正在停止…",
+    stoppingAfter: "处理了 {d}，正在停止…",
     process: "处理过程",
     done: "用时 {d}",
     replying: "正在回复 {d}",

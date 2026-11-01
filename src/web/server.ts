@@ -487,6 +487,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       } else if (item.kind === "delivery" && (action === "retry" || action === "dismiss")) ok = app.delivery.act(item.id, action);
       // 清理任务文件夹（3f）：保留（再算 30 天）、知道了（到时照样清理）
       else if (item.kind === "cleanup") ok = action === "keep" ? app.tasks.keepCleanup(item.botId) : app.tasks.dismissCleanup(item.botId);
+      // 观察够了的规则：改为执行（和规则详情里切模式一样）、继续观察（这一版不再问）
+      else if (item.kind === "suggest") ok = action === "act" ? !app.tasks.updateRule(item.ruleId!, { mode: "act" }).error : app.tasks.keepObserving(item.ruleId!);
       else if (item.kind === "rule" && action === "retry") ok = !app.tasks.resumeRule(item.ruleId!).error;
       // 加预算接着做：规则每月再给 $3，任务再给 $1
       else if (item.kind === "rule" && action === "continue") ok = !app.tasks.addRuleBudget(item.ruleId!).error;

@@ -20,7 +20,7 @@ export default {
   feishu: {
     bindHint: "Send the bot a message from your own Feishu account to finish binding.",
     sub: "Receives messages over a long connection",
-    secretSaved: "Saved {masked} · leave blank to keep it",
+    secretSaved: "Saved {masked}. Leave blank to keep it",
     saveConnect: "Save and connect",
     disconnect: "Disconnect",
     disconnectTitle: "Disconnect Feishu?",
@@ -68,7 +68,7 @@ export default {
   turn: {
     stopFailed: "Couldn't stop: {error}",
     processing: "Processing for {d}",
-    waitingAgent: " · waiting for the agent process",
+    waitingAgent: "Waiting for the agent process",
     idle: "No progress for {d}",
     stop: "Stop",
     activity: "Activity",

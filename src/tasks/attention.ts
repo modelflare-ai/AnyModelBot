@@ -4,7 +4,7 @@
  *
  * - 来源可以登记（addSource）：审批中心、任务服务、渠道各给一份；3c 的"留着没发出去的消息"也从这里接进来。
  * - 有变化（kick，或每 10 秒看一眼）时通知订阅者：侧栏的数字、托盘角标、系统通知。
- * - 系统通知每一项最多一次（takeNew：记在 KV 里，重启也算）。
+ * - 系统通知每一项最多一次（takeNew：记在 KV 里，重启也算）；问要不要改为执行的那种（suggest）不发。
  * 健康时什么都没有：没有行、没有角标、没有通知。
  */
 import type { ApprovalRow, Store } from "../store/db.js";
@@ -19,25 +19,31 @@ const log = logger("attention");
 /**
  * question / approval：在等你回答、批准（任务预算用完时的「再给 $1 继续？」也是 question）；failed：任务失败了；
  * rule：规则连续失败或本月预算用完（暂停了）；delivery：结果没送到；login：渠道登录过期了；budget：机器人的预算留给聊天，后台工作停着；
- * cleanup：任务文件夹 30 天没动过，过几天清理（3f）
+ * cleanup：任务文件夹 30 天没动过，过几天清理（3f）；suggest：观察中的规则这一版好好观察了 3 次，问要不要改为执行（最不急：不推送、不发系统通知）
  */
-export type AttentionKind = "question" | "approval" | "failed" | "rule" | "delivery" | "login" | "budget" | "cleanup";
+export type AttentionKind = "question" | "approval" | "failed" | "rule" | "delivery" | "login" | "budget" | "cleanup" | "suggest";
 /**
  * answer、approve、deny、retry（任务再试 / 消息再发）、stop、dismiss（不再提示）、relogin（去重新扫码）、
- * open（打开对话；budget 是打开机器人设置的预算）、continue（加预算接着做：任务 $1，规则每月 $3）、keep（保留要清理的任务文件夹）
+ * open（打开对话；budget 是打开机器人设置的预算）、continue（加预算接着做：任务 $1，规则每月 $3）、keep（保留要清理的任务文件夹）、
+ * act（规则改为执行；suggest 的 dismiss 是继续观察）
  */
-export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open" | "continue" | "keep";
+export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open" | "continue" | "keep" | "act";
 
 export interface AttentionItem {
-  /** 稳定 id：approval:<id>、task:<id>、rule:<id>、delivery:<会话>:held|failed、login:<bot>:<渠道>、reserve:<bot>（预算留给聊天）、cleanup:<bot> */
+  /** 稳定 id：approval:<id>、task:<id>、rule:<id>、suggest:<规则>、delivery:<会话>:held|failed、login:<bot>:<渠道>、reserve:<bot>（预算留给聊天）、cleanup:<bot> */
   id: string;
   kind: AttentionKind;
   botId: string;
   botName: string;
   /** 说的是什么：任务名、渠道名（"微信"），或一句话（"微信登录已过期"） */
   subject: string;
-  /** 状态：等你回答 / 等你批准 / 失败 / 未送达；没有就不显示 */
+  /** 状态：等你回答 / 等你批准 / 失败 / 未送达；没有就是空 */
   status: string;
+  /**
+   * 界面上的那一句（不带机器人名）：「「GPU 价格调研」在等你回答」「微信登录已过期」。几个机器人时界面在前面加上名字
+   * （「小蓝的「GPU 价格调研」在等你回答」）；侧栏机器人行的第二行也是它
+   */
+  head: string;
   /** 第二行：问题、命令、失败原因、没送到的那句话 */
   line: string;
   /** 有默认回答的提问：不回答会怎样（「不回复就按中文做」）；任务这时还在做 */
@@ -48,8 +54,10 @@ export interface AttentionItem {
   conversationId?: string;
   channel?: string;
   taskId?: string;
-  /** 规则（3d）：连续失败的、执行时的审批 */
+  /** 规则（3d）：连续失败的、执行时的审批、问要不要改为执行的 */
   ruleId?: string;
+  /** 规则的名字（改为执行后的提示「「看 X 价格」改为执行」用） */
+  ruleTitle?: string;
   approvalId?: string;
   code?: string;
   questions?: QuestionItem[];
@@ -57,8 +65,10 @@ export interface AttentionItem {
 
 export type AttentionSource = () => AttentionItem[];
 
-/** 排序：提问和审批在前（等着的事），再是失败、没送到，最后是系统的（登录、预算）；同一类旧的在前 */
-const ORDER: Record<AttentionKind, number> = { question: 0, approval: 0, failed: 1, rule: 1, delivery: 2, login: 3, budget: 3, cleanup: 3 };
+/** 排序：提问和审批在前（等着的事），再是失败、没送到，再是系统的（登录、预算），问要不要改为执行的最后；同一类旧的在前 */
+const ORDER: Record<AttentionKind, number> = { question: 0, approval: 0, failed: 1, rule: 1, delivery: 2, login: 3, budget: 3, cleanup: 3, suggest: 4 };
+/** 不发系统通知的：只是建议，等用户自己来看 */
+const QUIET = new Set<AttentionKind>(["suggest"]);
 
 const NOTIFIED = "attention:notified";
 
@@ -161,8 +171,9 @@ export class Attention {
     }
   }
 
-  /** 还没发过系统通知的项（记下来，之后不再给；重启后也一样）。已经不在列表里的记录随之清掉 */
-  takeNew(items = this.list()): AttentionItem[] {
+  /** 还没发过系统通知的项（记下来，之后不再给；重启后也一样）。已经不在列表里的记录随之清掉；不发通知的那几种不算 */
+  takeNew(all = this.list()): AttentionItem[] {
+    const items = all.filter((it) => !QUIET.has(it.kind));
     let done: string[] = [];
     try {
       done = JSON.parse(this.o.store.getKV(NOTIFIED) || "[]");
@@ -181,7 +192,7 @@ const channelLabel = (c: string) => (c === "weixin" ? tr("tasks.chWeixin") : c =
 
 /**
  * 审批中心那一份：还在等的提问和审批（聊天回合里的、后台任务的）。任务的以任务名为题，聊天里的以渠道为题：
- * 「小蓝 · GPU 价格调研 · 等你回答」「小蓝 · 微信 · 等你批准」。
+ * 「「GPU 价格调研」在等你回答」「微信里有个操作等你批准」。
  */
 export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[] {
   return rows.map((r) => {
@@ -191,6 +202,12 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
     const qs = questionsOf(r);
     const line = r.kind === "approval" ? r.detail || r.reason || r.tool : qs.map((q) => q.question).join(" / ") || r.detail;
     const note = r.kind === "question" ? defaultLine(r) : undefined;
+    const budget = r.kind === "question" && r.tool === BUDGET_TOOL;
+    const head = task
+      ? tr(r.kind === "approval" ? "tasks.headApproval" : budget ? "tasks.headBudget" : "tasks.headAnswer", { title: task.title })
+      : rule
+        ? tr(r.kind === "approval" ? "rules.headApproval" : "rules.headAnswer", { title: rule.title })
+        : tr(r.kind === "approval" ? "tasks.headChatApproval" : "tasks.headChatAnswer", { channel: channelLabel(channel) ?? tr("tasks.chWeb") });
     return {
       id: `approval:${r.id}`,
       kind: r.kind,
@@ -198,7 +215,8 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       botName: store.getBot(r.botId)?.name ?? r.botId,
       subject: task?.title ?? (rule ? tr("rules.subject", { title: rule.title }) : (channelLabel(channel) ?? tr("tasks.chWeb"))),
       // 任务预算用完时问的那个：状态是预算用完（第二行就是「已用约 $1.00，再给 $1 继续？」）
-      status: r.kind === "approval" ? tr("tasks.stageApproval") : r.tool === BUDGET_TOOL ? tr("tasks.stageBudget") : tr("tasks.stageAnswer"),
+      status: r.kind === "approval" ? tr("tasks.stageApproval") : budget ? tr("tasks.stageBudget") : tr("tasks.stageAnswer"),
+      head,
       line: line.length > 300 ? line.slice(0, 299) + "…" : line,
       ...(note ? { note } : {}),
       since: r.createdAt,
@@ -216,7 +234,7 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
 }
 
 /**
- * 出站队列那一份（core/delivery.ts）：没送到的结果，一个会话一行。「1 条结果未送达微信 · 在微信里发条消息就能收到」，
+ * 出站队列那一份（core/delivery.ts）：没送到的结果，一个会话一行。「1 条结果未送达微信，在微信里发条消息就能收到」，
  * 第二行是没送到的那几句（在这里就能看到）；一直失败的可以重试、放弃了的可以不再提示
  */
 export function deliveryItem(d: DeliveryItem, botName: string): AttentionItem {
@@ -228,6 +246,7 @@ export function deliveryItem(d: DeliveryItem, botName: string): AttentionItem {
     botName,
     subject: d.title,
     status: d.line,
+    head: d.line ? tr("delivery.head", { title: d.title, line: d.line }) : d.title,
     line: text.length > 300 ? text.slice(0, 299) + "…" : text,
     since: d.since,
     severity: d.severity === "error" ? "err" : "warn",
@@ -237,17 +256,17 @@ export function deliveryItem(d: DeliveryItem, botName: string): AttentionItem {
   };
 }
 
-/** 列表变没变：id + 状态 + 第二行 */
+/** 列表变没变：id + 那一句 + 第二行 */
 function signature(items: AttentionItem[]): string {
-  return items.map((it) => `${it.id}|${it.status}|${it.line}`).join("\n");
+  return items.map((it) => `${it.id}|${it.head}|${it.line}`).join("\n");
 }
 
-/** 侧栏机器人行的第二行："GPU 价格调研等你回答"、"微信登录已过期" */
+/** 侧栏机器人行的第二行：「「GPU 价格调研」在等你回答」「微信登录已过期」 */
 export function botLine(it: AttentionItem): string {
-  return it.status ? `${it.subject}${it.status}` : it.subject;
+  return it.head;
 }
 
-/** 系统通知：标题「小蓝 需要你」，正文「GPU 价格调研：报告用中文还是英文？」（设计第 6 节） */
+/** 系统通知：标题「小蓝 需要你」，正文「GPU 价格调研：报告用中文还是英文？」（设计第 6 节）；没有第二行时是那一句 */
 export function notificationOf(it: AttentionItem): { title: string; body: string } {
   const body = it.line ? `${it.subject}：${it.line}` : botLine(it);
   return { title: tr("tasks.notifyTitle", { name: it.botName }), body: body.length > 120 ? body.slice(0, 119) + "…" : body };

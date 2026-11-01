@@ -156,7 +156,7 @@ export default {
     account: {
       name: "Modelflare 账户",
       signedIn: "已登录",
-      enterprise: "{name} · 由企业钱包付费",
+      enterprise: "{name} 的费用由企业钱包支付",
       signedOut: "登录后可以查看用量、通知和邀请链接，也能给机器人单独设预算",
       keys: "登录 注册 账户 退出 account login",
       logout: "退出登录",

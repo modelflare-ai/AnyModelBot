@@ -169,7 +169,8 @@ function FileCard({ name }) {
 }
 
 /**
- * 回复上方的工作状态：没出字时"思考中 · 正在做的那一步"，出字后"正在回复 N 秒"，结束后"用时 N 秒"（短于 3 秒且没有步骤时不显示）。
+ * 回复上方的工作状态，一句话：没出字时"思考中 N 秒"，有一步在做时是那一步"运行 bash，已用 N 秒"，出字后"正在回复 N 秒"，
+ * 结束后"用时 N 秒"（短于 3 秒且没有步骤时不显示）。
  * 代理回合有步骤时这一行可以展开成处理过程（默认折叠）；历史消息只知道步数，展开时用 load 取。
  */
 function WorkLine({ live, stopping, text, startedAt, workedMs, steps, count, load }) {
@@ -183,11 +184,14 @@ function WorkLine({ live, stopping, text, startedAt, workedMs, steps, count, loa
   if (!live && !(ms >= 3000) && !steps?.length && !count) return null;
   const cur = live && !text ? currentStep(steps) : "";
   // 按了停止：代理要重启进程，可能要几秒，先说清楚在停
+  const long = ms >= 3000;
   const label = live
     ? stopping
-      ? t("chat.work.stopping", { extra: ms >= 3000 ? t("chat.work.processedFor", { d: fmtDur(ms) }) : "" })
-      : `${text ? t("chat.work.replying", { d: fmtDur(ms) }) : ms >= 3000 ? t("chat.work.thinkingFor", { d: fmtDur(ms) }) : t("chat.work.thinking")}${cur ? ` · ${cur}` : ""}`
-    : ms >= 3000 ? t("chat.work.done", { d: fmtDur(ms) }) : t("chat.work.process");
+      ? long ? t("chat.work.stoppingAfter", { d: fmtDur(ms) }) : t("chat.work.stopping")
+      : text ? t("chat.work.replying", { d: fmtDur(ms) })
+      : cur ? (long ? t("activity.stepFor", { step: cur, d: fmtDur(ms) }) : cur)
+      : long ? t("chat.work.thinkingFor", { d: fmtDur(ms) }) : t("chat.work.thinking")
+    : long ? t("chat.work.done", { d: fmtDur(ms) }) : t("chat.work.process");
   // 换阶段（思考 → 回复 → 用时）时文字淡入：key 变才重播，秒数跳动不重播
   const phase = !live ? "done" : stopping ? "stop" : text ? "reply" : "think";
   return html`<${ActivityLine} label=${label} phase=${phase} live=${live} steps=${steps} count=${count} load=${load} />`;

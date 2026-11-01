@@ -19,6 +19,8 @@ export const zh = {
   failedResults: { other: "{count} 条结果没能发到{channel}" },
   failedMessages: { other: "{count} 条消息没能发到{channel}" },
   heldLine: "在{channel}里发条消息就能收到",
+  // 「需要你」那一行的那一句：没送到的几条，和怎么办
+  head: "{title}，{line}",
   retrying: "还在重试",
   fileItem: "[文件 {name}]",
   goneTooLong: "等待太久，已不再发送",
@@ -71,6 +73,7 @@ export const en: Catalog<typeof zh> = {
   failedResults: { one: "{count} result couldn't be sent to {channel}", other: "{count} results couldn't be sent to {channel}" },
   failedMessages: { one: "{count} message couldn't be sent to {channel}", other: "{count} messages couldn't be sent to {channel}" },
   heldLine: "Send a message in {channel} to receive them",
+  head: "{title}. {line}",
   retrying: "Still retrying",
   fileItem: "[file {name}]",
   goneTooLong: "Waited too long; no longer sending",

@@ -16,6 +16,7 @@ import { DEFAULT_SETTINGS } from "../src/agent/settings.js";
 import { Outbox } from "../src/core/outbox.js";
 import { Delivery } from "../src/core/delivery.js";
 import { Store, type RunOutcome } from "../src/store/db.js";
+import { withLang } from "../src/i18n/index.js";
 
 const TZ = "Asia/Shanghai";
 const at = (s: string) => Date.parse(`${s}${s.length === 16 ? ":00" : ""}+08:00`);
@@ -157,7 +158,7 @@ describe("保留与清理（假宿主、假时钟）", () => {
     expect(due).toBe(now + WARN_MS);
     expect(svc.get(t)!.cleanupAt).toBe(due);
     expect(cleanupItems()).toEqual([
-      expect.objectContaining({ id: "cleanup:b", kind: "cleanup", botName: "小蓝", subject: "1 个任务文件夹 12月1日 删除", line: "GPU 价格调研 · 30 天没动过", severity: "warn", actions: ["keep", "dismiss"], since: now }),
+      expect.objectContaining({ id: "cleanup:b", kind: "cleanup", botName: "小蓝", subject: "1 个任务文件夹 12月1日 删除", head: "1 个任务文件夹 12月1日 删除", line: "GPU 价格调研 30 天没动过了", severity: "warn", actions: ["keep", "dismiss"], since: now }),
     ]);
     // 只在应用里：出站队列里没有它
     expect(store.listOutbox({ limit: 100 }).filter((r) => r.id.includes("cleanup"))).toEqual([]);
@@ -183,7 +184,8 @@ describe("保留与清理（假宿主、假时钟）", () => {
     now += KEEP_MS - WARN_MS;
     svc.retain();
     expect(cleanupItems()[0].subject).toBe("2 个任务文件夹 12月1日 删除");
-    expect(cleanupItems()[0].line).toBe("A和B · 30 天没动过");
+    expect(cleanupItems()[0].line).toBe("A和B 30 天没动过了");
+    expect(withLang("en", () => cleanupItems()[0].line)).toBe("A and B haven't been used in 30 days");
     expect(svc.keepCleanup("b")).toBe(true);
     expect(store.getTask(a)!.cleanupAt).toBe(0);
     expect(cleanupItems()).toEqual([]);

@@ -72,9 +72,9 @@ import {
   RULE_DENY_PREFIX,
   RULE_FAILS_TO_PAUSE,
   RULE_FAILS_TO_SHOW,
-  RULE_HINT_AFTER,
   RULE_OBSERVE_AFTER_EDIT,
   RULE_RUN_CAP_MS,
+  RULE_SUGGEST_AFTER,
   RUN_ERROR,
   WOULD_APPROVAL,
   errorText,
@@ -280,6 +280,8 @@ const NOTES = "task-notes:";
 const TRASH = "tasks:session-trash";
 /** 「需要你」里清理文件夹那一行点过「知道了」：到哪个清理时间为止不再显示（每个机器人一个） */
 const CLEANUP_SEEN = "tasks:cleanup-seen:";
+/** 「需要你」里问要不要改为执行的那一行点过「继续观察」：哪一版不再问（每条规则一个；删规则时一起删） */
+const SUGGEST_SEEN = "rules:suggest-seen:";
 
 /** 预算用完时的回答：不要了 */
 const STOP_WORDS = /^(停止|停|不用了?|不要了?|算了|取消|stop|no|cancel)[。.!！]*$/i;
@@ -1684,6 +1686,7 @@ export class TaskService {
         botName: bot?.name ?? t.botId,
         subject: t.title,
         status: st.label,
+        head: tr(st.key === "failed" ? "tasks.headFailed" : "tasks.headBudget", { title: t.title }),
         line: clip(oneLine(line), 200),
         since: run?.endedAt || t.updatedAt,
         severity: st.key === "failed" ? "err" : "warn",
@@ -1703,6 +1706,7 @@ export class TaskService {
         botName: bot.name,
         subject: tr("tasks.reserveSubject"),
         status: "",
+        head: tr("tasks.reserveSubject"),
         line: tr("tasks.reserveLine", { remain: usdText(low.remainUsd), limit: stepText(low.limitUsd) }),
         since: this.reserveSince.get(bot.id) ?? this.now(),
         severity: "warn",
@@ -1997,14 +2001,16 @@ export class TaskService {
       const date = new Intl.DateTimeFormat(l === "en" ? "en-US" : "zh-CN", { month: l === "en" ? "short" : "long", day: "numeric", timeZone: this.timeZone }).format(first);
       const names = tasks.slice(0, 3).map((t) => t.title);
       const titles = new Intl.ListFormat(l === "en" ? "en" : "zh-CN", { type: "conjunction" }).format(names) + (tasks.length > 3 ? "…" : "");
+      const subject = tr("tasks.cleanupSubject", { count: tasks.length, date });
       out.push({
         id: `cleanup:${botId}`,
         kind: "cleanup",
         botId,
         botName: this.store.getBot(botId)?.name ?? botId,
-        subject: tr("tasks.cleanupSubject", { count: tasks.length, date }),
+        subject,
         status: "",
-        line: tr("tasks.cleanupLine", { titles }),
+        head: subject,
+        line: tr("tasks.cleanupLine", { titles, count: tasks.length }),
         since: first - WARN_MS,
         severity: "warn",
         actions: ["keep", "dismiss"],
@@ -2250,6 +2256,8 @@ export class TaskService {
     if (reopened) (next.failures = 0), (next.pausedReason = "");
     if (next.trigger || next.mode !== undefined || reopened) next.nextRunAt = this.nextFor({ trigger, mode, pausedReason: reopened ? "" : rule.pausedReason }, now);
     this.store.updateRule(id, next);
+    // 自己选了观察（从执行、关着切回来）：这一版算是决定过了，「需要你」里不再问要不要改为执行（改了原话的新一版照样会问）
+    if (mode === "observe" && rule.mode !== "observe" && !reworded) this.store.setKV(SUGGEST_SEEN + id, String(rule.version));
     log.info("rule updated", { rule: id, fields: Object.keys(next).filter((k) => k !== "updatedAt") });
     this.ruleChanged(id);
     return { rule: this.store.getRule(id) };
@@ -2289,6 +2297,7 @@ export class TaskService {
     const l = [...this.live.values()].find((x) => x.ruleId === id);
     if (l) this.forget(l);
     this.store.deleteRule(id);
+    this.store.deleteKV(SUGGEST_SEEN + id);
     if (l) await this.o.host.stop(l.botId, l.sessionId).catch(() => undefined);
     log.info("rule deleted", { rule: id });
     this.ruleChanged(id);
@@ -2800,7 +2809,6 @@ export class TaskService {
   ruleView(rule: RuleRow): RuleView {
     const live = this.store.listRuns({ ruleId: rule.id, states: ["queued", "running", "settling"], limit: 1 })[0];
     const last = this.store.ruleRuns(rule.id, { limit: 5 }).find((r) => r.state === "ended");
-    const observed = rule.kind === "check" ? this.store.ruleRuns(rule.id, { mode: "observe", outcome: "done", version: rule.version, limit: RULE_HINT_AFTER }).length : 0;
     return {
       id: rule.id,
       botId: rule.botId,
@@ -2817,8 +2825,6 @@ export class TaskService {
       state: ruleState(rule, !!live),
       nextRunAt: rule.nextRunAt,
       ...(last ? { last: { at: last.queuedAt, outcome: last.outcome, line: runLine(last, rule.kind, this.carrier(last)) } } : {}),
-      hint: rule.kind === "check" && rule.mode === "observe" && !rule.pausedReason && observed >= RULE_HINT_AFTER,
-      observed,
       failures: rule.failures,
       pausedReason: rule.pausedReason,
       monthUsd: rule.kind === "check" ? this.monthSpent(rule) : 0,
@@ -2867,12 +2873,14 @@ export class TaskService {
   }
 
   /**
-   * 「需要你」里规则那一份：连续失败 3 次暂停了的（红），连续失败 2 次的（黄），本月预算用完暂停了的（黄，可以再给 $3 接着跑）。
-   * 原因没了（重试成功、关掉、删掉、下个月了）就消失。规则执行时的审批由审批中心那一份给。
+   * 「需要你」里规则那一份：连续失败 3 次暂停了的（红），连续失败 2 次的（黄），本月预算用完暂停了的（黄，可以再给 $3 接着跑），
+   * 观察够了、问要不要改为执行的（suggestItem）。原因没了（重试成功、关掉、删掉、下个月了）就消失。规则执行时的审批由审批中心那一份给。
    */
   ruleAttention(): AttentionItem[] {
     const out: AttentionItem[] = [];
     for (const rule of this.store.listRules()) {
+      const suggest = this.suggestItem(rule);
+      if (suggest) out.push(suggest);
       const paused = !!rule.pausedReason;
       if (!paused && (rule.mode === "off" || rule.failures < RULE_FAILS_TO_SHOW)) continue;
       const conv = this.store.getConversation(rule.conversationId);
@@ -2884,6 +2892,7 @@ export class TaskService {
           botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
           subject: tr("rules.subject", { title: rule.title }),
           status: tr("rules.monthPaused"),
+          head: tr("rules.headMonth", { title: rule.title }),
           line: tr("rules.monthLine", { spent: usdText(this.monthSpent(rule)), add: stepText(RULE_MONTH_BUDGET_USD) }),
           since: rule.updatedAt,
           severity: "warn",
@@ -2903,6 +2912,7 @@ export class TaskService {
         botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
         subject: tr("rules.subject", { title: rule.title }),
         status: tr(paused ? "rules.failingPaused" : "rules.failing", { count: rule.failures }),
+        head: tr(paused ? "rules.headFailingPaused" : "rules.headFailing", { title: rule.title, count: rule.failures }),
         line: last ? clip(oneLine((last.outcome === "failed" && last.report?.message) || errorText(last.error || RUN_ERROR.noReport)), 200) : "",
         since: last?.endedAt || rule.updatedAt,
         severity: paused ? "err" : "warn",
@@ -2913,6 +2923,47 @@ export class TaskService {
       });
     }
     return out;
+  }
+
+  /**
+   * 观察中、没暂停的检查，这一版好好观察了 3 次（做完了的；失败、跳过的不算）：「需要你」里问要不要改为执行，第二行是最近那次
+   * 运行记录里的那一行。只在应用里：不推送、不发系统通知。改为执行、关掉、暂停、删掉就消失；继续观察了的这一版不再问
+   * （改了原话版本加 1，新的一版再好好观察 3 次再问）。
+   */
+  private suggestItem(rule: RuleRow): AttentionItem | undefined {
+    if (rule.kind !== "check" || rule.mode !== "observe" || rule.pausedReason) return undefined;
+    if (Number(this.store.getKV(SUGGEST_SEEN + rule.id) || 0) >= rule.version) return undefined;
+    const good = this.store.ruleRuns(rule.id, { mode: "observe", outcome: "done", version: rule.version, limit: RULE_SUGGEST_AFTER });
+    if (good.length < RULE_SUGGEST_AFTER) return undefined;
+    const last = good[0];
+    const subject = tr("rules.suggest", { title: rule.title, count: RULE_SUGGEST_AFTER });
+    return {
+      id: `suggest:${rule.id}`,
+      kind: "suggest",
+      botId: rule.botId,
+      botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
+      subject,
+      status: "",
+      head: subject,
+      line: runLine(last, rule.kind, this.carrier(last)),
+      since: last.endedAt || last.queuedAt,
+      severity: "warn",
+      actions: ["act", "dismiss"],
+      conversationId: rule.conversationId,
+      channel: this.store.getConversation(rule.conversationId)?.channel ?? "",
+      ruleId: rule.id,
+      ruleTitle: rule.title,
+    };
+  }
+
+  /** 「需要你」里的继续观察：这一版不再问要不要改为执行 */
+  keepObserving(id: string): boolean {
+    const rule = this.store.getRule(id);
+    if (!rule) return false;
+    this.store.setKV(SUGGEST_SEEN + id, String(rule.version));
+    log.info("rule keeps observing", { rule: id, version: rule.version });
+    this.changed(id);
+    return true;
   }
 }
 

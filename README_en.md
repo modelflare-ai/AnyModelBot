@@ -134,7 +134,7 @@ Requirements for building from source: Node.js 22.13+ and Go 1.26.8+. To build t
 
 # 🌠 Screenshots
 
-The app UI is currently in Simplified Chinese.
+These screenshots show the Simplified Chinese interface. The app also runs in English; switch in Settings.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/chat-dark.webp">
@@ -185,6 +185,7 @@ The app UI is currently in Simplified Chinese.
 A bot is more than a chat window: it has a persona, a default model, its own workspace and its own memory.
 
 - **Make as many bots as you need**, each with its own persona, model, workspace and avatar.
+- **You decide who it is.** A persona is just text, and templates are only a starting point. The six avatars change how a bot looks, not what it can do.
 - **Real file work.** Bots read and write files, run commands in a sandbox, and send the results back to the chat as files.
 - **Three permission presets per bot.** *Read-only*, *Workspace* (the default: write inside the bot's own folder, ask before anything outside) and *Full access* (no sandbox; recursive deletes still ask first).
 - **Approval cards, not surprises.** Out-of-bounds actions stop and wait for your answer.
@@ -326,7 +327,7 @@ Directions we are exploring. They are not promises, and the order is not a sched
 
 - [x] **Scheduled tasks**: let a bot run work on a timer (shipped as rules, above).
 - [ ] **Group chats**: chat channels handle one-to-one chats today.
-- [ ] **English interface**: the app UI is Simplified Chinese today.
+- [x] **English interface**: the app runs in English and Simplified Chinese; switch in Settings.
 - [ ] **macOS computer use**: verify direct mode on more real machines and move it out of Beta.
 - [ ] **A standalone mobile app**: today you reach your bots from WeChat, Feishu, Telegram, Slack or Discord.
 

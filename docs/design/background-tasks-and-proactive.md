@@ -333,7 +333,7 @@ Every pushed message is one line, with an optional second line only for a blocke
 | Rule hit | X 降价了：现在 ¥199（昨天 ¥259）。 | same | message, with the rule named in small text |
 | Digest (2 or more due within 2 min, or over the daily cap) | 2 条提醒：<br>· X 降价到 ¥199<br>· 仓库 Y 的 issue #12 有新回复 | one card with a line per item | one message |
 | Held, then delivered when the WeChat window reopens | 你不在时：GPU 价格调研好了（A100 最便宜是 X 云，约 ¥7,800）。 (sent just before the reply to the user's next message) | n/a | n/a |
-| Desktop notification | title 「小蓝 需要你」, body 「GPU 价格调研：要登录 X 云的控制台才看得到包月价，账号用哪个？」 | | |
+| Desktop notification | title 「天天 需要你」, body 「GPU 价格调研：要登录 X 云的控制台才看得到包月价，账号用哪个？」 | | |
 
 ### Communication rules and attention budget per channel
 
@@ -440,9 +440,9 @@ These use `ui/design/README.md`:
 │ [新建]                     [任务]  │   ← 任务: icon button, opens the tasks view
 │ ⌕ 搜索                             │
 │ ● 需要你                        3  │   ← only when > 0 (amber dot, .badge.count warn)
-│ (小蓝) 小蓝         2分钟            │   ← avatar state "waiting"
+│ (天天) 天天         2分钟            │   ← avatar state "waiting"
 │        GPU 价格调研等你回答       1  │
-│ (红魔) 红魔          正在工作…       │   ← avatar state "working", 1 task running
+│ (哒哒) 哒哒          正在工作…       │   ← avatar state "working", 1 task running
 └───────────────────────────────────┘
 ```
 
@@ -451,28 +451,28 @@ These use `ui/design/README.md`:
 ```
 需要你
 ┌─────────────────────────────────────────────────────────────┐
-│ ● 小蓝 · GPU 价格调研 · 等你回答                      2 分钟前 │
+│ ● 天天 · GPU 价格调研 · 等你回答                      2 分钟前 │
 │   比较包月价还是按小时价？                                    │
 │   不回复就按包月价做                                          │   only for a question with a default
 │   [包月价] [按小时价] [回复…]                                 │
 │─────────────────────────────────────────────────────────────│
-│ ● 小蓝 · 清理旧构建 · 等你批准                        5 分钟前 │
+│ ● 天天 · 清理旧构建 · 等你批准                        5 分钟前 │
 │   rm -rf build/                                              │
 │   [批准一次] [拒绝]                                           │
 │─────────────────────────────────────────────────────────────│
-│ ● 红魔 · 规则「每日 issue 巡检」连续失败 3 次，已暂停     08:00 │   red dot
+│ ● 哒哒 · 规则「每日 issue 巡检」连续失败 3 次，已暂停     08:00 │   red dot
 │   GitHub 返回 401：令牌可能过期了                             │
 │   [重试] [打开规则]                                           │
 │─────────────────────────────────────────────────────────────│
-│ ● 小萌 · 1 条结果未送达微信                              昨天 │
+│ ● 闪闪 · 1 条结果未送达微信                              昨天 │
 │   你 24 小时内没在微信里发消息，微信不允许机器人先发。          │
 │   在微信里给它发任意一条消息即可收到。                          │
 │   [在这里查看]                                                │
 │─────────────────────────────────────────────────────────────│
-│ ● 绿草 · 微信登录已过期                                今天    │   red dot
+│ ● 芽芽 · 微信登录已过期                                今天    │   red dot
 │   [重新扫码]                                                  │
 │─────────────────────────────────────────────────────────────│
-│ ● 小蓝 · 规则「看 X 价格」已观察 3 次，需要你来决定是否执行  08:00 │   never pushed
+│ ● 天天 · 规则「看 X 价格」已观察 3 次，需要你来决定是否执行  08:00 │   never pushed
 │   本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”                  │
 │   [改为执行] [继续观察]                                        │
 └─────────────────────────────────────────────────────────────┘
@@ -486,9 +486,9 @@ Order: questions and approvals first (time-sensitive), then failures, then deliv
 任务                                              [全部机器人 ▾] [新任务]
 进行中
 ┌─────────────────────────────────────────────────────────────┐
-│ ● GPU 价格调研            小蓝 · 12 分钟 · 约 $0.08          › │   green
+│ ● GPU 价格调研            天天 · 12 分钟 · 约 $0.08          › │   green
 │ ● 竞品周报                进行中，有个问题等你回答 · 20 分钟   › │   green: asked, keeps working
-│ ● 季度报告 PPT            小蓝 · 等你回答                     › │   amber
+│ ● 季度报告 PPT            天天 · 等你回答                     › │   amber
 └─────────────────────────────────────────────────────────────┘
 规则
 ┌─────────────────────────────────────────────────────────────┐
@@ -497,7 +497,7 @@ Order: questions and approvals first (time-sensitive), then failures, then deliv
 └─────────────────────────────────────────────────────────────┘
 已完成 · 最近 7 天
 ┌─────────────────────────────────────────────────────────────┐
-│ ○ 整理下载目录            小蓝 · 昨天 18:20 · 约 $0.02          › │
+│ ○ 整理下载目录            天天 · 昨天 18:20 · 约 $0.02          › │
 └─────────────────────────────────────────────────────────────┘
 ```
 

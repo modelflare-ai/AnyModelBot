@@ -87,9 +87,6 @@ function botRecord(b, now, extra = {}) {
     name: b.name,
     systemPrompt: b.systemPrompt,
     defaultModel: extra.defaultModel ?? D.BOT_MODEL,
-    feishuAppId: extra.feishuAppId ?? "",
-    feishuAppSecretMasked: extra.feishuAppId ? "••••7c1e" : "",
-    weixinEnabled: true,
     settings: {
       permission: "workspace",
       memory: { enabled: true, review: true, teamWrite: false },
@@ -142,7 +139,7 @@ export function createState(scene = "demo", opts = {}) {
   const list = scene === "fresh" ? [D.DEFAULT_BOT] : D.BOTS;
   list.forEach((b, i) => {
     const isYellow = b.id === D.YELLOW;
-    st.bots.push(botRecord(b, now, { order: i, defaultModel: scene === "fresh" ? "" : D.BOT_MODEL, cuApproval: isYellow ? opts.cuApproval : undefined, feishuAppId: isYellow && scene === "demo" && opts.feishu !== false ? D.FEISHU_APP_ID : "" }));
+    st.bots.push(botRecord(b, now, { order: i, defaultModel: scene === "fresh" ? "" : D.BOT_MODEL, cuApproval: isYellow ? opts.cuApproval : undefined }));
     const weixinBound = isYellow && scene === "demo" && opts.weixinBound !== false;
     st.channels[b.id] = {
       feishu: isYellow && scene === "demo" && opts.feishu !== false ? { state: "connected", since: now - 3 * 3600_000 } : { state: "disabled", detail: "未配置凭据", since: 0 },
@@ -293,9 +290,32 @@ export async function startMock({ port = 0, host = "127.0.0.1", scene = "demo", 
     return { ...a, loginUrl: a.state === "signing_in" ? LOGIN_URL : "", lowBalance: a.balanceUsd !== null && a.alerts.lowBalanceUsd > 0 && a.balanceUsd < a.alerts.lowBalanceUsd, loginAvailable: true };
   };
   const mfStatus = () => ({ mode: "managed", connected: S().mf.connected, keyTail: S().mf.keyTail, line: S().mf.line, baseUrl: "https://api.modelflare.dev", gateway: "running" });
-  const channelStatus = (id) => {
-    const ch = S().channels[id];
-    return { feishu: ch.feishu, weixin: { ...ch.weixin, ...(ch.account ? { account: ch.account } : {}), login: ch.login, quota: [] } };
+  /** 全局渠道账号：key 是账号的命名空间，演示数据里小黄的账号 key 就是它的 id（和升级后的老账号一样） */
+  const channelOf = (key) => (S().channels[key] ??= { feishu: { state: "disabled", detail: "未配置凭据", since: 0 }, weixin: { state: "login_required", detail: "尚未扫码登录", since: 0 }, account: undefined, login: undefined });
+  const channelStatus = (key) => {
+    const ch = channelOf(key);
+    const off = { state: "disabled", since: 0 };
+    return {
+      feishu: { ...ch.feishu, ...(ch.feishu.state === "connected" ? { account: { appId: D.FEISHU_APP_ID, saved: { appSecret: "****7c1e" } } } : {}) },
+      weixin: { ...ch.weixin, ...(ch.account ? { account: ch.account } : {}), login: ch.login, quota: [] },
+      telegram: off,
+      slack: off,
+      discord: off,
+    };
+  };
+  const channelAccounts = () => {
+    const out = [];
+    const seen = {};
+    for (const key of Object.keys(S().channels)) {
+      const ch = S().channels[key];
+      const row = (channel, label, status) => {
+        seen[channel] = (seen[channel] ?? 0) + 1;
+        out.push({ key, channel, number: seen[channel], label, defaultBot: D.YELLOW, enabled: true, status, requests: 0 });
+      };
+      if (ch.account) row("weixin", "我的微信", channelStatus(key).weixin);
+      if (ch.feishu.state === "connected") row("feishu", "工作飞书", channelStatus(key).feishu);
+    }
+    return out;
   };
   const LOGIN_URL = "https://modelflare.dev/oauth/authorize?client_id=anymodelbot&response_type=code&utm_source=anymodelbot";
 
@@ -307,8 +327,8 @@ export async function startMock({ port = 0, host = "127.0.0.1", scene = "demo", 
     events.emit("authorized");
   };
   /** 微信扫码确认（二维码 → 已连接） */
-  ctl.weixinConfirm = (botId) => {
-    const ch = S().channels[botId];
+  ctl.weixinConfirm = (key) => {
+    const ch = channelOf(key);
     ch.login = { state: "confirmed", message: "✅ 微信已连接", refreshCount: 0 };
     ch.account = { ilinkBotId: D.WEIXIN_BOT_ID, pausedUntil: 0 };
     ch.weixin = { state: "connected", since: Date.now() };
@@ -537,6 +557,7 @@ export async function startMock({ port = 0, host = "127.0.0.1", scene = "demo", 
         ...st.settings,
         autostart: { supported: true, on: true },
         desktop: true,
+        webSearch: { provider: "auto", url: "", keyTail: "", keyRejected: false },
         listen: { host: "127.0.0.1", port: 52713, tokenRequired: true },
         dataDir: "C:\\Users\\demo\\AppData\\Roaming\\anymodel bot\\data",
       });
@@ -590,12 +611,42 @@ export async function startMock({ port = 0, host = "127.0.0.1", scene = "demo", 
       }
       if (seg.length === 3 && seg[2] === "stop" && m === "POST") return send(res, 200, { stopped: false });
     }
+    // 已授权的数据账号（设置 › 连接）
+    if (p === "/connections" && m === "GET") {
+      return send(res, 200, { accounts: [
+        { id: "demo-notion", service: "notion", number: 1, label: "产品团队", method: "oauth", needsReauth: false },
+        { id: "demo-feishu", service: "feishu", number: 1, label: "工作飞书", method: "oauth", needsReauth: false },
+      ] });
+    }
+    // 全局渠道账号（设置 › 连接）
+    if (seg[0] === "channel-accounts") {
+      if (seg.length === 1 && m === "GET") return send(res, 200, { accounts: channelAccounts() });
+      if (p === "/channel-accounts/new-key" && m === "POST") return send(res, 200, { key: "acct_demo" });
+      const key = decodeURIComponent(seg[1] ?? "");
+      const sub = seg.slice(2).join("/");
+      if (sub === "channels" && m === "GET") return send(res, 200, channelStatus(key));
+      if (sub === "access" && m === "GET") {
+        const owner = channelOf(key).account ? { peer: D.WEIXIN_USER.slice(0, 8), name: "演示用户", via: "login" } : null;
+        return send(res, 200, { policy: "owner-allowlist", owners: { weixin: owner, feishu: null, telegram: null, slack: null, discord: null }, requests: [], entries: [] });
+      }
+      if (sub === "weixin/login" && m === "POST") {
+        const ch = channelOf(key);
+        ch.login = { state: "wait", message: "请用微信扫码", qrDataUrl: fakeQrDataUrl(), refreshCount: 0 };
+        events.emit("weixin-login", key);
+        return send(res, 200, ch.login);
+      }
+      if (sub === "weixin/login" && m === "GET") return send(res, 200, channelOf(key).login ?? { state: "idle" });
+      if (sub === "weixin/cancel" && m === "POST") {
+        channelOf(key).login = { state: "cancelled", message: "已取消", refreshCount: 0 };
+        return send(res, 200, { ok: true });
+      }
+    }
     if (seg[0] === "bots") {
       if (seg.length === 1 && m === "GET") return send(res, 200, { bots: st.bots });
       const b = bot(seg[1]);
       if (!b) throw new HttpError(404, "机器人不存在");
       const sub = seg.slice(2).join("/");
-      if (seg.length === 2 && m === "GET") return send(res, 200, { bot: b, channels: channelStatus(b.id) });
+      if (seg.length === 2 && m === "GET") return send(res, 200, { bot: b });
       if (seg.length === 2 && m === "PUT") {
         const body = await readJson(req);
         for (const k of ["name", "systemPrompt", "defaultModel"]) if (body[k] !== undefined) b[k] = String(body[k]);
@@ -611,18 +662,6 @@ export async function startMock({ port = 0, host = "127.0.0.1", scene = "demo", 
       if (sub === "memory" && m === "GET") {
         const entries = (st.memory[b.id] || []).map((text) => ({ text, meta: "source: web; added: 2026-10-20" }));
         return send(res, 200, { scopes: [{ kind: "team", id: "", label: "团队记忆", entries: [], topics: [] }, { kind: "bot", id: b.id, label: "机器人记忆", entries, topics: [] }], journal: [], steward: [] });
-      }
-      if (sub === "channels" && m === "GET") return send(res, 200, channelStatus(b.id));
-      if (sub === "weixin/login" && m === "POST") {
-        const ch = st.channels[b.id];
-        ch.login = { state: "wait", message: "请用微信扫码", qrDataUrl: fakeQrDataUrl(), refreshCount: 0 };
-        events.emit("weixin-login", b.id);
-        return send(res, 200, ch.login);
-      }
-      if (sub === "weixin/login" && m === "GET") return send(res, 200, st.channels[b.id].login ?? { state: "idle" });
-      if (sub === "weixin/cancel" && m === "POST") {
-        st.channels[b.id].login = { state: "cancelled", message: "已取消", refreshCount: 0 };
-        return send(res, 200, { ok: true });
       }
       if (sub === "chat" && m === "GET") {
         const conv = st.convs.get(`${b.id}:web:console`);

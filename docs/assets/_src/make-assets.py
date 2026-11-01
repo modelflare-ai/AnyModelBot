@@ -524,13 +524,13 @@ def diagram_data_flow(theme):
     g.bilabel(876, 88, "转发", "forwarded", max_w=130)
     # 虚线双向：渠道消息
     g.path("M214 315V440H589", start=True, end=True, dashed=True)
-    g.bilabel(403, 418, "渠道消息", "Channel messages", max_w=200)
+    g.bilabel(403, 418, "渠道消息与账号内容", "Messages & account data", max_w=200)
     g.rect(592, 412, 216, 56, rx=14)
-    g.bilabel(700, 440, "微信 / 飞书 平台", "WeChat / Feishu platforms", max_w=200)
+    g.bilabel(700, 440, "聊天平台与授权账号", "Chat apps & connected accounts", max_w=200)
     title = "数据流向 / Data flow"
-    desc = ("对话、记忆、文件和密钥留在你的设备上；模型请求经 Modelflare 转发给模型供应商；微信和飞书的消息会经过这两个平台。"
+    desc = ("对话、记忆、文件和密钥留在你的设备上；模型请求经 Modelflare 转发给模型供应商；聊天渠道的消息会经过对应的平台，机器人也会读写你授权的 Notion、飞书账号。"
             " Conversations, memory, files and keys stay on your device; model requests go through Modelflare to the model provider;"
-            " WeChat and Feishu messages pass through those platforms.")
+            " chat channel messages pass through those platforms, and bots read and write the Notion and Feishu accounts you authorize.")
     return g.svg(title, desc), g.warnings
 
 
@@ -546,7 +546,7 @@ def diagram_architecture(theme):
     g.rect(24, 112, 888, 148, rx=22, accent=True, fill=False, stroke_w=1.75)
     g.bilabel(468, 142, "Node.js + TypeScript 后端", "Node.js + TypeScript backend", kind="title")
     inner = [(48, "Preact 界面", "Preact UI"), (262, "SQLite 数据库", "SQLite database"),
-             (476, "渠道适配：飞书 / 微信", "Channels: Feishu / WeChat"), (690, "DSH 智能体运行时", "DSH agent runtime")]
+             (476, "聊天渠道与账号连接", "Channels & connected accounts"), (690, "DSH 智能体运行时", "DSH agent runtime")]
     for x, zh, en in inner:
         g.rect(x, 176, 198, 60, rx=12, accent=zh.startswith("DSH"))
         g.bilabel(x + 99, 206, zh, en, max_w=186)

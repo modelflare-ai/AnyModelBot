@@ -15,7 +15,7 @@
 | preact、htm | 界面的运行时。仓库根目录 `npm ci` 之后在 `node_modules` 里；或用 `AMB_NODE_MODULES` 指向任何装了这两个包的 `node_modules` |
 | playwright-core 1.64 + 对应的 Chromium | 默认找 `site/node_modules/playwright-core`（`cd site && npm install`）；或用 `PLAYWRIGHT_CORE` 指定目录、`CHROMIUM_PATH` 指定浏览器（headless shell 156 / revision 1248） |
 | Python 3 + Pillow ≥ 10 | 编码与核对（`encode.py`）、生图演示的成图（`make-illustration.py`）。不需要 ffmpeg、gifski、cwebp |
-| 字体 | Noto Sans SC（`/usr/share/fonts/truetype/noto-cjk/`）和 DejaVu Sans Mono。录制时自动生成一份 fontconfig，把界面字体栈落到的 `system-ui` / `sans-serif` 指向 Noto Sans SC |
+| 字体 | Noto Sans SC（`/usr/share/fonts/truetype/noto-cjk/`）和 DejaVu Sans Mono。录制时自动生成一份 fontconfig，把界面字体栈落到的 `system-ui` / `sans-serif` 指向 Noto Sans SC。还要 Noto Color Emoji（`fonts-noto-color-emoji`），否则 ✅ 这类符号显示成方块；不想装到系统就解压到某个目录，用 `REC_FONT_DIR` 指过去 |
 
 ## 用法
 
@@ -38,7 +38,7 @@ python3 docs/assets/_src/record/encode.py --verify docs/assets/features/model-sw
 npm run docs:check
 ```
 
-环境变量：`PLAYWRIGHT_CORE`、`CHROMIUM_PATH`、`AMB_NODE_MODULES`（见上表）；`REC_TMP` 放帧和中间文件的目录（默认系统临时目录下的 `amb-record`）；`REC_KEEP_FRAMES=1` 编码后保留原始帧。
+环境变量：`PLAYWRIGHT_CORE`、`CHROMIUM_PATH`、`AMB_NODE_MODULES`、`REC_FONT_DIR`（见上表）；`REC_TMP` 放帧和中间文件的目录（默认系统临时目录下的 `amb-record`）；`REC_KEEP_FRAMES=1` 编码后保留原始帧。
 
 每个素材录完会在 `$REC_TMP/<名字>/report.json` 里留下：编码结果、时间线（每次点击、输入、关键画面出现的秒数，用来对照 GIF 卡片的时间点）、页面控制台的报错和警告、失败的请求、模拟后端收到的未实现接口。全部录完后汇总到 `$REC_TMP/summary.json`，并在终端打印这几类问题的条数。
 
@@ -84,7 +84,7 @@ node docs/assets/_src/record/mock-server.mjs --scene fresh --port 4173       # �
 | G6 | 欢迎页 → 授权 → 模型列表 → 对话 | 全新安装的机器人是「我的助手」（蓝色）；登录回来的选模型页里点了 claude-sonnet-5-5 再点「开始对话」 |
 | G7 | 搜索 claude 后的列表 | 除了 4 个 Claude 模型，最后还有一行「使用「claude」 自定义模型 ID」（输入的不是现成 ID 时界面给的） |
 | G8 | 记忆区新条目高亮 1 秒 | 界面没有高亮效果，记忆行也不响应悬停；改为鼠标指着新条目停 1 秒。"新建对话"用的是对话顶栏的「开始新的一段对话」（发 `/new`），旧消息仍留在页面上 |
-| G9 | 桌面应用里同一段对话同步出现 | 微信会话出现在 信息面板 → 最近会话（每 8 秒刷新一次），点开是对话记录弹层；二维码到"已连接"之间是界面自己的刷新（每 1.5 秒），脚本把状态切换对齐到刷新前，没有剪辑 |
+| G9 | 桌面应用里同一段对话同步出现 | 账号在 设置 › 连接 里添加，录制从二维码开始；手机上聊完回到对话页，微信会话出现在 信息面板 → 最近会话，点开是对话记录弹层。模拟后端的账号 key 是 `acct_demo`，默认机器人是小黄 |
 
 ## 风格化示意（不是真实界面）
 
@@ -94,4 +94,4 @@ node docs/assets/_src/record/mock-server.mjs --scene fresh --port 4173       # �
 - G2：桌面、下载文件夹窗口、安装向导；
 - G4：桌面、文本编辑器窗口（记事本）和它的另存为对话框、桌面图标；
 - G5：看图窗口；
-- G9：手机聊天界面（通用样式，没有腾讯标志，不照抄微信），以及信息面板里的二维码（装饰性图案，不能扫）。
+- G9：手机聊天界面（通用样式，没有腾讯标志，不照抄微信），以及添加账号弹窗里的二维码（装饰性图案，不能扫）。

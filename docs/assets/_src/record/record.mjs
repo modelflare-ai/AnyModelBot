@@ -12,6 +12,7 @@
 //   CHROMIUM_PATH     Chromium 可执行文件（默认用 playwright-core 自带的查找规则）
 //   AMB_NODE_MODULES  装了 preact 和 htm 的 node_modules（默认仓库根目录的 node_modules）
 //   REC_TMP           帧和中间文件放哪里（默认系统临时目录下的 amb-record）
+//   REC_FONT_DIR      额外的字体目录（机器上没装 emoji 字体时用）
 //   REC_KEEP_FRAMES=1 编码后保留原始帧
 // 详见同目录的 README.md。
 
@@ -53,7 +54,7 @@ function fontConfig() {
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <fontconfig>
   <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
-  <alias binding="strong"><family>sans-serif</family><prefer><family>Noto Sans SC</family></prefer></alias>
+${process.env.REC_FONT_DIR ? `  <dir>${path.resolve(process.env.REC_FONT_DIR)}</dir>\n` : ""}  <alias binding="strong"><family>sans-serif</family><prefer><family>Noto Sans SC</family></prefer></alias>
   <alias binding="strong"><family>system-ui</family><prefer><family>Noto Sans SC</family></prefer></alias>
   <alias binding="strong"><family>monospace</family><prefer><family>DejaVu Sans Mono</family><family>Noto Sans SC</family></prefer></alias>
 </fontconfig>

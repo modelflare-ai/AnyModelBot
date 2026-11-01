@@ -293,7 +293,7 @@ AnyModelBot 同样能在后台干活：交代的任务可以在后台跑完，�
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/data-flow-dark.svg">
-  <img src="docs/assets/diagrams/data-flow-light.svg" alt="数据流向：对话、记忆、文件和密钥留在你的设备上；模型请求经 Modelflare 转发给模型供应商；微信和飞书的消息会经过这两个平台" width="100%">
+  <img src="docs/assets/diagrams/data-flow-light.svg" alt="数据流向：对话、记忆、文件和密钥留在你的设备上；模型请求经 Modelflare 转发给模型供应商；聊天渠道的消息会经过对应的平台，机器人也会读写你授权的 Notion、飞书账号" width="100%">
 </picture>
 
 | 留在你的设备上 | 会离开你的设备 |

@@ -697,46 +697,27 @@ export const SCENES = [
       const rect = { x: 0, y: 40, w: 1200, h: 820 };
       await openChat(R, rect);
       await R.stage("phone.show", { x: 1200, y: 0, w: 400, h: 900 }, { title: "小黄", clock: hhmm() });
-      // 录制开始前：打开信息面板 → 微信 → 扫码登录，二维码出来
+      // 录制开始前：信息面板 → 管理聊天渠道 → 微信「添加账号」→ 扫码登录，二维码出来
       await R.place(760, 300);
-      const tPanel = Date.now();
       await R.click('.chat-head button[aria-label^="信息面板"]', { dur: 0.6, pause: 0.2 });
-      const wxRow = R.$(".panel .row.clickable").filter({ hasText: "微信" });
-      await R.click(wxRow, { dur: 0.6, pause: 0.2 });
-      await R.click(R.$(".panel .row-edit .btn.primary").filter({ hasText: "扫码登录" }), { dur: 0.6, pause: 0.2 });
-      await R.wait(".panel-qr");
-      const tQr = Date.now();
-      await R.move(".panel-qr", { dur: 0.7, at: [0.5, 1.15] });
-      // 对齐两个轮询：信息面板每 8 秒取一次最近会话（新会话出现的时刻），微信这一行扫码时每 1.5 秒刷新一次（"已连接"出现的时刻）
-      await sleep(3400);
-      const reqs = R.mock.requests;
-      const detail = new RegExp(`^/amb/api/bots/${Y}$`);
-      const convs = /^\/amb\/api\/conversations\?bot=/;
-      const conv0 = reqs.find((r) => r.at >= tPanel && convs.test(r.path)).at;
-      const panel0 = reqs.find((r) => r.at >= tPanel && detail.test(r.path)).at;
-      const fast = reqs.filter((r) => r.at > tQr + 200 && detail.test(r.path) && Math.abs(((r.at - panel0) % 5000) - 2500) < 2350).map((r) => r.at);
-      const phase = fast.at(-1);
-      let t0 = 0;
-      let convAt = 0;
-      for (let j = 1; j < 60 && !t0; j++) {
-        const cand = phase + 1500 * j - 3000;
-        if (cand < Date.now() + 500) continue;
-        for (let k = 1; k < 20; k++) {
-          const c = conv0 + 8000 * k - cand;
-          if (c >= 9000 && c <= 10600) {
-            t0 = cand;
-            convAt = c / 1000;
-            break;
-          }
-        }
-      }
-      if (!t0) throw new Error("对不齐轮询");
-      await sleep(t0 - Date.now());
-      R.t0 = t0 / 1000;
-      R.mark(`start（最近会话的轮询在 ${convAt.toFixed(1)} s）`);
-      await R.until(2.85);
-      R.mock.weixinConfirm(Y);
-      await R.waitFn(() => [...document.querySelectorAll(".panel .row.clickable")].some((r) => r.textContent.includes("微信") && r.textContent.includes("已连接")));
+      // 面板和弹窗都有进场动画，等它们停稳再取坐标，否则鼠标点到旧位置
+      await R.wait('.panel [data-guide="weixin"]');
+      await sleep(600);
+      await R.click('.panel [data-guide="weixin"]', { dur: 0.6, pause: 0.2 });
+      await R.wait("#set-add-channel-weixin");
+      await sleep(500);
+      await R.click("#set-add-channel-weixin button", { dur: 0.6, pause: 0.2 });
+      await R.wait(".sheet .btn.primary");
+      await sleep(500);
+      await R.click(R.$(".sheet .btn.primary").filter({ hasText: "扫码登录" }), { dur: 0.6, pause: 0.2 });
+      await R.wait(".sheet .panel-qr");
+      await R.move(".sheet .panel-qr", { dur: 0.7, at: [0.5, 1.15] });
+      await sleep(700);
+      R.start();
+      await R.until(2.0);
+      R.mock.weixinConfirm("acct_demo");
+      // 账号连上：弹窗换成账号管理（别名、默认机器人）
+      await R.waitFn(() => [...document.querySelectorAll(".sheet .set-field")].some((f) => f.textContent.includes("默认机器人")));
       R.mark("微信已连接");
       // 手机上发消息
       const inp = await R.s$("#ph-in").boundingBox();
@@ -750,17 +731,23 @@ export const SCENES = [
       await sleep(120);
       await R.stage("phone.send");
       R.mark("手机发出");
-      ctx.wxDelay = Math.max(1600, (convAt - 0.7 - R.t()) * 1000);
+      ctx.wxDelay = 1700;
       const reply = R.mock.weixinInbound(Y, D.WEIXIN_USER, P.wxIntro);
       await sleep(500);
       await R.stage("phone.typing");
-      const listY = await R.$(".panel .list-head").filter({ hasText: "最近会话" }).boundingBox();
-      await R.move({ x: listY.x + 120, y: listY.y + 60 }, { dur: 0.9 });
       const text = await reply;
       await R.stage("phone.add", "bot", text);
       R.mark("手机收到回复");
+      // 回到对话页：信息面板打开时就取最近会话，微信这段对话已经在了
+      await sleep(500);
+      await R.press("Escape");
+      await sleep(250);
+      await R.click(".side-back", { dur: 0.6, pause: 0.2, label: "返回应用" });
+      await R.wait(".chat-col .msg-row");
+      if (!(await R.$(".panel").count())) await R.click('.chat-head button[aria-label^="信息面板"]', { dur: 0.5, pause: 0.2 });
       const row = R.$(".panel .row.compact.clickable").filter({ hasText: "微信 ·" });
       await R.wait(row);
+      await sleep(500);
       R.mark("最近会话出现微信会话");
       await R.click(row, { dur: 0.7, pause: 0.3, label: "打开微信会话" });
       await R.waitFn(() => document.querySelectorAll(".sheet .transcript-msg").length >= 2);

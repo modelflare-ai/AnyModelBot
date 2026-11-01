@@ -293,7 +293,7 @@ AnyModelBot works in the background too: a task you hand over can finish in the 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/data-flow-dark.svg">
-  <img src="docs/assets/diagrams/data-flow-light.svg" alt="Data flow: conversations, memory, files and keys stay on your device; model requests go through Modelflare to the model provider; WeChat and Feishu messages pass through those platforms" width="100%">
+  <img src="docs/assets/diagrams/data-flow-light.svg" alt="Data flow: conversations, memory, files and keys stay on your device; model requests go through Modelflare to the model provider; chat channel messages pass through those platforms, and bots read and write the Notion and Feishu accounts you authorize" width="100%">
 </picture>
 
 | Stays on your device | Leaves your device |

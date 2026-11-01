@@ -223,12 +223,12 @@ export default {
     },
     imageModel: {
       name: "Default image model",
-      sub: "Used by default when a bot generates images. You'll confirm before each one",
+      sub: "Used by default when a bot generates images",
       keys: "image picture generate model",
     },
     videoModel: {
       name: "Default video model",
-      sub: "Used by default when a bot generates videos. You'll confirm before each one",
+      sub: "Used by default when a bot generates videos",
       keys: "video generate model",
     },
     autoModel: "Auto ({model})",

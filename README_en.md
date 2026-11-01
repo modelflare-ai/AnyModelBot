@@ -197,17 +197,17 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 
 - **Background tasks.** For work that takes a while (research, a report, sorting files), or when you say "do it in the background", the bot starts a background task and you keep chatting. The result comes back to the conversation that asked for it.
 - **Follow-ups.** Quote the result in WeChat, or reply to it in Feishu, to keep talking to that task.
-- **Rules.** "Every morning at 8, check X's price and tell me if it drops below 200" becomes a rule. A new rule observes first: it records what it would have said, and sends nothing and changes no files. Once it looks right, switch it to act. Fixed reminders act straight away.
+- **Rules.** "Every morning at 8, check X's price and tell me if it drops below 200" becomes a rule that checks on schedule and tells you only when something matters. To see how it behaves first, say "observe first": it records what it would have said, and sends nothing and changes no files. Once it looks right, switch it to act.
 - **Needs you.** Everything any bot is waiting on you for, an answer, an approval or a retry, sits in one sidebar row that is only there when something needs you. The info panel's Tasks group lists the bot's tasks and rules, with every step visible.
 - **Quiet by default.** Only results, decisions and failures are pushed, never progress. Quiet hours are 22:00 to 08:00, and unprompted messages are capped per day (3 on WeChat, 5 on Feishu), with the rest merged into one.
 - **Budgets.** Every task and rule has a budget (1 US dollar per task; 0.10 per rule run and 3 a month), and work stops and asks when it runs out. Change them in the task details and the rule editor.
 - **Pause anytime.** One switch in bot settings › Proactive messages pauses background work; chat carries on.
-- **Cleans up after itself.** Tasks and run logs are kept for 30 days. A task folder unused for 30 days is deleted, and you are told first in Needs you, with the option to keep it. Run logs export as Markdown.
+- **Cleans up after itself.** Tasks and run logs are kept for 30 days. A task folder unused for 30 days is deleted without asking; the task details show the date, and Keep holds on to it. Run logs export as Markdown.
 
 ## 🖥️ Operates your computer, and makes images and video
 
 - **Computer use** is powered by the bundled [Cua Driver](https://github.com/trycua/cua). By default, actions run automatically. Switch a bot to *ask before changing the screen* and every click and keystroke waits for you. Reading the screen never needs approval. On macOS, computer use is a Beta feature.
-- **Image and video generation** runs right away with the default model at a normal cost. It asks first when switching models, when the estimated cost is high or when the request is unclear, so you see the model and prompt and can swap the model on the spot. To be asked every time, turn it on in the bot's settings.
+- **Image and video generation** runs right away, taking the most reasonable reading of a loose request. It asks first only when the estimated cost is above 0.50 US dollars, so you see the model and prompt and can swap the model on the spot. To be asked every time, turn it on in the bot's settings.
 
 <p align="center">
   <img src="docs/assets/features/computer-use.gif" alt="A bot opens Notepad, types a short note and saves it, while an approval card asks before each click and keystroke" width="100%">

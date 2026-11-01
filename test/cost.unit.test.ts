@@ -180,8 +180,9 @@ describe("预算（假宿主、假时钟）", () => {
     svc.fireDue(now);
     await flush();
   };
-  const createRule = async () => {
-    const r = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "看 X 价格", instruction: "每天早上看看 X 的价格，低于 200 告诉我", schedule: "daily 08:00" } });
+  /** 新规则直接执行；extra 里 mode: "observe" = 用户说了先观察 */
+  const createRule = async (extra: Record<string, unknown> = {}) => {
+    const r = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "看 X 价格", instruction: "每天早上看看 X 的价格，低于 200 告诉我", schedule: "daily 08:00", ...extra } });
     expect(r.error).toBeUndefined();
     return store.listRules({ botId: "b" }).at(-1)!;
   };
@@ -364,7 +365,7 @@ describe("预算（假宿主、假时钟）", () => {
 
   it("规则每月 $3：用完就停下并暂停（执行中的推一句，「需要你」里一行），下个月 1 号 0 点（主人的时区）自动恢复", async () => {
     const rule = await createRule();
-    svc.updateRule(rule.id, { mode: "act", runBudgetUsd: 2 });
+    svc.updateRule(rule.id, { runBudgetUsd: 2 });
     const day = async (d: string, usd: number[]) => {
       await go(at(`${d}T08:00`));
       await turn(undefined, (sid) => {
@@ -413,7 +414,7 @@ describe("预算（假宿主、假时钟）", () => {
   });
 
   it("「再给 $3」：本月预算用完暂停着的规则加了预算就接着按时间表跑；观察中的不推", async () => {
-    const rule = await createRule();
+    const rule = await createRule({ mode: "observe" });
     svc.updateRule(rule.id, { monthBudgetUsd: 0.2, runBudgetUsd: 1 });
     await go(at("2026-11-03T08:00"));
     await turn(undefined, (sid) => {

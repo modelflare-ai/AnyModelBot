@@ -41,7 +41,7 @@ export default {
     filter: "Filter models",
     default: "Default model",
     noMatch: "No matching models",
-    mediaHint: "Default models for generating images and videos. You'll be asked before each generation and can switch then.",
+    mediaHint: "Default models for generating images and videos.",
     image: "Image",
     imageLabel: "Default image model",
     video: "Video",

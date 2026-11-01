@@ -1,6 +1,8 @@
 # Background tasks and proactive rules (Phase 3 design)
 
-Status: **3a–3f are built**, plus questions that don't block (a task asks right away and keeps working while a question with a default waits, see [Questions](#questions-ask-early-keep-working)): tasks, questions and needs-you, delivery, rules with observe mode, cost controls, and the tasks view with retention, cleanup and Markdown export (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`, `ui/components/tasks.js`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`, `test/cost.*`, `test/retention.*`, `test/tasks-view.*`). Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
+Status: **3a–3f are built**, plus questions that don't block (a task asks right away and keeps working while a question with a default waits, see [Questions](#questions-ask-early-keep-working)): tasks, questions and needs-you, delivery, rules with an opt-in observe mode, cost controls, and the tasks view with retention, cleanup and Markdown export (`src/tasks/`, `src/core/delivery.ts`, `dsh-runtime/plugins/amb-tasks.mjs`, `ui/components/tasks.js`; tests in `test/tasks.*`, `test/delivery.*`, `test/rules.*`, `test/cost.*`, `test/retention.*`, `test/tasks-view.*`). Written 2026-10-31 against `master` df22385 and the pinned DSH `0.2.1-rc.4` in `dsh-runtime/`.
+
+> **2026-11-01, the PO changed the defaults: act, and ask only when it is really needed.** "We need to be automatic, not an infinite prompt for users." Since then: a rule the user asks for acts right away, because the user's words are its mandate just as an explicit task request is; observe is opt-in (「先观察」 in chat, or Observe in the rule editor), and editing a rule's words no longer sends it back to observe. Agents decide for themselves and say what they chose; they ask only when a wrong guess would cause harm, cost money or waste most of the work, when they need something only the user has, or when the step cannot be undone, and never about language, format, scope or style. Image and video generation asks only above the cost threshold. Idle task folders are cleaned up without a needs-you row or a notification. The sections below are updated; the new decisions are in [15](#15-decisions-product-owner-2026-11-01-act-and-ask-only-when-really-needed), and the ones they replace are marked in [14](#14-decisions-product-owner-2026-10-31).
 Feasibility evidence is in [Appendix A](#appendix-a-feasibility-answers-with-evidence). The spike that produced it is `scripts/spikes/p3-tasks/`.
 
 ## Summary
@@ -8,7 +10,7 @@ Feasibility evidence is in [Appendix A](#appendix-a-feasibility-answers-with-evi
 The product owner (PO) confirmed that background work and proactive behaviour are what make AnyModelBot different. This doc covers three features:
 
 1. **Background tasks.** "Build me X" or "research Y and report back" runs in its own DSH session and folder while the user keeps chatting.
-2. **Proactive rules.** These are reminders, watchers and scheduled checks that the user writes in words. A new rule starts in **observe** mode: it records what it would have said or done and does not act.
+2. **Proactive rules.** These are reminders, watchers and scheduled checks that the user writes in words. A new rule **acts** right away and speaks only when something matters. The user can ask for **observe** mode first: it records what it would have said or done and does not act.
 3. **A "needs you" view.** It lists everything across all bots that waits for a person. When everything is healthy it takes no space.
 
 Key decisions:
@@ -17,7 +19,7 @@ Key decisions:
 - **The host is the source of truth.** It owns the tasks, the schedule, delivery and the budget. DSH runs the sessions. One in-child plugin, `amb-tasks.mjs`, decorates the task sessions: it restricts their tools, adds a prompt section and a `task_report` tool, and reports when a session has settled.
 - **Scheduling stays in the host.** `@deepseek-ai/dsh-schedule` can't be activated under our `sdk` profile. Even if it could, it would fire into chat sessions that nobody is watching.
 - **The human lane never waits.** Chat turns never take a task slot. Tasks run in separate DSH sessions in the same process; the spike measured a 63 ms chat reply while two 4-second task turns ran. When a person answers a task's question, the task wakes on a reserved slot.
-- **A task asks as soon as it needs to know, and keeps working when it can.** A question with a reasonable default doesn't stop the task: it goes on with the work that doesn't depend on the answer and, if nobody answered by the time it finishes, uses the default, says so in its result and withdraws the question. Only a question nobody but the user can decide (paying, deleting, choosing an account) makes the task wait. See [Questions](#questions-ask-early-keep-working).
+- **A task decides for itself and asks only when it must.** It picks the most reasonable option and says what it chose in its result; it never asks about language, format, scope or style. It asks only when a wrong guess would cause harm, cost money or waste most of the work, when it needs something only the user has (a login, a file, a password), or when the step cannot be undone (paying, deleting the user's data, messaging other people). A question where a wrong guess would only waste work carries a default and doesn't stop the task (rare); the others make it wait. See [Questions](#questions-ask-early-keep-working).
 - **We push only three things:** a result the user can use, a decision the user must make, and a failure. WeChat may hold even these: iLink allows sends only within 24 h of the user's last message, and at most 10 sends per inbound message. See [WeChat](#wechat-the-hard-constraint).
 - **Depends on P1** (the host→child control channel with per-session `steer`, `cancel` and model). Without per-session cancel, stopping one task means killing the bot's DSH process, which also ends the chat and every other task.
 
@@ -26,7 +28,7 @@ Key decisions:
 **Goals**
 
 - Long work happens off the chat lane. Its result comes back to the conversation that asked for it, and it survives an app restart without repeating side effects.
-- Proactive help that the user can trust before it acts. It starts in observe mode, stays inside a strict attention budget, and every run can be audited.
+- Proactive help that the user can trust. It acts on the user's own words, stays inside a strict attention budget and a permission cap, and every run can be audited. Observe mode is there for a user who wants to watch first.
 - Transparency that costs no attention. The user can always look, and we push only what needs them.
 
 **Non-goals (Phase 3)**
@@ -37,8 +39,8 @@ Key decisions:
 **Principles**, from dsh-superagent `000-philosophy.md`, adapted:
 
 - **Take as little attention as possible and give as much value as possible.** Every message, notification, setting and panel element must earn its place.
-- **Act only when asked, or when a written rule allows it.** A rule that judges whether to speak or act starts in observe mode.
-- **Speak only when a person must act or can use a result.** Ask one concrete question at a time. Report honestly: a draft is not "done", and a failure is a failure.
+- **Act only when asked, or when a written rule allows it.** A rule the user wrote is that permission; observe mode is opt-in (since 2026-11-01).
+- **Speak only when a person must act or can use a result.** Decide what you can and say what you chose; ask only when it is really needed, one concrete question at a time. Report honestly: a draft is not "done", and a failure is a failure.
 - **Use few concepts and few settings.** Use a default when one value suits almost everyone. Write behaviour the user describes in words as prompt text, not as a setting.
 - **Healthy takes no space.**
 
@@ -59,7 +61,7 @@ flowchart LR
 | Concept | What it is | Rules it keeps | Why it exists |
 | --- | --- | --- | --- |
 | **Task** | A unit of authorized background work. It has its own DSH session (`task-<id>`) and folder (`tasks/<slug>-<id6>/`). | It is created only by a person's request, either through the chat agent's `task_start` or the "new task" button. It holds its origin conversation, a snapshot of the permission preset, the model and the budget. It ends only when it is **done**, when a **person stops** it, or when it fails and is archived. A follow-up from a person can resume a done task. It defines its own stage instead of following the DSH session (see [stage table](#2-states-and-transitions)). | Owns the work, the result and the questions. |
-| **Rule** | A standing instruction in the user's own words, plus a schedule and a mode: `off`, `observe` or `act`. | It is created in `observe` mode, except for a fixed reminder (see [observe](#5-observe-mode)). It never acts beyond its mode or its permission cap. It records its `version`, and each run records which version it ran. Three failed runs in a row, or its monthly budget, pause it. | Proactive work with a mandate the user wrote. |
+| **Rule** | A standing instruction in the user's own words, plus a schedule and a mode: `off`, `observe` or `act`. | It is created in `act` mode, or in `observe` when the user asks to watch first; a fixed reminder always acts (see [observe](#5-observe-mode)). It never acts beyond its mode or its permission cap. It records its `version`, and each run records which version it ran. Three failed runs in a row, or its monthly budget, pause it. | Proactive work with a mandate the user wrote. |
 | **Run** | One stretch of work in a session: a task's launch, an answer, a retry or a recovery, or one firing of a rule. | It goes `queued`, `running`, `settling`, then `ended` with an outcome. It holds a slot while running or settling. It stores its activity steps and its cost. A rule gets a fresh session for each run. | The unit of audit, cost and recovery (superagent's Assignment). |
 | **Report** | The structured state a Run reports through `task_report`. Its state is `progress`, `needs_you`, `done` or `failed`, with a `message` (user-facing, at most 300 characters), a `question` (one question with options and an optional `default`, one of the options), `summary` (internal) and `files`. A `needs_you` with a default is asked but doesn't end the run. | The latest Report is "what the task last said". A `progress` Report is internal and never pushed. In observe mode, `message` is recorded as "would have said". | We classify needs-you from structured fields, never from free text. |
 | **Attention** | One thing that waits for a person. Some are stored: a question, or an approval (the existing `approvals` table, extended). Others are derived from state: a failed task, a rule that keeps failing, an undelivered message, an expired channel login, a stuck turn, a budget that ran out. | It is shown once, in "needs you". It is pushed only when the [push rules](#what-is-pushed-and-only-that) allow. It goes away by itself when its cause is gone. | It answers "does anything need me now?" |
@@ -105,7 +107,7 @@ A person's input after rows 3–6 (an answer, a follow-up, "retry" or "continue"
 | `interrupted` | The app or DSH restarted mid-run; a `recover` run follows if the task should continue |
 | `skipped` | Rule only: the app wasn't running, or the slots were busy past the grace period |
 
-**Rule.** The mode is `off`, `observe` or `act`. The rule is visible in "needs you" only when it is paused because of failures or budget, or when it has failed two runs in a row.
+**Rule.** The mode is `off`, `observe` or `act`. The rule is visible in "needs you" only when it is paused because of failures or budget, when it has failed two runs in a row, or when the user put it in observe and it has observed enough to ask whether to act.
 
 ```mermaid
 stateDiagram-v2
@@ -269,7 +271,8 @@ The time zone is the system's IANA zone, stored on the rule when it is created. 
 
 - The user writes 「每天早上 8 点看看 X 的价格，低于 200 告诉我」.
 - The chat agent calls `rule_create({ title, instruction, schedule })`. The instruction is the user's words, verbatim, and the agent supplies the structured schedule. The UI form does the same with the utility model.
-- The host creates the rule in `observe` and replies once: 「已建好规则：每天 08:00 看 X 价格。先观察几天，只记录不打扰你；在「任务」里可以改成执行。」
+- The host creates the rule in `act` and replies once: 「已建好规则：每天 08:00 看 X 价格，有值得说的就告诉你。」 On WeChat it adds the 24 h note.
+- When the user says 「先观察」, the agent passes `mode: "observe"` and the reply is 「已建好规则：每天 08:00 看 X 价格，先观察几天，只记录不打扰你。」 The rule editor has the same choice (执行 by default, 观察).
 
 ## 5. Observe mode
 
@@ -282,9 +285,10 @@ The time zone is the system's IANA zone, stored on the rule when it is created. 
 | Messages to anyone | **never** | through the outbox and attention budget |
 | Recorded | "本会发送：…" / "本会保持安静" / "本会做：…" plus cost and steps | what it said and did |
 
-- **Every new rule starts in observe.** The one exception is a **fixed reminder**, such as 「明天下午 3 点提醒我开会」. The user dictated both the text and the time, so there is nothing to judge. It runs in act and delivers the text without a model turn. (Open question Q6.)
-- **Switching modes.** After 3 good observed runs on the current version (outcome done; failed and skipped runs don't count), "needs you" asks: 「规则「看 X 价格」已观察 3 次，需要你来决定是否执行」, with the latest run's line (「本会发送：“…”」) under it and [改为执行] [继续观察]. It is the least urgent kind: last in the list, never pushed, no desktop notification, though it counts toward the badge. 继续观察 stops asking for this version (kept across restarts); editing the instruction makes a new version, which asks again after 3 more good runs. The row goes away when the rule switches to act or off, pauses, or is deleted. The user can also switch in the rule detail or by telling the bot. Act can go back to observe at any time.
-- **Editing the instruction** puts the rule back in observe; this needs PO confirmation (Q7). Editing only the schedule keeps the mode.
+- **Observe is opt-in (since 2026-11-01).** A new rule acts: the user's words are its mandate, just as an explicit task request is. Observe is for a user who wants to watch first, by saying 「先观察」 or picking 观察 in the rule editor; the permission cap, budgets and failure pausing are the same either way. Until 2026-11-01 every new check started in observe.
+- **A fixed reminder always acts**, such as 「明天下午 3 点提醒我开会」. The user dictated both the text and the time, so there is nothing to judge. It delivers the text without a model turn and has no observe mode. (Q6.)
+- **Switching modes.** For a rule the user put in observe: after 3 good observed runs on the current version (outcome done; failed and skipped runs don't count), "needs you" asks: 「规则「看 X 价格」已观察 3 次，需要你来决定是否执行」, with the latest run's line (「本会发送：“…”」) under it and [改为执行] [继续观察]. It is the least urgent kind: last in the list, never pushed, no desktop notification, though it counts toward the badge. 继续观察 stops asking for this version (kept across restarts); editing the instruction makes a new version, which asks again after 3 more good runs. The row goes away when the rule switches to act or off, pauses, or is deleted. The user can also switch in the rule detail or by telling the bot. Act can go back to observe at any time.
+- **Editing the instruction** makes a new version and keeps the mode: an acting rule keeps acting. (From 2026-10-31 to 2026-11-01 an acting rule observed once after an edit, `observe_left`; the column stays in the schema, unused.) Editing only the schedule keeps the mode.
 - **Tasks a person asked for are never in observe.** An explicit request is its own mandate, as in superagent, where explicit requests work in every accept mode.
 - **What observe guarantees:** no message to anyone through AnyModelBot, and no file changes, because the sandbox is read-only. It does not block network calls from shell tools. The prompt forbids outside actions, and the Report lists what the rule would do. We say exactly this in the UI help text.
 
@@ -308,7 +312,7 @@ Nothing below is ever pushed. It lives in the tasks view, the bot's info panel a
 | Push | When | Never |
 | --- | --- | --- |
 | **A result the user can use** | A task's `done` Report; a rule hit in act mode | Progress, "still working", partial drafts, retries, recovery after restart |
-| **A decision the user must make** | A task question (as soon as the task asks, with or without a default) or an approval, one at a time per conversation | A question the agent could decide itself; repeating an unchanged question |
+| **A decision the user must make** | A task question (as soon as the task asks, with or without a default) or an approval, one at a time per conversation | A question the agent could decide itself (language, format, scope, style); repeating an unchanged question |
 | **A failure that needs them** | A task failed after automatic retries, or a rule paused after 3 failures | A one-off network error; a failure the agent can work around |
 
 The acknowledgement of a new task is the chat reply itself, so it costs no extra message. Observe mode pushes nothing.
@@ -321,15 +325,15 @@ Every pushed message is one line, with an optional second line only for a blocke
 | --- | --- | --- | --- |
 | Ack (part of the chat reply) | 好，后台开始调研三家云的 GPU 价格，好了告诉你，你可以继续聊别的。 | same text | same text, plus a task chip 「后台任务 · GPU 价格调研 · 进行中 ›」 |
 | Result | GPU 价格调研好了：A100 包月最便宜的是 X 云，约 ¥7,800，报告已发给你。引用这条消息可以继续问。 | same line; buttons [详情] [继续改] | message in the conversation; the chip turns 已完成; OS notification only if the window isn't focused |
-| Question | ❓「GPU 价格调研」想问你：报告用中文还是英文？<br>1. 中文<br>2. 英文<br>（回复编号，或引用这条消息回答） | question card with option buttons, as for `ask_user_question` today | the same card in the conversation and in "needs you" |
-| Question with a default (the task keeps working) | ❓「GPU 价格调研」想问你：报告用中文还是英文？<br>1. 中文<br>2. 英文<br>不回复就按中文做<br>（回复编号，或引用这条消息回答） | the same card, with 不回复就按中文做 under the question | the card and the needs-you row carry 不回复就按中文做; the task row and chip read 进行中，有个问题等你回答 |
-| Result after going with the default | 报告写好了，按中文做的，要英文的话引用这条说一声。引用这条消息可以继续问。 | same line | message in the conversation |
+| Question | ❓「GPU 价格调研」想问你：要登录 X 云的控制台才看得到包月价，账号用哪个？<br>（回复，或引用这条消息回答） | question card with option buttons, as for `ask_user_question` today | the same card in the conversation and in "needs you" |
+| Question with a default (rare: the task keeps working) | ❓「GPU 价格调研」想问你：比较包月价还是按小时价？<br>1. 包月价<br>2. 按小时价<br>不回复就按包月价做<br>（回复编号，或引用这条消息回答） | the same card, with 不回复就按包月价做 under the question | the card and the needs-you row carry 不回复就按包月价做; the task row and chip read 进行中，有个问题等你回答 |
+| Result after going with the default | 报告写好了，按包月价比较的，要按小时价的话引用这条说一声。引用这条消息可以继续问。 | same line | message in the conversation |
 | Approval | 需批准（任务「清理旧构建」）：`rm -rf build/` — 回复 y 4821 / n 4821 | the existing approval card, titled with the task | "needs you" row with [批准一次] [拒绝] |
 | Failure | ⚠️「GPU 价格调研」没做完：X 云的价格页要登录，我进不去。发我一个能打开的链接，或者回复「停止」。 | same, with buttons [重试] [停止] | "needs you" row |
 | Rule hit | X 降价了：现在 ¥199（昨天 ¥259）。 | same | message, with the rule named in small text |
 | Digest (2 or more due within 2 min, or over the daily cap) | 2 条提醒：<br>· X 降价到 ¥199<br>· 仓库 Y 的 issue #12 有新回复 | one card with a line per item | one message |
 | Held, then delivered when the WeChat window reopens | 你不在时：GPU 价格调研好了（A100 最便宜是 X 云，约 ¥7,800）。 (sent just before the reply to the user's next message) | n/a | n/a |
-| Desktop notification | title 「小蓝 需要你」, body 「GPU 价格调研：报告用中文还是英文？」 | | |
+| Desktop notification | title 「小蓝 需要你」, body 「GPU 价格调研：要登录 X 云的控制台才看得到包月价，账号用哪个？」 | | |
 
 ### Communication rules and attention budget per channel
 
@@ -347,14 +351,16 @@ These rules apply to every pushed message. Replies within a user's active chat t
 
 As built (decided by the product owner after 3f). A question can wait for hours (quiet hours, the WeChat window), so a task asks as soon as it knows it needs to, and stops only when it must.
 
+**When to ask at all (PO, 2026-11-01).** Asking is the exception. The agent decides and says what it chose in its result. It asks only when a wrong guess would cause harm, cost money or waste most of the work; when it needs something only the user has (a login, a file, a password); or when the step cannot be undone (paying, deleting the user's data, messaging other people). Language, format, scope and style are never asked: it uses the conversation's language and the most reasonable option. So a question with a default is rare: it is for a guess that would only waste work.
+
 - **Two kinds.** `task_report` `needs_you` takes an optional `default` (one of `options` when options are given; a number is read as that option).
-  - **With a default** (「报告用中文还是英文？」, default 中文): the host asks right away and the turn goes on. The tool result tells the agent to keep working on what doesn't depend on the answer. An answer reaches the running task at its next step, the same way as a follow-up (steered, or delivered as its next input while it settles). If the agent finishes first, it goes with the default, says so in its result (「按中文做了，要英文的话引用这条说一声」) and reports `done`; the host then withdraws the question everywhere: the ApprovalCenter row is cancelled (`decided_by = default`), so needs-you drops it, and a push that is still pending, scheduled or held is withdrawn. A push that was already sent can't be taken back: quoting it (WeChat) or tapping its card button (Feishu) later reaches the task as a late answer and resumes it; a bare number is ordinary chat.
-  - **Must decide** (no safe default: paying, deleting, choosing an account, anything irreversible): unchanged, the agent ends its turn and the Run ends `needs_you` once the session is quiet.
+  - **With a default** (「比较包月价还是按小时价？」, default 包月价; a wrong guess would redo most of the report): the host asks right away and the turn goes on. The tool result tells the agent to keep working on what doesn't depend on the answer. An answer reaches the running task at its next step, the same way as a follow-up (steered, or delivered as its next input while it settles). If the agent finishes first, it goes with the default, says so in its result (「按包月价比较的，要按小时价的话引用这条说一声」) and reports `done`; the host then withdraws the question everywhere: the ApprovalCenter row is cancelled (`decided_by = default`), so needs-you drops it, and a push that is still pending, scheduled or held is withdrawn. A push that was already sent can't be taken back: quoting it (WeChat) or tapping its card button (Feishu) later reaches the task as a late answer and resumes it; a bare number is ordinary chat.
+  - **Must decide** (no safe default: harm or money, something only the user has, anything irreversible such as paying, deleting the user's data or messaging other people): unchanged, the agent does the work that doesn't depend on the answer, then ends its turn and the Run ends `needs_you` once the session is quiet.
 - **Ask immediately.** Both kinds are created and pushed when `task_report` is called, not when the Run ends or settles. An answer that arrives while the Run still settles (background jobs) or while the host is checking whether it is quiet is delivered to the session as its next input; the Run doesn't end until the session took it.
 - **What else ends a question.** A Run that ends `done` or `failed` withdraws the task's open questions (a failed task asks again on retry); a stopped or archived task withdraws them as before. Asking the same question again replaces the open one. A `budget` or `interrupted` Run leaves them open.
-- **Stage.** A question with a default doesn't block: the task stays in the working group as `working/asking` (进行中，有个问题等你回答). The task detail shows the question, with 不回复就按中文做 under it; the needs-you row shows the question, its options and the same line; so do the pushed WeChat text and the Feishu card.
+- **Stage.** A question with a default doesn't block: the task stays in the working group as `working/asking` (进行中，有个问题等你回答). The task detail shows the question, with 不回复就按包月价做 under it; the needs-you row shows the question, its options and the same line; so do the pushed WeChat text and the Feishu card.
 - **Unchanged.** One open pushed question per conversation (a question with a default that was pushed holds the slot until it is answered or withdrawn); quiet hours, daily caps and the WeChat window apply as before; approvals and the budget question still block; rules have no `needs_you`.
-- **Prompt.** The task rules say: decide yourself when you can; with a reasonable default, ask as early as possible with `default` and keep doing only what doesn't depend on the answer; when only the user can decide, do the independent work first, then ask and end the turn.
+- **Prompt.** The task rules say: decide yourself and say what you chose; never ask about language, format, scope or style; ask only in the three cases above. When a wrong guess would only waste work, ask as early as possible with `default` and keep doing only what doesn't depend on the answer; otherwise do the independent work first, then ask and end the turn. The chat rules say the same, with `ask_user_question` for choices.
 
 ### WeChat: the hard constraint
 
@@ -403,16 +409,18 @@ Expanding a row shows the Report (summary, message, would-do), the steps, the ru
 
 | Setting | Default |
 | --- | --- |
-| New rule mode | observe (except fixed reminders) |
+| New rule mode | act; observe only when the user asks for it (since 2026-11-01; before, every new check started in observe) |
 | Background slots | 2 per bot, 4 overall |
 | Quiet hours | 22:00–08:00 |
 | Unsolicited cap | WeChat 3 per day, Feishu 5 per day, per bot per conversation; overflow becomes a digest |
-| Questions | one open pushed question per conversation; no reminders for unanswered questions |
+| Questions | only when really needed (harm or money, something only the user has, irreversible); never about language, format, scope or style; one open pushed question per conversation; no reminders for unanswered questions |
 | Progress | never pushed |
 | Budgets | task $1.00, rule run $0.10, rule $3.00 per month (Q3) |
 | Automatic pause | a rule after 3 failures in a row; background work when the bot's Modelflare budget falls below 20 % |
 | Manual pause | one switch per bot (bot settings › 主动消息, the info panel's 「后台工作已暂停」 line, or asking the bot): no new task runs, scheduled rules are logged as skipped and not caught up, pushes wait; chat and running turns carry on |
-| Observe → act hint | after 3 observed runs, shown in place, never pushed |
+| Observe → act hint | for a rule the user put in observe: after 3 observed runs, shown in place, never pushed |
+| Image and video generation | generates right away; asks only above the $0.5 cost threshold (or when the bot is set to always ask) |
+| Idle task folders | deleted after 30 idle days without asking or notifying; the date and 保留 are in the task detail |
 | Desktop notifications | needs-you only, window unfocused, once per item |
 
 ### Mock-ups
@@ -444,9 +452,9 @@ These use `ui/design/README.md`:
 需要你
 ┌─────────────────────────────────────────────────────────────┐
 │ ● 小蓝 · GPU 价格调研 · 等你回答                      2 分钟前 │
-│   报告用中文还是英文？                                        │
-│   不回复就按中文做                                            │   only for a question with a default
-│   [中文] [英文] [回复…]                                       │
+│   比较包月价还是按小时价？                                    │
+│   不回复就按包月价做                                          │   only for a question with a default
+│   [包月价] [按小时价] [回复…]                                 │
 │─────────────────────────────────────────────────────────────│
 │ ● 小蓝 · 清理旧构建 · 等你批准                        5 分钟前 │
 │   rm -rf build/                                              │
@@ -470,7 +478,7 @@ These use `ui/design/README.md`:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Order: questions and approvals first (time-sensitive), then failures, then deliveries, then the system (logins, stuck turns, budget), and last a rule that has observed enough and asks whether to act. When the list is empty, there is no sidebar row and no badge. Opening the view directly shows a quiet 「没有需要你处理的事」.
+Order: questions and approvals first (time-sensitive), then failures, then deliveries, then the system (logins, stuck turns, budget), and last a rule the user put in observe that has observed enough and asks whether to act. When the list is empty, there is no sidebar row and no badge. Opening the view directly shows a quiet 「没有需要你处理的事」.
 
 **Tasks view** (main pane; all bots, with a bot filter). Sections appear only when non-empty.
 
@@ -484,7 +492,7 @@ Order: questions and approvals first (time-sensitive), then failures, then deliv
 └─────────────────────────────────────────────────────────────┘
 规则
 ┌─────────────────────────────────────────────────────────────┐
-│ ○ 每天 08:00 · 看 X 价格   观察中 · 下次 明天 08:00            › │   grey
+│ ○ 每天 08:00 · 看 X 价格   观察中，明天 08:00 再运行           › │   grey: the user chose observe
 │ ● 每周一 09:00 · issue 周报 执行中 · 上次 周一 · 说了 1 句      › │
 └─────────────────────────────────────────────────────────────┘
 已完成 · 最近 7 天
@@ -523,7 +531,7 @@ GPU 价格调研                                          [停止]
 - The panel is already the place for "this bot" (channels, approvals, memory, conversations), bot settings' rules row already points there (「N 条，在信息面板的「任务」里」), and the cross-bot question "does anything need me?" is the needs-you page. A main-pane page would add a permanent sidebar control that shows nothing when healthy.
 - Order: working and needs-you tasks (`GET /tasks?bot=&group=working,needs`), then rules, then one quiet row 「已结束 3」 that folds the ended tasks of the last 30 days (`group=ended`). The group is absent when the bot has no task or rule.
 - A row opens in place, as rules already do (one `--well`, no lines between the detail's rows): 来自 (channel, time and the user's words; it opens that conversation), 最新进展, 预算 (约 $0.08 / $1.00 with 改), 文件夹 (path, size, 打开 on the desktop), 清理 (only when a date is set, with 保留), then each run as a folded 处理过程, and 停止 / 导出 / 删除. The chat chip and needs-you show the same detail. The command palette has 「任务和规则」.
-- Rule detail is as in 3d, plus 导出 next to 编辑 and 删除. The rule editor has 每次 / 每月 budgets for checks.
+- Rule detail is as in 3d, plus 导出 next to 编辑 and 删除. The rule editor has 每次 / 每月 budgets for checks and, for a new check, the mode: 执行 (default) or 观察.
 
 ## 7. Permissions
 
@@ -593,7 +601,7 @@ CREATE TABLE IF NOT EXISTS rules (
   title TEXT NOT NULL, instruction TEXT NOT NULL,      -- the user's words, verbatim
   kind TEXT NOT NULL DEFAULT 'check',     -- check | remind (fixed text, no model turn)
   schedule TEXT NOT NULL,                 -- JSON {kind, at|time|days|minutes|cron, tz}
-  mode TEXT NOT NULL DEFAULT 'observe',   -- off | observe | act
+  mode TEXT NOT NULL DEFAULT 'observe',   -- off | observe | act; the host always writes it (act unless the user asked to observe, since 2026-11-01)
   act_permission TEXT NOT NULL DEFAULT 'workspace', -- workspace | bot
   folder TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
   run_budget_usd REAL NOT NULL DEFAULT 0.1, month_budget_usd REAL NOT NULL DEFAULT 3,
@@ -680,7 +688,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | `task_start` | chat | `{title, brief, budget_usd?}` → `{task, accepted}` or a refusal |
 | `task_message` | chat | `{task, text}`: steer a working task or resume a done one |
 | `task_list` | chat | Open tasks and rules with their stage and latest line, read from the host without waking any task |
-| `rule_create` | chat | `{title, instruction, schedule, kind}` → a rule in observe mode, or in act mode for a fixed reminder |
+| `rule_create` | chat | `{title, instruction, schedule, kind, mode}` → a rule in act mode; in observe mode only when the user asked to watch first (`mode: "observe"`; a fixed reminder always acts). `POST /rules` takes the same optional `mode` from the rule editor |
 | `task_report` | task and rule | `{state: progress\|needs_you\|done\|failed, summary, message?, question?, options?, default?, files?, would?}`; `question` may also be `{question, options?, multiSelect?, default?}`. With `default`, `needs_you` is asked and the run goes on |
 
 **Bridge** (child → host; the existing loopback with a per-launch token):
@@ -718,7 +726,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 | Two hosts open the same data dir | On desktop, Electron's `requestSingleInstanceLock()` already prevents it. The headless CLI and Docker build need a data-dir lock before the Scheduler starts (a small addition in 3d) |
 | Prompt injection from a web page during a task or rule | Permission caps (observe is read-only; act is capped at workspace), approvals go to needs-you, and denied acting tools. We can't fully prevent network side effects from shell tools, and the UI says so |
 | The DSH child's memory grows with sessions the SDK can't close (one per rule run) | About 0.25–0.45 MB per finished session (measured). After more than 100 task and rule sessions the child is replaced as soon as it is fully idle: no chat turn, run, pending approval, compaction or background job. Nothing is interrupted or recovered |
-| Disk growth (task folders, DSH session JSONL) | Retention (decision 9, as built in 3f): a task with no run in flight and nothing new for 30 days is archived (hidden, no follow-ups, open questions withdrawn); run logs are pruned after 30 days, keeping each task's latest run and the current month's rule runs. A folder with files gets a needs-you row (「2 个任务文件夹 11月4日 删除」, 保留 / 知道了, never pushed) at 27 idle days and is deleted at 30 days, no sooner than 3 days after the row appeared, together with the task's DSH session directories (`dsh/<bot>/sessions/*/task-<id>[-N]`; the SDK has no delete, so the host removes them, and retries later if the session is still open in the child). Any use of the task, or 保留, restarts the 30 days. Folder and session sizes are in the task detail; deleting a task removes its folder. State is in `tasks.cleanup_at` and `kv`, so it survives restarts and long times off |
+| Disk growth (task folders, DSH session JSONL) | Retention (decision 9, as built in 3f): a task with no run in flight and nothing new for 30 days is archived (hidden, no follow-ups, open questions withdrawn); run logs are pruned after 30 days, keeping each task's latest run and the current month's rule runs. A folder with files gets a deletion date at 27 idle days and is deleted at 30 days, no sooner than 3 days after the date was set, together with the task's DSH session directories (`dsh/<bot>/sessions/*/task-<id>[-N]`; the SDK has no delete, so the host removes them, and retries later if the session is still open in the child). Any use of the task, or 保留, restarts the 30 days. Since 2026-11-01 the user is not asked: no needs-you row (it used to read 「2 个任务文件夹 11月4日 删除」 with 保留 / 知道了) and no desktop notification; the date and 保留 are in the task detail. Folder and session sizes are in the task detail; deleting a task removes its folder. State is in `tasks.cleanup_at`, so it survives restarts and long times off |
 
 ## 12. Testing strategy
 
@@ -742,7 +750,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(status, due_at);
 - **Channels:** a fake iLink server for the WeChat window and quota (hold, then piggyback); Feishu card actions for answer, retry and stop.
 - **UI:** design-gallery cases for the tasks view, needs-you and the chip, in both themes; a test that a healthy state renders no needs-you row and no badge.
 - **Time:** a fake-clock run of 3 rules over 48 simulated hours, checking run counts, skips, caps and digests.
-- **Dogfooding:** the team runs real rules in observe mode for a week before act ships, and reviews each run log against the [push rules](#what-is-pushed-and-only-that).
+- **Dogfooding:** the team runs real rules for a week and reviews each run log against the [push rules](#what-is-pushed-and-only-that). (Planned in observe mode before act shipped; since 2026-11-01 rules act by default.)
 
 ## 13. Phased build plan
 
@@ -757,21 +765,21 @@ Estimates are in developer-days and include tests.
 | **3e Cost controls** | Per-run cost estimate; task, run and rule-month budgets; budget pause and continue; reserve for the bot's Modelflare key; time caps | A task stops at $1 with 「再给 $1 继续？」; continuing works | 3 | 3a, 3d |
 | **3f Tasks view and polish** | Full tasks view and detail; rule detail; retention and cleanup; Markdown export of run logs; docs and help text | Matches the mock-ups; healthy shows nothing | 4 | 3b–3e |
 
-**Total: about 32 developer-days.** 3a and 3b are the minimum to show the differentiator. 3d is the riskiest product-wise; observe mode is what makes it safe to ship.
+**Total: about 32 developer-days.** 3a and 3b are the minimum to show the differentiator. 3d is the riskiest product-wise; observe mode was meant to make it safe to ship. On 2026-11-01 the PO chose acting by default with observe as an opt-in; the permission cap, budgets and failure pausing are what keep it safe.
 
 ## 14. Decisions (product owner, 2026-10-31)
 
-The product owner accepted the recommendations below; item 8 is their own refinement.
+The product owner accepted the recommendations below; item 8 is their own refinement. Items 6, 7 and 9 were changed on 2026-11-01 (see [15](#15-decisions-product-owner-2026-11-01-act-and-ask-only-when-really-needed)).
 
 1. **Who decides "background":** both. The chat agent starts a task for long work and says so in one line (「这个要跑一会儿，我放到后台做，好了告诉你」). The user can also say 「后台做」, or 「前台做」 to keep it in chat.
 2. **Concurrency:** 2 background runs per bot, 4 overall. Chat never waits behind them.
 3. **Budgets:** task $1.00, rule run $0.10, rule $3.00 per month. At the limit we pause and ask (shown in "needs you"); we never stop silently.
 4. **Quiet hours:** 22:00–08:00 in the user's time zone, on by default, per user. A rule can override them.
 5. **Models for rules:** checks run on the cheaper utility model; the main model only writes the actual result.
-6. **Fixed reminders** skip observe mode.
-7. **Observe → act:** after 3 good observed runs we suggest switching to act. Editing a rule's instruction sends it back to observe for one run.
+6. **Fixed reminders** skip observe mode. (Since 2026-11-01 every rule acts by default; a reminder still has no observe mode.)
+7. **Observe → act:** after 3 good observed runs we suggest switching to act. Editing a rule's instruction sends it back to observe for one run. (Superseded 2026-11-01: observe is opt-in, the suggestion stays for rules the user put in observe, and an edit keeps the mode.)
 8. **WeChat 24 h window:** the "reply ok" nudge described in [WeChat: the hard constraint](#wechat-the-hard-constraint). Held messages show in "needs you" and go out with the user's next message, and desktop notifications are the reliable channel for time-sensitive rules.
-9. **Retention:** tasks and run logs are kept 30 days. Task folders are kept until the task is deleted and cleaned up after 30 idle days; the user is told first.
+9. **Retention:** tasks and run logs are kept 30 days. Task folders are kept until the task is deleted and cleaned up after 30 idle days; the user is told first. (Since 2026-11-01 the user is not told: the date and 保留 are in the task detail, and deletion still waits at least 3 days after the date is set.)
 10. **Feishu groups:** only the owner and allowed people (P2's allowlist) may start tasks and rules.
 11. **`/tasks`** chat command: yes, to list and stop tasks and rules.
 12. **Permission cap:** act-mode rules are capped at `workspace-write`, even on full-permission bots.
@@ -790,6 +798,17 @@ The product owner accepted the recommendations below; item 8 is their own refine
 10. **Groups:** in Feishu groups, who may start tasks and rules? Only allowed senders (P2's allowlist)? Who receives the questions?
 11. **Chat commands:** should WeChat and Feishu get a `/tasks` command (one message listing open tasks and rules), or is the desktop enough?
 12. **Permission cap:** should act-mode rules be capped at `workspace-write` even on full-permission bots, as proposed?
+
+## 15. Decisions (product owner, 2026-11-01): act, and ask only when really needed
+
+"We don't need infinite permission from agents. Stop being super reservative and keep asking human in the loop. We need to be automatic, not an infinite prompt for users. Only ask users when REALLY needed."
+
+1. **Rules act right away.** A rule the user asks for (chat `rule_create`, or the rule editor) is created in act mode; the user's words are its mandate, as for a task. Observe is opt-in: 「先观察」 in chat, or 观察 in the rule editor. Editing a rule's words keeps its mode (`observe_left` is gone). The observe → act suggestion stays, only for rules the user put in observe. The permission cap, budgets and failure pausing are unchanged.
+2. **Agents decide instead of asking.** In chat and in tasks the agent decides and says what it chose. It asks only when a wrong guess would cause harm, cost money or waste most of the work; when it needs something only the user has (a login, a file, a password); or when the step cannot be undone (paying, deleting the user's data, messaging other people). Language, format, scope and style are never asked. A question with a default is rare.
+3. **Media asks less.** The default asks only when the estimated cost is above $0.5 (a video whose cost cannot be estimated counts as above). A non-default model the agent or the user picked, or an ambiguous request, is not asked about; the agent takes the most reasonable reading. 每次都问 stays as an opt-in.
+4. **Cleanup doesn't ask.** Idle task folders are cleaned up after 30 days without a needs-you row or a desktop notification. The task detail shows the date with 保留, and a folder is never deleted sooner than 3 days after the date was set.
+
+What still asks, because only the user can decide: recursive deletes (`amb-delete-gate`); writes outside the workspace in the workspace tier, including approvals in act-mode rules; a task or rule at its budget; anything that needs something only the user has; strangers asking to use the bot; and the failure rows (failed task, rule paused after failures, expired login, undelivered result).
 
 ## Appendix A. Feasibility answers with evidence
 

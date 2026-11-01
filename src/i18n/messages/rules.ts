@@ -71,8 +71,9 @@ export const zh = {
   headMonth: "规则「{title}」本月预算用完了",
   // 推送：连续失败暂停了（执行中的规则）
   pausedPush: "⚠️ 规则「{title}」连续失败 {count} 次，已暂停：{why}",
-  // 建规则时建议给用户的那句（经聊天代理转述）
-  createdReply: "已建好规则：{when} {title}。先观察几天，只记录不打扰你；在「任务」里可以改成执行。",
+  // 建规则时建议给用户的那句（经聊天代理转述）：新规则直接执行；用户说了先观察的才观察
+  createdReply: "已建好规则：{when} {title}，有值得说的就告诉你。",
+  createdObserveReply: "已建好规则：{when} {title}，先观察几天，只记录不打扰你。",
   remindReply: "好，{when} 提醒你。",
   weixinNote: "微信只在你 24 小时内发过消息时才能主动发给你；否则会在你下次发消息时一起送到，并显示在桌面端。",
   // /tasks、/stop 编号（行的写法、提示语用 tasks.* 的）
@@ -165,7 +166,8 @@ export const en: Catalog<typeof zh> = {
   headFailingPaused: { one: "Rule “{title}” failed {count} time in a row and is paused", other: "Rule “{title}” failed {count} times in a row and is paused" },
   headMonth: "Rule “{title}” used up this month's budget",
   pausedPush: "⚠️ Rule “{title}” failed {count} times in a row and is paused: {why}",
-  createdReply: "Rule set: {title}, {when}. It watches quietly for a few days; switch it to act under Tasks.",
+  createdReply: "Rule set: {title}, {when}. I'll tell you when something matters.",
+  createdObserveReply: "Rule set: {title}, {when}. It watches quietly for a few days and sends nothing.",
   remindReply: "OK, reminder set for {when}.",
   weixinNote: "WeChat lets the bot message you only within 24 hours of your last message. Otherwise it arrives with your next message and shows on the desktop.",
   listHead: "Rules:",

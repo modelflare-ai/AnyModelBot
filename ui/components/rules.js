@@ -1,7 +1,7 @@
-// 规则（3d）：信息面板「任务」组里一条规则一行——时间表 · 标题，下面一句状态和下次运行（观察够了要不要改为执行，在「需要你」里问，
-// 从不推送）。点开是规则的详情：用户的原话、模式（观察 / 执行 / 关）、立即运行、编辑、删除，
+// 规则（3d）：信息面板「任务」组里一条规则一行——时间表 · 标题，下面一句状态和下次运行（用户选了观察的，观察够了要不要改为执行，
+// 在「需要你」里问，从不推送）。点开是规则的详情：用户的原话、模式（观察 / 执行 / 关）、立即运行、编辑、删除，
 // 和运行记录（一次一行：时间 · 模式 · 本会发送 / 保持安静 / 失败 / 跳过），每行再点开看报告、步骤、版本和权限；运行记录可以导出成
-// Markdown（3f）。编辑器里有每次、每月的预算（3f，检查才有）。
+// Markdown（3f）。编辑器里有每次、每月的预算（3f，检查才有）；新建的检查还能选执行（默认）或观察。
 // 健康时不多说话：状态是"点 + 文字"（绿 = 执行中、提醒，灰 = 观察中、关了，红 = 暂停了）。
 import { useEffect, useState } from "preact/hooks";
 import { html, Icon, Button, Seg, Sheet, Spinner } from "./ui.js";
@@ -141,7 +141,6 @@ export function RuleDetail({ rule, runs: given, onChanged }) {
       <span class="grow"></span>
       <${Button} size="sm" loading=${busy === "run"} disabled=${!!busy || !!rule.live || rule.mode === "off"} onClick=${runNow}>${t("rules.runNow")}<//>
     </div>
-    ${rule.mode === "act" && rule.observeLeft > 0 && html`<span class="hint">${t("rules.observeLeft", { count: rule.observeLeft })}</span>`}
     ${rule.kind === "check" && rule.mode === "observe" && html`<span class="hint">${t("rules.observeHelp")}</span>`}
     <div class="actions">
       <button type="button" class="text" onClick=${() => setEditing(true)}>${t("common.edit")}</button>
@@ -204,7 +203,7 @@ function convOptions(convs, current) {
 
 /**
  * 新建或编辑一条规则（对话框）：名称、要做什么（用户的原话）或提醒的那句话、时间、发到哪个会话。
- * 新建的检查从观察开始；改了原话的执行中的规则先观察 1 次（服务端处理）。发到微信时说清 24 小时的限制。
+ * 新建的检查默认执行，也可以选先观察（之后在详情里切）；改了原话模式不变。发到微信时说清 24 小时的限制。
  * 对话框里不放下拉菜单（玻璃对话框会裁掉它）：选项都用分段。时间表没改就不发，every 的起点不会被挪动。
  */
 export function RuleEditor({ botId, rule, onClose, onSaved }) {
@@ -214,6 +213,8 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
   const [orig] = useState(() => formOf(rule?.trigger?.kind === "schedule" ? rule.trigger.schedule : undefined));
   const [f, setF] = useState(orig);
   const [conv, setConv] = useState(rule?.conversationId || "");
+  // 新建的检查：执行（默认）或观察
+  const [mode, setMode] = useState("act");
   const [convs, setConvs] = useState(null);
   const [busy, setBusy] = useState(false);
   // 预算（3f）：每次、每月（美元）；没改就不发
@@ -244,8 +245,8 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
       };
       const d = rule
         ? await api(`/rules/${encodeURIComponent(rule.id)}`, { method: "PUT", body })
-        : await api("/rules", { method: "POST", body: { ...body, botId, kind } });
-      toast(rule ? t("common.saved") : kind === "remind" ? t("rules.createdRemind") : t("rules.createdCheck"));
+        : await api("/rules", { method: "POST", body: { ...body, botId, kind, ...(kind === "check" ? { mode } : {}) } });
+      toast(rule ? t("common.saved") : kind === "remind" ? t("rules.createdRemind") : mode === "observe" ? t("rules.createdObserve") : t("rules.createdCheck"));
       onSaved?.(d.rule);
     } catch (e) {
       failed(e);
@@ -277,6 +278,10 @@ export function RuleEditor({ botId, rule, onClose, onSaved }) {
         <span class="t-label">${t("rules.to")}</span>
         ${!convs ? html`<${Spinner} />` : convs.length ? html`<${Seg} label=${t("rules.to")} options=${convOptions(convs, conv)} value=${conv} onChange=${setConv} />` : html`<span class="hint">${t("rules.noConvs")}</span>`}
       </div>
+      ${!rule && !remind && html`<div class="rule-when">
+        <span class="t-label">${t("rules.modeLabel")}</span>
+        <${Seg} label=${t("rules.modeLabel")} options=${[["act", t("rules.mode.act")], ["observe", t("rules.mode.observe")]]} value=${mode} onChange=${setMode} />
+      </div>`}
       ${!remind && html`<div class="rule-when">
         <span class="t-label">${t("rules.budget")}</span>
         <div class="rule-when-row">

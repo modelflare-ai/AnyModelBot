@@ -610,7 +610,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <${NeedsRow} count=${3} onClick=${() => {}} /><${NeedsRow} count=${2} on onClick=${() => {}} /><${NeedsRow} count=${0} />
           </div>`}
         <//>
-        <${Demo} flush col title="列表" note="NeedItem：标题行是一句话，几个机器人时带上名字（「小蓝的「GPU 价格调研」在等你回答」）。等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天 / 清理文件夹 / 观察够了，要不要改为执行（不推送）">
+        <${Demo} flush col title="列表" note="NeedItem：标题行是一句话，几个机器人时带上名字（「小蓝的「GPU 价格调研」在等你回答」）。等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天 / 观察够了，要不要改为执行（不推送）">
           ${() => html`<div class="list needs-list">${NEEDS.map((it) => html`<${NeedItem} item=${it} multiBot onAct=${async () => {}} />`)}</div>`}
         <//>
       <//>
@@ -688,7 +688,6 @@ const NEEDS = [
   { id: "rb", kind: "rule", botName: "小蓝", subject: "规则「看 X 价格」", status: "本月预算用完", head: "规则「看 X 价格」本月预算用完了", line: "已用约 $3.00，下月自动恢复。再给 $3 继续？", since: Date.now() - 2 * 3600_000, severity: "warn", actions: ["continue"] },
   { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", head: "微信登录已过期", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
   { id: "rs", kind: "budget", botName: "小蓝", subject: "后台工作已停", status: "", head: "后台工作已停", line: "机器人预算只剩约 $1.80（共 $10），留给聊天", since: Date.now() - 4 * 3600_000, severity: "warn", actions: ["open"] },
-  { id: "c", kind: "cleanup", botName: "小蓝", subject: "2 个任务文件夹 11月4日 删除", status: "", head: "2 个任务文件夹 11月4日 删除", line: "整理下载目录和旧照片归档 30 天没动过了", since: Date.now() - 5 * 3600_000, severity: "warn", actions: ["keep", "dismiss"] },
   { id: "s", kind: "suggest", botName: "小蓝", subject: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", status: "", head: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", since: Date.now() - 6 * 3600_000, severity: "warn", actions: ["act", "dismiss"], ruleTitle: "看 X 价格" },
 ];
 
@@ -741,7 +740,7 @@ const at = (days, h, m = 0) => {
   d.setHours(h, m, 0, 0);
   return d.getTime();
 };
-const rule = (o) => ({ botId: "b", kind: "check", mode: "observe", observeLeft: 0, failures: 0, channel: "weixin", message: "", trigger: { kind: "schedule" }, version: 1, ...o });
+const rule = (o) => ({ botId: "b", kind: "check", mode: "observe", failures: 0, channel: "weixin", message: "", trigger: { kind: "schedule" }, version: 1, ...o });
 const RULES = [
   rule({ id: "g1", title: "看 X 价格", when: "每天 08:00", instruction: "每天早上看看 X 的价格，降到 200 以下告诉我", state: { key: "observe", label: "观察中", dot: "" }, nextRunAt: at(1, 8), monthUsd: 0.41, monthBudgetUsd: 3 }),
   rule({ id: "g2", title: "issue 周报", when: "每周一 09:00", instruction: "每周一早上把仓库上周的 issue 汇总成三句话发给我", mode: "act", state: { key: "act", label: "执行中", dot: "ok" }, nextRunAt: at(3, 9) }),

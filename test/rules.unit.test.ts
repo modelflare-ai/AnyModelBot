@@ -1,8 +1,9 @@
 /**
  * 规则（3d）的零件：时间表（解析、给人看的话、下一次 / 上一次、夏令时、宽限期、cron）、宿主的定时器、事件的过滤条件、数据目录锁，
- * 以及 TaskService 对着一个假宿主和一个假时钟：从观察开始、观察只记「本会发送」、3 次好的观察后在「需要你」里问要不要改为执行（失败、
- * 跳过的不算；不推送、不发系统通知；继续观察了这一版不再问，重启也一样；改了原话再观察 3 次再问）、执行时经出站队列发一句、
- * 改了原话先观察 1 次再回到执行、连续失败 3 次自动暂停（执行的推一句，观察的只在「需要你」里）、错过的按宽限期补跑一次或记为跳过、
+ * 以及 TaskService 对着一个假宿主和一个假时钟：新规则直接执行（用户说先观察才观察，产品负责人 2026-11-01）、观察只记「本会发送」、
+ * 用户选了观察的，3 次好的观察后在「需要你」里问要不要改为执行（失败、跳过的不算；不推送、不发系统通知；继续观察了这一版不再问，
+ * 重启也一样；改了原话再观察 3 次再问）、执行时经出站队列发一句、改了原话模式不变（不再先观察）、
+ * 连续失败 3 次自动暂停（执行的推一句，观察的只在「需要你」里）、错过的按宽限期补跑一次或记为跳过、
  * 等名额超过宽限期跳过、固定提醒不进模型、重启后宽限期内重跑一次、运行记录、事件触发、时间上限、观察时的审批自动拒绝、
  * 检查用小模型而那一句用主模型写、微信配额预留和续期提醒、/tasks 列出并关掉规则。
  */
@@ -344,6 +345,8 @@ describe("规则（假宿主、假时钟）", () => {
     await flush();
   };
   const report = (state: string, message = "", extra: Record<string, unknown> = {}) => (sid: string) => void expect(svc.report({ sessionId: sid, state, summary: "X 现在 ¥199", message, ...extra }).error).toBeUndefined();
+  /** 观察：用户说了先观察的检查 */
+  const OBSERVE = { mode: "observe" };
   /** 拨钟，到点的开 run */
   const go = async (t: number) => {
     now = t;
@@ -365,23 +368,33 @@ describe("规则（假宿主、假时钟）", () => {
 
   beforeEach(() => store.setAgentSession(CONV, "b", "chat-1"));
 
-  it("rule_create：从观察开始，用户原话原样存，自己的文件夹；回复里有设计里那句话，微信加上 24 小时那句", async () => {
+  it("rule_create：直接执行（用户的原话就是授权），用户原话原样存，自己的文件夹；回复里有设计里那句话，微信加上 24 小时那句；说了先观察才观察", async () => {
     const { text, rule } = await create();
-    expect(rule).toMatchObject({ kind: "check", mode: "observe", version: 1, conversationId: CONV, instruction: "每天早上 8 点看看 X 的价格，低于 200 告诉我", anytime: false });
+    expect(rule).toMatchObject({ kind: "check", mode: "act", version: 1, conversationId: CONV, instruction: "每天早上 8 点看看 X 的价格，低于 200 告诉我", anytime: false });
     expect(rule.id).toMatch(/^rl_[0-9a-f]{12}$/);
     expect(rule.folder).toBe(`rules/x-${rule.id.slice(3, 9)}`);
     expect(rule.trigger).toEqual({ kind: "schedule", schedule: { kind: "daily", time: "08:00", tz: TZ } });
     expect(rule.nextRunAt).toBe(at("2026-11-02T08:00"));
-    expect(text).toContain("「已建好规则：每天 08:00 看 X 价格。先观察几天，只记录不打扰你；在「任务」里可以改成执行。」");
+    expect(text).toContain("「已建好规则：每天 08:00 看 X 价格，有值得说的就告诉你。」");
+    expect(text).not.toContain("observe");
     expect(text).toContain(tServer("rules.weixinNote"));
-    expect(svc.getRuleView(rule.id)).toMatchObject({ when: "每天 08:00", state: { key: "observe", label: "观察中", dot: "" } });
+    expect(svc.getRuleView(rule.id)).toMatchObject({ when: "每天 08:00", state: { key: "act", label: "执行中", dot: "ok" } });
+    // 用户说先观察：聊天代理传 mode observe
+    const watch = await create("daily 09:00", OBSERVE);
+    expect(watch.rule).toMatchObject({ kind: "check", mode: "observe" });
+    expect(watch.text).toContain("in observe mode");
+    expect(watch.text).toContain("「已建好规则：每天 09:00 看 X 价格，先观察几天，只记录不打扰你。」");
+    expect(svc.getRuleView(watch.rule.id)).toMatchObject({ state: { key: "observe", label: "观察中", dot: "" } });
+    // 提醒没有观察：照样执行
+    const remind = await create("daily 10:00", { ...OBSERVE, kind: "remind", message: "喝水。" });
+    expect(remind.rule).toMatchObject({ kind: "remind", mode: "act" });
     // 时间表说不清：照着错误改
     const bad = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "t", instruction: "i", schedule: "每天" } });
     expect(bad.error).toMatch(/Use one of/);
   });
 
-  it("退出演示的单元版：观察 3 天（只记「本会发送」，什么都不推），提示改为执行；改了之后命中时推一句（主模型写的）", async () => {
-    const { rule } = await create();
+  it("退出演示的单元版：用户要先观察，观察 3 天（只记「本会发送」，什么都不推），提示改为执行；改了之后命中时推一句（主模型写的）", async () => {
+    const { rule } = await create("daily 08:00", OBSERVE);
     // 第 1 天：到点开一个新会话，第一条输入是规则、原话、这次是观察；检查用小模型
     await go(at("2026-11-02T08:00"));
     const p1 = host.prompts.at(-1)!;
@@ -436,7 +449,7 @@ describe("规则（假宿主、假时钟）", () => {
   });
 
   it("观察够了：这一版好好观察 3 次后「需要你」里问要不要改为执行（失败、跳过的不算），排在最后，算件数但不推送、不发系统通知", async () => {
-    const { rule } = await create();
+    const { rule } = await create("daily 08:00", OBSERVE);
     const ask = () => svc.ruleAttention().filter((a) => a.kind === "suggest");
     await day("2026-11-02", report("done"));
     await day("2026-11-03", report("failed", "X 的页面打不开"));
@@ -471,15 +484,15 @@ describe("规则（假宿主、假时钟）", () => {
     expect(store.listOutbox({ limit: 100 })).toEqual([]);
     const att = new Attention({ store });
     att.addSource(() => svc.ruleAttention());
-    att.addSource(() => [{ id: "cleanup:b", kind: "cleanup", botId: "b", botName: "小蓝", subject: "1 个任务文件夹 11月9日 删除", status: "", head: "1 个任务文件夹 11月9日 删除", line: "", since: now + H, severity: "warn", actions: ["keep", "dismiss"] }]);
-    expect(att.list().map((a) => a.id)).toEqual(["cleanup:b", `suggest:${rule.id}`]);
+    att.addSource(() => [{ id: "login:b:weixin", kind: "login", botId: "b", botName: "小蓝", subject: "微信登录已过期", status: "", head: "微信登录已过期", line: "", since: now + H, severity: "err", actions: ["relogin"] }]);
+    expect(att.list().map((a) => a.id)).toEqual(["login:b:weixin", `suggest:${rule.id}`]);
     expect(att.count()).toBe(2);
-    expect(att.takeNew().map((a) => a.id)).toEqual(["cleanup:b"]);
+    expect(att.takeNew().map((a) => a.id)).toEqual(["login:b:weixin"]);
     att.stop();
   });
 
   it("观察够了：改为执行、关掉、暂停、删掉就消失；继续观察了这一版不再问（重启也一样），改了原话再好好观察 3 次再问", async () => {
-    const { rule } = await create();
+    const { rule } = await create("daily 08:00", OBSERVE);
     const asks = () => svc.ruleAttention().filter((a) => a.kind === "suggest").length;
     for (const d of ["2026-11-02", "2026-11-03", "2026-11-04"]) await day(d, report("done"));
     expect(asks()).toBe(1);
@@ -494,7 +507,7 @@ describe("规则（假宿主、假时钟）", () => {
     expect(asks()).toBe(0);
     svc.updateRule(rule.id, { mode: "off" });
     // 另一条：暂停了（本月预算用完）消失，删掉也消失
-    const other = (await create("daily 09:00")).rule;
+    const other = (await create("daily 09:00", OBSERVE)).rule;
     for (const d of ["2026-11-05", "2026-11-06", "2026-11-07"]) {
       await go(at(`${d}T09:00`));
       await turn(report("done"));
@@ -511,7 +524,7 @@ describe("规则（假宿主、假时钟）", () => {
     expect(store.getKV(`rules:suggest-seen:${other.id}`)).toBeUndefined();
 
     // 继续观察：这一版不再问，再好好观察一次也不问；重启后也一样
-    const third = (await create("daily 10:00")).rule;
+    const third = (await create("daily 10:00", OBSERVE)).rule;
     for (const d of ["2026-11-08", "2026-11-09", "2026-11-10"]) {
       await go(at(`${d}T10:00`));
       await turn(report("done"));
@@ -541,8 +554,7 @@ describe("规则（假宿主、假时钟）", () => {
   });
 
   it("完全权限的机器人：执行时最多可写工作区；只读的机器人：执行也只读", async () => {
-    const { rule } = await create();
-    svc.updateRule(rule.id, { mode: "act" });
+    await create();
     host.settingsValue = { ...host.settingsValue, permission: "full" };
     await go(at("2026-11-02T08:00"));
     expect(svc.sessionConfig({ sessionId: host.prompts.at(-1)!.sessionId }).permission).toBe("workspace-write");
@@ -553,41 +565,38 @@ describe("规则（假宿主、假时钟）", () => {
     expect(svc.sessionConfig({ sessionId: "task-x" }).error).toBeDefined();
   });
 
-  it("改原话：版本加 1，执行中的先观察 1 次再回到执行；只改时间表不动模式；正在跑的照原来的版本跑完", async () => {
+  it("改原话：版本加 1，模式不变（执行中的照样执行，不再先观察一次）；只改时间表不动模式；正在跑的照原来的版本跑完", async () => {
     const { rule } = await create();
-    svc.updateRule(rule.id, { mode: "act" });
     await go(at("2026-11-02T08:00"));
     // 跑的时候改了原话
     svc.updateRule(rule.id, { instruction: "每天早上看看 X 的价格，低于 180 告诉我" });
-    expect(store.getRule(rule.id)).toMatchObject({ version: 2, observeLeft: 1, mode: "act" });
-    expect(svc.getRuleView(rule.id)!.state.key).toBe("observe");
+    expect(store.getRule(rule.id)).toMatchObject({ version: 2, mode: "act" });
+    expect(store.getRule(rule.id)).not.toHaveProperty("observeLeft");
+    expect(svc.getRuleView(rule.id)!.state.key).toBe("act");
     await turn(report("done", "X 降到 199 了"));
     // 那一次是第 1 版、执行的：照样发
     expect(runsOf(rule.id).at(-1)).toMatchObject({ ruleVersion: 1, mode: "act" });
     await flush();
     expect(pushes()).toHaveLength(1);
-    expect(store.getRule(rule.id)!.observeLeft).toBe(1);
-    // 下一次：第 2 版、观察
+    // 下一次：第 2 版，照样执行，命中就发
     await go(at("2026-11-03T08:00"));
     expect(host.prompts.at(-1)!.text).toContain("低于 180");
-    expect(host.prompts.at(-1)!.text).toContain("[这次]\n观察");
+    expect(host.prompts.at(-1)!.text).toContain("[这次]\n执行");
     await turn(report("done", "X 降到 170 了"));
     await flush();
-    expect(pushes()).toHaveLength(1);
-    expect(store.getRule(rule.id)).toMatchObject({ observeLeft: 0, mode: "act" });
-    expect(svc.ruleLog(rule.id)[0]).toMatchObject({ mode: "observe", version: 2 });
-    // 再下一次：回到执行
-    await go(at("2026-11-04T08:00"));
-    expect(host.prompts.at(-1)!.text).toContain("[这次]\n执行");
-    await turn(report("done"));
+    expect(pushes()).toHaveLength(2);
+    expect(svc.ruleLog(rule.id)[0]).toMatchObject({ mode: "act", version: 2 });
+    // 观察中的改了原话：还是观察
+    const watch = (await create("daily 09:00", OBSERVE)).rule;
+    svc.updateRule(watch.id, { instruction: "每天看看 Y 的价格" });
+    expect(store.getRule(watch.id)).toMatchObject({ version: 2, mode: "observe" });
     // 只改时间表：模式不变，下一次按新时间
     svc.updateRule(rule.id, { schedule: parseSchedule("daily 09:30", TZ, now).schedule! });
-    expect(store.getRule(rule.id)).toMatchObject({ mode: "act", observeLeft: 0, version: 2, nextRunAt: at("2026-11-04T09:30") });
+    expect(store.getRule(rule.id)).toMatchObject({ mode: "act", version: 2, nextRunAt: at("2026-11-03T09:30") });
   });
 
   it("连续失败 3 次自动暂停：执行中的推一句 ⚠️，「需要你」里一行（2 次时就有黄的）；成功一次清零；重试重新开并马上跑", async () => {
     const { rule } = await create();
-    svc.updateRule(rule.id, { mode: "act" });
     await day("2026-11-02", report("failed", "X 的页面打不开"));
     expect(store.getRule(rule.id)!.failures).toBe(1);
     expect(svc.ruleAttention()).toEqual([]);
@@ -617,7 +626,7 @@ describe("规则（假宿主、假时钟）", () => {
   });
 
   it("观察中的规则连续失败 3 次也暂停，但什么都不推，只在「需要你」里", async () => {
-    const { rule } = await create();
+    const { rule } = await create("daily 08:00", OBSERVE);
     for (const d of ["2026-11-02", "2026-11-03", "2026-11-04"]) await day(d, report("failed", "打不开"));
     expect(store.getRule(rule.id)!.pausedReason).toBe("failures");
     expect(pushes()).toEqual([]);
@@ -779,7 +788,7 @@ describe("规则（假宿主、假时钟）", () => {
   });
 
   it("运行记录：新的在前，一次一行，可以往前翻；展开有报告、版本、权限；runLine 的几种说法", async () => {
-    const { rule } = await create("every 15m");
+    const { rule } = await create("every 15m", OBSERVE);
     for (let i = 0; i < 4; i++) {
       await go(store.getRule(rule.id)!.nextRunAt);
       await turn(report("done"));
@@ -802,7 +811,7 @@ describe("规则（假宿主、假时钟）", () => {
 
   it("事件触发（扩展点）：来源和过滤条件对得上的开着的规则各开一个 run，走同一条观察 / 执行的路；对不上、关着的不开", async () => {
     const events = new RuleEvents(svc);
-    const r = svc.createRule({ botId: "b", conversationId: CONV, title: "仓库新 issue", instruction: "有新 issue 时看看要不要我处理", trigger: { kind: "event", source: "fake", filter: { repo: "me/app" } } });
+    const r = svc.createRule({ botId: "b", conversationId: CONV, title: "仓库新 issue", instruction: "有新 issue 时看看要不要我处理", mode: "observe", trigger: { kind: "event", source: "fake", filter: { repo: "me/app" } } });
     const other = svc.createRule({ botId: "b", conversationId: CONV, title: "别的仓库", instruction: "x", trigger: { kind: "event", source: "fake", filter: { repo: "me/other" } } });
     expect(r.rule).toMatchObject({ mode: "observe", nextRunAt: 0, trigger: { kind: "event", source: "fake" } });
     expect(svc.getRuleView(r.rule!.id)).toMatchObject({ when: "事件 fake", state: { key: "observe" } });
@@ -844,7 +853,7 @@ describe("规则（假宿主、假时钟）", () => {
   });
 
   it("没报告：提醒一次（规则的说法），还没有就失败；观察时要批准的自动拒绝、记成「需要批准」", async () => {
-    const { rule } = await create();
+    const { rule } = await create("daily 08:00", OBSERVE);
     await go(at("2026-11-02T08:00"));
     svc.wouldNeedApproval(runsOf(rule.id)[0].id, "curl -X POST https://x.example/alert");
     await turn();
@@ -860,7 +869,6 @@ describe("规则（假宿主、假时钟）", () => {
 
   it("执行时的审批：在「需要你」里（规则名），不进聊天回合；1 小时没人管就拒绝、这次失败；ruleOfSession 认得子代理", async () => {
     const { rule } = await create();
-    svc.updateRule(rule.id, { mode: "act" });
     await go(at("2026-11-02T08:00"));
     const sid = host.prompts.at(-1)!.sessionId;
     const who = svc.ruleOfSession("sub-1", sid)!;
@@ -877,7 +885,7 @@ describe("规则（假宿主、假时钟）", () => {
   });
 
   it("微信：执行中的规则（含提醒）每条留 1 条配额，观察中的不留；续期提醒列出窗口关了以后要跑的", async () => {
-    const { rule } = await create();
+    const { rule } = await create("daily 08:00", OBSERVE);
     expect(delivery.reserved("b", "weixin", "owner")).toBe(0);
     svc.updateRule(rule.id, { mode: "act" });
     expect(delivery.reserved("b", "weixin", "owner")).toBe(1);
@@ -896,12 +904,15 @@ describe("规则（假宿主、假时钟）", () => {
   it("聊天代理：task_list 列出规则；rule_update 改模式、改原话、删掉；/tasks 列出规则，/stop 编号 关掉它", async () => {
     const { rule } = await create();
     const list = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "list", args: {} });
-    expect(list.text).toBe(`rule ${rule.id} 「看 X 价格」 每天 08:00 · 观察中`);
-    const up = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_update", args: { rule: "X 价格", mode: "act" } });
-    expect(up.text).toMatch(/^Updated rule 「看 X 价格」: 每天 08:00, 执行中\./);
+    expect(list.text).toBe(`rule ${rule.id} 「看 X 价格」 每天 08:00 · 执行中`);
+    const up = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_update", args: { rule: "X 价格", mode: "observe" } });
+    expect(up.text).toMatch(/^Updated rule 「看 X 价格」: 每天 08:00, 观察中\./);
+    await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_update", args: { rule: "X 价格", mode: "act" } });
+    // 改了原话：照样执行，不再说下一次只观察
     const re = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_update", args: { rule: rule.id, instruction: "低于 150 告诉我" } });
-    expect(re.text).toContain("its next run only observes");
-    expect(svc.listText(CONV)).toBe("规则：\n1. 看 X 价格 · 观察中：每天 08:00\n发 /stop 编号 可停止。");
+    expect(re.text).toMatch(/^Updated rule 「看 X 价格」: 每天 08:00, 执行中\. Tell the user/);
+    expect(re.text).not.toContain("observes");
+    expect(svc.listText(CONV)).toBe("规则：\n1. 看 X 价格 · 执行中：每天 08:00\n发 /stop 编号 可停止。");
     expect(svc.stopByIndex(CONV, 1, "weixin:owner")).toBe("已关闭规则「看 X 价格」。");
     expect(store.getRule(rule.id)!.mode).toBe("off");
     expect(svc.listText(CONV)).toBe("没有后台任务。");
@@ -914,7 +925,6 @@ describe("规则（假宿主、假时钟）", () => {
   it("没设小模型：检查和写那一句都用主模型，不再多调一次；网页会话：写进会话历史", async () => {
     host.settingsValue = { ...DEFAULT_SETTINGS };
     const r = svc.createRule({ botId: "b", conversationId: WEB, title: "看 X 价格", instruction: "看看 X", schedule: parseSchedule("daily 08:00", TZ, now).schedule });
-    svc.updateRule(r.rule!.id, { mode: "act" });
     await go(at("2026-11-02T08:00"));
     expect(host.prompts.at(-1)!.model).toBe("main-model");
     await turn(report("done", "X 降到 199 了"));
@@ -938,7 +948,6 @@ describe("规则（假宿主、假时钟）", () => {
     ]);
     expect(normalizeSchedule({ kind: "every", minutes: 5 }, TZ, now, "en").error).toBe("The interval must be at least 15 minutes");
     const { rule } = await create();
-    svc.updateRule(rule.id, { mode: "act" });
     await day("2026-11-02", report("done", "X 降到 199 了"));
     await day("2026-11-03", report("done"));
     withLang("en", () => {
@@ -962,7 +971,9 @@ describe("规则（假宿主、假时钟）", () => {
       expect(svc.stopByIndex(CONV, 2, "weixin:owner")).toBe("Rule “看 X 价格” is off.");
       expect(host.prompts.findLast((x) => x.sessionId.startsWith("rule-"))!.text).toContain("[规则]\n看 X 价格（每天 08:00）");
       const made = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "Weather", instruction: "check the rain every weekday", schedule: "weekdays 07:30" } });
-      expect(made.text).toContain("「Rule set: Weather, Weekdays 07:30. It watches quietly for a few days; switch it to act under Tasks.」");
+      expect(made.text).toContain("「Rule set: Weather, Weekdays 07:30. I'll tell you when something matters.」");
+      const watched = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "Wind", instruction: "watch the wind first", schedule: "weekdays 07:00", mode: "observe" } });
+      expect(watched.text).toContain("「Rule set: Wind, Weekdays 07:00. It watches quietly for a few days and sends nothing.」");
       expect(made.text).toContain("WeChat lets the bot message you only within 24 hours of your last message.");
       expect(svc.updateRule(rule.id, { title: " " }).error).toBe("Name can't be empty");
     } finally {
@@ -972,9 +983,8 @@ describe("规则（假宿主、假时钟）", () => {
 
   it("模拟 48 小时：三条规则（每天、每 30 分钟、一次性提醒），中间应用关了 3 小时；次数、跳过、推送都对", async () => {
     const daily = (await create("daily 08:00")).rule;
-    const half = (await create("every 30m")).rule;
+    const half = (await create("every 30m", OBSERVE)).rule;
     await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "rule_create", args: { title: "交房租", instruction: "明天中午提醒我交房租", schedule: "once 2026-11-03 12:00", kind: "remind", message: "该交房租了。" } });
-    svc.updateRule(daily.id, { mode: "act" });
     const end = at("2026-11-04T07:00");
     let off = false;
     for (let t = now; t <= end; t += 5 * MIN) {

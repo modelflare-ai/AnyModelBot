@@ -243,12 +243,13 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       const urls = (Array.isArray(content) ? content : []).filter((p: any) => p?.type === "image_url").map((p: any) => String(p.image_url?.url ?? "").split(",")[0]);
       return { text: `SEEN<<${urls.join(" ")}|${/\[图片 inbox\/[^\]]+\.png\]/.test(user) ? "path" : "nopath"}>>` };
     }
-    const scripts: Array<[RegExp, Array<{ name: string; args: any }>]> = [
+    const scripts: Array<[RegExp, Array<{ name: string; args: any; say?: string }>]> = [
       [/QUICKSORT/, [{ name: "bash", args: { description: "run", command: "cat > qs.py <<'PY'\ndef qs(a):\n    return a if len(a)<2 else qs([x for x in a[1:] if x<a[0]])+[a[0]]+qs([x for x in a[1:] if x>=a[0]])\nprint(qs([5,3,9,1,7,2]))\nPY\npython3 qs.py" } }]],
       [/ESCALATE/, [{ name: "bash", args: { description: "run", command: "echo escalated-$((40+2))", sandbox_permissions: "danger-full-access", justification: "测试提权" } }]],
       [/SECRET/, [{ name: "bash", args: { description: "run", command: `ls ${dataDir} 2>&1; cat ${path.join(dataDir, "anymodel.db")} >/dev/null 2>&1 && echo DB-READABLE || echo DB-HIDDEN` } }]],
       [/READFILE/, [{ name: "read", args: { file_path: path.join(dataDir, "config.json") } }, { name: "read", args: { file_path: "qs.py" } }]],
-      [/PRESENT/, [{ name: "bash", args: { description: "run", command: "printf 'hello deliverable' > report.txt" } }, { name: "present", args: { files: [{ path: "report.txt", description: "报告" }, { path: "/etc/hostname" }] } }]],
+      // 每步先说一句（回合中间说的话），再调工具
+      [/PRESENT/, [{ name: "bash", args: { description: "run", command: "printf 'hello deliverable' > report.txt" }, say: "我先写个报告。" }, { name: "present", args: { files: [{ path: "report.txt", description: "报告" }, { path: "/etc/hostname" }] }, say: "写好了，交给你。" }]],
       [/ASKQ/, [{ name: "ask_user_question", args: { questions: [{ id: "lang", question: "用哪种语言？", options: [{ label: "Python" }, { label: "Go" }] }] } }]],
       // 原生依赖与子进程：ripgrep（grep/glob）、PTC 的 Node 子进程（workflow）
       [/NATIVES/, [
@@ -280,7 +281,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     ];
     for (const [re, steps] of scripts) {
       if (!re.test(user)) continue;
-      if (tools.length < steps.length) return { tool: steps[tools.length] };
+      if (tools.length < steps.length) return { tool: steps[tools.length], text: steps[tools.length].say };
       if (/BGJOB/.test(user)) return { text: `STILL-RUNNING<<${tools.map((t) => textOf(t.content)).join("|")}>>` };
       return { text: `RESULT<<${tools.map((t) => textOf(t.content)).join("|")}>>` };
     }
@@ -355,6 +356,8 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
       res.writeHead(200, { "content-type": "text/event-stream" });
       const send = (o: any) => res.write(`data: ${JSON.stringify({ id: "c1", object: "chat.completion.chunk", model: b.model, ...o })}\n\n`);
       if (step.tool) {
+        // 带工具调用的那一步也可以先说一句话（content 和 tool_calls 一起来）
+        if (step.text) send({ choices: [{ index: 0, delta: { role: "assistant", content: step.text } }] });
         send({ choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_" + Math.random().toString(36).slice(2, 8), type: "function", function: { name: step.tool.name, arguments: JSON.stringify(step.tool.args) } }] } }] });
         send({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] });
       } else {
@@ -551,9 +554,20 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("agent ho
     expect(r.reply).toContain("def qs");
   }, 120_000);
 
-  it("present delivers workspace files only", async () => {
+  it("present delivers workspace files only; what the model says between tool calls and the delivered file stay in the history and the file opens", async () => {
     const r = await chat("PRESENT report");
     expect(r.files).toEqual(["report.txt"]);
+    const d = (await (await fetch(`${base}/amb/api/bots/default/chat`)).json()) as any;
+    const m = d.messages.at(-1);
+    expect(m.interim).toEqual(["我先写个报告。", "写好了，交给你。"]);
+    expect(m.content).toMatch(/^RESULT<</);
+    expect(m.files).toEqual([{ path: fs.realpathSync(path.join(dataDir, "workspaces", "default", "report.txt")), name: "report.txt", size: 17 }]);
+    // 处理过程里模型那一步不再重复说过的话
+    const steps = ((await (await fetch(`${base}/amb/api/conversations/${encodeURIComponent(d.conversationId)}/messages/${m.id}/activity`)).json()) as any).steps;
+    expect(JSON.stringify(steps)).not.toContain("我先写个报告");
+    const f = await fetch(`${base}/amb/api/conversations/${encodeURIComponent(d.conversationId)}/file?path=${encodeURIComponent(m.files[0].path)}`);
+    expect(f.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await f.text()).toBe("hello deliverable");
   }, 120_000);
 
   it("ask_user_question becomes a numbered prompt answered by reply", async () => {

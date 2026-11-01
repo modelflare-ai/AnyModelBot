@@ -1,9 +1,11 @@
 import type http from "node:http";
 import type { OutboundOp, ReplySession } from "../core/types.js";
+import { describeFile } from "./files.js";
 
 /**
- * 运行时的 OutboundOp → 网页对话的 SSE 事件：text（到目前为止的完整回复，覆盖式）、typing、prompt（审批/提问）、
- * file、activity（代理的一步，按 id 覆盖）。stream.start 不发。
+ * 运行时的 OutboundOp → 网页对话的 SSE 事件：text（到目前为止的完整回复，覆盖式）、interim（模型在回合中间说的一段话，追加）、
+ * typing、prompt（审批/提问）、file（交付的文件，见 ShownFile；回合中 present 时就发）、activity（代理的一步，按 id 覆盖）。
+ * stream.start 不发。
  */
 export function opEvent(op: OutboundOp): [string, unknown] | undefined {
   switch (op.type) {
@@ -16,8 +18,11 @@ export function opEvent(op: OutboundOp): [string, unknown] | undefined {
     case "stream.finish":
     case "text":
       return ["text", { text: op.text, final: true }];
+    case "interim":
+      return ["interim", { text: op.text }];
     case "file":
-      return ["file", { name: op.name }];
+    case "presented":
+      return ["file", describeFile(op.path, op.name)];
     case "interactive":
       return ["prompt", { kind: op.kind, prompt: op.prompt, requestId: op.requestId, code: op.code }];
     case "activity":

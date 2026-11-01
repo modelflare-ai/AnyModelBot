@@ -231,6 +231,7 @@ async function boot(): Promise<void> {
     },
     openDataDir: () => void shell.openPath(config.dataDir),
     openPath: (p) => void shell.openPath(p),
+    showItemInFolder: (p) => shell.showItemInFolder(p),
     openInBrowser: () => void shell.openExternal(entryUrl),
     openExternal: (url) => {
       if (/^https?:/i.test(url)) void shell.openExternal(url);

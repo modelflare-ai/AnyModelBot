@@ -83,6 +83,8 @@ export interface TurnProgress {
   jobs: Set<string>;
   /** 进行中的生图 / 生视频任务 */
   media: number;
+  /** 模型在这一轮中间说过的话（信息面板里和步骤一起显示；步骤里不再重复这些文字） */
+  interim: string[];
 }
 
 /** 生成确认里"取消"那一项（问题建好后界面语言可能变了：两种语言的都认） */
@@ -330,7 +332,7 @@ export class AgentManager {
 
   private async track(botId: string, input: TurnInput & { onStep?: (step: ActivityStep) => void }, run: (input: TurnInput) => Promise<TurnResult>): Promise<TurnResult> {
     const conv = input.conversationId;
-    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model), abort: new AbortController(), tools: new Set(), jobs: new Set(), media: 0 };
+    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model, { chat: true }), abort: new AbortController(), tools: new Set(), jobs: new Set(), media: 0, interim: [] };
     this.turnsInProgress.set(conv, t);
     // 看门狗：代理已经在处理，却长时间没有进展（模型不回、只在重试），又不是在等用户批准或回答、
     // 也没有工具、命令或生成任务在跑（生视频、转到后台的长命令、子代理里的工具）→ 中止
@@ -348,6 +350,10 @@ export class AgentManager {
       onStart: () => {
         t.lastProgress = Date.now();
         input.observer?.onStart?.();
+      },
+      onInterim: (text) => {
+        t.interim.push(text);
+        input.observer?.onInterim?.(text);
       },
       onEvent: (type, data, time) => {
         if (type === "subagent/event") {

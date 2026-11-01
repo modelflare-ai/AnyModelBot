@@ -1199,7 +1199,8 @@ export class TaskService {
     const text = outcome === "done" ? clip(msg, MESSAGE_MAX - (hint ? hint.length + 2 : 0)) || tr("tasks.done", { title: task.title }) : tr("tasks.notDone", { title: task.title, why: clip(msg || error || tr("tasks.noResult"), MESSAGE_MAX) });
     const files = outcome === "done" ? this.files(task, report?.files ?? []) : [];
     if (pushed) this.post(conv, task, id, purpose, text, files, hint);
-    this.store.addMessage(conv.id, "assistant", files.length && conv.channel === "web" ? `${text}\n\n${files.map((f) => `- ${path.relative(this.o.host.workspace(task.botId), f)}`).join("\n")}` : text);
+    // 交付的文件跟着这条消息存下：网页对话里是文件卡片（图片直接显示），点开就能看
+    this.store.addMessage(conv.id, "assistant", text, undefined, { files });
     this.store.updateRun(runId, { delivery: id });
     this.note(conv.id, outcome === "done" ? `[后台任务「${task.title}」已完成，已把结果发给用户] ${text}` : `[后台任务「${task.title}」失败了，已告诉用户] ${text}`);
   }

@@ -9,6 +9,7 @@ import { markDone } from "../lib/guide.js";
 import { fmtAgo, fmtClock, fmtDur, fmtTime } from "../lib/format.js";
 import { channelName as accessChannel } from "../lib/access.js";
 import { PausedLine, TaskGroup } from "../components/tasks.js";
+import { DeliveredFiles } from "../components/files.js";
 import { t } from "../lib/i18n.js";
 
 export function usePoll(fn, ms, deps = []) {
@@ -185,6 +186,7 @@ function LiveTurn({ turn, convId }) {
   const label = step ? t("activity.stepFor", { step, d }) : t("info.turn.processing", { d });
   return html`<div class="transcript-turn">
     <${ActivityLine} label=${label} live steps=${turn.steps} />
+    ${turn.interim?.length > 0 && html`<div class="transcript-msg"><div class="bubble selectable">${turn.interim.join("\n\n")}</div></div>`}
     <div class="cluster">
       ${idle >= 60_000 && html`<span class="hint">${t("info.turn.idle", { d: fmtDur(idle) })}</span>`}
       <span class="grow"></span>
@@ -210,7 +212,8 @@ function ConversationSheet({ conv, onClose }) {
       ${d && !d.messages.length && !turn && html`<span class="hint">${t("info.noMessages")}</span>`}
       ${d && d.messages.map((m) => html`<div class=${`transcript-msg${m.role === "user" ? " user" : ""}`}>
         ${m.steps && html`<${ActivityLine} label=${t("info.turn.activity")} count=${m.steps} load=${() => api(`/conversations/${enc}/messages/${m.id}/activity`).then((x) => x.steps)} />`}
-        <div class="bubble selectable">${m.content}</div>
+        <div class="bubble selectable">${[...(m.interim || []), m.content].join("\n\n")}</div>
+        <${DeliveredFiles} files=${m.files} conv=${conv.id} canOpen=${d.canOpen} />
         <div class="hint">${fmtTime(m.createdAt)}</div>
       </div>`)}
       ${turn && html`<${LiveTurn} key=${turn.since} turn=${turn} convId=${conv.id} />`}

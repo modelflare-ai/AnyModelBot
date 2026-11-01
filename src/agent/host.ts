@@ -140,6 +140,10 @@ export interface TurnObserver {
   onEvent?(type: string, data: any, time?: number): void;
   /** 消息已经交给代理（之前是等进程、等会话） */
   onStart?(): void;
+  /** 模型在回合中间说的话（见 interimText），按说的顺序 */
+  onInterim?(text: string): void;
+  /** 代理用 present 交付了文件：已按 deliverables 过滤（工作区里真实存在的普通文件，真实路径） */
+  onPresent?(files: string[]): void;
 }
 
 /**
@@ -560,6 +564,18 @@ export function answerText(data: any): string {
   if (data?.interrupted) return "";
   const content: any[] = Array.isArray(data?.message?.content) ? data.message.content : [];
   if (content.some((b) => b?.type === "tool-call")) return "";
+  return content
+    .filter((b) => b?.type === "text")
+    .map((b) => String(b.text ?? ""))
+    .join("")
+    .trim();
+}
+
+/** 一条 assistant/message 是不是回合中间说的话（带工具调用、没被打断，比如「我先看看下载目录里有什么。」）：是就返回它的文字 */
+export function interimText(data: any): string {
+  if (data?.interrupted) return "";
+  const content: any[] = Array.isArray(data?.message?.content) ? data.message.content : [];
+  if (!content.some((b) => b?.type === "tool-call")) return "";
   return content
     .filter((b) => b?.type === "text")
     .map((b) => String(b.text ?? ""))
@@ -1530,7 +1546,12 @@ exec "$REAL" "$@"
         st.toolCalls++;
         this.calls.set(String(data.callId), { name: String(data.name), args: String(data.arguments ?? ""), at: Date.now() });
         if (this.calls.size > 500) this.calls.delete(this.calls.keys().next().value!);
-        if (data.name === "present") st.presented.push(...presentPaths(String(data.arguments ?? "")));
+        if (data.name === "present") {
+          const paths = presentPaths(String(data.arguments ?? ""));
+          st.presented.push(...paths);
+          const files = deliverables(this.workspace, paths);
+          if (files.length) observer?.onPresent?.(files);
+        }
         observer?.onProgress?.(`🔧 ${summarizeCall(String(data.name), String(data.arguments ?? "")).split(this.workspace + "/").join("")}`);
       }
       if (ev?.type === "tool/result") {
@@ -1548,6 +1569,8 @@ exec "$REAL" "$@"
         }
         const answer = answerText(data);
         if (answer) st.answers.push(answer);
+        const interim = interimText(data);
+        if (interim) observer?.onInterim?.(interim);
       }
       if (ev?.type === "turn/end" && data?.reason?.kind === "error") st.turnError = String(data.reason.error?.message ?? "unknown error");
       observer?.onEvent?.(String(ev?.type), data, Number(ev?.time) || Date.now());

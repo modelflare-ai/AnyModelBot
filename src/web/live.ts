@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { ActivityStep } from "../agent/activity.js";
 import type { OutboundOp, ReplySession } from "../core/types.js";
 import { opEvent } from "./sse-reply.js";
+import { describeFile, type ShownFile } from "./files.js";
 
 export interface LivePrompt {
   kind: string;
@@ -15,10 +16,12 @@ export interface LiveSnapshot {
   id: string;
   startedAt: number;
   userText: string;
+  /** 模型在回合中间说的话（按说的顺序），显示在 text 前面 */
+  interim: string[];
   text: string;
   steps: ActivityStep[];
   prompts: LivePrompt[];
-  files: string[];
+  files: ShownFile[];
   /** 已经按了停止，正在收尾 */
   stopping: boolean;
   /** 这条并进了它前面那条正在进行的处理：没有自己的回复，回复在前面那条里 */
@@ -37,9 +40,10 @@ export class LiveTurn implements ReplySession {
   readonly id = crypto.randomUUID();
   readonly startedAt = Date.now();
   text = "";
+  readonly interim: string[] = [];
   readonly steps = new Map<string, ActivityStep>();
   readonly prompts: LivePrompt[] = [];
-  readonly files: string[] = [];
+  readonly files: ShownFile[] = [];
   stopping = false;
   /** 并进了正在进行的处理（见 LiveSnapshot.steered） */
   steered = false;
@@ -60,9 +64,15 @@ export class LiveTurn implements ReplySession {
     if (this.done) return;
     if (op.type === "text" && op.ack) this.steered = true;
     if (op.type === "stream.update" || op.type === "stream.finish" || op.type === "text") this.text = op.text;
+    else if (op.type === "interim") this.interim.push(op.text);
     else if (op.type === "activity") this.steps.set(op.step.id, op.step);
-    else if (op.type === "file") this.files.push(op.name);
-    else if (op.type === "interactive" && !this.prompts.some((p) => p.requestId && p.requestId === op.requestId)) {
+    else if (op.type === "file" || op.type === "presented") {
+      // 回合中已经显示过的（presented），结束时的 file 不再显示一遍
+      if (this.files.some((f) => f.path === op.path)) return;
+      const f = describeFile(op.path, op.name);
+      this.files.push(f);
+      return this.emit("file", f);
+    } else if (op.type === "interactive" && !this.prompts.some((p) => p.requestId && p.requestId === op.requestId)) {
       this.prompts.push({ kind: op.kind, prompt: op.prompt, requestId: op.requestId, code: op.code });
     }
     const ev = opEvent(op);
@@ -74,6 +84,7 @@ export class LiveTurn implements ReplySession {
       id: this.id,
       startedAt: this.startedAt,
       userText: this.userText,
+      interim: [...this.interim],
       text: this.text,
       steps: [...this.steps.values()],
       prompts: [...this.prompts],

@@ -39,7 +39,9 @@ export default {
     submit: "提交",
   },
   file: {
-    delivered: "已交付到机器人工作区，微信和飞书会直接发送",
+    open: "打开 {name}",
+    reveal: "在文件夹中显示",
+    gone: "找不到文件",
   },
   /** 回复上方的工作状态；{d} 是 fmtDur 的用时 */
   work: {

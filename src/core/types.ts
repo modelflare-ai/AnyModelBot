@@ -52,8 +52,15 @@ export type OutboundOp =
   | { type: "text"; text: string; ack?: boolean }
   /** 代理回合的一步（新增或更新，按 id）：只有网页对话显示，其它渠道忽略 */
   | { type: "activity"; step: ActivityStep }
-  /** 代理交付的本地文件（present）：微信走 CDN 媒体消息，飞书上传文件/图片，网页列出文件名 */
+  /** 代理交付的本地文件（present）：微信走 CDN 媒体消息，飞书上传文件/图片，网页显示成文件卡片（图片直接显示） */
   | { type: "file"; path: string; name: string }
+  /**
+   * 模型在回合中间说的话（带工具调用的那一步里的文字），按说的顺序一段一段来：网页对话和飞书的流式卡片显示在回复前面，
+   * 微信不发（只发最后的回复，配额留给它）
+   */
+  | { type: "interim"; text: string }
+  /** 代理在回合中交付了一个文件（present）：网页对话马上显示；文件本身照旧在回复之后由 file 发出，其它渠道忽略这个操作 */
+  | { type: "presented"; path: string; name: string }
   /**
    * ask_user / approval / secret_request 等交互，按能力映射到卡片按钮或编号文本。
    * prompt 为完整的纯文本提示（文本渠道直接发送）；buttons 供卡片渠道使用，value 会原样回传。

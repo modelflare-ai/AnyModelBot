@@ -44,6 +44,16 @@ export interface Message {
   createdAt: number;
   /** 代理回合的活动记录有几步（内容按需用 getActivity 取） */
   steps?: number;
+  /** 模型在回合中间说的话（按说的顺序），显示在 content 前面 */
+  interim?: string[];
+  /** 这条回复交付的文件（真实路径） */
+  files?: string[];
+}
+
+/** 一条助手消息除了正文之外的东西：回合中间说的话、交付的文件 */
+export interface MessageExtra {
+  interim?: string[];
+  files?: string[];
 }
 
 export interface WeixinAccount {
@@ -351,6 +361,12 @@ function parseJson<T>(v: unknown): T | undefined {
   }
 }
 
+/** JSON 字符串数组列；坏的、空的都当空数组 */
+function strings(v: unknown): string[] {
+  const a = parseJson<unknown>(v);
+  return Array.isArray(a) ? a.filter((x): x is string => typeof x === "string" && x !== "") : [];
+}
+
 /** 按字段名改一行：cols 是字段 → 列名，布尔值存 0/1，对象存 JSON */
 function updateRow(db: DatabaseSync, table: string, cols: Record<string, string>, id: string, patch: Record<string, unknown>): void {
   const keys = Object.keys(patch).filter((k) => k in cols && patch[k] !== undefined);
@@ -511,6 +527,9 @@ const COLUMNS: Array<[string, string, string]> = [
   ["conversations", "kind", "TEXT NOT NULL DEFAULT 'dm'"],
   // 代理回合的活动记录（JSON 数组，见 agent/activity.ts）；只在助手消息上
   ["messages", "activity", "TEXT NOT NULL DEFAULT ''"],
+  // 模型在回合中间说的话、交付的文件（JSON 字符串数组）；只在助手消息上
+  ["messages", "interim", "TEXT NOT NULL DEFAULT ''"],
+  ["messages", "files", "TEXT NOT NULL DEFAULT ''"],
   // 主动消息的送达规则（core/delivery.ts）
   ["outbox", "purpose", "TEXT NOT NULL DEFAULT ''"],
   ["outbox", "subject", "TEXT NOT NULL DEFAULT ''"],
@@ -728,11 +747,12 @@ export class Store {
   }
 
   // ---------- messages ----------
-  addMessage(conversationId: string, role: Message["role"], content: string, activity?: unknown[]): number {
+  addMessage(conversationId: string, role: Message["role"], content: string, activity?: unknown[], extra: MessageExtra = {}): number {
     const now = Date.now();
+    const json = (a: unknown[] | undefined) => (a?.length ? JSON.stringify(a) : "");
     const res = this.db
-      .prepare("INSERT INTO messages(conversation_id, role, content, created_at, activity) VALUES(?, ?, ?, ?, ?)")
-      .run(conversationId, role, content, now, activity?.length ? JSON.stringify(activity) : "");
+      .prepare("INSERT INTO messages(conversation_id, role, content, created_at, activity, interim, files) VALUES(?, ?, ?, ?, ?, ?, ?)")
+      .run(conversationId, role, content, now, json(activity), json(extra.interim), json(extra.files));
     this.db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, conversationId);
     return Number(res.lastInsertRowid);
   }
@@ -749,17 +769,28 @@ export class Store {
   listMessages(conversationId: string, limit = 500): Message[] {
     const rows = this.db
       .prepare(
-        "SELECT * FROM (SELECT id, conversation_id, role, content, created_at, CASE WHEN json_valid(activity) THEN json_array_length(activity) ELSE 0 END AS steps FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+        "SELECT * FROM (SELECT id, conversation_id, role, content, created_at, interim, files, CASE WHEN json_valid(activity) THEN json_array_length(activity) ELSE 0 END AS steps FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
       )
       .all(conversationId, limit) as Row[];
-    return rows.map((r) => ({
-      id: Number(r.id),
-      conversationId: String(r.conversation_id),
-      role: String(r.role) as Message["role"],
-      content: String(r.content),
-      createdAt: Number(r.created_at),
-      ...(Number(r.steps) ? { steps: Number(r.steps) } : {}),
-    }));
+    return rows.map((r) => {
+      const interim = strings(r.interim);
+      const files = strings(r.files);
+      return {
+        id: Number(r.id),
+        conversationId: String(r.conversation_id),
+        role: String(r.role) as Message["role"],
+        content: String(r.content),
+        createdAt: Number(r.created_at),
+        ...(Number(r.steps) ? { steps: Number(r.steps) } : {}),
+        ...(interim.length ? { interim } : {}),
+        ...(files.length ? { files } : {}),
+      };
+    });
+  }
+  /** 这个会话里交付过的文件（真实路径，旧→新，去重） */
+  deliveredFiles(conversationId: string): string[] {
+    const rows = this.db.prepare("SELECT files FROM messages WHERE conversation_id = ? AND files != '' ORDER BY id").all(conversationId) as Row[];
+    return [...new Set(rows.flatMap((r) => strings(r.files)))];
   }
   /** 一条消息的活动记录（没有则为空数组） */
   getActivity(conversationId: string, messageId: number): unknown[] {

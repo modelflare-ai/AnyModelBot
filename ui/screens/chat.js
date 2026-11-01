@@ -8,6 +8,7 @@ import { ModelPicker, shortModel, sameModel } from "../components/model-picker.j
 import { PwshHint } from "../components/pwsh-hint.js";
 import { ActivityLine, currentStep, upsertStep } from "../components/activity.js";
 import { TaskChip } from "../components/tasks.js";
+import { DeliveredFiles } from "../components/files.js";
 import { GuideChecklist, MediaDemo } from "../components/guide.js";
 import { api, attachChat, streamChat } from "../lib/api.js";
 import { confirmSheet, failed, saved, useStore } from "../lib/store.js";
@@ -41,14 +42,24 @@ const errText = (s) => s.replace(/^⚠️\s*/, "");
 // 服务端报错的文字（两种语言都认）
 const isAuthError = (s) => /HTTP 401\b|\b401\b.*(key|密钥|unauthor)/i.test(s); // i18n-ignore
 
-// steps：代理回合的活动记录有几步（展开时按 mid 取）
+// steps：代理回合的活动记录有几步（展开时按 mid 取）；interim：模型在回合中间说的话；files：交付的文件
 function toItems(messages) {
   return messages.map((m) =>
     m.role === "assistant" && isError(m.content)
-      ? { kind: "error", id: "m" + m.id, mid: m.id, text: errText(m.content), at: m.createdAt, steps: m.steps }
-      : { kind: "msg", id: "m" + m.id, mid: m.id, role: m.role === "user" ? "user" : "assistant", text: m.content, at: m.createdAt, steps: m.steps },
+      ? { kind: "error", id: "m" + m.id, mid: m.id, text: errText(m.content), at: m.createdAt, steps: m.steps, interim: m.interim, files: m.files }
+      : { kind: "msg", id: "m" + m.id, mid: m.id, role: m.role === "user" ? "user" : "assistant", text: m.content, at: m.createdAt, steps: m.steps, interim: m.interim, files: m.files },
   );
 }
+
+/** 回复显示的全文：模型在回合中间说的话在前，按说的顺序，最后的回复接着（最后没再说话时回复就是中间说的最后一句，不重复） */
+function shownText(it) {
+  const before = it.interim || [];
+  const rest = before.length && before.at(-1) === it.text ? before.slice(0, -1) : before;
+  return [...rest, it.text].filter(Boolean).join("\n\n");
+}
+
+/** 按路径加一个交付的文件（回合中 present 时来一次，结束时可能再来一次） */
+const addFile = (files, f) => ((files || []).some((x) => x.path === f.path) ? files : [...(files || []), f]);
 
 // 进行中的一条消息（服务端的 live 快照）：用户消息 + 到目前为止的回复；turn 标记这些项属于哪条进行中的消息。
 // 代理自己醒来的一轮（后台命令结束）没有用户消息；并进前一条处理的消息没有自己的回复
@@ -56,8 +67,7 @@ function liveItems(t, cards = []) {
   return [
     ...(t.userText ? [{ kind: "msg", id: "u" + t.id, role: "user", text: t.userText, at: t.startedAt, turn: t.id }] : []),
     ...cards.map((c) => ({ ...c, turn: t.id })),
-    ...(t.steered ? [] : [{ kind: "msg", id: "a" + t.id, role: "assistant", text: t.text, at: t.startedAt, live: true, startedAt: t.startedAt, activity: t.steps, turn: t.id }]),
-    ...t.files.map((name, i) => ({ kind: "file", id: `f${t.id}-${i}`, name, turn: t.id })),
+    ...(t.steered ? [] : [{ kind: "msg", id: "a" + t.id, role: "assistant", text: t.text, interim: t.interim, files: t.files, at: t.startedAt, live: true, startedAt: t.startedAt, activity: t.steps, turn: t.id }]),
   ];
 }
 
@@ -158,16 +168,6 @@ export function PromptCard({ requestId, fallback }) {
   </div>`;
 }
 
-function FileCard({ name }) {
-  return html`<div class="file-card">
-    <${Icon} name="file" size="xl" />
-    <div class="grow">
-      <div class="fname">${name}</div>
-      <div class="fsub">${t("chat.file.delivered")}</div>
-    </div>
-  </div>`;
-}
-
 /**
  * 回复上方的工作状态，一句话：没出字时"思考中 N 秒"，有一步在做时是那一步"运行 bash，已用 N 秒"，出字后"正在回复 N 秒"，
  * 结束后"用时 N 秒"（短于 3 秒且没有步骤时不显示）。
@@ -182,18 +182,19 @@ function WorkLine({ live, stopping, text, startedAt, workedMs, steps, count, loa
   }, [live]);
   const ms = live ? Date.now() - startedAt : workedMs;
   if (!live && !(ms >= 3000) && !steps?.length && !count) return null;
-  const cur = live && !text ? currentStep(steps) : "";
+  // 有一步在做时说那一步（模型在回合中间说过话也一样）；没有时出了字是"正在回复"
+  const cur = live ? currentStep(steps) : "";
   // 按了停止：代理要重启进程，可能要几秒，先说清楚在停
   const long = ms >= 3000;
   const label = live
     ? stopping
       ? long ? t("chat.work.stoppingAfter", { d: fmtDur(ms) }) : t("chat.work.stopping")
-      : text ? t("chat.work.replying", { d: fmtDur(ms) })
       : cur ? (long ? t("activity.stepFor", { step: cur, d: fmtDur(ms) }) : cur)
+      : text ? t("chat.work.replying", { d: fmtDur(ms) })
       : long ? t("chat.work.thinkingFor", { d: fmtDur(ms) }) : t("chat.work.thinking")
     : long ? t("chat.work.done", { d: fmtDur(ms) }) : t("chat.work.process");
   // 换阶段（思考 → 回复 → 用时）时文字淡入：key 变才重播，秒数跳动不重播
-  const phase = !live ? "done" : stopping ? "stop" : text ? "reply" : "think";
+  const phase = !live ? "done" : stopping ? "stop" : !cur && text ? "reply" : "think";
   return html`<${ActivityLine} label=${label} phase=${phase} live=${live} steps=${steps} count=${count} load=${load} />`;
 }
 
@@ -224,6 +225,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const [slashOff, setSlashOff] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [cue, setCue] = useState(null); // 头像的一次性反应（出错）；完成时头像自己会播
+  const [canOpen, setCanOpen] = useState(false); // 桌面版：交付的文件用系统程序打开
   const lang = useLang();
   const scroller = useRef(null);
   const stick = useRef(true);
@@ -276,6 +278,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       if (!mounted.current) return;
       convId.current = d.conversationId || "";
       setConvModel(d.model || "");
+      setCanOpen(!!d.canOpen);
       const list = toItems(d.messages || []);
       const reply = ended && list.findLast((x) => x.role !== "user");
       if (reply && reply.at >= ended.since) reply.workedMs = ended.ms;
@@ -389,7 +392,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
         {
           snapshot: (d) => {
             finalText = d.text;
-            patchLive(liveId, (it) => ({ ...it, text: d.text, activity: d.steps, startedAt: d.startedAt }));
+            patchLive(liveId, (it) => ({ ...it, text: d.text, interim: d.interim || [], files: d.files || [], activity: d.steps, startedAt: d.startedAt }));
             d.prompts.forEach(card);
             if (d.stopping && mounted.current) setStopping(true);
           },
@@ -397,14 +400,17 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
             finalText = d.text;
             patchLive(liveId, (it) => ({ ...it, text: d.text }));
           },
+          // 模型在回合中间说的一段话：接在已经说过的后面
+          interim: (d) => patchLive(liveId, (it) => ({ ...it, interim: [...(it.interim || []), d.text] })),
           activity: (d) => patchLive(liveId, (it) => ({ ...it, activity: upsertStep(it.activity, d) })),
           prompt: (d) => {
             notify(bot.name, t("notify.prompt"), `amb-prompt-${bot.id}`);
             card(d);
           },
+          // 交付的文件（回合中 present 时就来）：挂在这条回复下面，图片直接显示
           file: (d) => {
             markDone(isMediaFile(d.name) ? "media" : "hands");
-            if (mounted.current) setItems((l) => [...l, { kind: "file", id: uid(), name: d.name, turn, enter: true }]);
+            patchLive(liveId, (it) => ({ ...it, files: addFile(it.files, d) }));
           },
           stopping: () => mounted.current && setStopping(true),
           error: (d) => {
@@ -505,8 +511,9 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
         }
         const { turn, ...it } = item; // 结束了：不再属于进行中的消息
         if (it.id !== liveId) out.push(it);
-        else if (isError(finalText)) out.push({ kind: "error", id: liveId, text: errText(finalText), retry: msg.startsWith("/") ? undefined : msg, at: it.at, activity: it.activity, workedMs: Date.now() - it.startedAt, enter: true });
-        else if (finalText || it.activity?.length) out.push({ ...it, text: finalText, live: false, workedMs: Date.now() - it.startedAt });
+        else if (isError(finalText))
+          out.push({ kind: "error", id: liveId, text: errText(finalText), retry: msg.startsWith("/") ? undefined : msg, at: it.at, activity: it.activity, interim: it.interim, files: it.files, workedMs: Date.now() - it.startedAt, enter: true });
+        else if (finalText || it.activity?.length || it.interim?.length || it.files?.length) out.push({ ...it, text: finalText, live: false, workedMs: Date.now() - it.startedAt });
       }
       return isReset && !isError(finalText) ? out.filter((x) => x.id === liveId) : out;
     });
@@ -650,6 +657,11 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   }, [items, tasks]);
 
   const chips = (it) => (chipsAfter.get(it.id) || []).map((t) => html`<${TaskChip} key=${t.id} task=${t} onChanged=${loadTasks} />`);
+  // 图片读完了高度才定下来：本来就跟着底部时，再贴一次底
+  const onMedia = () => {
+    if (stick.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  };
+  const files = (it) => html`<${DeliveredFiles} files=${it.files} conv=${convId.current || `${bot.id}:web:console`} canOpen=${canOpen} onLoad=${onMedia} />`;
   const rows = useMemo(() => {
     const out = [];
     let prev = null;
@@ -663,24 +675,27 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       const cont = prev && (prev.kind === "msg" ? prev.role : "assistant") === role;
       const cls = `msg-row ${role}${cont ? " cont" : ""}${it.enter ? " enter" : ""}${it.live ? " live" : ""}`;
       if (it.kind === "msg") {
+        // 回复：工作状态行（处理过程折叠在里面）、模型说的话（回合中间说的在前）、交付的文件
+        const shown = it.role === "user" ? it.text : shownText(it);
         out.push(html`<div class=${`${cls}${it.id === lastAi ? " last" : ""}`} key=${it.id}>
           ${it.role === "user"
             ? html`<div class="msg"><${Linkified} text=${it.text} /></div><${MsgActions} text=${it.text} at=${it.at} />`
             : html`${(it.live || it.workedMs || it.steps) && html`<${WorkLine} live=${it.live} stopping=${it.live && stopping} text=${it.text} startedAt=${it.startedAt} workedMs=${it.workedMs}
                 steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}
-              ${it.text && html`<div class="msg"><${Markdown} text=${it.text} /></div>`}
+              ${shown && html`<div class="msg"><${Markdown} text=${shown} /></div>`}
+              ${files(it)}
               ${chips(it)}
-              ${!it.live && html`<${MsgActions} text=${it.text} at=${it.at} />`}`}
+              ${!it.live && html`<${MsgActions} text=${shown} at=${it.at} />`}`}
         </div>`);
       } else if (it.kind === "prompt") {
         out.push(html`<div class=${cls} key=${it.id}><${PromptCard} requestId=${it.requestId} fallback=${it.prompt} /></div>`);
-      } else if (it.kind === "file") {
-        out.push(html`<div class=${cls} key=${it.id}><${FileCard} name=${it.name} /></div>`);
       } else if (it.kind === "media-demo") {
         out.push(html`<div class=${cls} key=${it.id}><${MediaDemo} prompt=${it.text} /></div>`);
       } else if (it.kind === "error") {
         out.push(html`<div class=${cls} key=${it.id}>
           ${(it.activity?.length || it.steps) && html`<${WorkLine} workedMs=${it.workedMs} steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}
+          ${it.interim?.length > 0 && html`<div class="msg"><${Markdown} text=${it.interim.join("\n\n")} /></div>`}
+          ${files(it)}
           <${ErrorNotice} text=${it.text} onRetry=${it.retry ? () => send(it.retry) : undefined} onFixKey=${() => onOpenSettings("modelflare", "connection")} />
         </div>`);
       }
@@ -689,7 +704,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       prev = it;
     }
     return out;
-  }, [items, generating, stopping, chipsAfter, lang]);
+  }, [items, generating, stopping, chipsAfter, lang, canOpen]);
 
   const empty = items && items.length === 0;
   const showGuide = isActive(g) && !g.seen.includes("intro") && !!guideStep(g);

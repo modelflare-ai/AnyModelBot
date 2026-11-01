@@ -360,6 +360,8 @@ function StateRow({ name, note, ctx = "surface", cells }) {
   </figure>`;
 }
 
+// 回复里先是模型在回合中间说的话，最后的回复接在后面（chat.js 的 shownText）
+const INTERIM_REPLY = "我先看看下载目录里有什么。\n\n找到 12 张截图，按日期分进了 3 个文件夹，顺手挑了一张做封面。\n\n整理好了：截图都在「截图/2026-10」下面，清单和封面在下面。";
 const MD = "支持 **粗体**、`行内代码`、[链接](https://modelflare.dev)：\n\n- 列表项\n- 第二项\n\n```js\nconst ok = true;\n```";
 
 function Gallery() {
@@ -594,13 +596,29 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <div class="msg-row assistant"><div class="card"><div class="meta"><span>「竞品周报」想问你</span></div><div class="q-block"><div class="q">报告用中文还是英文？</div><div class="q-detail">不回复就按中文做</div>
               <div class="opts"><button type="button" class="opt"><span class="letter">A</span><span>中文</span></button>
               <button type="button" class="opt"><span class="letter">B</span><span>英文</span></button></div></div></div></div>
-            <div class="msg-row assistant"><div class="file-card"><${Icon} name="file" size="xl" /><div class="grow"><div class="fname">report.pdf</div><div class="fsub">已交付到机器人工作区</div></div></div></div>
           </div>
           <div class="composer"><textarea rows="1" placeholder="给「我的助手」发消息，/ 查看命令"></textarea>
             <div class="composer-bar"><button type="button" class="plus" aria-label="更多"><${Icon} name="plus" size="md" /></button><span class="grow"></span>
               <button type="button" class="model-chip"><span class="v">claude-sonnet-5-5</span><${Icon} name="chevDown" /></button>
               <button type="button" class="send" aria-label="发送"><${Icon} name="up" size="md" strong /></button></div></div>
           <div class="chips"><button type="button" class="chip">总结今天的消息</button><button type="button" class="chip">写一封邮件</button></div>`}
+        <//>
+        <${Demo} col title="回合中间说的话与交付的文件" note="模型在工具调用之间说的话按顺序写在回复里，最后的回复接在后面，处理过程只列步骤；present 交付的文件挂在文字下面：图片直接显示（限宽 320、限高 240，保持比例，点开看大图），其它是文件卡片（桌面版点开用系统程序打开，右边在文件夹中显示；网页里点开在新标签页打开），找不到的文件不能点">
+          ${() => html`<div class="gal-chat">
+            <div class="msg-row user"><div class="msg">把下载目录里的截图整理一下，挑一张做封面</div></div>
+            <div class="msg-row assistant live"><div class="activity"><button type="button" class="work-line toggle live" aria-expanded="false"><span class="wl shimmer">运行 bash，已用 6 秒</span><${Icon} name="chevRight" size=${12} class="chev" /></button></div>
+              <div class="msg"><${Markdown} text="我先看看下载目录里有什么。" /></div></div>
+            <div class="msg-row assistant last"><div class="activity"><button type="button" class="work-line toggle" aria-expanded="false"><span class="wl">用时 18 秒</span><${Icon} name="chevRight" size=${12} class="chev" /></button></div>
+              <div class="msg"><${Markdown} text=${INTERIM_REPLY} /></div>
+              <div class="msg-files">
+                <button type="button" class="msg-img" title="打开 cover.png"><img src="../assets/guide-demo.svg" alt="cover.png" /></button>
+                <div class="file-card"><button type="button" class="file-open" title="打开 截图清单.pdf"><${Icon} name="file" size="xl" class="fic" /><span class="grow"><span class="fname">截图清单.pdf</span><span class="fsub num">1.2 MB</span></span></button>
+                  <${IconButton} icon="folder" label="在文件夹中显示" /></div>
+                <a class="file-card" href="#patterns" title="打开 整理记录.md"><${Icon} name="file" size="xl" class="fic" /><span class="grow"><span class="fname">整理记录.md</span><span class="fsub num">2.4 KB</span></span></a>
+                <div class="file-card off"><${Icon} name="file" size="xl" class="fic" /><span class="grow"><span class="fname">旧的截图.zip</span><span class="fsub">找不到文件</span></span></div>
+              </div>
+              <div class="msg-actions"><${CopyButton} text=${INTERIM_REPLY} /><span class="when num">10:02</span></div></div>
+          </div>`}
         <//>
       <//>
 

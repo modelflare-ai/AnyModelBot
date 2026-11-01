@@ -73,8 +73,8 @@
     --hz-glow: var(--bot-blue-glow);
     --hero-hue: 250;          /* 和窗口环境光的 --aura-hue 同一套：天天 250 · 飞飞 62 · 芽芽 158 */
     --hero-core: rgba(255, 255, 255, .05);
-    --hero-panel-top: #0a0b10;  /* 顶上偏一点点夜空蓝，往下回到卡片底色 */
-    --hero-star: #dfe6ff; --hero-star-a: .85;
+    --hero-panel-top: #070a14;  /* 顶上是夜空的深蓝，星才亮得起来；往下回到卡片底色 */
+    --hero-star: #dfe6ff; --hero-star-a: 1;
     --hero-rim: rgba(255, 255, 255, .6);
     --hero-glow-a: 14%;
     --hero-aura: oklch(.6 .08 var(--hero-hue) / .07);
@@ -122,9 +122,9 @@
     -webkit-mask-image: linear-gradient(transparent, #000 160px); mask-image: linear-gradient(transparent, #000 160px);
   }
   /* 顶部天空（.hero__sky）：只占卡片上半部，整层往下渐隐；点在 Hero.astro 里伪随机生成，标题背后有意稀一些。
-     深色是星空（约 340 颗冷白小星，少数偏蓝 / 偏暖，几颗亮星带一圈光）；浅色是晴空（浅天蓝的顶 + 三朵白云 + 四十来个四角形细小闪光）。
+     深色是星空（一条很淡的银河，一千多颗亮度悬殊的星沿着它聚集，十颗亮星带柔光和星芒，生成规则见 Hero.astro）；浅色是晴空（浅天蓝的顶 + 三朵白云 + 四十来个四角形细小闪光）。
      动画都很轻（用户 2026-10-31 明确要的，是"背景不做动画"规矩里写明的例外）：
-       深色：约五分之一的星（.tw）慢慢明暗闪烁，各自周期、起点不同；两颗流星隔十几、二十秒才划过一次，每次不到一秒。
+       深色：约七十颗较亮的星（.tw）慢慢明暗闪烁，各自周期、起点不同；银河和暗星静止；两颗流星隔十几、二十秒才划过一次，每次不到一秒。
        浅色：三朵云极慢地从左往右飘（横穿一次 3–5 分钟，几乎察觉不到在动）；约六成闪光亮起来、转 45° 再隐去，各自错开。
        浅色不放流星（细线划过白底像划痕）。"减少动态效果"时全部静止，云停在各自的位置（--x0）。 */
   .hero__sky {
@@ -132,7 +132,13 @@
     -webkit-mask-image: linear-gradient(#000 25%, transparent 88%); mask-image: linear-gradient(#000 25%, transparent 88%);
   }
   .hero__stars { position: absolute; inset: 0; width: 100%; height: 100%; opacity: var(--hero-star-a); fill: currentColor; }
-  /* 深色·星空：小星点（一成五偏冷蓝 .c、一成偏暖 .w，亮星外圈的光 .h 用本色）；浅色下整组不显示 */
+  /* 深色·星空：两成偏冷蓝 .c、一成偏暖 .w，其余冷白；浅色下整组不显示。
+     暗星是长度几乎为零的圆头线段（归成几十条路径）；静止的这张 SVG 自己一层，闪烁只重绘上面那张 */
+  .hero__stars--still { will-change: transform; }
+  [data-theme="light"] .hero__stars--still { display: none; }
+  .hero__dust path { fill: none; stroke: currentColor; stroke-linecap: round; }
+  .hero__dust .c { stroke: #bfd4ff; }
+  .hero__dust .w { stroke: #ffe7c9; }
   .hero__dots .c { fill: #bfd4ff; }
   .hero__dots .w { fill: #ffe7c9; }
   .hero__glints { display: none; }
@@ -560,7 +566,7 @@
     .hero__cloud { animation: cloud-drift var(--c) linear var(--t) infinite; }
     .hero__meteor { animation: hero-meteor var(--c) linear var(--w) infinite; }
   }
-  @keyframes star-twinkle { 50% { opacity: calc(var(--o) * .2); } }
+  @keyframes star-twinkle { 50% { opacity: var(--dim); } }
   /* 闪光：几乎看不见（小、淡）→ 亮起来、转 45° → 再隐去；大半时间停在"几乎看不见"，偶尔一闪 */
   @keyframes glint-sparkle {
     0%, 100% { opacity: calc(var(--o) * .12); scale: calc(var(--s) * .35); rotate: 0deg; }

@@ -32,40 +32,90 @@ const L = t.bots.looks;
 const isZh = lang === "zh";
 // 要点和"App 界面目前是简体中文"这类提示放在同一行小字里，不再单独占一行
 const meta = [...t.hero.trust.map((x) => fmt(x, v)), ...(t.hero.appUiNote ? [t.hero.appUiNote] : [])];
-// 顶部天空：在 1600 × 640 的画布上伪随机撒点，每次构建都一样、不成网格。两套，按主题只显示一套（home.css 的 .hero__sky）：
-//   深色·星空（dots）：约 340 颗小星，标题背后那一块椭圆里只留约三成，字不会被打扰；约一成五偏冷蓝、一成偏暖，其余冷白；
-//     少数亮星外面再套一圈极淡的光（h）。约五分之一的星（和所有亮星）慢慢明暗闪烁：周期 --d 3–7 秒、起点 --t 各不相同，不会一起闪。
+// 顶部天空：都在 1600 × 640 的画布上伪随机生成，每次构建都一样。两套，按主题只显示一套（home.css 的 .hero__sky）：
+//   深色·星空（用户 2026-11-01 要求"更像星空"）。夜空的观感靠的不是点多，而是这三点，改的时候别丢：
+//     ① 亮度悬殊：绝大多数星又小又暗，亮星极少（星等取 rnd³，暗星远多于亮星），颜色有冷白、偏蓝、偏暖；
+//     ② 疏密不均：一条银河从左中斜穿到右上，星沿着它聚集、疏密起伏，再加三小团星簇，其余地方稀疏；
+//     ③ 银河自己的光：几团拉长的极淡径向渐变，中间压两条暗带，靠右的核心略偏暖。全部静止、很淡，不抢标题。
+//     标题背后留暗：越靠近正中星越少，只留最暗的，亮星不进这块椭圆。
+//     两张 SVG 叠放：下面一张静止（银河 + 约一千颗暗星，按大小、亮度、颜色归成几十条路径，比一颗一个 circle 小得多，自己一层、只画一次），
+//     上面一张会闪（约七十颗：周期 --d 3–7 秒、起点 --t 各不相同，--dim 是最暗时的不透明度；十颗亮星带一团柔光和四角星芒）。闪烁只重绘上面这张。
 //     另有两颗流星（.hero__meteor），隔十几、二十秒才划过一次。
 //   浅色·晴空：顶上一片浅天蓝（home.css 的 .hero__bg）；白天没有星空，小灰点在白底上像灰尘——换成三朵很软的白云（.hero__cloud，纯 CSS，极慢地从左往右飘，横穿一次 3–5 分钟）
 //     + 四十来个四角形的细小闪光（glints，✦），只在标题两侧和上方，大小 3–8、颜色跟着当前机器人的色调压得很淡；
 //     约六成会亮起来、转一下再隐去（各自错开）。不放流星。
 const GLINT = "M0-1C.1-.1.1-.1 1 0C.1.1.1.1 0 1C-.1.1-.1.1-1 0C-.1-.1-.1-.1 0-1Z";
-const sky = (() => {
-  let h = 20261031;
-  const rnd = () => (h = (Math.imul(h, 1103515245) + 12345) >>> 0) / 2 ** 32;
+const seeded = (seed: number) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
+};
+// 标题那块椭圆：0 在正中，1 在边上，大于 1 在外面
+const titleDist = (x: number, y: number) => ((x - 800) / 540) ** 2 + ((y - 300) / 270) ** 2;
+// 银河的中线；BAND_DEG 是它的倾角，渐变层绕 (800, 160) 转这么多正好落在中线上
+const bandY = (x: number) => 360 - 0.25 * x;
+const BAND_DEG = -14.04;
+const stars = (() => {
+  const rnd = seeded(20261101);
+  const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) * 1.73;
+  const tint = () => { const v = rnd(); return v < 0.2 ? "c" : v < 0.32 ? "w" : ""; };
+  const near = (levels: number[], v: number) => levels.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
+  const twinkle = (dim: number) => `--dim:${dim.toFixed(2)};--d:${(3 + rnd() * 4).toFixed(1)}s;--t:-${(rnd() * 7).toFixed(1)}s`;
+  const inCanvas = (x: number, y: number) => x >= 0 && x <= 1600 && y >= 0 && y <= 640;
+
+  const buckets = new Map<string, { cls: string; w: number; o: number; d: string }>();
+  const dust = (x: number, y: number, scale = 1) => {
+    if (!inCanvas(x, y)) return;
+    const t = titleDist(x, y);
+    if (t < 1 && rnd() > 0.08 + 0.5 * t) return;
+    const m = rnd() ** 3;
+    const r = near([0.42, 0.55, 0.72, 0.95], Math.min((0.42 + m * 0.62) * scale, t < 1 ? 0.55 : 9));
+    const o = near([0.28, 0.42, 0.6, 0.82], Math.min(0.24 + m * 0.62 + rnd() * 0.1, t < 1 ? 0.42 : 9));
+    const cls = tint();
+    const key = `${cls}|${r}|${o}`;
+    if (!buckets.has(key)) buckets.set(key, { cls, w: +(r * 2).toFixed(2), o, d: "" });
+    buckets.get(key)!.d += `M${x.toFixed(1)} ${y.toFixed(1)}h.01`;
+  };
+  // 天幕：稀疏地铺满
+  for (let i = 0; i < 620; i++) dust(rnd() * 1600, rnd() * 640);
+  // 银河：沿中线正态散开，疏密随 x 起伏（两个不同周期的正弦相乘，不成规律）
+  for (let n = 0; n < 880; ) {
+    const x = rnd() * 1600;
+    if (rnd() > 0.55 + 0.45 * Math.sin(x / 173 + 1.3) * Math.sin(x / 67 + 0.4)) continue;
+    dust(x, bandY(x) + gauss() * (52 + rnd() * 34), 0.88);
+    n++;
+  }
+  // 三小团星簇，都在标题椭圆外面
+  for (const [cx, cy] of [[1400, 190], [210, 130], [1010, 25]]) for (let i = 0; i < 36; i++) dust(cx + gauss() * 30, cy + gauss() * 26);
+
+  const mids: { x: number; y: number; r: number; o: number; cls: string; tw: string }[] = [];
+  while (mids.length < 62) {
+    const x = +(rnd() * 1600).toFixed(1), y = +(rnd() < 0.45 ? bandY(x) + gauss() * 60 : rnd() * 640).toFixed(1);
+    if (!inCanvas(x, y) || titleDist(x, y) < 1.05) continue;
+    const o = +(0.78 + rnd() * 0.22).toFixed(2);
+    mids.push({ x, y, r: +(0.95 + rnd() * 0.4).toFixed(2), o, cls: tint(), tw: twinkle(o * 0.3) });
+  }
+
+  const brights: { x: number; y: number; r: number; o: number; cls: string; halo: number; spike: number; tw: string }[] = [];
+  while (brights.length < 10) {
+    const x = +(rnd() * 1600).toFixed(1), y = +(rnd() * 430).toFixed(1);
+    if (titleDist(x, y) < 1.15 || brights.some((b) => Math.hypot(b.x - x, b.y - y) < 190)) continue;
+    brights.push({ x, y, r: +(1.5 + rnd() * 0.5).toFixed(2), o: +(0.92 + rnd() * 0.08).toFixed(2), cls: tint(), halo: +(7 + rnd() * 4).toFixed(1), spike: +(4.5 + rnd() * 3.5).toFixed(1), tw: twinkle(0.55) });
+  }
+  return { dust: [...buckets.values()], mids, brights };
+})();
+const glints = (() => {
+  const rnd = seeded(20261031);
   const twinkle = (o: number) => `--o:${o};--d:${(3 + rnd() * 4).toFixed(1)}s;--t:-${(rnd() * 7).toFixed(1)}s`;
-  const inTitle = (x: number, y: number) => { const dx = (x - 800) / 540, dy = (y - 300) / 270; return dx * dx + dy * dy < 1; };
-  const dots: { x: number; y: number; r: number; o: number; cls?: string; tw?: string }[] = [];
-  while (dots.length < 340) {
-    const x = +(rnd() * 1600).toFixed(1), y = +(rnd() * 640).toFixed(1);
-    if (inTitle(x, y) && rnd() < 0.7) continue;
-    const big = rnd() < 0.06;
-    const tint = rnd();
-    const cls = tint < 0.15 ? "c" : tint < 0.25 ? "w" : undefined;
-    if (big) dots.push({ x, y, r: 4.4, o: 0.09, cls: "h" }, { x, y, r: 1.35, o: 0.95, cls, tw: twinkle(0.95) });
-    else {
-      const o = +(0.35 + rnd() * 0.5).toFixed(2);
-      dots.push({ x, y, r: +(0.55 + rnd() * 0.65).toFixed(2), o, cls, ...(rnd() < 0.2 ? { tw: twinkle(o) } : {}) });
-    }
-  }
-  const glints: { x: number; y: number; s: number; o: number; tw?: string }[] = [];
-  while (glints.length < 42) {
+  const out: { x: number; y: number; s: number; o: number; tw?: string }[] = [];
+  while (out.length < 42) {
     const x = +(rnd() * 1600).toFixed(1), y = +(30 + rnd() * 500).toFixed(1);
-    if (inTitle(x, y)) continue;
+    if (titleDist(x, y) < 1) continue;
     const o = +(0.45 + rnd() * 0.45).toFixed(2);
-    glints.push({ x, y, s: +(3 + rnd() * 5).toFixed(1), o, ...(rnd() < 0.6 ? { tw: twinkle(o) } : {}) });
+    out.push({ x, y, s: +(3 + rnd() * 5).toFixed(1), o, ...(rnd() < 0.6 ? { tw: twinkle(o) } : {}) });
   }
-  return { dots, glints };
+  return out;
 })();
 
 // —— 标题：中文逐字、英文逐词拆成小块，--i 是出场次序；关键词里的块另有 --j（扫光的次序）——
@@ -144,9 +194,34 @@ const ic = (d: string, size = 16, cls = "aic") => `<svg class="${cls}" width="${
   <div class="hero__bg" aria-hidden="true">
     <div class="hero__beam"></div>
     <div class="hero__sky">
+      <svg class="hero__stars hero__stars--still" viewBox="0 0 1600 640" preserveAspectRatio="xMidYMin slice" focusable="false">
+        <defs>
+          <radialGradient id="hs-milky"><stop offset="0" stop-color="#cdd9ff" stop-opacity=".12" /><stop offset=".5" stop-color="#aabeff" stop-opacity=".05" /><stop offset="1" stop-color="#aabeff" stop-opacity="0" /></radialGradient>
+          <radialGradient id="hs-core"><stop offset="0" stop-color="#ffe6c8" stop-opacity=".1" /><stop offset=".55" stop-color="#ffe6c8" stop-opacity=".035" /><stop offset="1" stop-color="#ffe6c8" stop-opacity="0" /></radialGradient>
+          <radialGradient id="hs-rift"><stop offset="0" stop-color="#07090f" stop-opacity=".55" /><stop offset="1" stop-color="#07090f" stop-opacity="0" /></radialGradient>
+          <radialGradient id="hs-halo"><stop offset="0" stop-color="#dfe6ff" stop-opacity=".5" /><stop offset=".3" stop-color="#dfe6ff" stop-opacity=".12" /><stop offset="1" stop-color="#dfe6ff" stop-opacity="0" /></radialGradient>
+        </defs>
+        <g class="hero__dots" transform={`rotate(${BAND_DEG} 800 160)`}>
+          <ellipse cx="800" cy="160" rx="1150" ry="120" fill="url(#hs-milky)" />
+          <ellipse cx="360" cy="160" rx="360" ry="62" fill="url(#hs-milky)" />
+          <ellipse cx="1170" cy="160" rx="420" ry="74" fill="url(#hs-core)" />
+          <ellipse cx="1040" cy="165" rx="300" ry="13" fill="url(#hs-rift)" />
+          <ellipse cx="520" cy="152" rx="240" ry="10" fill="url(#hs-rift)" />
+        </g>
+        <g class="hero__dots hero__dust">{stars.dust.map((b) => <path class={b.cls || undefined} stroke-width={b.w} opacity={b.o} d={b.d} />)}</g>
+      </svg>
       <svg class="hero__stars" viewBox="0 0 1600 640" preserveAspectRatio="xMidYMin slice" focusable="false">
-        <g class="hero__dots">{sky.dots.map((s) => <circle cx={s.x} cy={s.y} r={s.r} opacity={s.o} class:list={[s.cls, { tw: s.tw }]} style={s.tw} />)}</g>
-        <g class="hero__glints">{sky.glints.map((g) => <g transform={`translate(${g.x} ${g.y})`}><path d={GLINT} opacity={g.o} class:list={[{ tw: g.tw }]} style={`--s:${g.s};${g.tw ?? ""}`} /></g>)}</g>
+        <g class="hero__dots">
+          {stars.mids.map((s) => <circle class:list={[s.cls, "tw"]} cx={s.x} cy={s.y} r={s.r} opacity={s.o} style={s.tw} />)}
+          {stars.brights.map((s) => (
+            <g class="tw" transform={`translate(${s.x} ${s.y})`} opacity={s.o} style={s.tw}>
+              <circle r={s.halo} fill="url(#hs-halo)" />
+              <path d={GLINT} transform={`scale(${s.spike})`} opacity=".7" />
+              <circle class={s.cls || undefined} r={s.r} />
+            </g>
+          ))}
+        </g>
+        <g class="hero__glints">{glints.map((g) => <g transform={`translate(${g.x} ${g.y})`}><path d={GLINT} opacity={g.o} class:list={[{ tw: g.tw }]} style={`--s:${g.s};${g.tw ?? ""}`} /></g>)}</g>
       </svg>
       <div class="hero__clouds">
         <i class="hero__cloud" style="--y:36px;--w:540px;--x0:6cqw;--c:170s;--t:-38s"></i>

@@ -27,7 +27,7 @@ Tools are named \`mcp__computer-use__<tool>\`. Actions run automatically; no app
 
 /**
  * 生图 / 生视频的技能说明：不含 Key、不让代理自己调接口，参数格式以 Modelflare 文档为准。
- * 什么时候先问用户由宿主决定（manager.ts mediaAsk）：这里只说清规则，让代理知道何时传 confirm。
+ * 什么时候先问用户由宿主决定（manager.ts mediaAsk：花费高或设成每次都问）；代理自己不问，按最合理的理解直接生成。
  */
 export const MEDIA_SKILL = `---
 name: media
@@ -39,12 +39,8 @@ description: Generate or edit images and generate videos with Modelflare image a
 You have no Modelflare key and must not call the API yourself (no curl, no scripts): the tools call it with this bot's key. Every generation costs the user money.
 
 ## When the user is asked first
-With the default model and a normal cost the app generates right away. It asks the user to confirm the model first only when:
-- the model is not the default one, unless you pass \`confirm: false\` because the user named that model;
-- the estimated cost is high (an expensive model, a long or high-resolution video, many images);
-- this bot is set to always ask;
-- you pass \`confirm: true\` because the request is ambiguous.
-A clear request the default model can do needs no question: generate it. If the subject, style or purpose is unclear, ask one question with \`ask_user_question\` first, or pass \`confirm: true\`.
+The app generates right away. It asks the user to confirm the model first only when the estimated cost is high (above $0.5: an expensive model, a long or high-resolution video, many images) or this bot is set to always ask.
+Do not ask about the subject, style, purpose or model yourself: if they are not spelled out, make the most reasonable interpretation, generate it, and say in one line what you chose.
 
 ## Steps
 1. \`media_models\` (kind \`image\` or \`video\`) lists the models this bot may use, the default one, their parameter ranges and reference prices. Use the default unless the user named a model or the request needs something the default cannot do (a reference image, a ratio or length it does not support).

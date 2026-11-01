@@ -91,18 +91,17 @@ const CANCELS = [tl("zh-CN", "media.cancel"), tl("en", "media.cancel")];
 /** 预计花费超过它（美元）就先问用户 */
 export const MEDIA_ASK_USD = 0.5;
 
-/** 为什么要先问：机器人设成每次都问 / 代理说要问 / 花费 / 模型不是默认的 */
-export type MediaAskReason = "always" | "agent" | "cost" | "model";
+/** 为什么要先问：机器人设成每次都问 / 花费超过上限 */
+export type MediaAskReason = "always" | "cost";
 
 /**
- * 生成前要不要先问用户；不用问时为空。confirm 是代理传的：true = 要求不明确，要问；false = 用户点名了这个模型。
- * 花费超过上限（视频算不出花费也算）和"每次都问"不看 confirm。
+ * 生成前要不要先问用户；不用问时为空。默认（需要时再问）只在预计花费超过上限时问，视频算不出花费也算（可能很贵）。
+ * 代理或用户选了不是默认的模型、要求不够明确，都不问：代理按最合理的理解直接生成（产品负责人 2026-11-01）。
+ * "每次都问"是用户自己打开的。
  */
-export function mediaAsk(plan: Pick<MediaPlan, "kind" | "model" | "default" | "estimate">, confirm: unknown, setting: MediaConfirm): MediaAskReason | undefined {
+export function mediaAsk(plan: Pick<MediaPlan, "kind" | "estimate">, setting: MediaConfirm): MediaAskReason | undefined {
   if (setting === "always") return "always";
-  if (confirm === true || confirm === "true") return "agent";
   if (plan.estimate !== undefined ? plan.estimate > MEDIA_ASK_USD : plan.kind === "video") return "cost";
-  if (plan.model.id !== plan.default.id && confirm !== false && confirm !== "false") return "model";
   return undefined;
 }
 
@@ -639,7 +638,7 @@ export class AgentManager {
 
   /**
    * 生图 / 生视频：只在该机器人有回合进行中时受理（工具调用只会发生在回合里）。
-   * models / docs 直接回答；image / video 用默认模型、花费不高时直接生成，需要时（mediaAsk）先问用户用哪个模型。
+   * models / docs 直接回答；image / video 直接生成，预计花费超过上限或设成每次都问时（mediaAsk）先问用户用哪个模型。
    */
   private async mediaOp(b: any): Promise<{ text?: string; error?: string }> {
     const botId = String(b?.botId ?? "");
@@ -659,7 +658,7 @@ export class AgentManager {
       const tool = plan.kind === "image" ? "generate_image" : "generate_video";
       let model = plan.model;
       const grant = conv ? this.mediaGrants.get(conv) : undefined;
-      const why = mediaAsk(plan, args.confirm, this.settings(botId).media.confirm);
+      const why = mediaAsk(plan, this.settings(botId).media.confirm);
       if (grant?.kind === plan.kind && grant.model === model.id && Date.now() - grant.at < (this.o.approvalTtlMs ?? APPROVAL_TTL_MS)) {
         this.mediaGrants.delete(conv);
       } else if (why) {
@@ -706,15 +705,13 @@ export class AgentManager {
   private async confirmMedia(botId: string, conv: string, sessionId: string, plan: MediaPlan, tool: string, why: MediaAskReason): Promise<{ model?: MediaModel; cancel?: boolean; reply?: string }> {
     const image = plan.kind === "image";
     const opt = (m: MediaModel, tag = "") => ({ label: m.id, description: [tag, m.price].filter(Boolean).join(" · ") || undefined });
-    // 为什么问：花费高、不是默认模型时说一句（每次都问、代理要问的不用解释）
+    // 为什么问：花费高时说一句（每次都问是用户自己设的，不用解释）
     const reason =
       why === "cost"
         ? plan.estimate !== undefined
           ? t("media.reasonCost", { amount: Math.round(plan.estimate * 100) / 100, limit: MEDIA_ASK_USD })
           : t("media.reasonCostUnknown")
-        : why === "model"
-          ? t("media.reasonModel", { model: plan.default.id })
-          : "";
+        : "";
     const q: QuestionItem = {
       id: "model",
       header: t(image ? "media.confirmHeaderImage" : "media.confirmHeaderVideo"),

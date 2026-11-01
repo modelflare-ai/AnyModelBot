@@ -485,8 +485,6 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
           ? app.agent.approvals.answer(item.approvalId!, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
           : app.agent.approvals.answerText(item.approvalId!, String(b.text ?? ""), "web");
       } else if (item.kind === "delivery" && (action === "retry" || action === "dismiss")) ok = app.delivery.act(item.id, action);
-      // 清理任务文件夹（3f）：保留（再算 30 天）、知道了（到时照样清理）
-      else if (item.kind === "cleanup") ok = action === "keep" ? app.tasks.keepCleanup(item.botId) : app.tasks.dismissCleanup(item.botId);
       // 观察够了的规则：改为执行（和规则详情里切模式一样）、继续观察（这一版不再问）
       else if (item.kind === "suggest") ok = action === "act" ? !app.tasks.updateRule(item.ruleId!, { mode: "act" }).error : app.tasks.keepObserving(item.ruleId!);
       else if (item.kind === "rule" && action === "retry") ok = !app.tasks.resumeRule(item.ruleId!).error;
@@ -585,12 +583,15 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       }
       if (seg.length === 1 && m === "POST") {
         const b = await readJson(req);
+        // 检查默认执行；mode observe = 用户在编辑器里选了先观察
+        if (b.mode !== undefined && !["observe", "act"].includes(b.mode)) throw new HttpError(400, t("rules.badMode"));
         const r = app.tasks.createRule({
           botId: String(b.botId ?? ""),
           conversationId: String(b.conversationId ?? ""),
           title: String(b.title ?? ""),
           instruction: String(b.instruction ?? ""),
           kind: b.kind === "remind" ? "remind" : "check",
+          ...(b.mode === "observe" ? { mode: "observe" as const } : {}),
           message: String(b.message ?? ""),
           schedule: scheduleOf(b.schedule, app.delivery.timeZone),
           ...(b.runBudgetUsd !== undefined ? { runBudgetUsd: Number(b.runBudgetUsd) } : {}),

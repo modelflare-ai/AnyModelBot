@@ -558,25 +558,20 @@ describe("amb-media 插件与 bridge", () => {
     }
   });
 
-  it("什么时候先问：每次都问 > 代理说要问 > 花费超过上限（视频算不出也算）> 不是默认模型（用户点名的除外）", () => {
-    const M1 = { id: "m1" } as MediaModel;
-    const M2 = { id: "m2" } as MediaModel;
-    const plan = (o: { model?: MediaModel; estimate?: number; kind?: "image" | "video" } = {}) => ({ kind: o.kind ?? ("image" as const), model: o.model ?? M1, default: M1, estimate: o.estimate });
-    expect(mediaAsk(plan({ estimate: 0.04 }), undefined, "auto")).toBeUndefined();
-    expect(mediaAsk(plan({ estimate: 0.04 }), undefined, "always")).toBe("always");
-    expect(mediaAsk(plan({ estimate: 0.04 }), true, "auto")).toBe("agent");
-    expect(mediaAsk(plan({ estimate: 0.04 }), "true", "auto")).toBe("agent");
-    expect(mediaAsk(plan({ estimate: MEDIA_ASK_USD }), undefined, "auto")).toBeUndefined();
-    expect(mediaAsk(plan({ estimate: MEDIA_ASK_USD + 0.01 }), false, "auto")).toBe("cost");
-    // 图片算不出花费不问（便宜），视频算不出就问
-    expect(mediaAsk(plan({}), undefined, "auto")).toBeUndefined();
-    expect(mediaAsk(plan({ kind: "video" }), undefined, "auto")).toBe("cost");
-    expect(mediaAsk(plan({ kind: "video", estimate: 0.3 }), undefined, "auto")).toBeUndefined();
-    expect(mediaAsk(plan({ model: M2, estimate: 0.04 }), undefined, "auto")).toBe("model");
-    expect(mediaAsk(plan({ model: M2, estimate: 0.04 }), false, "auto")).toBeUndefined();
+  /** 少问（产品负责人 2026-11-01）：默认只在预计花费超过上限时问；换了模型、要求不明确都不问（代理按最合理的理解直接生成） */
+  it("什么时候先问：每次都问；或者预计花费超过上限（视频算不出也算）。不是默认模型、要求不明确都不问", () => {
+    const plan = (o: { estimate?: number; kind?: "image" | "video" } = {}) => ({ kind: o.kind ?? ("image" as const), estimate: o.estimate });
+    expect(mediaAsk(plan({ estimate: 0.04 }), "auto")).toBeUndefined();
+    expect(mediaAsk(plan({ estimate: 0.04 }), "always")).toBe("always");
+    expect(mediaAsk(plan({ estimate: MEDIA_ASK_USD }), "auto")).toBeUndefined();
+    expect(mediaAsk(plan({ estimate: MEDIA_ASK_USD + 0.01 }), "auto")).toBe("cost");
+    // 图片算不出花费不问（便宜），视频算不出就问（可能很贵）
+    expect(mediaAsk(plan({}), "auto")).toBeUndefined();
+    expect(mediaAsk(plan({ kind: "video" }), "auto")).toBe("cost");
+    expect(mediaAsk(plan({ kind: "video", estimate: 0.3 }), "auto")).toBeUndefined();
   });
 
-  it("默认模型、花费不高直接生成；换模型、花费高、代理要问、设成每次都问时先问；换模型后按新文档重写的那一次免确认", async () => {
+  it("直接生成（换了模型、代理还传着旧的 confirm 也不问）；花费高、设成每次都问时先问；换模型后按新文档重写的那一次免确认", async () => {
     const store = new Store(":memory:");
     store.createBot({ id: "b1", name: "b1" });
     const M1 = { id: "m1", kind: "image", price: "$0.03/张" };
@@ -621,38 +616,41 @@ describe("amb-media 插件与 bridge", () => {
     try {
       // 默认模型、花费不高：不问，直接生成
       expect(await call({ prompt: "猫" })).toEqual({ text: "done m1" });
+      // 代理（或用户）选了别的模型：不问
+      expect(await call({ prompt: "猫", model: "m2" })).toEqual({ text: "done m2" });
+      // 旧提示词里的 confirm: true（要求不明确）不再算数：不问
+      expect(await call({ prompt: "猫", confirm: true })).toEqual({ text: "done m1" });
       expect(mgr.approvals.pending("c1", "question")).toEqual([]);
-      // 用户点名了别的模型（confirm: false）：也不问
-      expect(await call({ prompt: "猫", model: "m2", confirm: false })).toEqual({ text: "done m2" });
 
-      // 代理自己换了模型：问，并说明默认是哪个
-      let [r, q] = await Promise.all([call({ prompt: "猫", model: "m2" }), answer({ selected: ["m2"] })]);
-      expect(q.question).toBe("这次用 m2 生成图片吗？");
-      expect(q.detail).toContain("不是默认模型（默认是 m1）");
-      expect(q.options.map((o: any) => o.label)).toEqual(["m2", "m2", "取消"]);
-      expect(r).toEqual({ text: "done m2" });
-
-      // 花费超过上限：就算 confirm: false 也问；附上预计花费
-      [r, q] = await Promise.all([call({ prompt: "猫", body: { n: 30 }, confirm: false }), answer({ selected: ["取消"] })]);
+      // 花费超过上限：问，附上预计花费
+      let [r, q] = await Promise.all([call({ prompt: "猫", body: { n: 30 } }), answer({ selected: ["取消"] })]);
+      expect(q.question).toBe("这次用 m1 生成图片吗？");
       expect(q.detail).toContain(`预计花费约 $0.9，超过 $${MEDIA_ASK_USD}`);
+      expect(q.options[0]).toEqual({ label: "m1", description: "默认 · $0.03/张" });
       expect(r.text).toMatch(/取消/);
 
-      // 要求不明确（confirm: true）：问；请求体按 m1 的文档写的，换成 m2 时先让代理按 m2 的文档重写，重写后的那一次不再确认
-      [r, q] = await Promise.all([call({ prompt: "猫", body: { a: 1 }, confirm: true }), answer({ custom: "用 M2" })]);
-      expect(q.options[0]).toEqual({ label: "m1", description: "默认 · $0.03/张" });
-      expect(r.text).toMatch(/media_docs 查 m2/);
-      expect(await call({ prompt: "猫", model: "m2", body: { b: 1 } })).toEqual({ text: "done m2" });
+      // 机器人选的模型花费高：问的是它，标着「机器人选的」
+      [r, q] = await Promise.all([call({ prompt: "猫", model: "m2", body: { n: 30 } }), answer({ selected: ["m2"] })]);
+      expect(q.question).toBe("这次用 m2 生成图片吗？");
+      expect(q.options.map((o: any) => o.label)).toEqual(["m2", "m2", "取消"]);
+      expect(q.options[0].description).toBe("机器人选的");
+      expect(r).toEqual({ text: "done m2" });
 
-      [r] = await Promise.all([call({ prompt: "猫", confirm: true }), answer({ custom: "好的" })]);
+      // 请求体按 m1 的文档写的，用户换成 m2：先让代理按 m2 的文档重写，重写后的那一次不再确认
+      [r] = await Promise.all([call({ prompt: "猫", body: { n: 30 } }), answer({ custom: "用 M2" })]);
+      expect(r.text).toMatch(/media_docs 查 m2/);
+      expect(await call({ prompt: "猫", model: "m2", body: { n: 30, b: 1 } })).toEqual({ text: "done m2" });
+
+      [r] = await Promise.all([call({ prompt: "猫", body: { n: 30 } }), answer({ custom: "好的" })]);
       expect(r).toEqual({ text: "done m1" });
-      [r] = await Promise.all([call({ prompt: "猫", confirm: true }), answer({ custom: "换成竖屏的" })]);
+      [r] = await Promise.all([call({ prompt: "猫", body: { n: 30 } }), answer({ custom: "换成竖屏的" })]);
       expect(r.text).toMatch(/「换成竖屏的」/);
 
       // 机器人设成每次都问
       store.updateBot("b1", { settings: normalizeSettings({ media: { confirm: "always" } }) });
       [r] = await Promise.all([call({ prompt: "猫" }), answer({ selected: ["m1"] })]);
       expect(r).toEqual({ text: "done m1" });
-      expect(ran).toEqual(["m1", "m2", "m2", "m2", "m1", "m1"]);
+      expect(ran).toEqual(["m1", "m2", "m1", "m2", "m2", "m1", "m1"]);
     } finally {
       await mgr.bridge.stop();
       store.close();

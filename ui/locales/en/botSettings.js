@@ -103,7 +103,7 @@ export default {
     head: "Images and video",
     confirm: "Confirm before generating",
     alwaysSub: "Ask me which model to use before every generation",
-    autoSub: "Generate right away when the default model works and the cost is low; ask first when switching models, above about $0.5, or when the request is unclear",
+    autoSub: "Ask me only when it would cost more than $0.5",
     auto: "Ask when needed",
     always: "Always ask",
   },

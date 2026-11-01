@@ -3,7 +3,7 @@ import { DEFAULT_QUIET, minuteOf, type QuietHours } from "../core/quiet.js";
 export type PermissionPreset = "readonly" | "workspace" | "full";
 export type CuBackend = "cua" | "codex";
 export type CuApproval = "auto" | "ask-input";
-/** auto = 只在需要时问（模型不是默认的、预计花费超过上限、要求不明确）；always = 每次生成前都问 */
+/** auto = 只在预计花费超过上限时问（视频算不出花费也问）；always = 每次生成前都问 */
 export type MediaConfirm = "auto" | "always";
 /** 内置头像角色（ui/components/avatar.js 的 BOT_CHARS）；blue 是主角 */
 export const BOT_AVATARS = ["blue", "yellow", "green", "red", "purple", "orange"] as const;
@@ -100,7 +100,7 @@ export function normalizeSettings(raw: unknown): BotSettings {
       // 旧值（always / readonly-free）一律迁移为自动执行
       approval: cu.approval === "ask-input" ? "ask-input" : "auto",
     },
-    // 以前每次都问；升级后默认只在需要时问
+    // 以前每次都问；升级后默认只在花费高时问
     media: { confirm: md.confirm === "always" ? "always" : "auto" },
     utilityModel: typeof r.utilityModel === "string" ? r.utilityModel.trim().slice(0, 200) : "",
     avatar: (BOT_AVATARS as readonly string[]).includes(r.avatar) ? r.avatar : "",

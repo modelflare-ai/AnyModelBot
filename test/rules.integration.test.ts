@@ -1,7 +1,8 @@
 /**
  * 规则（3d）端到端：真实 DSH 子进程 + 脚本化的模型 + mock iLink（主人在微信里和自己的机器人聊）。
- * 退出演示：微信里说「每天 08:00 看 X 价格」，聊天代理 rule_create 建好规则（观察）；「三天」到点各跑一次（把 next_run_at 拨到现在、
- * 叫醒定时器），运行记录读得懂，什么都没发；「需要你」里问要不要改为执行；改了之后命中时推一句，只推一次。
+ * 退出演示：微信里说「每天 08:00 看 X 价格，先观察」，聊天代理 rule_create 建好规则（用户要先观察，所以是观察；不说就直接执行）；
+ * 「三天」到点各跑一次（把 next_run_at 拨到现在、叫醒定时器），运行记录读得懂，什么都没发；「需要你」里问要不要改为执行；
+ * 改了之后命中时推一句，只推一次。
  * 另外：每次运行一个新会话；观察只读（写不了文件），执行可写工作区；规则会话的工具（观察去掉能改变什么的）；检查用小模型、
  * 那一句用主模型写；观察时要批准的自动拒绝、记下来，「需要你」里没有；事件触发走同一条路。
  */
@@ -48,7 +49,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
     const outs = messages.slice(last + 1).filter((m) => m.role === "tool").map((m) => textOf(m.content)).join("|");
     if (!system.includes("# 规则（优先于上面的聊天规则）")) {
       if (/RULE PRICE/.test(user))
-        return done ? { text: "ACK-RULE：已建好规则：每天 08:00 看 X 价格。先观察几天，只记录不打扰你。" } : { tool: { name: "rule_create", args: { title: "看 X 价格", instruction: "每天 08:00 看看 X 的价格，低于 200 告诉我", schedule: "daily 08:00" } } };
+        return done ? { text: "ACK-RULE：已建好规则：每天 08:00 看 X 价格，先观察几天，只记录不打扰你。" } : { tool: { name: "rule_create", args: { title: "看 X 价格", instruction: "每天 08:00 看看 X 的价格，低于 200 告诉我，先观察", schedule: "daily 08:00", mode: "observe" } } };
       const p = /PING (\w+)/.exec(user);
       if (p) return { text: `PONG-${p[1]}` };
       return { text: "好的" };
@@ -154,14 +155,14 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
   };
   const price = (n: number) => fs.writeFileSync(path.join(ws(), "price.txt"), `${n}\n`);
 
-  it("exit demo: 「每天 08:00 看 X 价格」 runs 3 days in observe with a readable log, then switches to act and pushes one line on a hit", async () => {
-    // 微信里说一句，聊天代理建规则（观察），回复确认
-    ilink.push(OWNER, "RULE PRICE");
+  it("exit demo: 「每天 08:00 看 X 价格，先观察」 runs 3 days in observe with a readable log, then switches to act and pushes one line on a hit", async () => {
+    // 微信里说一句（要先观察），聊天代理建规则（观察），回复确认
+    ilink.push(OWNER, "RULE PRICE 先观察");
     await waitFor(() => sentTo("ACK-RULE").length === 1);
     const chat = calls.find((c) => !c.rule && c.users.some((u) => u.includes("RULE PRICE")))!;
     expect(chat.tools).toEqual(expect.arrayContaining(["rule_create", "rule_update", "task_list"]));
     const [rule] = (await api("/rules?bot=default")).rules;
-    expect(rule).toMatchObject({ title: "看 X 价格", when: "每天 08:00", mode: "observe", state: { key: "observe", label: "观察中" }, instruction: "每天 08:00 看看 X 的价格，低于 200 告诉我", conversationId: CONV });
+    expect(rule).toMatchObject({ title: "看 X 价格", when: "每天 08:00", mode: "observe", state: { key: "observe", label: "观察中" }, instruction: "每天 08:00 看看 X 的价格，低于 200 告诉我，先观察", conversationId: CONV });
     // 三天：观察。每次一个新会话，检查用小模型；写不了文件（只读）；什么都不发
     price(259);
     const d1 = await tick(rule.id);
@@ -242,7 +243,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
   });
 
   it("an approval asked in observe mode is rejected automatically and recorded as would-need; needs-you stays empty", async () => {
-    const r = app.tasks.createRule({ botId: "default", conversationId: CONV, title: "提权", instruction: "ESCALATE 看看系统", schedule: { kind: "daily", time: "09:00", tz: "UTC" } });
+    const r = app.tasks.createRule({ botId: "default", conversationId: CONV, title: "提权", instruction: "ESCALATE 看看系统", mode: "observe", schedule: { kind: "daily", time: "09:00", tz: "UTC" } });
     const run = await tick(r.rule!.id);
     expect(run).toMatchObject({ mode: "observe", outcome: "done" });
     expect(run.report!.summary).toBe("not run");
@@ -260,7 +261,7 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
     expect(app.store.getRule(r.rule!.id)).toBeUndefined();
   }, 180_000);
 
-  it("the rule editor's API: a new check from the UI starts in observe, a reminder acts; a bad schedule is refused; editing the words of an acting rule observes once", async () => {
+  it("the rule editor's API: a new check from the UI acts unless observe is picked, a reminder acts; a bad schedule is refused; editing the words keeps the mode", async () => {
     const bad = await fetch(`${base}/amb/api/rules`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ botId: "default", conversationId: CONV, title: "x", instruction: "x", schedule: { kind: "every", minutes: 5 } }) });
     expect(bad.status).toBe(400);
     expect(((await bad.json()) as any).error).toBe("间隔至少 15 分钟");
@@ -268,19 +269,22 @@ describe.skipIf(!runtime || !hasBwrap || process.platform !== "linux")("rules (r
     expect(((await badEn.json()) as any).error).toBe("The interval must be at least 15 minutes");
     expect((await (await fetch(`${base}/amb/api/rules?bot=default`, { headers: { "x-amb-lang": "en" } })).json() as any).rules[0]).toMatchObject({ when: "Daily 08:00", state: { label: "Acting" } });
     const c = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", title: "看天气", instruction: "每个工作日早上看看会不会下雨", schedule: { kind: "daily", time: "07:30", days: [1, 2, 3, 4, 5] } } })).rule;
-    expect(c).toMatchObject({ mode: "observe", when: "每个工作日 07:30", state: { key: "observe" } });
+    expect(c).toMatchObject({ mode: "act", when: "每个工作日 07:30", state: { key: "act" } });
+    const o = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", mode: "observe", title: "看风", instruction: "每天早上看看风大不大", schedule: { kind: "daily", time: "07:00" } } })).rule;
+    expect(o).toMatchObject({ mode: "observe", state: { key: "observe" } });
     const r = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "remind", title: "喝水", message: "喝水。", schedule: { kind: "every", minutes: 120 } } })).rule;
     expect(r).toMatchObject({ kind: "remind", mode: "act", message: "喝水。", instruction: "喝水。", when: "每 2 小时", state: { key: "remind" } });
-    await api(`/rules/${c.id}`, { method: "PUT", body: { mode: "act" } });
+    // 改了原话：新的一版，照样执行（不再先观察一次）
     const edited = (await api(`/rules/${c.id}`, { method: "PUT", body: { instruction: "每个工作日早上看看会不会下雨，下雨就提醒我带伞" } })).rule;
-    expect(edited).toMatchObject({ mode: "act", observeLeft: 1, version: 2, state: { key: "observe" } });
-    for (const id of [c.id, r.id]) await api(`/rules/${id}`, { method: "DELETE" });
+    expect(edited).toMatchObject({ mode: "act", version: 2, state: { key: "act" } });
+    expect(edited).not.toHaveProperty("observeLeft");
+    for (const id of [c.id, o.id, r.id]) await api(`/rules/${id}`, { method: "DELETE" });
     expect((await api("/rules?bot=default")).rules.map((x: any) => x.id)).not.toContain(c.id);
   });
 
   it("an event-triggered rule (the extension point for user workloads) runs through the same path when a fake source emits", async () => {
     const r = app.tasks.createRule({ botId: "default", conversationId: CONV, title: "新 issue", instruction: "仓库有新 issue 时告诉我", trigger: { kind: "event", source: "fake-repo", filter: { action: "opened" } } });
-    app.tasks.updateRule(r.rule!.id, { mode: "act" });
+    expect(r.rule).toMatchObject({ mode: "act" });
     expect(app.ruleEvents.emit("fake-repo", { action: "closed", number: 7 })).toEqual([]);
     expect(app.ruleEvents.emit("fake-repo", { action: "opened", number: 8 })).toEqual([r.rule!.id]);
     await waitFor(() => app.store.ruleRuns(r.rule!.id, { limit: 1 })[0]?.state === "ended", 90_000);

@@ -7,8 +7,9 @@
 //     tools.restrict throws on unknown ones),
 //   - adds the task rules (AMB_TASK_RULES, written by the host) as the last system-prompt section,
 //   - registers task_report, which reports the task's state to the host (needs_you carries one question for the
-//     user; the host asks it right away and hands the answer back as an input: with a default the task keeps working
-//     and the answer reaches its next step, without one the task ends its turn and waits),
+//     user, only when the task cannot decide itself; the host asks it right away and hands the answer back as an
+//     input: with a default the task keeps working and the answer reaches its next step, without one the task ends
+//     its turn and waits),
 //   - refuses every tool call once the host has stopped the task.
 // Chat sessions get task_start / task_message / task_list, rule_create / rule_update and background_pause (pause or
 // resume all of the bot's background work); subagents get none of them.
@@ -129,12 +130,13 @@ export function apply(ctx) {
     }))
     ctx.tools.register(defineTool({
       name: 'rule_create',
-      description: 'Set up a standing rule the user asks for: a recurring check (kind check; it tells the user only when it matters, and starts in observe mode, only recording what it would say) or a fixed reminder (kind remind: sends message at the time). Confirm in one sentence.',
+      description: 'Set up a standing rule the user asks for: a recurring check (kind check; it acts right away and tells the user only when it matters) or a fixed reminder (kind remind: sends message at the time). Confirm in one sentence.',
       parameters: {
         title: { type: 'string', required: true, description: 'Short, e.g. 看 X 价格.' },
         instruction: { type: 'string', required: true, description: 'The user\'s words, verbatim.' },
         schedule: { type: 'string', required: true, description: 'Local time: once YYYY-MM-DD HH:MM | daily HH:MM | weekdays HH:MM | weekly mon,thu HH:MM | every 30m | cron M H DOM MON DOW' },
         kind: { type: 'string', enum: ['check', 'remind'] },
+        mode: { type: 'string', enum: ['act', 'observe'], description: 'observe only when the user wants to watch first (先观察): it only records what it would say.' },
         message: { type: 'string', description: 'remind: the line to send.' },
       },
       output: TEXT_OUT,
@@ -177,7 +179,7 @@ export function apply(ctx) {
 
   const reportTool = () => defineTool({
     name: 'task_report',
-    description: 'Report this background task\'s state to the app. done: finished. failed: you cannot finish it. For both, message is the one line the user receives (at most 300 characters, in their language): the result and where it is; files are files to send them. needs_you: the app asks the user question now. With default, keep working on what does not depend on the answer; if you finish first, use default and say so in message. Without default (only the user can decide), their answer is your next message. progress is recorded, never sent. After done, failed or needs_you without default, end your turn.',
+    description: 'Report this background task\'s state to the app. done: finished. failed: you cannot finish it. For both, message is the one line the user receives (at most 300 characters, in their language): the result, where it is and what you chose; files are files to send them. needs_you only if a wrong guess could cause harm, cost money or waste most of the work, you need something only the user has, or the step cannot be undone; decide everything else yourself. The app asks the user question now. With default (rare), keep working on what does not depend on the answer; if you finish first, use default and say so in message. Without default, their answer is your next message. progress is recorded, never sent. After done, failed or needs_you without default, end your turn.',
     parameters: {
       state: { type: 'string', required: true, enum: ['progress', 'needs_you', 'done', 'failed'] },
       summary: { type: 'string', required: true, description: 'What you did and found, for the record (not sent to the user).' },

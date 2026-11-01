@@ -53,6 +53,7 @@ export default {
     feishuTitle: "添加飞书账号",
     feishuAppHint: "应用要开通读消息的用户权限。填完后再扫码授权。",
     next: "下一步",
+    feishuChatStep: "用飞书扫码，创建你的机器人应用。完成后在飞书里给它发条消息就能聊。",
     feishuStepCreate: "第 1 步：用飞书扫码，创建你的个人应用",
     feishuStepAuthorize: "第 2 步：用飞书扫码，授权读取你的会话和消息",
     qrAlt: "飞书授权二维码",

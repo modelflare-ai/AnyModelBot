@@ -553,6 +553,14 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
         await app.connectFeishu(id, String(b.appId ?? "").trim(), String(b.appSecret ?? "").trim());
         return send(res, 200, app.channelStatus(id));
       }
+      // 一键添加：扫码创建应用（流程状态在 /connections/flows/:id），连上后账号才出现
+      if (sub === "feishu/one-click" && m === "POST") {
+        const flow = app.connections.feishu.startAppFlow(async (created) => {
+          await app.connectFeishu(id, created.appId, created.appSecret, created.brand);
+          return app.store.getChannelAccount(id, "feishu")?.label ?? "";
+        });
+        return send(res, 200, { flow });
+      }
       if (sub === "feishu" && m === "DELETE") {
         await app.removeChannelAccount(id, "feishu");
         return send(res, 200, app.channelStatus(id));

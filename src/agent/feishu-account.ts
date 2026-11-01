@@ -306,10 +306,25 @@ export class FeishuAccounts {
 
   /** 开始添加：给了 App ID 和 Secret 就用已有的应用，否则一键创建 */
   startFlow(app?: { appId: string; appSecret: string; brand?: FeishuBrand }): FeishuFlowView {
+    return this.launch(app ? "authorize" : "create-app", (flow) => this.runFlow(flow, app));
+  }
+
+  /** 飞书聊天账号：只扫码创建应用，不要用户授权（聊天用的是应用身份）。done 把应用连上，回账号的名字 */
+  startAppFlow(done: (app: { appId: string; appSecret: string; brand: FeishuBrand }) => Promise<string>): FeishuFlowView {
+    return this.launch("create-app", async (flow) => {
+      const app = await this.createApp(flow, flow.abort.signal);
+      flow.label = await done(app);
+      flow.url = "";
+      flow.qr = "";
+      flow.state = "done";
+    });
+  }
+
+  private launch(state: FeishuFlowState, run: (flow: Flow) => Promise<void>): FeishuFlowView {
     for (const [k, f] of this.flows) if (f.state === "done" || f.state === "failed") this.flows.delete(k);
-    const flow: Flow = { id: crypto.randomBytes(12).toString("hex"), state: app ? "authorize" : "create-app", url: "", qr: "", error: "", label: "", abort: new AbortController() };
+    const flow: Flow = { id: crypto.randomBytes(12).toString("hex"), state, url: "", qr: "", error: "", label: "", abort: new AbortController() };
     this.flows.set(flow.id, flow);
-    this.runFlow(flow, app).catch((e) => {
+    run(flow).catch((e) => {
       if (flow.abort.signal.aborted) return;
       flow.state = "failed";
       flow.error = e instanceof ConnectionError ? e.message : "Feishu didn't complete the authorization. Try again.";

@@ -651,6 +651,37 @@ describe("飞书账号：添加流程", () => {
     expect((accounts.list("feishu")[0].auth as any).brand).toBe("lark");
   });
 
+  it("聊天账号一键添加：只扫码创建应用，交给回调连上，不做用户授权", async () => {
+    const { feishu, accounts, calls } = flowWith([
+      { json: { device_code: "reg", user_code: "UC", interval: 0.01, expire_in: 60 } },
+      { json: { client_id: "cli_chat", client_secret: "sec_chat", user_info: { open_id: "ou", tenant_brand: "lark" } } },
+      { json: { client_id: "cli_chat", client_secret: "sec_chat", user_info: { open_id: "ou", tenant_brand: "lark" } } },
+    ]);
+    const got: unknown[] = [];
+    const flow = feishu.startAppFlow(async (app) => {
+      got.push(app);
+      return "飞书";
+    });
+    expect(flow.state).toBe("create-app");
+    const done = await settle(feishu, flow.id);
+    expect(done).toMatchObject({ state: "done", label: "飞书", url: "", qr: "" });
+    expect(got).toEqual([{ appId: "cli_chat", appSecret: "sec_chat", brand: "lark" }]);
+    expect(calls.some((c) => c.path.includes("device_authorization"))).toBe(false);
+    // 聊天账号不进数据账号的列表
+    expect(accounts.list()).toEqual([]);
+  });
+
+  it("聊天账号一键添加：回调失败时流程失败", async () => {
+    const { feishu } = flowWith([
+      { json: { device_code: "reg", user_code: "UC", interval: 0.01, expire_in: 60 } },
+      { json: { client_id: "c", client_secret: "s" } },
+    ]);
+    const flow = feishu.startAppFlow(async () => {
+      throw new ConnectionError("Couldn't connect.");
+    });
+    expect((await settle(feishu, flow.id)).error).toBe("Couldn't connect.");
+  });
+
   it("取消：流程不再加账号", async () => {
     const { feishu, accounts } = flowWith([{ json: { device_code: "d", verification_uri: "https://x", interval: 30, expires_in: 60 } }]);
     const { id } = feishu.startFlow({ appId: "a", appSecret: "s" });

@@ -105,7 +105,7 @@ export function appVersion(): string {
 
 export interface AppOptions {
   /** 测试注入：替换飞书传输层 */
-  feishuTransport?: (account: { id: string; feishuAppId: string; feishuAppSecret: string }) => FeishuTransport;
+  feishuTransport?: (account: { id: string; feishuAppId: string; feishuAppSecret: string; brand: "feishu" | "lark" }) => FeishuTransport;
   /** 测试用：替换 Telegram、Slack、Discord 的传输层 */
   messengerTransport?: (id: MessengerId, botId: string, credentials: Record<string, string>) => MessengerTransport;
   /** 测试注入：替换 iLink 的 fetch */
@@ -863,7 +863,8 @@ export class App {
     const { appId, appSecret } = fsAccount?.credentials ?? {};
     if (fsAccount?.enabled && appId && appSecret && !ch.feishu) {
       registerSecret(appSecret);
-      const transport = this.opts.feishuTransport?.({ id: key, feishuAppId: appId, feishuAppSecret: appSecret }) ?? new LarkTransport(appId, appSecret);
+      const brand = fsAccount.credentials.brand === "lark" ? "lark" : "feishu";
+      const transport = this.opts.feishuTransport?.({ id: key, feishuAppId: appId, feishuAppSecret: appSecret, brand }) ?? new LarkTransport(appId, appSecret, brand);
       ch.feishu = new FeishuChannel(key, transport, this.runtime, this.queue, this.config.feishu.throttleMs, this.outbox, this.store);
       ch.feishu.delivery = this.delivery;
       ch.feishu.route = route("feishu");
@@ -971,12 +972,14 @@ export class App {
   }
 
   /** 连接（或改凭据）飞书应用：Secret 留空沿用已保存的；App ID 留空就是移除。换了应用：单聊会话都是新的，连上后第一个发消息的人成为主人 */
-  async connectFeishu(key: string, appId: string, appSecret: string): Promise<void> {
+  async connectFeishu(key: string, appId: string, appSecret: string, brand?: "feishu" | "lark"): Promise<void> {
     if (!appId) return this.removeFeishu(key);
     const cur = this.store.getChannelAccount(key, "feishu");
-    if (appId !== cur?.credentials.appId) this.access.resetOwner(key, "feishu");
+    const same = appId === cur?.credentials.appId;
+    if (!same) this.access.resetOwner(key, "feishu");
     const base = this.ensureChannelAccount(key, "feishu", t("app.feishu_account_name"));
-    this.store.saveChannelAccount({ ...base, credentials: { appId, appSecret: appSecret || cur?.credentials.appSecret || "" } });
+    const lark = (brand ?? (same ? cur?.credentials.brand : undefined)) === "lark";
+    this.store.saveChannelAccount({ ...base, credentials: { appId, appSecret: appSecret || cur?.credentials.appSecret || "", ...(lark ? { brand: "lark" } : {}) } });
     await this.stopFeishu(key);
     await this.startBot(key);
   }

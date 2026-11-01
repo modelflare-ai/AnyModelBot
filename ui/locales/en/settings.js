@@ -53,6 +53,7 @@ export default {
     feishuTitle: "Add a Feishu account",
     feishuAppHint: "The app needs user permissions for reading messages. You'll scan a code to authorize next.",
     next: "Next",
+    feishuChatStep: "Scan with Feishu to create your bot app. Then send it a message in Feishu to start chatting.",
     feishuStepCreate: "Step 1: scan with Feishu to create your personal app",
     feishuStepAuthorize: "Step 2: scan with Feishu to let it read your chats and messages",
     qrAlt: "Feishu authorization QR code",

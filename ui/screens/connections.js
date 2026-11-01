@@ -207,15 +207,12 @@ function NotionTokenSheet({ conn, onClose }) {
   <//>`;
 }
 
-/** 飞书：一键授权要扫两次（创建应用、授权读消息）；用已有应用只扫第二次 */
-function FeishuSheet({ conn, mode, onClose }) {
-  const [appId, setAppId] = useState("");
-  const [appSecret, setAppSecret] = useState("");
+/** 飞书的扫码流程：开始之后轮询状态，完成时回调；关掉就取消 */
+function useFeishuFlow(onDone) {
   const [flow, setFlow] = useState(null);
   const [error, setError] = useState("");
   const live = useRef(null);
   const timer = useRef(null);
-
   const poll = async () => {
     if (!live.current) return;
     try {
@@ -223,9 +220,7 @@ function FeishuSheet({ conn, mode, onClose }) {
       setFlow(r.flow);
       if (r.flow.state === "done") {
         live.current = null;
-        conn.setAccounts(r.accounts);
-        saved();
-        onClose();
+        onDone(r);
         return;
       }
       if (r.flow.state === "failed") {
@@ -237,10 +232,11 @@ function FeishuSheet({ conn, mode, onClose }) {
     }
     timer.current = setTimeout(poll, POLL_MS);
   };
-  const start = async (body) => {
+  const start = async (path, body) => {
     setError("");
+    setFlow(null);
     try {
-      const r = await api("/connections/feishu", { method: "POST", body });
+      const r = await api(path, { method: "POST", body });
       live.current = r.flow.id;
       setFlow(r.flow);
       timer.current = setTimeout(poll, POLL_MS);
@@ -248,31 +244,71 @@ function FeishuSheet({ conn, mode, onClose }) {
       setError(e.message || String(e));
     }
   };
-  useEffect(() => {
-    if (mode === "oneclick") start({});
-    return () => {
+  useEffect(
+    () => () => {
       clearTimeout(timer.current);
       if (live.current) api(`/connections/flows/${live.current}`, { method: "DELETE" }).catch(() => {});
-    };
-  }, []);
+    },
+    [],
+  );
+  return { flow, error: flow && flow.state === "failed" ? flow.error : error, start };
+}
 
-  const failedText = flow && flow.state === "failed" ? flow.error : error;
+/** 流程进行中：二维码、链接、等待 */
+function FlowSteps({ flow, text }) {
+  return html`<p>${text}</p>
+    ${flow.qr && html`<img class="panel-qr" src=${flow.qr} alt=${t("settings.connections.qrAlt")} />`}
+    ${flow.url && html`<p><a class="text" href=${flow.url} target="_blank" rel="noopener noreferrer">${t("settings.connections.openInBrowser")}</a></p>`}
+    <p class="hint"><${Spinner} /> ${t("settings.connections.waiting")}</p>`;
+}
+
+/** 飞书消息：一键授权要扫两次（创建应用、授权读消息）；用已有应用只扫第二次 */
+function FeishuSheet({ conn, mode, onClose }) {
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const { flow, error, start } = useFeishuFlow((r) => {
+    conn.setAccounts(r.accounts);
+    saved();
+    onClose();
+  });
+  const begin = (body) => start("/connections/feishu", body);
+  useEffect(() => {
+    if (mode === "oneclick") begin({});
+  }, []);
   const steps = flow && (flow.state === "create-app" || flow.state === "authorize");
   return html`<${Sheet} title=${t("settings.connections.feishuTitle")} onClose=${onClose}>
-    ${mode === "app" && !flow && html`<form onSubmit=${(e) => { e.preventDefault(); start({ appId: appId.trim(), appSecret: appSecret.trim() }); }}>
+    ${mode === "app" && !flow && html`<form onSubmit=${(e) => { e.preventDefault(); begin({ appId: appId.trim(), appSecret: appSecret.trim() }); }}>
       <p class="hint">${t("settings.connections.feishuAppHint")}</p>
       <label class="set-field"><span class="k">App ID</span><input class="field mono" value=${appId} placeholder="cli_xxxxxxxx" onInput=${(e) => setAppId(e.target.value)} /></label>
       <label class="set-field"><span class="k">App Secret</span><input class="field mono" type="password" autocomplete="off" value=${appSecret} onInput=${(e) => setAppSecret(e.target.value)} /></label>
       <div class="actions"><button type="submit" class="btn primary" disabled=${!appId.trim() || !appSecret.trim()}>${t("settings.connections.next")}</button></div>
     </form>`}
-    ${steps && html`<p>${t(flow.state === "create-app" ? "settings.connections.feishuStepCreate" : "settings.connections.feishuStepAuthorize")}</p>
-      ${flow.qr && html`<img class="panel-qr" src=${flow.qr} alt=${t("settings.connections.qrAlt")} />`}
-      ${flow.url && html`<p><a class="text" href=${flow.url} target="_blank" rel="noopener noreferrer">${t("settings.connections.openInBrowser")}</a></p>`}
-      <p class="hint"><${Spinner} /> ${t("settings.connections.waiting")}</p>`}
-    ${!flow && mode === "oneclick" && !failedText && html`<p class="hint"><${Spinner} /></p>`}
-    <${ErrorLine} text=${failedText} />
-    ${failedText && html`<div class="actions"><button type="button" class="btn" onClick=${() => { setFlow(null); setError(""); if (mode === "oneclick") start({}); }}>${t("settings.connections.retry")}</button></div>`}
+    ${steps && html`<${FlowSteps} flow=${flow} text=${t(flow.state === "create-app" ? "settings.connections.feishuStepCreate" : "settings.connections.feishuStepAuthorize")} />`}
+    ${!flow && mode === "oneclick" && !error && html`<p class="hint"><${Spinner} /></p>`}
+    <${ErrorLine} text=${error} />
+    ${error && mode === "oneclick" && html`<div class="actions"><button type="button" class="btn" onClick=${() => begin({})}>${t("settings.connections.retry")}</button></div>`}
   <//>`;
+}
+
+/** 飞书聊天账号：默认扫码创建应用，也可以填已有的应用 */
+function FeishuChatConnect({ accountKey, st, reload }) {
+  const [manual, setManual] = useState(false);
+  const path = `/channel-accounts/${encodeURIComponent(accountKey)}/feishu/one-click`;
+  const { flow, error, start } = useFeishuFlow(() => {
+    saved();
+    reload();
+  });
+  useEffect(() => {
+    if (!manual) start(path, {});
+  }, [manual]);
+  if (manual) return html`<${CredentialConnect} accountKey=${accountKey} channel="feishu" st=${st} reload=${reload} />`;
+  return html`${flow && flow.state === "create-app" && flow.url && html`<${FlowSteps} flow=${flow} text=${t("settings.connections.feishuChatStep")} />`}
+    ${(!flow || !flow.url) && !error && html`<p class="hint"><${Spinner} /></p>`}
+    <${ErrorLine} text=${error} />
+    <div class="actions">
+      ${error && html`<button type="button" class="btn" onClick=${() => start(path, {})}>${t("settings.connections.retry")}</button>`}
+      <button type="button" class="text" onClick=${() => setManual(true)}>${t("settings.connections.feishuOther")}</button>
+    </div>`;
 }
 
 function RenameSheet({ conn, account, onClose }) {
@@ -468,9 +504,11 @@ function ChannelSheet({ conn, bots, channel, accountKey, onClose }) {
         <${MenuButton} label=${t("settings.connections.defaultBot")} value=${account.defaultBot} width=${260} options=${(bots || []).map((b) => [b.id, b.name])} onChange=${(v) => put({ defaultBot: v })} />
         <p class="hint">${t("settings.connections.defaultBotHint")}</p>
       </div>`}
-    ${key && (channel === "weixin"
+    ${key && st && (channel === "weixin"
       ? html`<${WeixinConnect} accountKey=${key} st=${st} reload=${reload} />`
-      : html`<${CredentialConnect} key=${key} accountKey=${key} channel=${channel} st=${st} reload=${reload} />`)}
+      : channel === "feishu" && !st.account
+        ? html`<${FeishuChatConnect} accountKey=${key} st=${st} reload=${reload} />`
+        : html`<${CredentialConnect} key=${key} accountKey=${key} channel=${channel} st=${st} reload=${reload} />`)}
     ${account && html`<${AccessPanel} accountKey=${key} channel=${channel} onChanged=${conn.reloadChannels} />
       <div class="actions"><button type="button" class="text danger" onClick=${remove}>${t("settings.connections.removeAccount")}</button></div>`}
   <//>`;

@@ -19,6 +19,7 @@ let base: string;
 /** 账号 key → 假 Telegram（检查凭据和真正连上用的是两个对象，留最后建的） */
 const fakes = new Map<string, FakeMessenger>();
 let secondBot = "";
+const feishuBrands: string[] = [];
 
 async function api(p: string, init: { method?: string; body?: unknown } = {}) {
   const res = await fetch(base + "/amb/api" + p, {
@@ -41,7 +42,10 @@ beforeAll(async () => {
   const config = loadConfig({ dataDir, env: { AMB_MAGPIE_BASE_URL: llm.url + "/v1", AMB_MAGPIE_API_KEY: "gw-key", AMB_UI_PORT: "0", AMB_AGENT: "off" } });
   app = new App(config, {
     printQrToTerminal: false,
-    feishuTransport: () => new FakeFeishu(),
+    feishuTransport: (account) => {
+      feishuBrands.push(account.brand);
+      return new FakeFeishu();
+    },
     messengerTransport: (id, key) => {
       const f = new FakeMessenger(id);
       fakes.set(key, f);
@@ -199,6 +203,22 @@ describe("删除机器人", () => {
     expect((await account(key)).defaultBot).toBe("default");
     await say(key, "boss", "还在");
     expect(shown(key, "boss")).toBe("[mock-a] 你说：还在");
+  });
+});
+
+describe("飞书聊天账号", () => {
+  it("连上后账号才出现；Lark 用 Lark 的地址，改 Secret 不丢品牌，换应用才重置", async () => {
+    const key = "acct_lark";
+    await app.connectFeishu(key, "cli_lark", "lark-secret", "lark");
+    expect(app.store.getChannelAccount(key, "feishu")!.credentials).toEqual({ appId: "cli_lark", appSecret: "lark-secret", brand: "lark" });
+    expect(feishuBrands.at(-1)).toBe("lark");
+    await api(`/channel-accounts/${key}/feishu`, { method: "PUT", body: { appId: "cli_lark", appSecret: "new-secret" } });
+    expect(app.store.getChannelAccount(key, "feishu")!.credentials).toEqual({ appId: "cli_lark", appSecret: "new-secret", brand: "lark" });
+    await api(`/channel-accounts/${key}/feishu`, { method: "PUT", body: { appId: "cli_other", appSecret: "s" } });
+    expect(app.store.getChannelAccount(key, "feishu")!.credentials).toEqual({ appId: "cli_other", appSecret: "s" });
+    expect(feishuBrands.at(-1)).toBe("feishu");
+    expect((await api(`/channel-accounts/${key}/feishu`, { method: "DELETE" })).status).toBe(200);
+    expect(await account(key)).toBeUndefined();
   });
 });
 

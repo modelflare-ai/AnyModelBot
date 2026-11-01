@@ -14,6 +14,7 @@ import { cuaConfig, cuaMcpEnv, discoverAppsCached, type CuaApp } from "./cua-dri
 import { pwshPatchLines, pwshProbe } from "./pwsh.js";
 import { hasEnvProxy, networkEnv, systemProxyEnv } from "./proxy-env.js";
 import { DEFAULT_SETTINGS, permissionMode, type BotSettings } from "./settings.js";
+import type { AccountService } from "./accounts.js";
 import { acceptsImages } from "../llm/client.js";
 import { CUA_SKILL, MEDIA_SKILL, TASK_RULES, agentPersona, botPrompt } from "./prompts/index.js";
 import { t, t as tr } from "../i18n/index.js";
@@ -206,6 +207,8 @@ export interface AgentHostOptions {
   onNotice?: (text: string) => void;
   /** 能生图 / 生视频（已连接 Modelflare）：写入 media 技能说明 */
   media?: boolean;
+  /** 哪些服务有已授权账号（全局，设置 › 连接）；加上第一个或删掉最后一个时，空闲的代理进程重启才有变化 */
+  connections?: () => Partial<Record<AccountService, boolean>>;
   /** 模型的上下文长度（Modelflare 模型资料）；不知道时 undefined，用内置兜底表 */
   contextWindow?: (model: string) => Promise<number | undefined>;
   /** 模型支持的接口与是否推理（Modelflare 模型资料），用来选对话接口；不知道时 undefined，走 Chat Completions */
@@ -755,6 +758,9 @@ export class AgentHost {
       // 联网搜索：默认免费（Exa MCP、必应、DuckDuckGo），设置里可换成带 Key 的接口（search.ts）
       "    - id: amb-web-search",
       `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-web-search.mjs"))}`,
+      // 已授权账号（Notion、飞书）：有账号才注册工具（AMB_CONNECTIONS），令牌只在宿主这边（accounts.ts）
+      "    - id: amb-connections",
+      `      name: ${yamlStr(path.join(this.o.runtimeDir, "plugins", "amb-connections.mjs"))}`,
       // sdk 配置默认不带这两个工具：ask_user_question 走 user-questions → 插件 → 审批中心；
       // present 只声明交付文件，由宿主在回合结束后经渠道发送。
       "    - id: amb-tool-ask-user",
@@ -942,6 +948,7 @@ exec "$REAL" "$@"
       LANG: "C.UTF-8",
       DSH_PERMISSION_MODE: permissionMode(this.settings().permission),
       AMB_MEMORY: this.settings().memory.enabled ? "1" : "0",
+      AMB_CONNECTIONS: this.connectionsEnv(),
       AMB_CU_APPROVAL: this.settings().computerUse.approval,
       AMB_CU_READ_TOOLS: this.cuReadTools,
       AMB_MAGPIE_KEY: this.o.bridge.token,
@@ -973,13 +980,21 @@ exec "$REAL" "$@"
   private settings(): BotSettings {
     return this.o.settings?.() ?? DEFAULT_SETTINGS;
   }
+  /** 插件注册哪些工具：有账号的服务；只读机器人不给 Notion 的写工具。飞书只读 */
+  private connectionsEnv(): string {
+    const on = this.o.connections?.() ?? {};
+    return JSON.stringify({
+      ...(on.notion ? { notion: this.settings().permission === "readonly" ? "read" : "write" } : {}),
+      ...(on.feishu ? { feishu: "read" } : {}),
+    });
+  }
   /**
    * 影响子进程启动参数的设置签名。带上 PowerShell 路径：装好 PowerShell 7、内置的装好或坏了退回时，空闲的代理进程换用新的。
    * 启动时记的是补丁里实际写的路径（pwsh），不是记签名那一刻的选择：中间隔着几次 await，选择可能刚好变了。
    */
   private settingsSig(pwsh = pwshProbe.cachedDshPath): string {
     const st = this.settings();
-    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.backend}|${st.computerUse.approval}|${pwsh ?? ""}`;
+    return `${st.permission}|${st.memory.enabled}|${st.computerUse.enabled}|${st.computerUse.backend}|${st.computerUse.approval}|${this.connectionsEnv()}|${pwsh ?? ""}`;
   }
   private sig = "";
 

@@ -10,6 +10,8 @@ import { ActivityLog, promotedJob, type ActivityStep } from "./activity.js";
 import { ApiFallbacks, type ApiFallback } from "./api-fallback.js";
 import type { MediaModel, MediaPlan, MediaService } from "./media.js";
 import { SearchAborted, type SearchService, type WebSource } from "./search.js";
+import { ConnectionError } from "./accounts.js";
+import type { ConnectionService } from "./connections.js";
 import { APPROVAL_TTL_MS, ApprovalCenter, TASK_APPROVAL_TTL_MS, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import type { TaskHost, TaskService } from "../tasks/service.js";
@@ -52,6 +54,8 @@ export interface AgentManagerOptions {
   media?: MediaService;
   /** 联网搜索（amb-web-search 插件经 bridge 调用，DSH 的 web_search 用它）；缺省时搜索返回不可用 */
   search?: SearchService;
+  /** 已授权账号（全局，amb-connections 插件经 bridge 调用）；缺省时机器人没有这些工具 */
+  connections?: ConnectionService;
   /** 需要让用户看到的提示（代理进程起不来等） */
   onNotice?: (text: string) => void;
   /** 模型的上下文长度（Modelflare 模型资料），写进 DSH 补丁 */
@@ -191,6 +195,7 @@ export class AgentManager {
       steward: (b) => this.stewardCall(b),
       media: (b) => this.mediaOp(b),
       search: (b, signal) => this.searchOp(b, signal),
+      connections: (b, signal) => this.connectionOp(b, signal),
       // amb-control 插件按机器人取指令；不认识的机器人（已删除、已停止）让它别再来
       control: {
         poll: (b, signal) => this.hosts.get(String(b?.botId ?? ""))?.control.poll(b, signal) ?? Promise.resolve({ stop: true }),
@@ -239,6 +244,7 @@ export class AgentManager {
         settings: () => this.settings(botId),
         onNotice: this.o.onNotice,
         media: !!this.o.media,
+        connections: () => this.o.connections?.available() ?? {},
         contextWindow: this.o.contextWindow,
         apiInfo: this.o.apiInfo,
         apiFallbacks: this.apiFallbacks,
@@ -667,6 +673,27 @@ export class AgentManager {
    * 生图 / 生视频：只在该机器人有回合进行中时受理（工具调用只会发生在回合里）。
    * models / docs 直接回答；image / video 直接生成，预计花费超过上限或设成每次都问时（mediaAsk）先问用户用哪个模型。
    */
+  /**
+   * 已授权账号：全局一份，所有机器人共用，机器人之间的差别只来自权限。写操作在这里再查一次（插件只是不给写工具）：
+   * 只读机器人和观察规则不能写。错误文字直接给模型看（accounts.ts）。
+   */
+  private async connectionOp(b: any, signal: AbortSignal): Promise<{ text?: string; error?: string }> {
+    const botId = String(b?.botId ?? "");
+    const connections = this.o.connections;
+    if (!connections || !this.hosts.has(botId)) return { error: "Connected accounts are not available." };
+    const service = String(b?.service ?? "");
+    const op = String(b?.op ?? "");
+    if (connections.isWrite(service, op)) {
+      if (this.settings(botId).permission === "readonly") return { error: "This bot is read-only, so it can't change anything in connected accounts." };
+      if (this.ruleOf(botId, String(b?.sessionId ?? ""))?.mode === "observe") return { error: "This rule only observes, so it can't change anything in connected accounts." };
+    }
+    try {
+      return { text: await connections.run(service, op, (b?.args ?? {}) as Record<string, unknown>, signal) };
+    } catch (e) {
+      return { error: e instanceof ConnectionError ? e.message : "The connected account is temporarily unavailable." };
+    }
+  }
+
   private async mediaOp(b: any): Promise<{ text?: string; error?: string }> {
     const botId = String(b?.botId ?? "");
     // 后台任务里还不能生成（确认要问用户，3b 才有任务的提问）

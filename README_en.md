@@ -301,7 +301,7 @@ AnyModelBot works in the background too: a task you hand over can finish in the 
 | Memory (Markdown files) | Screenshots, when you ask a bot to look at your screen with computer use |
 | Files in each bot's workspace | Messages you exchange over chat channels, which pass through those platforms |
 | Your API key and sign-in tokens | Your sign-in with Modelflare, which happens at modelflare.dev |
-| Settings | |
+| Settings | If you add Notion or Feishu accounts, bots read and write in those accounts, and what they read also goes into model requests |
 
 Modelflare keeps request logs; its [Trust Center](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme) explains what is kept and for how long. We do not claim your data is beyond all risk: anything you send to a model leaves your device. The full inventory is in [docs/privacy_en.md](./docs/privacy_en.md).
 

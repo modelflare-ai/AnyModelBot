@@ -33,6 +33,8 @@ This document explains what AnyModelBot stores where, what leaves your device, a
 | Background tasks and rules | `anymodel.db` (tasks, rules and run logs, kept 30 days); task folders in `workspaces/<bot>/tasks/`, deleted after 30 days unused (you are told first in Needs you); their session files in `dsh/<bot>/sessions/`, deleted with the task | While they run | As for chats: context in model requests, sent through Modelflare to the provider you chose |
 | Settings | `config.json` | No | — |
 | Logs | `logs/app.log` (rotated by size) | No; "Copy diagnostics" is something you copy by hand, with keys replaced by `***` | — |
+| Tokens for connected accounts (Notion, Feishu, only if you add them) | `anymodel.db`; shared by all bots | Sent to that service as authentication each time a bot reads or writes | Notion, Feishu |
+| Notion content and Feishu messages a bot reads | Not stored separately; once in a chat they're stored with that chat | Yes | Sent as context in model requests, through Modelflare to the provider you chose |
 | Screenshots (computer use) | Not kept long-term | Yes | Sent as part of the model request through Modelflare to a vision-capable model; never forwarded to WeChat or Feishu chats unless you ask for them as files |
 
 ## Local console access control

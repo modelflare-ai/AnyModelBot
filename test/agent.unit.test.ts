@@ -621,6 +621,22 @@ describe("full access patch", () => {
     expect(text).toContain("\n- id: web\n  config:\n    searchProvider: amb\n    fetchProvider: http\n");
     expect(JSON.parse(env.AMB_DENY_READ)).toHaveLength(1);
   });
+  it("已授权账号：插件总在补丁里，有账号才给工具；只读机器人没有 Notion 写工具；账号变化要重启空闲的代理进程", () => {
+    const hostFor = (permission: "readonly" | "workspace", connections: () => { notion?: boolean; feishu?: boolean }) =>
+      new AgentHost({ botId: "b", dataDir: fs.mkdtempSync(path.join(os.tmpdir(), "amb-conn-host-")), runtimeDir: "/rt", bridge: { url: "http://127.0.0.1:1", token: "t" } as any, store: new Store(":memory:"), settings: () => normalizeSettings({ permission }), connections });
+    let on: { notion?: boolean; feishu?: boolean } = {};
+    const host = hostFor("workspace", () => on);
+    const env = () => (host as any).env() as Record<string, string>;
+    expect(JSON.parse(env().AMB_CONNECTIONS)).toEqual({});
+    const before = (host as any).settingsSig();
+    on = { notion: true, feishu: true };
+    expect(JSON.parse(env().AMB_CONNECTIONS)).toEqual({ notion: "write", feishu: "read" });
+    expect((host as any).settingsSig()).not.toBe(before);
+    expect(JSON.parse((hostFor("readonly", () => ({ notion: true, feishu: true })) as any).env().AMB_CONNECTIONS)).toEqual({ notion: "read", feishu: "read" });
+    fs.mkdirSync(host.home, { recursive: true });
+    const text = fs.readFileSync((host as any).writePatch("m", []), "utf8");
+    expect(text).toContain('    - id: amb-connections\n      name: "/rt/plugins/amb-connections.mjs"\n');
+  });
   it("other presets keep DSH's own permission rows", () => {
     for (const p of ["workspace", "readonly"] as const) {
       const { text, env } = patch(p);

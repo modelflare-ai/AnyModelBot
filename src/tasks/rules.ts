@@ -24,12 +24,12 @@ export const RULE_RUN_CAP_MS = 15 * 60_000;
 export const RULE_APPROVAL_TTL_MS = 3600_000;
 
 /**
- * 规则会话去掉的工具（只去掉注册了的；插件按 tools.restrict 的规矩过滤）。观察：能改变什么的都去掉，记忆只留 recall；
+ * 规则会话去掉的工具（只去掉注册了的；插件按 tools.restrict 的规矩过滤）。观察：能改变什么的都去掉，记忆只留 recall，已授权账号只留读取；
  * 执行：上限是可写工作区（决定 12），电脑操作和生图、生视频不给（设计第 7 节：除非规则上开了，3d 不做这个开关）。
  */
 const COMMON_DENY = ["present", "ask_user_question", "task_start", "task_message", "task_list", "rule_create", "rule_update", "background_pause", "generate_image", "generate_video", "media_models", "media_docs"];
 export const RULE_DENY: Readonly<Record<"observe" | "act", string[]>> = {
-  observe: [...COMMON_DENY, "remember", "forget"],
+  observe: [...COMMON_DENY, "remember", "forget", "notion_create_page", "notion_update_page"],
   act: COMMON_DENY,
 };
 /** 按前缀拒绝的工具（MCP 的电脑操作，名字随平台变化，没法列全） */

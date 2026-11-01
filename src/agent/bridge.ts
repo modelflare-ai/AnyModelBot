@@ -24,6 +24,8 @@ export interface BridgeHandlers {
   media?(body: any): Promise<unknown>;
   /** amb-web-search 插件：web_search 的一次搜索（signal = 连接断了：工具超时或回合被中止） */
   search?(body: any, signal: AbortSignal): Promise<unknown>;
+  /** amb-connections 插件：已授权账号的一次工具调用（signal = 连接断了：工具超时或回合被中止） */
+  connections?(body: any, signal: AbortSignal): Promise<unknown>;
   /** amb-control 插件：长轮询取宿主的指令（signal = 连接断了）、回报结果 */
   control?: { poll(body: any, signal: AbortSignal): Promise<unknown>; result(body: any): void };
   /** 服务端压缩：长会话的 /v1/responses 换上上游压缩过的历史（见 server-compaction.ts） */
@@ -55,6 +57,7 @@ export const BOT_HEADER = "x-amb-bot";
  * - /dsh/ask|wait|cancel：amb-bridge 插件的审批/提问长轮询
  * - /dsh/control/poll|result：amb-control 插件取宿主的指令（中止、插话、换模型）并回报
  * - /dsh/search：amb-web-search 插件（web_search 由宿主联网搜索）
+ * - /dsh/connections：amb-connections 插件（已授权账号的令牌只在宿主这边）
  * - /dsh/task-report|task-settled|task-tool|task-config：amb-tasks 插件（后台任务的报告、收尾结束、聊天代理的任务工具、规则会话的配置）
  */
 export class AgentBridge {
@@ -277,6 +280,11 @@ export class AgentBridge {
       const ac = new AbortController();
       res.on("close", () => ac.abort());
       out = await this.h.search(body, ac.signal);
+    }
+    else if (url === "/dsh/connections" && this.h.connections) {
+      const ac = new AbortController();
+      res.on("close", () => ac.abort());
+      out = await this.h.connections(body, ac.signal);
     }
     else if (url === "/dsh/control/poll" && this.h.control) {
       const ac = new AbortController();

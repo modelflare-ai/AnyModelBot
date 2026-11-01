@@ -301,7 +301,7 @@ AnyModelBot 同样能在后台干活：交代的任务可以在后台跑完，�
 | 记忆（Markdown 文件） | 你让机器人用电脑操作看屏幕时的屏幕截图 |
 | 每个机器人工作区里的文件 | 你通过聊天渠道收发的消息，会经过对应的平台 |
 | 你的 API Key 和登录令牌 | 你登录 Modelflare 的过程，发生在 modelflare.dev |
-| 设置 | |
+| 设置 | 你添加 Notion 或飞书账号后，机器人会读写这些账号的内容，读到的内容也会进入模型请求 |
 
 Modelflare 会保留请求日志；保留什么、保留多久，见它的[信任中心](https://modelflare.dev/trust?utm_source=anymodelbot&utm_campaign=amb_readme)。我们不声称能做到万无一失：凡是你发给模型的内容，都会离开你的设备。完整清单见 [docs/privacy.md](./docs/privacy.md)。
 

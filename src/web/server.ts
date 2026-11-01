@@ -22,6 +22,7 @@ import type { ApprovalRow, Message, Store } from "../store/db.js";
 import { defaultLine } from "../agent/approvals.js";
 import { normalizeSettings } from "../agent/settings.js";
 import { SEARCH_PROVIDERS, normalizeSearxUrl, type SearchProvider } from "../agent/search.js";
+import { ConnectionError } from "../agent/accounts.js";
 import { scopeLabel } from "../agent/memory.js";
 import { pwshProbe, type PwshMode, type PwshStatus } from "../agent/pwsh.js";
 import { ACCESS_CHANNELS, peerName, shortPeer, whoText, type AccessChannel } from "../core/access.js";
@@ -90,6 +91,9 @@ async function readJson(req: http.IncomingMessage): Promise<any> {
   }
   return body ? JSON.parse(body) : {};
 }
+
+/** Notion 一键授权的回调地址（必须和注册时一致，所以固定） */
+const NOTION_CALLBACK = "/oauth/notion/callback";
 
 function send(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -489,6 +493,58 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       return send(res, 200, { ...app.agent.status(), busy: [...new Set([...live.bots(), ...app.runtime.busyBots()])], background: app.tasks.background(), attention: items.length, needs: app.attention.byBot(items) });
     }
     // —— 需要你（3b）：所有机器人里在等人的事，和对它们的操作 ——
+    // 已授权账号（设置 › 连接）：全局一份，所有机器人共用。令牌不出现在任何回复里
+    if (seg[0] === "connections") {
+      const c = app.connections;
+      const guard = async <T>(run: () => Promise<T>): Promise<T> => {
+        try {
+          return await run();
+        } catch (e) {
+          if (e instanceof ConnectionError) throw new HttpError(400, e.message);
+          throw e;
+        }
+      };
+      if (seg.length === 1 && m === "GET") return send(res, 200, { accounts: c.accounts.view() });
+      if (p === "/connections/notion/token" && m === "POST") {
+        const b = await readJson(req);
+        const token = String(b.token ?? "").trim();
+        if (!token) throw new HttpError(400, t("web.notionTokenRejected"));
+        const who = await c.notion.verifyToken(token);
+        if (who.rejected) throw new HttpError(400, t("web.notionTokenRejected"));
+        c.accounts.upsert({ service: "notion", label: who.label, identity: who.identity, auth: { kind: "notion-token", token } });
+        return send(res, 200, { accounts: c.accounts.view() });
+      }
+      if (p === "/connections/notion/oauth" && m === "POST") {
+        const url = await guard(() => c.notion.startAuthorization(`http://127.0.0.1:${boundPort}${NOTION_CALLBACK}`));
+        return send(res, 200, { url });
+      }
+      if (p === "/connections/feishu" && m === "POST") {
+        const b = await readJson(req);
+        const appId = String(b.appId ?? "").trim();
+        const appSecret = String(b.appSecret ?? "").trim();
+        if (Boolean(appId) !== Boolean(appSecret)) throw new HttpError(400, t("web.feishuAppIncomplete"));
+        return send(res, 200, { flow: c.feishu.startFlow(appId ? { appId, appSecret } : undefined) });
+      }
+      if (seg[1] === "flows" && seg[2]) {
+        if (m === "DELETE") {
+          c.feishu.cancelFlow(seg[2]);
+          return send(res, 200, { ok: true });
+        }
+        const flow = c.feishu.flow(seg[2]);
+        if (!flow) throw new HttpError(404, "not found");
+        return send(res, 200, { flow, accounts: c.accounts.view() });
+      }
+      if (seg.length === 2 && m === "PUT") {
+        const b = await readJson(req);
+        if (!c.accounts.rename(seg[1], String(b.label ?? ""))) throw new HttpError(400, t("web.badAccountName"));
+        return send(res, 200, { accounts: c.accounts.view() });
+      }
+      if (seg.length === 2 && m === "DELETE") {
+        c.accounts.remove(seg[1]);
+        return send(res, 200, { accounts: c.accounts.view() });
+      }
+      throw new HttpError(405, "method not allowed");
+    }
     if (seg[0] === "attention") {
       if (seg.length === 1 && m === "GET") return send(res, 200, { items: app.attention.list() });
       const id = decodeURIComponent(seg[1] ?? "");
@@ -1115,6 +1171,23 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
 
   // 界面请求带 x-amb-lang（界面当前的语言）：整个请求里的报错和状态文字都用这种语言（src/i18n）；
   // 没带的（curl、旧页面）按应用的语言偏好。连接关闭后，请求里启动的后台任务退回应用语言
+  async function notionCallback(res: http.ServerResponse, url: URL): Promise<void> {
+    let title = t("web.oauthDone");
+    let detail = t("web.oauthClose");
+    try {
+      const account = await app.connections.notion.finishAuthorization({ state: url.searchParams.get("state"), code: url.searchParams.get("code"), error: url.searchParams.get("error") });
+      detail = `${account.label} · ${detail}`;
+    } catch (e) {
+      title = t("web.oauthFailed");
+      detail = e instanceof ConnectionError ? e.message : t("web.oauthFailedRetry");
+      if (!(e instanceof ConnectionError)) log.warn("notion authorization failed", { message: (e as Error).message });
+    }
+    const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" }).end(
+      `<!doctype html><meta charset="utf-8"><title>${escape(title)}</title><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font:16px system-ui,sans-serif;display:grid;place-content:center;min-height:90vh;text-align:center"><h1 style="font-size:20px;font-weight:600">${escape(title)}</h1><p>${escape(detail)}</p></body>`,
+    );
+  }
+
   const server = http.createServer((req, res) => {
     const scope = requestLang(normalizeLang(req.headers["x-amb-lang"]));
     res.once("close", scope.end);
@@ -1122,6 +1195,11 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
   });
   function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = new URL(req.url || "/", "http://localhost");
+    // Notion 授权页跳回来：地址是固定的回环地址，浏览器不一定带着控制台的令牌；一次性的 state 就是凭据（notion.ts）
+    if (url.pathname === NOTION_CALLBACK && req.method === "GET") {
+      void notionCallback(res, url);
+      return;
+    }
     if (!authorized(req, url, res)) return;
     if (url.pathname.startsWith("/amb/api/")) {
       api(req, res, url).catch((e) => {

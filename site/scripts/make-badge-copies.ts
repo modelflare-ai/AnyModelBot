@@ -2,7 +2,7 @@
 // 页面 HTML 里的站方原码不变，校验机器人读到的还是站方的图片地址；备份只是垫在下面（styles/footer.css）。
 //
 // 一律转成 WebP：大的 SVG 有几十 KB，放不进 check-images 的 SVG 预算；转成位图也就不用在自家域名上托管第三方 SVG。
-// 高度 88px，是页脚显示高度（44px）的两倍。
+// 高度 88px：页脚格子里最高显示 30px，三倍屏也够清晰。
 //
 // 用法：npm run badges:copies（需要联网）。data/badges.ts 新增或换了图片徽章后要重跑，check-images 会查缺的文件。
 import fs from "node:fs";

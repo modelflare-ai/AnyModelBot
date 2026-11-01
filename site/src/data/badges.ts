@@ -16,12 +16,11 @@ export interface Badge {
   /** 站方的深色款，深色主题用 */
   dark?: string;
   /**
-   * 默认：图片徽章，统一缩放到一个高度。
-   * natural：图片徽章，但本身就矮，保持站方尺寸。
+   * 默认：图片徽章，在格子里等比缩放。
    * text：站方只要一条文字链接。
    * html：站方用 HTML 画的徽章，页脚的样式会盖掉它自带的底色和边框。
    */
-  kind?: "natural" | "text" | "html";
+  kind?: "text" | "html";
   /** 取不到站方的图，没有本地备份：站方的图加载出来之前，格子里显示站名 */
   noCopy?: boolean;
 }
@@ -61,7 +60,6 @@ export const BADGES: Badge[] = [
   },
   {
     name: "Mydentify",
-    kind: "natural",
     html: `<a href="https://mydentify.com/" aria-label="Listed on Mydentify"><img src="https://mydentify.com/badges/listed-on-mydentify.svg" alt="Listed on Mydentify" width="176" height="32"></a>`,
   },
   {

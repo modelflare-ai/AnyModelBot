@@ -19,35 +19,38 @@
   .footer__cols ul { display: grid; gap: 10px; font-size: var(--fs-sm); }
   .footer__cols a { color: var(--text-2); transition: color var(--dur-fast); }
   .footer__cols a:hover { color: var(--text); text-decoration: none; }
-  /* 收录徽章（data/badges.ts）：站方的徽章宽窄、高矮、底色各不相同，统一放进同样大小的格子，边框和底色由本站定。
-     原码带着各自的尺寸和内联样式，所以下面要用 !important 盖过内联。
-     图片高度 44px 不要再往小改：Aura++ 这类站方要求徽章不小于 150×44。格子最窄 216px，是因为最宽的 OpenHunts 在这个高度下有 204px */
-  .footer__featured { margin-top: 40px; }
-  .footer__badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(216px, 1fr)); gap: 10px; }
-  .footer__badge { position: relative; display: grid; place-items: center; height: 56px; border: 1px solid var(--line); border-radius: var(--r-item); background: var(--bg-raised); transition: border-color var(--dur-fast); }
-  .footer__badge > * { grid-area: 1 / 1; }
-  .footer__badge:hover { border-color: var(--line-strong); }
+  /* 收录徽章（data/badges.ts）：几十个站方徽章，只是页脚的一条署名，要紧凑、不抢眼。
+     统一放进小格子，图片在格子里等比缩放（object-fit），原码的尺寸和内联样式都用 !important 盖掉；平时灰阶，指到时恢复原色。
+     HTML 里的站方原码不变，校验机器人读到的 width / height 还是站方给的 */
+  .footer__featured { margin-top: 32px; }
+  .footer__featured .footer__title { margin-bottom: 10px; }
+  .footer__badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 6px; }
+  .footer__badge { position: relative; display: grid; place-items: center; height: 38px; border-radius: 8px; background: var(--hover); filter: grayscale(1); opacity: .82; transition: filter var(--dur-fast), opacity var(--dur-fast); }
+  .footer__badge:hover, .footer__badge:focus-within { filter: none; opacity: 1; }
   [data-theme="dark"] .footer__badge[data-on="light"], [data-theme="light"] .footer__badge[data-on="dark"] { display: none; }
   /* 链接铺满整格，整格都能点 */
-  .footer__badge a { position: absolute; inset: 0; display: flex !important; align-items: center; justify-content: center; border-radius: var(--r-item); }
+  .footer__badge a { position: absolute; inset: 0; display: flex !important; align-items: center; justify-content: center; padding: 4px; border-radius: 8px; }
   .footer__badge a:hover { text-decoration: none; }
   .footer__badge img { display: block; }
-  .footer__badge:not([data-kind]) img { width: auto !important; height: 44px !important; max-width: none !important; }
-  .footer__badge[data-kind="natural"] img { width: auto; height: 32px; }
+  .footer__badge:not([data-kind]) a img { width: 100% !important; height: 100% !important; max-width: none !important; object-fit: contain; }
+  .footer__badge-copy { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); max-width: none; object-fit: contain; }
   /* 站方的图加载成功才显示（scripts/badges.ts 加 is-loaded）。还在等、连不上或被插件拦截时，格子里显示的是 public/badges/ 的备份，
      不会出现破图图标和裸露的 alt 文字。没有 JS 时直接显示站方的图，备份垫在下面 */
   .js .footer__badge:not(.is-loaded) a img { opacity: 0; }
   .footer__badge.is-loaded .footer__badge-copy { display: none; }
-  /* 没有备份的徽章（badges.ts 的 noCopy）：站方的图加载出来之前显示站名 */
-  .js .footer__badge[data-label]:not(.is-loaded)::before { content: attr(data-label); grid-area: 1 / 1; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; }
-  .footer__badge[data-kind="text"] a { color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; transition: color var(--dur-fast); }
+  /* 文字徽章，以及没有备份的徽章（badges.ts 的 noCopy）在站方的图加载出来之前显示的站名 */
+  .footer__badge[data-kind="text"] a, .js .footer__badge[data-label]:not(.is-loaded)::before { color: var(--text-2); font-size: 11.5px; font-weight: 500; line-height: 1.2; text-align: center; }
+  .js .footer__badge[data-label]:not(.is-loaded)::before { content: attr(data-label); }
+  .footer__badge[data-kind="text"] a { padding: 0 8px; transition: color var(--dur-fast); }
   .footer__badge[data-kind="text"] a:hover { color: var(--text); }
-  /* TopAITools4U 是站方用内联样式画的白底卡片，这里去掉它自己的底色和边框，字色跟主题走 */
-  .footer__badge[data-kind="html"] a { padding: 0 !important; border: 0 !important; background: none !important; color: var(--text) !important; font-family: inherit !important; }
-  .footer__badge[data-kind="html"] a > span > span:first-child { color: var(--text-2) !important; }
-  /* 手机上排成网格会有十几屏长，改成贴边的三行横滑，右边露出半格提示还能滑。只是摆放方式，HTML 不变，校验机器人照样读得到 */
+  /* TopAITools4U 是站方用内联样式画的白底卡片：去掉它自己的底色和边框，字色跟主题走，图标和字号缩到格子里放得下 */
+  .footer__badge[data-kind="html"] a { padding: 0 !important; gap: 6px !important; border: 0 !important; background: none !important; color: var(--text) !important; font-family: inherit !important; }
+  .footer__badge[data-kind="html"] a img { flex: none; width: 20px !important; height: 20px !important; border-radius: 5px !important; }
+  .footer__badge[data-kind="html"] a > span > span:first-child { color: var(--text-2) !important; font-size: 8.5px !important; }
+  .footer__badge[data-kind="html"] a > span > span:last-child { font-size: 11.5px !important; }
+  /* 手机上排成网格仍然很长，改成贴边的三行横滑，右边露出半格提示还能滑。只是摆放方式，HTML 不变 */
   @media (max-width: 767px) {
-    .footer__badges { grid-template-columns: none; grid-template-rows: repeat(3, auto); grid-auto-flow: column; grid-auto-columns: 216px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); }
+    .footer__badges { grid-template-columns: none; grid-template-rows: repeat(3, 38px); grid-auto-flow: column; grid-auto-columns: 124px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); }
   }
   .footer__bottom { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: var(--fs-xs); color: var(--text-2); }
   .footer__switch { margin-left: auto; display: flex; gap: 16px; }

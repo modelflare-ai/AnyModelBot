@@ -1,15 +1,17 @@
 ---
 // 页脚：品牌（标记 + 一句话）｜ 三栏链接 → 收录徽章 → 版权行 → 眼睛田。
-// 收录徽章的原码和取舍见 data/badges.ts：要写进静态 HTML，校验机器人不跑 JS。
+// 收录徽章的原码和取舍见 data/badges.ts：要写进静态 HTML，校验机器人不跑 JS。默认收起成一两排，只是样式，HTML 里始终是全部徽章。
 // 眼睛田是页脚最下面的大字标：AnyModelBot 由几百枚迷你 Eyes 标记拼成，跟着指针看、点一下发消息、定时"换脑"（scripts/eyefield.ts）。
 // 纯装饰（aria-hidden），没有 JS 时整块不显示；样式在 styles/footer.css。
 import "../styles/footer.css";
 import EyesMark from "./EyesMark.astro";
-import { dict, href, altLang, switchHref, type Lang } from "../i18n";
+import Icon from "./Icon.astro";
+import { dict, fmt, href, altLang, switchHref, type Lang } from "../i18n";
 import { GITHUB_URL, MF, pricing } from "../lib/site";
 import { docsUrl } from "../lib/docs";
 import { pickModels } from "../lib/eyefield";
 import { BADGES, badgeVariants } from "../data/badges";
+import badgeRatios from "../data/badge-ratios.json";
 interface Props { lang: Lang; path: string }
 const { lang, path } = Astro.props;
 const t = dict(lang);
@@ -27,7 +29,15 @@ const other = altLang(lang);
 const models = pickModels(pricing.rows);
 // 图片懒加载：被隐藏的那个主题款不会发请求，页面也只在快到页脚时才请求这些外部图片
 const lazy = (html: string) => html.replace(/<img\b([^>]*)>/g, (_, attrs: string) => `<img${/\sloading=/.test(attrs) ? "" : ' loading="lazy"'} decoding="async"${attrs}>`);
-const badges = BADGES.flatMap((b) => badgeVariants(b).map((v) => ({ ...v, kind: b.kind, label: b.noCopy ? b.name : undefined, html: lazy(v.html) })));
+// 有深色款的排最前面：收起时露出来的第一排，在两个主题下都和页面底色协调
+const ratios: Record<string, number> = badgeRatios;
+const badges = [...BADGES.filter((b) => b.dark), ...BADGES.filter((b) => !b.dark)].flatMap((b) => badgeVariants(b).map((v) => ({
+  ...v,
+  kind: b.kind,
+  label: b.noCopy ? b.name : undefined,
+  ratio: v.copy ? ratios[v.copy.path] : b.ratio,
+  html: lazy(v.html),
+})));
 ---
 <footer class="footer">
   <div class="container footer__inner">
@@ -50,9 +60,14 @@ const badges = BADGES.flatMap((b) => badgeVariants(b).map((v) => ({ ...v, kind: 
   </div>
   <div class="container footer__featured">
     <h2 class="footer__title">{t.footer.featured}</h2>
-    <ul class="footer__badges" role="list">
+    <button class="footer__more" type="button" aria-expanded="false" aria-controls="footer-badges">
+      <span data-when="closed">{fmt(t.footer.featuredMore, { count: BADGES.length })}</span>
+      <span data-when="open">{t.footer.featuredLess}</span>
+      <Icon name="chevron" size={14} />
+    </button>
+    <ul class="footer__badges" id="footer-badges" role="list">
       {badges.map((b) => (
-        <li class="footer__badge" data-kind={b.kind} data-on={b.on} data-label={b.label}>
+        <li class="footer__badge" data-kind={b.kind} data-on={b.on} data-label={b.label} style={b.ratio ? `--r:${b.ratio}` : undefined}>
           {b.copy && <img class="footer__badge-copy" src={`/${b.copy.path}`} alt="" loading="lazy" decoding="async" />}
           <Fragment set:html={b.html} />
         </li>

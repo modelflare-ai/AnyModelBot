@@ -39,8 +39,11 @@ for (const f of files.filter((f) => /^bots\/.+\.webp$/.test(f))) {
   if (!files.includes(`bots/${key}.avif`) || avifOf[key] !== hash) bad.push(`bots/${key}.avif 不是从当前的 ${f} 生成的（npm run bots:avif 重新生成）`);
 }
 // 每张图片徽章都要有本地备份，否则站方的图连不上时格子是空的（styles/footer.css）
+// 也要有宽高比，否则页脚只能按默认宽度摆，图片会变小（styles/footer.css 的 --r）
+const badgeRatios: Record<string, number> = JSON.parse(fs.readFileSync(path.join(root, "src/data/badge-ratios.json"), "utf8"));
 for (const { copy } of BADGES.flatMap(badgeVariants)) {
   if (copy && !files.includes(copy.path)) bad.push(`${copy.path} 不存在（npm run badges:copies 重新生成）`);
+  else if (copy && !badgeRatios[copy.path]) bad.push(`${copy.path} 在 badge-ratios.json 里没有宽高比（npm run badges:copies 重新生成）`);
 }
 const fonts = files.filter((f) => f.endsWith(".woff2")).reduce((n, f) => n + fs.statSync(path.join(pub, f)).size, 0);
 if (fonts > 60 * KB) bad.push(`字体合计 ${Math.round(fonts / KB)} KB（≤ 60 KB）`);

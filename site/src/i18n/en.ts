@@ -408,6 +408,8 @@ export const en: Dict = {
     art: "Character art © the AnyModelBot project",
     tagline: "AI teammates that live on your machine. One key for every major model — swap brains any time.",
     featured: "Featured on",
+    featuredMore: "Show all {count}",
+    featuredLess: "Show less",
     // Footer eye field: the wordmark is made of a crowd of bot faces
     fieldHint: "Click to message them all",
     fieldModel: "Brain",

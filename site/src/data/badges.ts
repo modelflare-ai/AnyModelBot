@@ -16,13 +16,15 @@ export interface Badge {
   /** 站方的深色款，深色主题用 */
   dark?: string;
   /**
-   * 默认：图片徽章，在格子里等比缩放。
+   * 默认：图片徽章，等高排列，宽度跟着图片自己的比例走。
    * text：站方只要一条文字链接。
    * html：站方用 HTML 画的徽章，页脚的样式会盖掉它自带的底色和边框。
    */
   kind?: "text" | "html";
-  /** 取不到站方的图，没有本地备份：站方的图加载出来之前，格子里显示站名 */
+  /** 取不到站方的图，没有本地备份：站方的图加载出来之前，徽章的位置上显示站名 */
   noCopy?: boolean;
+  /** 没有备份的图片徽章的宽高比，取站方原码的 width / height。有备份的不用写，量备份得到（badge-ratios.json） */
+  ratio?: number;
 }
 
 export interface BadgeVariant {
@@ -136,6 +138,7 @@ export const BADGES: Badge[] = [
     // 站方开了 Vercel 安全检查，服务器请求这张图只拿到 429 和验证页（2026-11-01），所以没有备份；访客的浏览器能否加载也不确定
     name: "Startup Fame",
     noCopy: true,
+    ratio: 3.17,
     html: `<a href="https://startupfa.me/s/anymodelbot?utm_source=anymodel.bot" target="_blank"><img src="https://startupfa.me/badges/featured-badge.webp" alt="AnyModelBot - Featured on Startup Fame" width="171" height="54" /></a>`,
   },
   {

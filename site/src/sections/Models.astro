@@ -99,7 +99,9 @@ const inner = vendors.slice(0, 8);
         <div class="marquee__track">{[...models, ...models].map((x) => <span class="marquee__item mono"><VendorLogo vendor={vendorOf[x]} size={15} />{x}</span>)}</div>
       </div>
     </div>
-    <p class="sr-only">{t.models.marqueeLabel}：{vendors.join("、")}；{models.join("、")}</p>
+    <p class="sr-only">{lang === "en"
+      ? `${t.models.marqueeLabel}: ${vendors.join(", ")}; ${models.join(", ")}`
+      : `${t.models.marqueeLabel}：${vendors.join("、")}；${models.join("、")}`}</p>
 
     <div class="models__pricing">
       <div class="models__price-head">

@@ -1,12 +1,15 @@
 ---
 import Base from "../layouts/Base.astro";
 import { dict, type Lang } from "../i18n";
-import notices from "../data/third-party.md?raw";
+import noticesZh from "../data/third-party.md?raw";
+import noticesEn from "../data/third-party.en.md?raw";
 import "../styles/pages.css";
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const t = dict(lang);
 const l = t.licenses;
+// 第三方声明：中文页用仓库根目录的 THIRD_PARTY_NOTICES.md，英文页用 THIRD_PARTY_NOTICES_en.md（sync-from-app 同步过来）
+const notices = lang === "en" ? noticesEn : noticesZh;
 ---
 <Base lang={lang} path="/licenses" title={l.title} description={l.description}>
   <article class="container page">

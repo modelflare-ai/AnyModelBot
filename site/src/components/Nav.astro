@@ -24,9 +24,10 @@ const links = [
 const other = altLang(lang);
 const langHref = switchHref(lang, path);
 const langHreflang = other === "en" ? "en" : "zh-CN";
+// 语言菜单：中文页用各自的本名；英文页整页不出现中文，"简体中文"写成英文（文字是英文，lang 也跟着标 en）
 const LANGS = [
-  { code: "zh", name: "简体中文", tag: "zh-CN" },
-  { code: "en", name: "English", tag: "en" },
+  { code: "zh", name: lang === "en" ? "Simplified Chinese" : "简体中文", tag: "zh-CN", textLang: lang === "en" ? "en" : "zh-CN" },
+  { code: "en", name: "English", tag: "en", textLang: "en" },
 ] as const;
 const themes = [
   { pref: "light", icon: "sun", label: t.nav.themeLight },
@@ -52,8 +53,8 @@ const themes = [
           <button class="nav__util nav__util--icon" type="button" aria-haspopup="menu" aria-expanded="false" aria-label={t.nav.langLabel} data-tip={t.nav.langLabel} data-menu-toggle><Icon name="globe" size={16} /></button>
           <div class="menu" role="menu" aria-label={t.nav.langLabel} hidden>
             {LANGS.map((l) => l.code === lang
-              ? <button type="button" role="menuitemradio" aria-checked="true" lang={l.tag}><span class="menu__label">{l.name}</span><Icon name="check" size={16} class="menu__check" /></button>
-              : <a role="menuitemradio" aria-checked="false" href={langHref} hreflang={l.tag} lang={l.tag} data-lang-switch><span class="menu__label">{l.name}</span><Icon name="check" size={16} class="menu__check" /></a>)}
+              ? <button type="button" role="menuitemradio" aria-checked="true" lang={l.textLang}><span class="menu__label">{l.name}</span><Icon name="check" size={16} class="menu__check" /></button>
+              : <a role="menuitemradio" aria-checked="false" href={langHref} hreflang={l.tag} lang={l.textLang} data-lang-switch><span class="menu__label">{l.name}</span><Icon name="check" size={16} class="menu__check" /></a>)}
           </div>
         </div>
         <div class="nav__menu">
@@ -96,7 +97,7 @@ const themes = [
   <div class="container drawer__foot">
     <div class="drawer__prefs">
       <a class="lang-seg" href={langHref} hreflang={langHreflang} aria-label={t.nav.langLabel} data-lang-switch>
-        <span data-cur={lang === "zh" ? "" : undefined}>中</span><span data-cur={lang === "en" ? "" : undefined}>EN</span>
+        <span data-cur={lang === "zh" ? "" : undefined}>{lang === "en" ? "ZH" : "中"}</span><span data-cur={lang === "en" ? "" : undefined}>EN</span>
       </a>
       <div class="drawer__theme" role="group" aria-label={t.nav.theme}>
         <button type="button" class="chip" data-theme-set="light">{t.nav.themeLight}</button>

@@ -13,7 +13,8 @@ const { lang, path } = Astro.props;
 const t = dict(lang).banner;
 const items = bannerItems(lang);
 const langHref = switchHref(lang, path);
-const target = lang === "zh" ? { hreflang: "en", lang: "en" } : { hreflang: "zh-CN", lang: "zh-CN" };
+// 语言提示的文字一律是英文：中文页上写给读英文的人；英文页整页不出现中文，也用英文说"有中文版"
+const target = lang === "zh" ? { hreflang: "en", lang: "en" } : { hreflang: "zh-CN", lang: undefined };
 const ext = (a: { external: boolean }) => (a.external ? { target: "_blank", rel: "noopener" } : {});
 const tr = (id: string, kind: string, where: string) => ({ "data-track": "banner_click", "data-track-id": id, "data-track-kind": kind, "data-track-target": where });
 ---

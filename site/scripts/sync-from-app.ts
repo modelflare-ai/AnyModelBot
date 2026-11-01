@@ -19,6 +19,8 @@ for (const f of fs.readdirSync(bots).filter((f) => f.endsWith(".webp"))) {
   fs.copyFileSync(path.join(bots, f), path.join(site, "public/bots", f));
 }
 fs.copyFileSync(path.join(app, "THIRD_PARTY_NOTICES.md"), path.join(site, "src/data/third-party.md"));
+// 英文页用英文译本（英文页整页不出现中文）；改了中文版记得同步改 THIRD_PARTY_NOTICES_en.md
+fs.copyFileSync(path.join(app, "THIRD_PARTY_NOTICES_en.md"), path.join(site, "src/data/third-party.en.md"));
 
 export function botCharsHash(src: string) {
   const m = src.match(/export const BOT_CHARS = (\{[\s\S]*?\n\});/);

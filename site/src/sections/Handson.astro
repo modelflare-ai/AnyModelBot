@@ -75,7 +75,9 @@ const chapters = [
               <span class="file-chip desk__out on-rise" data-at="9000"><Icon name="doc" />{h.file}</span>
             </div>
           </div>
-          <p class="sr-only">{h.demoSteps.join("，")}，{w.approvalTitle}：{h.approvalBody}，{w.allow}，{h.file}</p>
+          <p class="sr-only">{lang === "en"
+            ? `${h.demoSteps.join(", ")}, ${w.approvalTitle}: ${h.approvalBody}, ${w.allow}, ${h.file}`
+            : `${h.demoSteps.join("，")}，${w.approvalTitle}：${h.approvalBody}，${w.allow}，${h.file}`}</p>
         </div>
 
         <div class="story__scene" data-scene="1" style="--tint:var(--bot-green-glow)">

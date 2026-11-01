@@ -7,7 +7,7 @@
 // 舞台卡底光和挂绳随角色换色；窄屏上纵向排列，左右滑动舞台也能换角色。
 // 月薪 = 计算器"日常"预设 × 默认线路价；点开去 /pricing 的计算器，并带上这个模型（计算器读 ?m=）。
 // 名字：每个角色的中英文名都取自它最显眼的那件配饰（天天 Ping ← 天线、闪闪 Twinkle ← 星星、芽芽 Sprout ← 嫩芽、
-// 哒哒 Beat ← 耳机、晶晶 Crystal ← 水晶、飞飞 Pilot ← 飞行护目镜）。工牌上名字旁边写着另一种语言的名字（alias），
+// 哒哒 Beat ← 耳机、晶晶 Crystal ← 水晶、飞飞 Pilot ← 飞行护目镜）。中文页工牌上名字旁边写着英文名（alias）；英文页不写中文名（alias 留空，页面上不出现中文），
 // 座右铭讲名字的由来。证件照上不加任何标注（以前有一个指向配饰的小标签，用户 2026-10-31 要求去掉：没有意义）。
 import BotFace from "../components/BotFace.astro";
 import EyesMark from "../components/EyesMark.astro";
@@ -73,7 +73,7 @@ const perkIcons = ["chat", "layers", "bolt"] as const;
                   </div>
                   <div class="badge-card__id">
                     <p class="badge-card__job eyebrow">{b.chars[k].job}</p>
-                    <h3 class="badge-card__name subhead">{b.chars[k].name} <span class="badge-card__alias" lang={lang === "zh" ? "en" : "zh-CN"}>{b.chars[k].alias}</span></h3>
+                    <h3 class="badge-card__name subhead">{b.chars[k].name}{b.chars[k].alias && <> <span class="badge-card__alias" lang="en">{b.chars[k].alias}</span></>}</h3>
                     <p class="badge-card__motto">{b.chars[k].lead}</p>
                   </div>
                   <dl class="badge-card__fields">

@@ -2,9 +2,9 @@
 name: site
 on:
   push:
-    paths: ["site/**", "ui/design/bots/**", "ui/components/avatar.js", "THIRD_PARTY_NOTICES.md", ".github/workflows/site.yml"]
+    paths: ["site/**", "ui/design/bots/**", "ui/components/avatar.js", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES_en.md", ".github/workflows/site.yml"]
   pull_request:
-    paths: ["site/**", "ui/design/bots/**", "ui/components/avatar.js", "THIRD_PARTY_NOTICES.md", ".github/workflows/site.yml"]
+    paths: ["site/**", "ui/design/bots/**", "ui/components/avatar.js", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES_en.md", ".github/workflows/site.yml"]
 jobs:
   check:
     runs-on: ubuntu-latest

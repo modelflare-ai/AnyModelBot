@@ -1,8 +1,9 @@
 // 首页"在哪都能用"（sections/Devices.astro）里的聊天渠道：切换台里的入口和接入步骤都由这里生成。
 //
 // 不放在 i18n 里：中英文页面展示的渠道可以不同，不是同一份内容的两种语言——
-// 中文页面是微信、飞书；英文页面是微信、飞书，外加标着 Coming soon 的 Slack（应用里还没有 Slack 渠道）。
-// 只列应用里真有的渠道；还没做好的写 soon（卡片和标签上标出来，接入指南里不放步骤），做好了再补步骤、去掉 soon。
+// 中文页面是微信、飞书；英文页面是 Slack、Telegram、Discord、WhatsApp（用户 2026-11-01 定的：英文页不出现微信 / 飞书，
+// 这四个直接按已支持来写；应用里目前只有 weixin、feishu 两个渠道，接入步骤照各平台的通用做法写，渠道做好后按真实界面核对）。
+// 还没做好、要标出来的渠道写 soon（卡片和标签上标出来，接入指南里不放步骤），做好了再补步骤、去掉 soon。
 // 所以两边条数可以不同，check-i18n 的"结构一致"不适用；禁词扫描（scripts/banned.ts）照样覆盖这个文件。
 //
 // 改渠道只改这一个文件：清单顺序就是数组顺序；icon 用 components/Icon.astro 里的自绘线稿，不用品牌 Logo；
@@ -53,33 +54,49 @@ export const CHANNELS: Record<Lang, Channel[]> = {
   ],
   en: [
     {
-      id: "wechat", icon: "chat", title: "WeChat", body: "Scan a QR code, then chat with it right in WeChat — pictures and files too.", format: "Channel (iLink QR login)",
+      id: "slack", icon: "hash", title: "Slack", body: "Message it in a Slack DM — at your desk or on your phone, pictures and files too.", format: "Channel (Socket Mode)",
       guide: {
-        title: "Connect WeChat",
+        title: "Connect Slack",
         steps: [
-          "Click the bot name at the top of the chat → info panel → Channels → WeChat → Log in with QR code.",
-          "Scan the QR code with WeChat and confirm. You can also run npm run weixin:login from the command line.",
-          "The login is kept in your data directory and resumes after restarts; when it expires, the app asks you to scan again.",
+          "At api.slack.com/apps, create an app, turn on Socket Mode and generate an app-level token (xapp-…).",
+          "Add the bot scopes chat:write and im:history, subscribe to the message.im event and allow messages in App Home. Install the app to your workspace and copy the bot token (xoxb-…).",
+          "Click the bot name at the top of the chat → info panel → Channels → Slack, paste both tokens and save. Then send the bot a direct message in Slack.",
         ],
-        limit: "Platform limit: after each message you send, the bot can reply at most 10 times within 24 hours.",
+      },
+    },
+    {
+      id: "telegram", icon: "send", title: "Telegram", body: "Create a bot with @BotFather, then chat with it anywhere — pictures and files too.", format: "Channel (bot token)",
+      guide: {
+        title: "Connect Telegram",
+        steps: [
+          "In Telegram, message @BotFather, send /newbot and follow the prompts. Copy the bot token it gives you.",
+          "Click the bot name at the top of the chat → info panel → Channels → Telegram, paste the token and save.",
+          "Open your new bot in Telegram and send it a message. It connects over long polling, so your computer needs no public address.",
+        ],
+      },
+    },
+    {
+      id: "discord", icon: "headset", title: "Discord", body: "Add it to your server, then DM it from the desktop or the Discord app.", format: "Channel (bot token)",
+      guide: {
+        title: "Connect Discord",
+        steps: [
+          "In the Discord Developer Portal, create an application, add a bot and copy its token.",
+          "Under OAuth2 → URL Generator, tick the bot scope and open the link to add the bot to a server you're in.",
+          "Click the bot name at the top of the chat → info panel → Channels → Discord, paste the token and save. Then send the bot a direct message.",
+        ],
+      },
+    },
+    {
+      id: "whatsapp", icon: "phone", title: "WhatsApp", body: "Link a number by QR code, then message it like any other contact.", format: "Channel (QR login)",
+      guide: {
+        title: "Connect WhatsApp",
+        steps: [
+          "Click the bot name at the top of the chat → info panel → Channels → WhatsApp → Log in with QR code.",
+          "On the phone with the bot's number, open WhatsApp → Settings → Linked devices → Link a device, and scan the QR code. A separate number for the bot works best.",
+          "Message that number from your own WhatsApp. The login is kept in your data directory and resumes after restarts; when it expires, the app asks you to scan again.",
+        ],
         qr: "Sample QR code — not scannable",
       },
-    },
-    {
-      id: "feishu", icon: "card", title: "Feishu", body: "A Feishu bot with streaming reply cards and approval cards.", format: "Channel (long connection + cards)",
-      guide: {
-        title: "Connect Feishu",
-        steps: [
-          "On the Feishu Open Platform, create a custom app, add the Bot capability, and grant the permissions to read direct messages, send messages as the app and write cards.",
-          "In the info panel, open Channels → Feishu, enter the App ID and App Secret, and save.",
-          "Under event subscriptions, choose to receive events over a long connection and add im.message.receive_v1. Publish a version, then message the bot in Feishu.",
-        ],
-        limit: "One-to-one chats only for now; group messages are ignored.",
-      },
-    },
-    {
-      id: "slack", icon: "hash", title: "Slack", soon: "Coming soon", body: "We're building it: DM your bot, or @mention it in a channel.", format: "Channel (in development)",
-      guide: { title: "Slack", steps: [] },
     },
   ],
 };

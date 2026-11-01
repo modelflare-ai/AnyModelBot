@@ -15,7 +15,8 @@ interface Props { lang: Lang }
 const { lang } = Astro.props;
 const t = dict(lang);
 const u = t.tour.ui;
-const bots = t.bots.chars;
+const P = t.bots.personas;
+const L = t.bots.looks;
 const isZh = lang === "zh";
 const cps = isZh ? 34 : 64;            // 回复逐字打出的速度：英文字母多，快一点，两种语言差不多同时写完
 const durations = [6000, 8000, 7000, 7500, 8000, 8500, 6500];
@@ -45,9 +46,9 @@ const I = {
 const ic = (d: string, size = 16) => `<svg class="tw-ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 // 侧栏的机器人行（第 4–6 幕）：头像 + 名称 + 时间 + 一行预览
 const sideRows = [
-  { k: "red" as const, name: code, when: "21:08" },
-  { k: "blue" as const, name: bots.blue.name, when: "20:46", snip: bots.blue.bot },
-  { k: "green" as const, name: bots.green.name, when: "18:30", snip: bots.green.bot },
+  { k: "yellow" as const, name: code, when: "21:08" },
+  { k: "blue" as const, name: L.blue.name, when: "20:46", snip: P.pair.bot },
+  { k: "green" as const, name: L.green.name, when: "18:30", snip: P.secretary.bot },
 ];
 const pickerGroups = [
   ["GPT", ["gpt-5.6-sol", "gpt-6-sol"]],
@@ -145,28 +146,34 @@ const tplIcons = [I.file, I.chat, I.terminal];
             <div class="tw__list">
               <div class="tw-row is-sel by-time">
                 <span><span class="tw-row__av"><BotFace char="blue" size={30} class="neutral" /></span><span class="tw-row__body"><b>{u.newBot}</b><span class="tw-row__snip">{u.creating}</span></span></span>
-                <span data-at="4500"><span class="tw-row__av"><BotFace char="red" size={30} /></span><span class="tw-row__body"><b>{code}</b><span class="tw-row__snip">{u.noChat}</span></span></span>
+                <span data-at="4500"><span class="tw-row__av"><BotFace char="yellow" size={30} /></span><span class="tw-row__body"><b>{code}</b><span class="tw-row__snip">{u.noChat}</span></span></span>
               </div>
             </div>
             <div class="tw__acct"><span class="tw__me">M</span><span class="tw__who">Modelflare<small class="tnum">$12.40</small></span><Fragment set:html={ic(I.gear)} /></div>
           </div>
           <div class="tw__main">
             <div class="tw-head">
-              <span class="by-time tw-head__bot"><span><BotFace char="blue" size={22} /><b>{u.newBot}</b></span><span data-at="1000"><BotFace char="red" size={22} /><b>{u.newBot}</b></span></span>
+              <span class="by-time tw-head__bot"><span><BotFace char="blue" size={22} /><b>{u.newBot}</b></span><span data-at="2200"><BotFace char="yellow" size={22} /><b>{u.newBot}</b></span></span>
               <span class="tw-grow"></span>
               <span class="tw-ib"><Fragment set:html={ic(I.close)} /></span>
             </div>
             <div class="tnew">
-              <div class="by-time tnew__face"><span><BotFace char="blue" size={56} lively /></span><span data-at="1000"><BotFace char="red" size={56} lively /></span></div>
+              <div class="by-time tnew__face"><span><BotFace char="blue" size={56} lively /></span><span data-at="2200"><BotFace char="yellow" size={56} lively /></span></div>
               <b class="tnew__title">{u.newFirst}</b>
               <div class="tnew__pick">
                 {(["blue", "yellow", "green", "red", "purple", "orange"] as const).map((k) => (
-                  <span class:list={["tav", { "tav--first": k === "blue" }]} data-at={k === "red" ? "1000" : undefined}><BotFace char={k} size={28} /><small>{bots[k].name}</small></span>
+                  <span class:list={["tav", { "tav--first": k === "blue", "tw-press": k === "yellow" }]} data-at={k === "yellow" ? "2200" : undefined}><BotFace char={k} size={28} /><small>{L[k].name}</small></span>
                 ))}
               </div>
-              <div class="tnew__field">
-                <span class="tnew__k">{u.botName}</span>
-                <span class="tw-field tw-field--lg" data-at="1000"><span class="by-time"><span class="tw-field__ph">{u.botNamePh}</span><span data-at="1000">{code}</span></span></span>
+              <div class="tnew__fields">
+                <div class="tnew__field">
+                  <span class="tnew__k">{u.botName}</span>
+                  <span class="tw-field tw-field--lg" data-at="1000"><span class="by-time"><span class="tw-field__ph">{u.botNamePh}</span><span data-at="1000">{code}</span></span></span>
+                </div>
+                <div class="tnew__field">
+                  <span class="tnew__k">{u.botPersona}</span>
+                  <span class="tw-field tw-field--lg"><span class="by-time"><span class="tw-field__ph">{u.botPersonaPh}</span><span data-at="1000">{u.botPersonaValue}</span></span></span>
+                </div>
               </div>
               <span class="tw-btn tw-btn--primary tw-btn--lg tnew__go tw-press" data-at="3700"><span class="by-time"><span>{u.create}</span><span data-at="3800"><span class="tw-spin tw-spin--on"></span>{u.creating}</span></span></span>
               <div class="tnew__tpls">
@@ -203,7 +210,7 @@ const tplIcons = [I.file, I.chat, I.terminal];
           </div>
           <div class="tw__main">
             <div class="tw-head">
-              <span class="tw-head__bot"><span><BotFace char="red" size={22} data-states={JSON.stringify([[0, "idle"], [900, "working"], [3700, "idle"]])} /><b>{code}</b></span></span>
+              <span class="tw-head__bot"><span><BotFace char="yellow" size={22} data-states={JSON.stringify([[0, "idle"], [900, "working"], [3700, "idle"]])} /><b>{code}</b></span></span>
               <span class="tw-grow"></span>
               <span class="tw-ib"><Fragment set:html={ic(I.edit)} /></span><span class="tw-ib"><Fragment set:html={ic(I.panel)} /></span>
             </div>
@@ -259,7 +266,7 @@ const tplIcons = [I.file, I.chat, I.terminal];
           </div>
           <div class="tw__main">
             <div class="tw-head">
-              <span class="tw-head__bot"><span><BotFace char="red" size={22} data-states={JSON.stringify([[0, "idle"], [800, "working"], [6500, "idle"]])} data-shots={JSON.stringify([[6500, "done"]])} /><b>{code}</b></span></span>
+              <span class="tw-head__bot"><span><BotFace char="yellow" size={22} data-states={JSON.stringify([[0, "idle"], [800, "working"], [6500, "idle"]])} data-shots={JSON.stringify([[6500, "done"]])} /><b>{code}</b></span></span>
               <span class="tw-grow"></span>
               <span class="tw-ib"><Fragment set:html={ic(I.edit)} /></span><span class="tw-ib"><Fragment set:html={ic(I.panel)} /></span>
             </div>
@@ -299,11 +306,11 @@ const tplIcons = [I.file, I.chat, I.terminal];
             <span class="tim__ic"><Fragment set:html={ic(I.chat, 20)} /></span>
             <b>{fmt(u.channelOk, { im: u.imFrom })}</b>
             <small>{u.channelSub}</small>
-            <span class="tim__bot"><BotFace char="green" size={26} />{bots.green.name}<i class="tw-dot"></i></span>
+            <span class="tim__bot"><BotFace char="green" size={26} />{L.green.name}<i class="tw-dot"></i></span>
           </div>
           <div class="phone tour__phone">
             <div class="phone__screen">
-              <div class="phone__head"><BotFace char="green" size={30} data-states={JSON.stringify([[0, "idle"], [1900, "working"], [3600, "idle"]])} /><span class="tim__who"><b>{bots.green.name}</b><small>{u.imFrom}</small></span></div>
+              <div class="phone__head"><BotFace char="green" size={30} data-states={JSON.stringify([[0, "idle"], [1900, "working"], [3600, "idle"]])} /><span class="tim__who"><b>{L.green.name}</b><small>{u.imFrom}</small></span></div>
               <div class="phone__log">
                 <span class="phone__day">{u.today}</span>
                 <p class="msg msg--user on-rise" data-at="900">{u.imUser}</p>

@@ -281,7 +281,12 @@
   .tav { display: grid; justify-items: center; gap: 2px; min-width: 52px; padding: 6px 4px 4px; border-radius: 9px; color: var(--a-muted); font-size: 11px; transition: background .25s var(--ease-out), color .25s var(--ease-out); }
   .tav--first, .tav.on { background: var(--a-pill-press); color: var(--a-fg); font-weight: 500; }
   .tnew__pick:has(.tav.on) .tav--first { background: none; color: var(--a-muted); font-weight: 400; }
-  .tnew__field { display: grid; gap: 5px; width: min(320px, 100%); }
+  /* 名称和人设并排（演示舞台的高度放不下再多一行）；窄屏模板收起，有地方了再竖排 */
+  .tnew__fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 10px; width: min(560px, 100%); }
+  .tnew__field { display: grid; gap: 5px; min-width: 0; }
+  .tnew__field .tw-field { min-width: 0; }
+  .tnew__field .by-time { display: grid; flex: 1; min-width: 0; }
+  .tnew__field .by-time > * { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .tnew__k { color: var(--a-fg2); font-size: 12px; font-weight: 500; }
   .tnew__go { min-width: 120px; }
   .tnew__go .by-time > * { display: inline-flex; align-items: center; gap: 6px; }
@@ -362,6 +367,7 @@
     .tour__stage { height: 400px; }
     .tw { inset: 8px; grid-template-columns: minmax(0, 1fr); }
     .tw__side, .tnew__tpls, .tim__card { display: none; }
+    .tnew__fields { grid-template-columns: minmax(0, 1fr); width: min(320px, 100%); }
     .tw__main { margin: 8px; }
     .tbr { left: 8%; right: 8%; width: auto; }
     .tour__steps { display: flex; gap: 4px; margin: 10px 12px 0; overflow-x: auto; scrollbar-width: none; }

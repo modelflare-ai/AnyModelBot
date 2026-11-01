@@ -1,8 +1,9 @@
 ---
 // 能动手、会记住（§6.7、§6.8）：章节头 → 一段"边滚边讲"的两章故事（参考 bevel.health 的分章叙事，版式和第 2 节的舞台卡同一套）。
 // 桌面（≥1024 且屏幕够高、有 JS）：左边两章文字依次滚过，右边一张吸顶的舞台卡跟着换场——
-//   第 1 章 动手：飞飞骑在光标上干活，要你批准时冒"!"，舞台底光是飞飞的橙；
-//   第 2 章 记忆：芽芽一行行往 MEMORY.md 里记，有人想塞密码就眼睛一叉、划掉，底光换成芽芽的绿。
+//   第 1 章 动手：机器人骑在光标上干活，要你批准时冒"!"；
+//   第 2 章 记忆：同一个机器人一行行往 MEMORY.md 里记，有人想塞密码就眼睛一叉、划掉。
+//   两章是同一张脸：能力不分角色，不要让某种长相看起来专管某件事。舞台底光跟着这张脸的颜色。
 //   当前那章文字亮着、另一章淡下去；舞台卡顶上的两个小标签能点，点了滚到那一章（scripts/sections.ts 的 story）。
 // 窄屏 / 无 JS：舞台卡拆开（display: contents），每章文字下面紧跟它自己的场景卡，从上往下读。
 // 两个场景都是循环示意（时间线见 scripts/tour.ts 的 mountLoop），对读屏另有一句文字版。
@@ -26,7 +27,7 @@ const lineAt = (i: number) => String(500 + i * 650);
 const secretAt = 500 + m.lines.length * 650 + 300;
 const chapters = [
   { label: h.badge, tint: "var(--bot-orange-glow)" },
-  { label: m.tag, tint: "var(--bot-green-glow)" },
+  { label: m.tag, tint: "var(--bot-orange-glow)" },
 ];
 ---
 <section class="section" id="features" aria-labelledby="features-h2">
@@ -43,7 +44,7 @@ const chapters = [
         <p class="story__note">{h.caveat}</p>
       </article>
 
-      <article class="story__ch" data-ch="1" aria-labelledby="memory-h2" style="--tint:var(--bot-green-glow)">
+      <article class="story__ch" data-ch="1" aria-labelledby="memory-h2" style="--tint:var(--bot-orange-glow)">
         <p class="story__no"><span class="story__n mono">02</span><span class="badge badge--neutral">{m.tag}</span></p>
         <h3 class="subhead" id="memory-h2">{m.h2}</h3>
         <p class="story__lead">{m.layersLine}</p>
@@ -80,9 +81,9 @@ const chapters = [
             : `${h.demoSteps.join("，")}，${w.approvalTitle}：${h.approvalBody}，${w.allow}，${h.file}`}</p>
         </div>
 
-        <div class="story__scene" data-scene="1" style="--tint:var(--bot-green-glow)">
+        <div class="story__scene" data-scene="1" style="--tint:var(--bot-orange-glow)">
           <figure class="memfile" data-loop="12000">
-            <BotFace char="green" size={64} lively class="memfile__bot"
+            <BotFace char="orange" size={64} lively class="memfile__bot"
               data-states={JSON.stringify([[0, "working"], [secretAt - 200, "idle"]])}
               data-shots={JSON.stringify([[secretAt + 700, "error"], [secretAt + 3600, "done"]])}
               data-say-at={String(secretAt + 900)} data-say={m.nope} />
@@ -96,7 +97,7 @@ const chapters = [
       </div>
     </div>
 
-    <!-- 还有这些：上面两章没讲到的能力，版式沿用"认识它们"下面那排好处（home.css 的 crew-perks），三列两行 -->
+    <!-- 还有这些：上面两章没讲到的能力，版式沿用"由你定义"下面那排好处（home.css 的 crew-perks），三列两行 -->
     <div class="caps" aria-labelledby="caps-h3">
       <h3 class="subhead" id="caps-h3">{more.h3}</h3>
       <ul class="crew-perks" role="list">

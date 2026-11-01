@@ -1,59 +1,49 @@
 ---
-// 认识你的机器人（§6.9）："给每个机器人一份工作"——所以给它们发工牌。
-// 章节头 → 一张大舞台卡：最上面一排六个角色（WAI-ARIA tabs，选中的那个"在岗"，其余几个转头看它）；
-// 细线下垂下一根挂绳，挂着当前角色的工牌（证件照是会动、能戳的大头像，月薪 = 日常用量的月估算）；
-// 右边是手机里的对话，中间一条电脑 ↔ 手机的连线（微信 / 飞书）。卡片下面三条手机端的好处。
-// 交互在 scripts/sections.ts：换角色时工牌翻面、挂绳晃一晃，鼠标拨一下工牌也会晃；手机里的回复逐字打出；
-// 舞台卡底光和挂绳随角色换色；窄屏上纵向排列，左右滑动舞台也能换角色。
-// 月薪 = 计算器"日常"预设 × 默认线路价；点开去 /pricing 的计算器，并带上这个模型（计算器读 ?m=）。
-// 名字：每个角色的中英文名都取自它最显眼的那件配饰（天天 Ping ← 天线、闪闪 Twinkle ← 星星、芽芽 Sprout ← 嫩芽、
-// 哒哒 Beat ← 耳机、晶晶 Crystal ← 水晶、飞飞 Pilot ← 飞行护目镜）。中文页工牌上名字旁边写着英文名（alias）；英文页不写中文名（alias 留空，页面上不出现中文），
-// 座右铭讲名字的由来。证件照上不加任何标注（以前有一个指向配饰的小标签，用户 2026-10-31 要求去掉：没有意义）。
+// 由你定义（§6.9）：机器人没有固定的岗位。六个角色只有名字和长相不同，它做什么由你写的人设决定（和 App 的新建页 ui/screens/new-bot.js 一致）。
+// 章节头 → 一张大舞台卡：最上面一排人设示例（WAI-ARIA tabs）；细线下垂下一根挂绳，挂着一张"你好，我叫……"的名牌：
+// 脸 → 六个角色 → 名字和一句介绍 → 人设 → 模型 → 花费；右边是手机，它按这段人设回话；中间一条电脑 ↔ 手机的连线（微信 / 飞书）。
+// 这一节要讲的就是"角色和人设是两根互不相干的轴"：换人设，名牌翻面、手机里的回答跟着变，脸和名字不变；换角色，脸和名字变，人设一个字不动。
+// 示例人设（i18n 的 bots.personas）和角色不做配对；最后一个是白纸（blank），留给读者。
+// 不要再给某个角色写固定的岗位或擅长的事（用户 2026-11-01 明确纠正过）；名字可以留，介绍只讲名字的由来和配饰（bots.looks）。
+// 名字：每个角色的中英文名都取自它最显眼的那件配饰。中文页名字旁边写着英文名（alias）；英文页不写中文名（alias 留空，页面上不出现中文）。
+// 交互在 scripts/sections.ts。花费 = 计算器"日常"预设 × 默认线路价；点开去 /pricing 的计算器，并带上这个模型（计算器读 ?m=）。
 import BotFace from "../components/BotFace.astro";
 import EyesMark from "../components/EyesMark.astro";
 import Icon from "../components/Icon.astro";
 import SectionHead from "../components/SectionHead.astro";
-import { dict, fmt, href, type Lang } from "../i18n";
-import { CHAR_KEYS, type CharKey } from "../lib/bots";
-import { botModels } from "../data/pricing.config";
+import { buildVars, dict, fmt, href, type Lang } from "../i18n";
+import { CHAR_KEYS, PERSONA_KEYS, type CharKey, type PersonaKey } from "../lib/bots";
+import { personaModels } from "../data/pricing.config";
 import { rowOf } from "../lib/site";
 import { estimate, fmtMoney, PRESETS } from "../lib/calc";
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const t = dict(lang);
+const v = buildVars(lang);
 const b = t.bots;
+const c = b.card;
+const L = b.looks;
 const pricingPage = href(lang, "/pricing");
-const cost = (k: CharKey) => {
-  const r = rowOf(botModels[k]);
+const FIRST_LOOK: CharKey = "blue";
+const FIRST_PERSONA: PersonaKey = PERSONA_KEYS[0];
+const cost = (model: string) => {
+  const r = rowOf(model);
   return r ? fmtMoney(estimate(r, { group: r.defaultGroup, ...PRESETS.everyday }).monthly) : "—";
 };
-// 工牌底部的条形码：按角色名算出来的伪随机竖条，纯装饰
-const barcode = (k: string) => {
-  let h = [...k].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-  const bars: [number, number][] = [];
-  for (let x = 0; x < 118;) {
-    h = (Math.imul(h, 1103515245) + 12345) >>> 0;
-    const w = 1 + ((h >>> 16) % 3);
-    bars.push([x, w]);
-    x += w + 1 + ((h >>> 8) % 3);
-  }
-  return bars;
-};
-const perkIcons = ["chat", "layers", "bolt"] as const;
+const perkIcons = ["doc", "layers", "plus"] as const;
 ---
 <section class="section" id="bots" aria-labelledby="bots-h2">
   <div class="container">
     <SectionHead n={2} label={t.kicker.bots} id="bots-h2" title={b.h2} dim={b.h2dim} lead={b.lead} />
 
-    <div class="crew fx-rise" data-crew data-char={CHAR_KEYS[0]} data-doze data-fx>
-      <div class="lineup" role="tablist" aria-label={b.tabsLabel} data-bot-tabs>
-        {CHAR_KEYS.map((k, i) => (
-          <button type="button" role="tab" class="lineup__bot bot-hover" id={`bt-${k}`} aria-selected={i === 0 ? "true" : "false"} aria-controls={`bp-${k}`} tabindex={i === 0 ? 0 : -1} data-bot={k} style={`--c:var(--bot-${k}-glow)`}>
-            <BotFace char={k} size={64} lively />
-            <span class="lineup__name">{b.chars[k].name}</span>
-            <span class="lineup__job" aria-hidden="true"><span>{b.chars[k].job}</span><span class="lineup__duty">{b.badge.onDuty}</span></span>
-          </button>
-        ))}
+    <div class="crew fx-rise" data-crew data-char={FIRST_LOOK} data-persona={FIRST_PERSONA} data-doze data-fx>
+      <div class="personas">
+        <span class="personas__label" id="personas-label">{b.tabsLabel}</span>
+        <div class="personas__list" role="tablist" aria-labelledby="personas-label" data-persona-tabs>
+          {PERSONA_KEYS.map((p) => (
+            <button type="button" role="tab" class:list={["chip", { "chip--blank": p === "blank" }]} id={`pt-${p}`} aria-selected={p === FIRST_PERSONA ? "true" : "false"} aria-controls={`pp-${p}`} tabindex={p === FIRST_PERSONA ? 0 : -1} data-persona-tab={p}>{b.personas[p].tab}</button>
+          ))}
+        </div>
       </div>
 
       <div class="crew__stage" data-bot-stage>
@@ -63,33 +53,52 @@ const perkIcons = ["chat", "layers", "bolt"] as const;
             <span class="badge-hang__clip" aria-hidden="true"></span>
             <div class="badge-card" data-badge-card>
               <div class="badge-card__top" aria-hidden="true">
-                <span class="badge-card__org"><EyesMark size={16} />{b.badge.org}</span>
-                <span class="badge-card__staff">{b.badge.staff}</span>
+                <span class="badge-card__org"><EyesMark size={16} />{c.org}</span>
+                <span class="badge-card__tag">{c.tag}</span>
               </div>
-              {CHAR_KEYS.map((k, i) => (
-                <div class="badge-card__panel" role="tabpanel" id={`bp-${k}`} aria-labelledby={`bt-${k}`} hidden={i !== 0} data-panel={k} style={`--c:var(--bot-${k}-glow)`}>
-                  <div class="badge-card__photo">
-                    <BotFace char={k} size={176} lively pokeable />
+              <div class="badge-card__photo">
+                {CHAR_KEYS.map((k) => <div data-for-look={k} hidden={k !== FIRST_LOOK}><BotFace char={k} size={128} lively pokeable /></div>)}
+              </div>
+              <div class="looks" role="radiogroup" aria-label={b.looksLabel} data-looks>
+                {CHAR_KEYS.map((k) => (
+                  <button type="button" role="radio" class="looks__opt bot-hover" aria-checked={k === FIRST_LOOK ? "true" : "false"} aria-label={L[k].name} title={`${L[k].name} · ${L[k].motto}`} tabindex={k === FIRST_LOOK ? 0 : -1} data-look={k} style={`--c:var(--bot-${k}-glow)`}>
+                    <BotFace char={k} size={36} lively />
+                  </button>
+                ))}
+              </div>
+              <p class="looks__note">{b.looksNote}</p>
+              <div class="badge-card__ids">
+                {CHAR_KEYS.map((k) => (
+                  <div class:list={["badge-card__id", { "is-off": k !== FIRST_LOOK }]} data-look-id={k}>
+                    <p class="eyebrow">{c.hello}</p>
+                    <h3 class="badge-card__name subhead">{L[k].name}{L[k].alias && <> <span class="badge-card__alias" lang="en">{L[k].alias}</span></>}</h3>
+                    <p class="badge-card__motto">{L[k].motto}</p>
                   </div>
-                  <div class="badge-card__id">
-                    <p class="badge-card__job eyebrow">{b.chars[k].job}</p>
-                    <h3 class="badge-card__name subhead">{b.chars[k].name}{b.chars[k].alias && <> <span class="badge-card__alias" lang="en">{b.chars[k].alias}</span></>}</h3>
-                    <p class="badge-card__motto">{b.chars[k].lead}</p>
-                  </div>
-                  <dl class="badge-card__fields">
-                    <div><dt>{b.badge.skills}</dt><dd>{b.chars[k].rest}</dd></div>
-                    <div><dt>{b.badge.model}</dt><dd><span class="mono">{botModels[k]}</span><small>{b.modelNote}</small></dd></div>
-                    <div><dt>{b.badge.salary}</dt><dd>
-                      <a class="mono" href={`${pricingPage}?m=${botModels[k]}#calc`} data-track="bot_cost_click" data-track-bot_id={k} data-track-model_id={botModels[k]}>{fmt(b.cost, { amount: cost(k) })}<Icon name="arrow" size={14} /></a>
-                      <small>{b.badge.salaryNote}</small>
-                    </dd></div>
-                  </dl>
-                  <div class="badge-card__foot" aria-hidden="true">
-                    <svg viewBox="0 0 120 22" preserveAspectRatio="none">{barcode(k).map(([x, w]) => <rect x={x} y="0" width={w} height="22" />)}</svg>
-                    <span class="mono">{b.badge.no} · AMB-{String(i + 1).padStart(3, "0")}</span>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div class="badge-card__panels">
+                {PERSONA_KEYS.map((p) => {
+                  const blank = p === "blank";
+                  const model = p === "blank" ? "" : personaModels[p];
+                  return (
+                    <div class:list={["badge-card__panel", { "is-off": p !== FIRST_PERSONA, "is-blank": blank }]} role="tabpanel" id={`pp-${p}`} aria-labelledby={`pt-${p}`} data-panel={p}>
+                      <div class="badge-card__persona">
+                        <span>{c.persona}</span>
+                        <p data-persona-text>{b.personas[p].persona}</p>
+                      </div>
+                      <dl class="badge-card__fields">
+                        <div><dt>{c.model}</dt><dd>{blank ? fmt(c.blankModel, v) : <><span class="mono">{model}</span><small>{b.modelNote}</small></>}</dd></div>
+                        <div><dt>{c.spend}</dt><dd>
+                          {blank ? c.blankSpend : <>
+                            <a class="mono" href={`${pricingPage}?m=${model}#calc`} data-track="bot_cost_click" data-track-persona_id={p} data-track-model_id={model}>{fmt(b.cost, { amount: cost(model) })}<Icon name="arrow" size={14} /></a>
+                            <small>{c.spendNote}</small>
+                          </>}
+                        </dd></div>
+                      </dl>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
           <p class="crew__where"><Icon name="devices" size={16} />{b.where.pc}</p>
@@ -111,20 +120,22 @@ const perkIcons = ["chat", "layers", "bolt"] as const;
                   <rect x="40.5" y="1" width="19" height="10" rx="3" fill="none" stroke="currentColor" stroke-width="1" opacity=".45" /><rect x="42.5" y="3" width="13" height="6" rx="1.5" /><rect x="60.5" y="4" width="1.5" height="4" rx=".75" opacity=".45" />
                 </svg>
               </div>
-              {CHAR_KEYS.map((k, i) => (
-                <div class="phone__view" data-phone={k} hidden={i !== 0}>
-                  <div class="phone__head">
-                    <Icon name="chevron" class="phone__back" size={18} />
-                    <BotFace char={k} size={36} />
-                    <span class="phone__who"><b>{b.chars[k].name}</b><small>{b.phoneStatus}</small></span>
-                  </div>
-                  <div class="phone__log">
-                    <span class="phone__day">{b.phoneDay}</span>
-                    <p class="msg msg--user">{b.chars[k].user}</p>
-                    <div class="phone__reply"><BotFace char={k} size={26} /><p class="msg msg--bot">{b.chars[k].bot}</p></div>
-                  </div>
+              <div class="phone__head">
+                <Icon name="chevron" class="phone__back" size={18} />
+                <div class="look-stack">{CHAR_KEYS.map((k) => <div data-for-look={k} hidden={k !== FIRST_LOOK}><BotFace char={k} size={36} /></div>)}</div>
+                <span class="phone__who">
+                  {CHAR_KEYS.map((k) => <b data-for-look={k} hidden={k !== FIRST_LOOK}>{L[k].name}</b>)}
+                  <small>{b.phoneStatus}</small>
+                </span>
+              </div>
+              <div class="phone__log">
+                <span class="phone__day">{b.phoneDay}</span>
+                {PERSONA_KEYS.map((p) => b.personas[p].user && <p class="msg msg--user" data-view={p} hidden={p !== FIRST_PERSONA}>{b.personas[p].user}</p>)}
+                <div class="phone__reply">
+                  <div class="look-stack">{CHAR_KEYS.map((k) => <div data-for-look={k} hidden={k !== FIRST_LOOK}><BotFace char={k} size={26} /></div>)}</div>
+                  {PERSONA_KEYS.map((p) => <p class="msg msg--bot" data-view={p} hidden={p !== FIRST_PERSONA}>{b.personas[p].bot}</p>)}
                 </div>
-              ))}
+              </div>
               <div class="phone__input"><i class="phone__plus"></i><span>{b.phoneInput}</span><i class="phone__send"></i></div>
               <i class="phone__home"></i>
             </div>

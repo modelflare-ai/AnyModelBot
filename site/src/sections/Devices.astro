@@ -1,7 +1,7 @@
 ---
 // 在哪都找得到它（§6.6）：章节头 → 一幅产品合成图 → 一行四栏的入口 → 一个按需打开的"接入指南"。样式见 sections.css 的"6 在哪都找得到它"。
 // 首页这一节只讲一件事："同一个机器人、同一份记忆，在哪都能找到它"——不在页面上摆命令、令牌、步骤和二维码：
-//   合成图：浏览器（左后）、桌面 App（正中、最大）、手机里的聊天软件（右前）三块磨砂玻璃屏幕错落叠放，显示同一段和天天的对话，
+//   合成图：浏览器（左后）、桌面 App（正中、最大）、手机里的聊天软件（右前）三块磨砂玻璃屏幕错落叠放，显示同一段和芽芽的对话，
 //           回答下面挂着同一条"记忆"标签（三处一模一样，用画面说"一份记忆"）。屏幕照真实界面画：浏览器有标签页和地址栏，
 //           App 有侧栏（搜索、机器人列表）、浮起的主面板和玻璃输入框，手机有状态栏、聊天软件的顶栏和输入栏。整幅是示意，对读屏隐藏。
 //   入口行：一条磨砂玻璃底座，桌面 / Docker / 浏览器 / 聊天软件四栏，每栏一句话 + 一个链接，栏与栏之间一根细线。
@@ -22,7 +22,9 @@ const t = dict(lang);
 const d = t.devices;
 const it = d.items;
 const th = d.thread;
-const blue = t.bots.chars.blue;
+const P = t.bots.personas;
+const L = t.bots.looks;
+const main = L.green;   // 这段对话的主角，和首屏第三幕是同一个机器人
 const chats = CHANNELS[lang];
 // 入口行的小字只列已经能用的渠道；标着 soon 的（还没上线）只在接入指南里出现
 const chatNames = chats.filter((c) => !c.soon).map((c) => c.title).join(" · ");
@@ -30,7 +32,7 @@ const chatNames = chats.filter((c) => !c.soon).map((c) => c.title).join(" · ");
 const liveChat = chats.find((c) => !c.soon) ?? chats[0];
 // 合成图里 App 窗口的数据：侧栏三行（时间是示意）、搜索与输入框的占位（借用 Hero 舞台的文案）、输入框里的模型
 const st = t.hero.stage;
-const rows = [{ k: "blue", when: "17:02" }, { k: "orange", when: "16:40" }, { k: "green", when: "09:15" }] as const;
+const rows = [{ k: "green", p: "secretary", when: "17:02" }, { k: "blue", p: "pair", when: "16:40" }, { k: "orange", p: "expenses", when: "09:15" }] as const;
 const MODEL = "claude-sonnet-5-5";
 // 接入指南的标签：Docker、浏览器、各聊天渠道
 type Guide = { id: string; kind: "docker" | "browser" | "chat"; icon: "server" | "browser" | ChannelIcon; title: string; soon?: string };
@@ -75,10 +77,10 @@ for (let y = 0; y < 29; y++) for (let x = 0; x < 29; x++) {
             <span class="rs__url"><Icon name="lock" size={10} /><span>127.0.0.1<span class="rs__port">:3600</span></span></span>
           </div>
           <div class="rs__page">
-            <span class="rs__rail">{(["blue", "orange", "green"] as const).map((k, i) => <span class:list={["rs__dot", { "is-on": i === 0 }]}><BotFace char={k} size={20} /></span>)}</span>
+            <span class="rs__rail">{(["green", "blue", "orange"] as const).map((k, i) => <span class:list={["rs__dot", { "is-on": i === 0 }]}><BotFace char={k} size={20} /></span>)}</span>
             <div class="rs__thread">
               <p class="rs__msg rs__msg--me">{th.user}</p>
-              <div class="rs__reply"><BotFace char="blue" size={22} /><p class="rs__msg">{th.bot}</p></div>
+              <div class="rs__reply"><BotFace char="green" size={22} /><p class="rs__msg">{th.bot}</p></div>
               <p class="rs__memo"><Icon name="layers" size={11} />{th.memoLabel} · {th.memo}</p>
             </div>
           </div>
@@ -93,19 +95,19 @@ for (let y = 0; y < 29; y++) for (let x = 0; x < 29; x++) {
               {rows.map((r, i) => (
                 <span class:list={["rs__row", { "is-on": i === 0 }]}>
                   <BotFace char={r.k} size={28} />
-                  <span class="rs__row-body"><span class="rs__row-line"><b>{t.bots.chars[r.k].name}</b><small>{r.when}</small></span><span class="rs__snip">{t.bots.chars[r.k].job}</span></span>
+                  <span class="rs__row-body"><span class="rs__row-line"><b>{L[r.k].name}</b><small>{r.when}</small></span><span class="rs__snip">{P[r.p].bot}</span></span>
                 </span>
               ))}
             </div>
             <div class="rs__main">
-              <div class="rs__head"><BotFace char="blue" size={22} /><b>{blue.name}</b><span class="rs__grow"></span><span class="rs__ib"><Icon name="layers" size={13} /></span></div>
+              <div class="rs__head"><BotFace char="green" size={22} /><b>{main.name}</b><span class="rs__grow"></span><span class="rs__ib"><Icon name="layers" size={13} /></span></div>
               <div class="rs__thread">
                 <p class="rs__msg rs__msg--me">{th.user}</p>
-                <div class="rs__reply"><BotFace char="blue" size={26} /><p class="rs__msg">{th.bot}</p></div>
+                <div class="rs__reply"><BotFace char="green" size={26} /><p class="rs__msg">{th.bot}</p></div>
                 <p class="rs__memo"><Icon name="layers" size={11} />{th.memoLabel} · {th.memo}</p>
               </div>
               <div class="rs__composer">
-                <span class="rs__ph">{fmt(st.input, { name: blue.name })}</span>
+                <span class="rs__ph">{fmt(st.input, { name: main.name })}</span>
                 <span class="rs__tools"><span class="rs__ib rs__ib--ring"><Icon name="plus" size={11} /></span><span class="rs__chip mono">{MODEL}<Icon name="chevron" size={9} /></span><span class="rs__send"><Icon name="arrow" size={11} /></span></span>
               </div>
             </div>
@@ -115,7 +117,7 @@ for (let y = 0; y < 29; y++) for (let x = 0; x < 29; x++) {
         <!-- 手机（右前）：聊天软件里的同一段对话 -->
         <div class="rs rs--phone">
           <div class="rs__status"><b>9:41</b><span class="rs__sig"><i></i><i></i><i></i><i></i></span><span class="rs__bat"><i></i></span></div>
-          <div class="rs__phone-head"><Icon name="chevron" size={14} class="rs__back" /><BotFace char="blue" size={26} /><span><b>{blue.name}</b><small>{liveChat?.title}</small></span></div>
+          <div class="rs__phone-head"><Icon name="chevron" size={14} class="rs__back" /><BotFace char="green" size={26} /><span><b>{main.name}</b><small>{liveChat?.title}</small></span></div>
           <div class="rs__thread">
             <span class="rs__day">{t.bots.phoneDay}</span>
             <p class="rs__msg rs__msg--me">{th.user}</p>

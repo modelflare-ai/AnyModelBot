@@ -5,7 +5,7 @@ export const zh = {
     lang: "zh-CN",
     title: "AnyModelBot｜本地运行的 AI 机器人，任意模型，按量付费",
     description:
-      "开源、本地运行的 Grok Bot / OpenAI dots / Claude Duet 替代。在自己的电脑或服务器上运行 AI 机器人：对话、记忆、文件、密钥留在你的设备上；一个 Modelflare Key 接入 GPT、Claude、Gemini 等模型；App 免费，按用量付费，价格表公开。桌面、Docker、微信、飞书可用。",
+      "开源、本地运行的 Grok Bot / OpenAI dots / Claude Duet 替代。在自己的电脑或服务器上运行 AI 机器人：名字、人设、模型都由你定；对话、记忆、文件、密钥留在你的设备上；一个 Modelflare Key 接入 GPT、Claude、Gemini 等模型；App 免费，按用量付费，价格表公开。桌面、Docker、微信、飞书可用。",
     ogImage: "/og/og-zh.png",
   },
   nav: {
@@ -45,12 +45,12 @@ export const zh = {
     h1pre: "",
     h1mark: "住在你的电脑里",
     h1b: "",
-    lead: "整理文件、跑命令、记住你的习惯。一个 Key，畅用主流模型。",
+    lead: "几句人设，决定它做什么、怎么说话。整理文件、跑命令、记住你的习惯，一个 Key 畅用主流模型。",
     demo: "看演示",
     trust: ["App 免费开源", "模型按量付费", "Windows / macOS / Linux"],
     appUiNote: "",
-    // 标题上方的小胶囊（链到"认识你的机器人"）
-    eyebrow: "六个毛绒搭子，各管一摊",
+    // 标题上方的小胶囊（链到"由你定义"那一节）
+    eyebrow: "它是谁，由你来写",
     // 首屏底下那台 App 窗口、手机和两侧流动卡片里的字；其余对话复用 tour.ui、handson、bots、window 的文案
     stage: {
       task: "把下载里的发票整理进「报销」。",
@@ -78,7 +78,6 @@ export const zh = {
     approvalTitle: "需要你确认",
     allow: "允许",
     deny: "拒绝",
-    input: "给天天发消息…",
   },
   flow: {
     h2: "你的数据，",
@@ -121,7 +120,7 @@ export const zh = {
   models: {
     h2: "一个 Key，",
     h2dim: "所有模型。",
-    lead: "给每个机器人挑一个最合适的脑子，随时换。",
+    lead: "脑子也由你挑：每个机器人可以用不同的模型，随时换。",
     marqueeLabel: "Modelflare 上的厂商与文本模型",
     scenarios: { copy: "写文案", code: "改代码", research: "查资料" },
     question: { copy: "给新品写一句广告语。", code: "这个函数为什么会越界？", research: "总结这三篇论文的结论。" },
@@ -152,7 +151,7 @@ export const zh = {
         price: "$0",
         unit: "/ 永久",
         note: "免费开源（MIT）",
-        points: ["桌面（Windows / macOS / Linux）、Docker、CLI 都免费", "没有订阅，没有套餐档位", "六个机器人，想建几个建几个"],
+        points: ["桌面（Windows / macOS / Linux）、Docker、CLI 都免费", "没有订阅，没有套餐档位", "机器人想建几个建几个，每个都由你定义"],
       },
       usage: {
         tag: "模型用量 · 由 Modelflare 计费",
@@ -263,7 +262,7 @@ export const zh = {
     },
   },
   kicker: {
-    bots: "认识它们",
+    bots: "由你定义",
     features: "能做什么",
     models: "模型与价格",
     data: "数据去向",
@@ -273,7 +272,7 @@ export const zh = {
   features: {
     h2: "会动手，",
     h2dim: "也会记事。",
-    lead: "在你的电脑上动手，每一步都摆在明面上；记忆就是你硬盘里的 Markdown 文件。",
+    lead: "不管你把它写成谁，这些本事都在：在你的电脑上动手，每一步都摆在明面上；记忆就是你硬盘里的 Markdown 文件。",
     // 两章故事下面的一排小格：README 里有、上面两章没讲到的能力
     more: {
       h3: "还有这些。",
@@ -318,42 +317,55 @@ export const zh = {
     refused: "✗ 看起来像密码，已跳过",
   },
   bots: {
-    h2: "给每个机器人一份工作。",
-    h2dim: "挑一个，或者全都养着。",
-    lead: "六个毛绒角色，各有人设、模型和工作区。戳一下试试——它们会回嘴。",
-    tabsLabel: "选择角色",
+    h2: "它是谁，你说了算。",
+    h2dim: "没有固定的岗位，只有你写的人设。",
+    lead: "同一个天天，可以是结对程序员，也可以是德语陪练。写几句话告诉它做什么、怎么说话，它就照着来；想法变了，改一句，下一条消息就生效。",
+    tabsLabel: "比如这样写",
+    looksLabel: "挑个角色",
+    looksNote: "换个角色，人设一个字不变；名字也能改成你喜欢的。",
     cost: "≈ {amount} / 月",
-    badge: { org: "AnyModelBot", staff: "正式员工", no: "工号", skills: "擅长", model: "模型", salary: "月薪", salaryNote: "日常用量估算", onDuty: "在岗" },
+    card: { org: "AnyModelBot", tag: "由你填写", hello: "你好，我叫", persona: "人设", model: "模型", spend: "花费", spendNote: "日常用量估算", blankModel: "从 {modelCount} 个模型里挑一个", blankSpend: "按量付费，没有月费" },
     modelNote: "示例模型，可随时更换",
-    phoneNote: "示意：在微信或飞书里就是这样聊",
+    phoneNote: "以上都是示例，你的人设可以完全不一样。手机画面为示意：在微信或飞书里就是这样聊",
     phoneInput: "发消息…",
     phoneStatus: "在线 · 运行在你的电脑上",
     phoneDay: "今天 21:08",
-    swipeHint: "左右滑动换角色",
-    where: { pc: "住在你的电脑里", phone: "在手机上找它" },
+    swipeHint: "左右滑动换人设",
+    where: { pc: "住在你的电脑里", phone: "在手机上，它就这样回你" },
     link: "微信 / 飞书",
     perks: [
-      { title: "不用装新 App", body: "在微信、飞书里直接私聊它。" },
-      { title: "同一个机器人，同一份记忆", body: "路上交代的事，回到电脑前它也记得。" },
-      { title: "出门也能派活", body: "电脑开着它就在线；要 24 小时在线，放到 Docker 上。" },
+      { title: "人设就是一段话", body: "不用配流程，用你自己的话写。模板只是起点，每个字都能改。" },
+      { title: "各用各的模型和工作区", body: "每个机器人有自己的模型、文件夹和记忆，预算也能分开设。" },
+      { title: "想建几个建几个", body: "一个写代码，一个管家务，一个陪你练外语，互不打扰。" },
     ],
-    chars: {
-      blue: { name: "天天", alias: "Ping", job: "通用助手", lead: "头顶的天线天天在线，消息一到就接住。", rest: "默认助手、会议纪要。", user: "帮我把今天的会议记成三条要点。", bot: "好的：① 确认发布日期 ② 价格表以公开页面为准 ③ 下周补一版演示视频。" },
-      yellow: { name: "闪闪", alias: "Twinkle", job: "客服 · 陪聊", lead: "头顶一颗小星星，一笑就闪闪发亮，还会脸红。", rest: "客服、答疑、陪聊。", user: "你们周末发货吗？", bot: "周末也会发货，下单后 48 小时内寄出～" },
-      green: { name: "芽芽", alias: "Sprout", job: "日报 · 整理", lead: "头顶一株嫩芽，每整理一次记忆就长高一点。", rest: "日报、记忆整理、知识库。", user: "把今天的讨论整理成日报。", bot: "今日日报：3 个决定、2 个待办，已存入记忆。" },
-      red: { name: "哒哒", alias: "Beat", job: "代码 · 自动化", lead: "耳机一戴，键盘就哒哒哒响个不停。", rest: "写代码、跑脚本、自动化。", user: "跑一下测试。", bot: "全部通过，用时 12 秒。" },
-      purple: { name: "晶晶", alias: "Crystal", job: "写作 · 创意", lead: "灵感在头顶结成水晶，一个念头折出好几种说法。", rest: "写作、润色、出点子。", user: "给这篇文章起个标题。", bot: "三个备选：…… 你想要哪种语气？" },
-      orange: { name: "飞飞", alias: "Pilot", job: "翻译 · 搜索 · 操作电脑", lead: "飞行护目镜一戴，满世界找答案，也能替你操作电脑。", rest: "翻译、搜索、操作电脑。", user: "把这页翻成中文。", bot: "已翻译，术语表在附件里。" },
+    // 六个角色：名字取自最显眼的配饰，只有名字和长相不同。介绍只讲配饰，不写岗位：机器人做什么由人设决定
+    looks: {
+      blue: { name: "天天", alias: "Ping", motto: "头顶的天线天天在线，消息一到就接住。" },
+      yellow: { name: "闪闪", alias: "Twinkle", motto: "头顶一颗小星星，一笑就闪闪发亮，还会脸红。" },
+      green: { name: "芽芽", alias: "Sprout", motto: "头顶一株嫩芽，每天都长高一点。" },
+      red: { name: "哒哒", alias: "Beat", motto: "耳机一戴，节拍就哒哒哒响个不停。" },
+      purple: { name: "晶晶", alias: "Crystal", motto: "头顶结着一颗水晶，转起来亮晶晶。" },
+      orange: { name: "飞飞", alias: "Pilot", motto: "飞行护目镜一戴，随时准备起飞。" },
+    },
+    // 示例人设，和角色不做配对：tab 是这段人设的用途。首屏、"在哪都能用"、演示导览的界面示意也用这些对话
+    personas: {
+      pair: { tab: "写代码的搭档", persona: "你是我的结对程序员。先读代码再动手，改完告诉我怎么验证。别夸我，有问题直说。", user: "跑一下测试。", bot: "全部通过，用时 12 秒。不过第 48 行的判断永远为真，要我顺手改掉吗？" },
+      expenses: { tab: "管报销", persona: "你帮我管报销。发票按月份归档到「报销」文件夹，金额对不上就问我，别自己猜。", user: "上个月的报销弄完了吗？", bot: "归档了 9 张，合计 ¥3,280。有一张抬头不对，放在「待确认」里了。" },
+      secretary: { tab: "工作秘书", persona: "你是我的工作秘书。每天 17:00 把讨论整理成日报，记住我的习惯，说过的事别再问。", user: "今天的日报好了吗？", bot: "好了：3 个决定、2 个待办，已存入记忆。" },
+      german: { tab: "德语陪练", persona: "你是我的德语陪练，只用德语和我聊。我说错了，在句末用中文纠正一处就好。", user: "Gestern ich bin ins Kino gegangen.", bot: "Schön! Welchen Film hast du gesehen?（语序：Gestern bin ich…）" },
+      editor: { tab: "毒舌编辑", persona: "你是我的编辑，说话直接。看到空话就划掉，说清为什么。不要鼓励，只要改法。", user: "看看这句：我们致力于打造卓越的用户体验。", bot: "划掉。这句放在哪家公司都成立。你们到底做了什么？写那件事。" },
+      home: { tab: "家里的小管家", persona: "你是我家的小管家。记住家人的生日和忌口，每周五提醒我买菜，语气轻松点。", user: "周末做点什么吃？", bot: "妈妈不吃香菜，小宇这周想吃鱼。清蒸鲈鱼配番茄炒蛋？要的话我列个菜单～" },
+      blank: { tab: "你来写", persona: "写下你想让它成为的样子……", user: "", bot: "我还没有人设。你想让我成为谁？" },
     },
   },
-  // 戳一戳、撸一撸、打瞌睡被吵醒时说的话（lib/eyes.ts）；poke 按顺序轮流说
+  // 戳一戳、撸一撸、打瞌睡被吵醒时说的话（lib/eyes.ts）；poke 按顺序轮流说。只逗长相和配饰，不提任何工作：机器人做什么由人设决定
   quips: {
     blue: { poke: ["收到，信号满格。", "在呢在呢。", "戳一下就算已读了啊。"], love: "天线要冒火花了！", dizzy: "信号……丢……了……", pet: "滋滋——幸福满格。" },
-    yellow: { poke: ["哎呀，被发现了～", "亲，请问有什么可以帮您？", "戳脸要收费的哦～"], love: "脸红了，脸红了！", dizzy: "星星……在转圈圈……", pet: "再摸摸～这里这里～" },
-    green: { poke: ["别戳，我在长个子。", "光合作用 +1。", "已记入日报：被戳一次。"], love: "被你戳得发芽了。", dizzy: "叶子……打结了……", pet: "好舒服，又长高了一毫米。" },
-    red: { poke: ["嘘，正放到副歌。", "别吵，在编译。", "这个 bug 是你放的吧？"], love: "行吧，摘一边耳机听你说。", dizzy: "Segmentation fault (core dumped)", pet: "节拍对了，继续。" },
-    purple: { poke: ["灵感 +1。", "这一下可以写进诗里。", "别急，宝石还在结晶。"], love: "好了好了，给你写首诗。", dizzy: "灵感……碎了一地……", pet: "这手感，值得一个比喻。" },
-    orange: { poke: ["护目镜被你戳歪了！", "Hola！Bonjour！你好！", "正在搜索：是谁在戳我"], love: "发现新大陆：你！", dizzy: "地图……拿反了……", pet: "此处风景甚好，标记一下。" },
+    yellow: { poke: ["哎呀，被发现了～", "星星今天亮不亮？", "戳脸要收费的哦～"], love: "脸红了，脸红了！", dizzy: "星星……在转圈圈……", pet: "再摸摸～这里这里～" },
+    green: { poke: ["别戳，我在长个子。", "光合作用 +1。", "再戳就要开花了。"], love: "被你戳得发芽了。", dizzy: "叶子……打结了……", pet: "好舒服，又长高了一毫米。" },
+    red: { poke: ["嘘，正放到副歌。", "戴着耳机呢，再说一遍？", "这首歌循环第 40 遍了。"], love: "行吧，摘一边耳机听你说。", dizzy: "耳机线……缠住了……", pet: "节拍对了，继续。" },
+    purple: { poke: ["叮，碰到水晶了。", "小心，刚擦亮的。", "别急，水晶还在长。"], love: "亮晶晶，给你看。", dizzy: "光……折得到处都是……", pet: "这手感，滑溜溜的。" },
+    orange: { poke: ["护目镜被你戳歪了！", "等等，我调一下镜片。", "前方发现一根手指。"], love: "发现新大陆：你！", dizzy: "地图……拿反了……", pet: "此处风景甚好，标记一下。" },
     wake: ["我没睡！我在思考。", "嗯？刚才谁在打呼？", "在的在的，随时待命！"],
   },
   oss: {
@@ -372,6 +384,7 @@ export const zh = {
     more: "没找到答案？去文档里翻翻",
     items: [
       { q: "和 Grok Bot、OpenAI dots、Claude Duet 有什么不同？", a: "它们是同一类常驻的个人 AI 智能体，在后台替你干活，需要你拍板时再来问你。不同的是，AnyModelBot 开源（MIT），跑在你自己的电脑或服务器上；GPT、Claude、Gemini、Grok 等模型都能用，App 免费，模型按用量付费，不绑定某一家的订阅。GitHub 上的 README 有详细对比表。Grok Bot、dots、Claude Duet 分别是 xAI、OpenAI、Anthropic 的产品，AnyModelBot 与它们没有关联。" },
+      { q: "六个角色有什么区别？分别负责什么？", a: "只有名字和长相不同，没有谁专门负责什么。头像帮你一眼分清机器人；名字、人设、模型和工作区都由你定，每个机器人都能聊天、动手、记事。App 里的模板只是起点，填进去之后每个字都能改，也可以从一张白纸开始。" },
       { q: "我的数据会上传到你们的服务器吗？", a: "对话、记忆、文件和密钥保存在你的设备上。模型请求会经 Modelflare 发往你选择的模型厂商；Modelflare 的日志保留期以其文档《Data retention》为准。电脑操作时的屏幕内容会作为输入发给所选模型。" },
       { q: "不联网能用吗？", a: "不能。模型来自 Modelflare，不支持本地模型。" },
       { q: "能在手机上用吗？", a: "暂无独立 App；用微信或飞书和它聊。" },
@@ -387,7 +400,7 @@ export const zh = {
     ossRepo: "在 GitHub 上查看源码",
     ossLicenses: "第三方许可",
     h2: "让你的第一个机器人上线。",
-    sub: "App 免费，用多少付多少。",
+    sub: "起个名字，写几句人设，它就能开工。App 免费，用多少付多少。",
     docker: "用 Docker 部署 →",
   },
   footer: {
@@ -498,7 +511,7 @@ export const zh = {
       { title: "下载安装", caption: "按系统下载安装包（Windows / macOS / Linux），或者用一条 docker 命令放到服务器上。" },
       { title: "登录 Modelflare", caption: "首次启动在浏览器里登录一次 Modelflare，回来就自动连好；Docker / 远程部署可以改填 API Key。" },
       { title: "选默认模型", caption: "连上后列出账户里能用的模型，挑一个当默认；之后随时可以在对话里换。" },
-      { title: "新建机器人", caption: "挑个毛绒角色、起个名字，或者从模板开始；每个机器人有自己的人设、模型和工作区。" },
+      { title: "新建机器人", caption: "起个名字、写几句人设，它做什么、怎么说话都由你定。头像挑个顺眼的；模板只是起点，每个字都能改。" },
       { title: "开聊，随时换模型", caption: "回复边写边出来，可以随时停下；点一下输入框里的模型就能换。" },
       { title: "让它动手", caption: "读写文件、跑命令；越出工作区的操作会停下来，等你在对话里点头。" },
       { title: "在微信 / 飞书里找它", caption: "扫码接入后，在手机上直接和同一个机器人聊，记忆也是同一份。" },
@@ -527,6 +540,9 @@ export const zh = {
       botName: "名称",
       botNamePh: "例如：群聊日报",
       botNameValue: "代码助手",
+      botPersona: "人设",
+      botPersonaPh: "例如：你是一个乐于助人的中文助手，回答简洁准确。",
+      botPersonaValue: "你是代码助手。阅读和修改工作区里的代码，编写脚本解决问题。",
       create: "创建",
       templates: "从模板开始",
       tpls: [

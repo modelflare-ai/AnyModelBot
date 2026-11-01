@@ -16,4 +16,7 @@ export const BOT_CHARS: Record<CharKey, CharGeo> = {
   },
 };
 export const CHAR_KEYS = Object.keys(BOT_CHARS) as CharKey[];
+// 官网示例用的人设（文案在 i18n 的 bots.personas）。角色和人设互不绑定：产品里机器人的名字、人设、模型都是用户自己定的。
+export const PERSONA_KEYS = ["pair", "expenses", "secretary", "german", "editor", "home", "blank"] as const;
+export type PersonaKey = (typeof PERSONA_KEYS)[number];
 export const BOT_CHARS_HASH = "8d055ed19deb2468";

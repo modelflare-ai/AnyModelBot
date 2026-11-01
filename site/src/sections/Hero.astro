@@ -1,11 +1,12 @@
 ---
 // 首页第一屏（动效参考 bevel.health，窗口照 App 的原生界面 ui/design 来）。四周留 8px 的圆角大卡片，从上到下——
-//   小胶囊（六个角色头像 + 一句话，链到"认识你的机器人"）→ 标题（逐字由虚变实升起；第一行渐变字，行尾蹲着会看你、能戳的天天；
+//   小胶囊（六个角色头像 + 一句话，链到"由你定义"那一节）→ 标题（逐字由虚变实升起；第一行渐变字，行尾蹲着会看你、能戳的天天；
 //   关键词品牌色 + 光晕，入场后一道亮光从左到右扫过）→ 一句说明 → 下载 / 演示 → 三条要点 → 舞台。
 // 背景克制、全部静止：一层很淡的中性顶光（顶边淡入，不切出硬边）+ 顶部一层极淡的星空（小星点往下渐隐，少数几颗慢慢闪，偶尔划过一颗流星）→ 舞台后面一层极淡的机器人色 →
 //   托住窗口的弧形"地平线"（一线淡亮边、正中稍亮）→ App 同款磨砂颗粒。颜色只在舞台换机器人时微微变（--hero-hue / --hz-glow），不用品牌黄绿。
 // 舞台：一台 App 窗口（毛玻璃侧栏 + 浮起的主面板 + 玻璃输入框）+ 压在右下角的手机，循环 18 秒三幕，每幕换一个机器人：
 //   一幕 天天 · 聊天改代码 → 二幕 飞飞 · 动手整理文件（要你批准）→ 三幕 芽芽 · 微信 / 飞书里来的消息，手机和窗口同步。
+//   这里只是三段示例，不是三个角色的职责：对话都来自示例人设（i18n 的 bots.personas），和角色不绑定。
 //   侧栏的选中行、顶栏、对话、输入框里的模型和窗口的环境光（App 的 --aura-hue）随幕切换。
 //   宽屏两侧的卡片跟着节奏流动：左边的模型、任务、消息流进窗口，右边的结果、文件、记忆从窗口后面流出来。
 // 时间线由 scripts/tour.ts 的 mountLoop 驱动（只在看得见时走表）：data-steps 切幕（data-step 写"a / b / c"，干活时再加"busy"），
@@ -16,14 +17,16 @@ import Icon from "../components/Icon.astro";
 import BotFace from "../components/BotFace.astro";
 import HeroLogos from "../components/HeroLogos.astro";
 import { dict, fmt, buildVars, type Lang } from "../i18n";
-import { CHAR_KEYS, type CharKey } from "../lib/bots";
+import { CHAR_KEYS, type CharKey, type PersonaKey } from "../lib/bots";
+import { personaModels } from "../data/pricing.config";
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const t = dict(lang);
 const v = buildVars(lang);
 const s = t.hero.stage;
 const u = t.tour.ui;
-const bots = t.bots.chars;
+const P = t.bots.personas;
+const L = t.bots.looks;
 const isZh = lang === "zh";
 // 要点和"App 界面目前是简体中文"这类提示放在同一行小字里，不再单独占一行
 const meta = [...t.hero.trust.map((x) => fmt(x, v)), ...(t.hero.appUiNote ? [t.hero.appUiNote] : [])];
@@ -81,14 +84,14 @@ const FLOW = 3000; // 一张卡从泳道左外侧走到右外侧
 // 整幕：a 天天 0–6s · b 飞飞 6–12s · c 芽芽 12–18s；"busy" 是机器人在干活（侧栏亮绿点、发送钮变停止、窗口里的头像进入工作状态）
 const steps = JSON.stringify([[0, "a"], [1100, "a busy"], [4800, "a"], [6000, "b"], [6900, "b busy"], [10600, "b"], [12000, "c"], [12900, "c busy"], [15200, "c"]]);
 const cast: { k: CharKey; step: "a" | "b" | "c"; model: string; busy: [number, number] }[] = [
-  { k: "blue", step: "a", model: "claude-sonnet-5-5", busy: [1100, 4800] },
-  { k: "orange", step: "b", model: "gpt-5.6-sol", busy: [6900, 10600] },
-  { k: "green", step: "c", model: "deepseek-v4-flash", busy: [12900, 15200] },
+  { k: "blue", step: "a", model: personaModels.pair, busy: [1100, 4800] },
+  { k: "orange", step: "b", model: personaModels.expenses, busy: [6900, 10600] },
+  { k: "green", step: "c", model: personaModels.secretary, busy: [12900, 15200] },
 ];
 const botStates = (b: [number, number]) => JSON.stringify([[0, "idle"], [b[0], "working"], [b[1], "idle"]]);
 // 侧栏：三位主演 + 两位路人；时间是示意
-const rows: { k: CharKey; when: string }[] = [
-  { k: "blue", when: "21:08" }, { k: "orange", when: "20:46" }, { k: "green", when: "18:30" }, { k: "red", when: "17:52" }, { k: "purple", when: "09:15" },
+const rows: { k: CharKey; p: PersonaKey; when: string }[] = [
+  { k: "blue", p: "pair", when: "21:08" }, { k: "orange", p: "expenses", when: "20:46" }, { k: "green", p: "secretary", when: "18:30" }, { k: "red", p: "german", when: "17:52" }, { k: "purple", p: "home", when: "09:15" },
 ];
 const cps = isZh ? 30 : 44; // 回复逐字打出的速度：英文字母多，快一点，两种语言差不多同时写完
 
@@ -206,8 +209,8 @@ const ic = (d: string, size = 16, cls = "aic") => `<svg class="${cls}" width="${
               <div class="awin__row" data-bot={r.k}>
                 <span class="awin__av"><BotFace char={r.k} size={34} /><i class="awin__dot"></i></span>
                 <span class="awin__body">
-                  <span class="awin__line"><b>{bots[r.k].name}</b><small>{r.when}</small></span>
-                  <span class="awin__snip"><span>{bots[r.k].bot}</span><span class="awin__snip-busy">{s.working}</span></span>
+                  <span class="awin__line"><b>{L[r.k].name}</b><small>{r.when}</small></span>
+                  <span class="awin__snip"><span>{P[r.p].bot}</span><span class="awin__snip-busy">{s.working}</span></span>
                 </span>
               </div>
             ))}
@@ -218,7 +221,7 @@ const ic = (d: string, size = 16, cls = "aic") => `<svg class="${cls}" width="${
         <div class="awin__main">
           <div class="awin__head">
             <span class="by-step awin__hb">
-              {cast.map((c) => <span data-for={c.step}><BotFace char={c.k} size={24} data-states={botStates(c.busy)} data-shots={JSON.stringify([[c.busy[1], "done"]])} /><b>{bots[c.k].name}</b></span>)}
+              {cast.map((c) => <span data-for={c.step}><BotFace char={c.k} size={24} data-states={botStates(c.busy)} data-shots={JSON.stringify([[c.busy[1], "done"]])} /><b>{L[c.k].name}</b></span>)}
             </span>
             <span class="awin__grow"></span>
             <span class="awin__ib"><Fragment set:html={ic(I.edit)} /></span>
@@ -226,20 +229,20 @@ const ic = (d: string, size = 16, cls = "aic") => `<svg class="${cls}" width="${
           </div>
 
           <div class="by-step awin__views">
-            <!-- 一幕 天天：聊天改代码 -->
+            <!-- 一幕：聊天改代码 -->
             <div class="awin__view hs-log" data-for="a">
-              <div class="hs-item hs-item--static"><div><p class="amsg amsg--user">{bots.blue.user}</p></div></div>
-              <div class="hs-item hs-item--static"><div><p class="amsg">{bots.blue.bot}</p></div></div>
+              <div class="hs-item hs-item--static"><div><p class="amsg amsg--user">{P.pair.user}</p></div></div>
+              <div class="hs-item hs-item--static"><div><p class="amsg">{P.pair.bot}</p></div></div>
               <div class="hs-item" data-at="400"><div><p class="amsg amsg--user">{u.chatUser}</p></div></div>
               <div class="hs-item" data-at="1100"><div><p class="awork"><span class="by-time"><span class="awork__live">{s.thinking}</span><span data-at="2400">{fmt(s.took, { s: "1.3s" })}</span></span></p></div></div>
               <div class="hs-item" data-at="2400"><div><p class="amsg awin__live"><span data-at="2400" data-type={u.chatReply} data-cps={cps}></span></p></div></div>
               <div class="hs-item" data-at="4300"><div><div class="acode"><span class="acode__bar">c</span><pre><del>- for (i = 0; i &lt;= len; i++)</del>
 <ins>+ for (i = 0; i &lt; len; i++)</ins></pre></div></div></div>
             </div>
-            <!-- 二幕 飞飞：动手整理文件，越界要你批准 -->
+            <!-- 二幕：动手整理文件，越界要你批准 -->
             <div class="awin__view hs-log" data-for="b">
-              <div class="hs-item hs-item--static"><div><p class="amsg amsg--user">{bots.orange.user}</p></div></div>
-              <div class="hs-item hs-item--static"><div><p class="amsg">{bots.orange.bot}</p></div></div>
+              <div class="hs-item hs-item--static"><div><p class="amsg amsg--user">{P.expenses.user}</p></div></div>
+              <div class="hs-item hs-item--static"><div><p class="amsg">{P.expenses.bot}</p></div></div>
               <div class="hs-item" data-at="6400"><div><p class="amsg amsg--user">{s.task}</p></div></div>
               <div class="hs-item" data-at="6900"><div><p class="awork"><span class="by-time"><span class="awork__live">{s.thinking}</span><span data-at="10400">{fmt(s.took, { s: "3.5s" })}</span></span></p></div></div>
               <div class="hs-item" data-at="7300"><div><ul class="awell asteps" role="list">{t.handson.demoSteps.map((x, i) => <li data-at={String(7300 + i * 500)}><Fragment set:html={ic(I.check, 13)} />{x}</li>)}</ul></div></div>
@@ -251,7 +254,7 @@ const ic = (d: string, size = 16, cls = "aic") => `<svg class="${cls}" width="${
               </div></div></div>
               <div class="hs-item" data-at="10500"><div><div class="awell afile"><Fragment set:html={ic(I.doc, 24)} /><span><b>{t.handson.file}</b><small>{s.fileSub}</small></span></div></div></div>
             </div>
-            <!-- 三幕 芽芽：聊天软件里来的消息，回完存进记忆 -->
+            <!-- 三幕：聊天软件里来的消息，回完存进记忆 -->
             <div class="awin__view hs-log" data-for="c">
               <div class="hs-item hs-item--static"><div><span class="atime">{t.bots.phoneDay}</span></div></div>
               <div class="hs-item" data-at="12400"><div><p class="amsg amsg--user"><small>{u.imFrom}</small>{u.imUser}</p></div></div>
@@ -262,7 +265,7 @@ const ic = (d: string, size = 16, cls = "aic") => `<svg class="${cls}" width="${
           </div>
 
           <div class="awin__composer">
-            <span class="by-step awin__ph">{cast.map((c) => <span data-for={c.step}>{fmt(s.input, { name: bots[c.k].name })}</span>)}</span>
+            <span class="by-step awin__ph">{cast.map((c) => <span data-for={c.step}>{fmt(s.input, { name: L[c.k].name })}</span>)}</span>
             <span class="awin__bar">
               <span class="awin__plus"><Fragment set:html={ic(I.plus)} /></span>
               <span class="awin__chip"><Fragment set:html={ic(I.shield, 13)} />{s.perm}<Fragment set:html={ic(I.down, 11)} /></span>
@@ -274,10 +277,10 @@ const ic = (d: string, size = 16, cls = "aic") => `<svg class="${cls}" width="${
         </div>
       </div>
 
-      <!-- 手机：芽芽在聊天软件里，第三幕和窗口同步 -->
+      <!-- 手机：第三幕的机器人在聊天软件里，和窗口同步 -->
       <div class="phone hstage__phone">
         <div class="phone__screen">
-          <div class="phone__head"><BotFace char="green" size={26} data-states={botStates([12900, 15200])} />{bots.green.name} · {u.imFrom}</div>
+          <div class="phone__head"><BotFace char="green" size={26} data-states={botStates([12900, 15200])} />{L.green.name} · {u.imFrom}</div>
           <div class="phone__log hs-log">
             <div class="hs-item hs-item--static"><div><span class="phone__day">{t.bots.phoneDay}</span></div></div>
             <div class="hs-item hs-item--static"><div><p class="msg msg--user">{s.phoneUser}</p></div></div>

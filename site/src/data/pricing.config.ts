@@ -6,14 +6,14 @@ export const pricingConfig: PricingConfig = {
   sampleUsage: { days: 30, msgs: 50, inTok: 3000, outTok: 600 },
 };
 
-/** 角色的示例模型（§6.9，可在 App 里随时更换） */
-export const botModels = {
-  blue: "claude-sonnet-5-5",
-  yellow: "deepseek-v4-flash",
-  green: "claude-haiku-5-5",
-  red: "gpt-5.6-sol",
-  purple: "claude-opus-5-5",
-  orange: "gpt-6.1-terra",
+/** 示例人设配的模型（§6.9，可在 App 里随时更换）；白纸（blank）不配模型 */
+export const personaModels = {
+  pair: "claude-sonnet-5-5",
+  expenses: "gpt-5.6-sol",
+  secretary: "deepseek-v4-flash",
+  german: "gemini-3.5-flash",
+  editor: "claude-opus-5-5",
+  home: "claude-haiku-5-5",
 } as const;
 
 /** 模型演示的三个场景（§6.4） */

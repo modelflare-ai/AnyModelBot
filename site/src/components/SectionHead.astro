@@ -1,7 +1,7 @@
 ---
 // 首页章节头（样式在 components.css 的 .shead）：一列左对齐——细线 → "编号 / 名称"（.eyebrow）→ 两段式标题 → 说明。
 // 可选一个"主持"机器人，蹲在细线右端：跟着指针看、能戳，第一次滚到这一节时打个招呼（scripts/sections.ts）。
-// 本节内容里已经有大机器人的（认识机器人、常见问题）不放主持人。
+// 本节内容里已经有大机器人的（由你定义、常见问题）不放主持人。
 // 第一次滚进视口时（data-inview → .is-in）：细线从左往右画出来，编号、两句标题、说明依次升起（home.css）。
 import BotFace from "./BotFace.astro";
 import type { CharKey } from "../lib/bots";

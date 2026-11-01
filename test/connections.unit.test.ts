@@ -152,6 +152,44 @@ describe("已授权账号：全局列表", () => {
     expect(b.needsReauth).toBe(false);
   });
 
+  it("别名：同一个服务里不能重复（不分大小写），不能为空或全是数字；不同服务可以同名；改回自己的名字没问题", () => {
+    const accounts = new AccountStore(memoryKv());
+    const a = add(accounts, "feishu", "Work", "a");
+    const b = add(accounts, "feishu", "Home", "b");
+    const n = add(accounts, "notion", "Acme", "n");
+    expect(accounts.rename(b.id, "work")).toBe("taken");
+    expect(accounts.get(b.id)!.label).toBe("Home");
+    expect(accounts.rename(b.id, "  ")).toBe("invalid");
+    expect(accounts.rename(b.id, "2")).toBe("invalid");
+    expect(accounts.rename(n.id, "Work")).toBe("ok");
+    expect(accounts.rename(a.id, "WORK")).toBe("ok");
+    expect(accounts.rename(b.id, "个人飞书")).toBe("ok");
+    expect(accounts.resolve("feishu", "个人飞书").id).toBe(b.id);
+  });
+
+  it("默认名字撞车：自动加序号，账号总能按名字选到；全是数字时带上服务名", () => {
+    const accounts = new AccountStore(memoryKv());
+    add(accounts, "feishu", "张三", "a");
+    add(accounts, "feishu", "张三", "b");
+    add(accounts, "feishu", "张三", "c");
+    add(accounts, "feishu", "123", "d");
+    expect(accounts.view().map((v) => v.label)).toEqual(["张三", "张三 2", "张三 3", "Feishu 123"]);
+    expect(accounts.resolve("feishu", "张三 2").identity).toBe("b");
+  });
+
+  it("名字对不上唯一一个账号：不猜，报错并列出来", () => {
+    const kv = memoryKv();
+    const auth = { kind: "notion-token", token: "t" };
+    kv.setKV(ACCOUNTS_KV, JSON.stringify([{ id: "a", service: "feishu", identity: "a", label: "工作", auth }, { id: "b", service: "feishu", identity: "b", label: "工作", auth }]));
+    const accounts = new AccountStore(kv);
+    expect(() => accounts.resolve("feishu", "工作")).toThrow(/Several Feishu accounts match/);
+    const other = new AccountStore(memoryKv());
+    add(other, "feishu", "工作一组", "x");
+    add(other, "feishu", "工作二组", "y");
+    expect(() => other.resolve("feishu", "工作")).toThrow(/Several Feishu accounts match/);
+    expect(other.resolve("feishu", "二组").identity).toBe("y");
+  });
+
   it("坏数据不会让程序起不来，只跳过坏的那条", () => {
     const kv = memoryKv();
     kv.setKV(ACCOUNTS_KV, JSON.stringify([{ id: "x", service: "notion", identity: "i", auth: { kind: "notion-token" } }, { id: "y", service: "notion", identity: "j", label: "Ok", auth: { kind: "notion-token", token: "t" } }, "junk"]));

@@ -176,7 +176,7 @@ export class AccountStore {
     const account: ConnectedAccount = {
       id: crypto.randomBytes(8).toString("hex"),
       service: input.service,
-      label: input.label.trim().slice(0, 80) || SERVICE_NAME[input.service],
+      label: this.freeLabel(input.service, input.label),
       identity: input.identity,
       needsReauth: false,
       createdAt: Date.now(),
@@ -196,13 +196,34 @@ export class AccountStore {
     this.save();
   }
 
-  rename(id: string, label: string): boolean {
+  /**
+   * 改名。同一个服务里名字不能重复：用户说名字时要能选到唯一一个账号。
+   * 也不能全是数字：模型把数字当序号，「2」就分不清是第二个账号还是叫 2 的账号。
+   */
+  rename(id: string, label: string): "ok" | "invalid" | "taken" {
     const a = this.get(id);
     const name = label.trim().slice(0, 80);
-    if (!a || !name) return false;
+    if (!a || !name || /^\d+$/.test(name)) return "invalid";
+    if (this.labelTaken(a.service, name, id)) return "taken";
     a.label = name;
     this.save();
-    return true;
+    return "ok";
+  }
+
+  private labelTaken(service: AccountService, label: string, except?: string): boolean {
+    const lower = label.toLowerCase();
+    return this.list(service).some((a) => a.id !== except && a.label.toLowerCase() === lower);
+  }
+
+  /** 新账号的默认名字（工作区名、飞书用户名）：同名或全是数字时加点东西，账号总能按名字选到 */
+  private freeLabel(service: AccountService, label: string): string {
+    const raw = label.trim().slice(0, 76);
+    const base = !raw ? SERVICE_NAME[service] : /^\d+$/.test(raw) ? `${SERVICE_NAME[service]} ${raw}` : raw;
+    if (!this.labelTaken(service, base)) return base;
+    for (let n = 2; ; n++) {
+      const next = `${base} ${n}`;
+      if (!this.labelTaken(service, next)) return next;
+    }
   }
 
   remove(id: string): boolean {
@@ -241,10 +262,10 @@ export class AccountStore {
     const pick = /^\d+$/.test(raw) ? list[Number(raw) - 1] : undefined;
     if (pick) return pick;
     const lower = raw.toLowerCase();
-    const exact = list.find((a) => a.label.toLowerCase() === lower);
-    if (exact) return exact;
-    const near = list.filter((a) => a.label.toLowerCase().includes(lower));
+    const exact = list.filter((a) => a.label.toLowerCase() === lower);
+    const near = exact.length ? exact : list.filter((a) => a.label.toLowerCase().includes(lower));
     if (near.length === 1) return near[0];
+    if (near.length > 1) throw new ConnectionError(`Several ${name} accounts match "${raw.slice(0, 80)}". Say which one by number, or ask the user:\n${this.listText(service)}`);
     throw new ConnectionError(`There is no ${name} account "${raw.slice(0, 80)}". Connected accounts:\n${this.listText(service)}`);
   }
 }

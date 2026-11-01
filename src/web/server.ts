@@ -536,7 +536,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       }
       if (seg.length === 2 && m === "PUT") {
         const b = await readJson(req);
-        if (!c.accounts.rename(seg[1], String(b.label ?? ""))) throw new HttpError(400, t("web.badAccountName"));
+        const renamed = c.accounts.rename(seg[1], String(b.label ?? ""));
+        if (renamed !== "ok") throw new HttpError(400, t(renamed === "taken" ? "web.accountNameTaken" : "web.badAccountName"));
         return send(res, 200, { accounts: c.accounts.view() });
       }
       if (seg.length === 2 && m === "DELETE") {

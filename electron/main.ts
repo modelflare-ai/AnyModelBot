@@ -52,9 +52,9 @@ const PRODUCT = "AnyModelBot";
 const canAutostart = process.platform === "darwin" || process.platform === "win32";
 
 // Windows：也不要系统标题栏，侧栏顶部那一行就是标题栏——左上角是应用图标 + 名称（Windows 的习惯；macOS 那里是红绿灯），
-// 右上角由 Electron 画系统的最小化 / 最大化 / 关闭（Window Controls Overlay），贴住窗口的右上角，界面里最右的顶栏给它让位
-// （界面在 Electron + Windows 下带 win-app，见 shell.css）。Linux 的窗口管理器各不相同，仍用系统标题栏。
-// 叠层透明，高度 = 侧栏顶部那一行（--pane-gap 8 + --head-h 52），跟着页面缩放一起变；
+// 右上角由 Electron 画系统的最小化 / 最大化 / 关闭（Window Controls Overlay），贴住窗口的右上角；界面里最右的面板也贴住这个角，
+// 按钮落在它的顶栏上（界面在 Electron + Windows 下带 win-app，见 shell.css）。Linux 的窗口管理器各不相同，仍用系统标题栏。
+// 叠层透明，高度 = 侧栏顶部那一行 = 贴角那块面板的顶栏（--pane-gap 8 + --head-h 52），跟着页面缩放一起变；
 // 符号颜色跟界面主题：主题存在界面的 localStorage 里，界面解析后经 core.desktop.setTitleBarTheme 告诉这里，在那之前先按系统主题猜。
 // 底色虽然透明，RGB 也不能随便填：Electron 按底色的亮度挑悬停时那层灰（亮底 → 黑色、暗底 → 白色）
 const TITLE_BAR_H = 60;

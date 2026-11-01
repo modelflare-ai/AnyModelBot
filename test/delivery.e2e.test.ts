@@ -123,6 +123,7 @@ describe("退出演示：免打扰与微信窗口", () => {
     expect(items[0].messages.map((m) => m.text)).toEqual(["季度报告做好了，在 tasks 文件夹里。"]);
     // 「需要你」里就这一行（任务那一份不重复列），没送到的那句在这里就能看到
     expect(app.attention.list().map((x) => [x.kind, x.subject, x.status, x.line, x.actions])).toEqual([["delivery", "1 条结果未送达微信", "在微信里发条消息就能收到", "季度报告做好了，在 tasks 文件夹里。", []]]);
+    expect(app.attention.list()[0].head).toBe("1 条结果未送达微信，在微信里发条消息就能收到");
     // 主人周日 09:00 发消息：先收到留着的结果，再收到这次的回复
     await clock("2026-11-08T09:00");
     expect(await say(OWNER, "早")).toEqual(["你不在时：季度报告做好了，在 tasks 文件夹里。", "[mock-a] 你说：早"]);

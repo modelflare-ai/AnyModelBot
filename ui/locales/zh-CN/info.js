@@ -63,7 +63,7 @@ export default {
     allowed: "已允许「{who}」",
     denied: "已拒绝「{who}」",
     messages: { other: "发了 {count} 条消息" },
-    wants: "想使用这个机器人 · 配对码 {code}",
+    wants: "想使用这个机器人，配对码 {code}",
     quote: "「{text}」",
     allow: "允许",
     deny: "拒绝",
@@ -72,7 +72,7 @@ export default {
   turn: {
     stopFailed: "中止失败：{error}",
     processing: "正在处理 {d}",
-    waitingAgent: " · 等代理进程接手",
+    waitingAgent: "等代理进程接手",
     idle: "{d}没有新进展",
     stop: "中止",
     activity: "处理过程",

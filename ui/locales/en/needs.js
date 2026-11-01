@@ -1,6 +1,8 @@
 // needs · en
 export default {
   title: "Needs you",
+  head: "{bot}: {what}",
+  headSpaced: "{bot}: {what}",
   collapse: "Collapse",
   viewTask: "View task",
   viewRule: "View rule",

@@ -30,8 +30,8 @@ function choices(item) {
 }
 
 /**
- * 一件事：标题行（机器人 · 任务 · 状态 · 时间；只有一个机器人时不写机器人名）、第二行（问题 / 命令 / 原因）、行内操作。
- * onAct(action, body) 返回 Promise
+ * 一件事：标题行（一句话和时间：「小蓝的「GPU 价格调研」在等你回答」；只有一个机器人时不写机器人名）、第二行（问题 / 命令 / 原因）、
+ * 行内操作。onAct(action, body) 返回 Promise
  */
 export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenBotSettings }) {
   const [busy, setBusy] = useState("");
@@ -61,8 +61,9 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenB
   const expands = !!item.taskId || !!item.ruleId;
   const canOpen = expands || item.channel === "web";
   const head = () => (expands ? setOpen((v) => !v) : onOpenChat?.(item.botId));
-  const [lead, ...rest] = [multiBot && item.botName, item.subject, item.status].filter(Boolean);
-  const headIn = html`<span class="need-who"><b>${lead}</b>${rest.map((x) => ` · ${x}`).join("")}</span>
+  // 几个机器人时前面加上名字；那一句以数字、字母开头时中间空一格（「小蓝的 1 条结果…」）
+  const who = multiBot ? t(/^[0-9A-Za-z]/.test(item.head) ? "needs.headSpaced" : "needs.head", { bot: html`<b>${item.botName}</b>`, what: item.head }) : item.head;
+  const headIn = html`<span class="need-who">${who}</span>
     <span class="need-when num">${fmtAgo(item.since)}</span>
     ${expands && html`<${Icon} name="chevRight" size=${12} class="chev" />`}`;
   return html`<div class=${`need${open ? " open" : ""}`}>

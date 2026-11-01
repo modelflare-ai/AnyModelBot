@@ -1686,6 +1686,7 @@ export class TaskService {
         botName: bot?.name ?? t.botId,
         subject: t.title,
         status: st.label,
+        head: tr(st.key === "failed" ? "tasks.headFailed" : "tasks.headBudget", { title: t.title }),
         line: clip(oneLine(line), 200),
         since: run?.endedAt || t.updatedAt,
         severity: st.key === "failed" ? "err" : "warn",
@@ -1705,6 +1706,7 @@ export class TaskService {
         botName: bot.name,
         subject: tr("tasks.reserveSubject"),
         status: "",
+        head: tr("tasks.reserveSubject"),
         line: tr("tasks.reserveLine", { remain: usdText(low.remainUsd), limit: stepText(low.limitUsd) }),
         since: this.reserveSince.get(bot.id) ?? this.now(),
         severity: "warn",
@@ -1999,14 +2001,16 @@ export class TaskService {
       const date = new Intl.DateTimeFormat(l === "en" ? "en-US" : "zh-CN", { month: l === "en" ? "short" : "long", day: "numeric", timeZone: this.timeZone }).format(first);
       const names = tasks.slice(0, 3).map((t) => t.title);
       const titles = new Intl.ListFormat(l === "en" ? "en" : "zh-CN", { type: "conjunction" }).format(names) + (tasks.length > 3 ? "…" : "");
+      const subject = tr("tasks.cleanupSubject", { count: tasks.length, date });
       out.push({
         id: `cleanup:${botId}`,
         kind: "cleanup",
         botId,
         botName: this.store.getBot(botId)?.name ?? botId,
-        subject: tr("tasks.cleanupSubject", { count: tasks.length, date }),
+        subject,
         status: "",
-        line: tr("tasks.cleanupLine", { titles }),
+        head: subject,
+        line: tr("tasks.cleanupLine", { titles, count: tasks.length }),
         since: first - WARN_MS,
         severity: "warn",
         actions: ["keep", "dismiss"],
@@ -2888,6 +2892,7 @@ export class TaskService {
           botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
           subject: tr("rules.subject", { title: rule.title }),
           status: tr("rules.monthPaused"),
+          head: tr("rules.headMonth", { title: rule.title }),
           line: tr("rules.monthLine", { spent: usdText(this.monthSpent(rule)), add: stepText(RULE_MONTH_BUDGET_USD) }),
           since: rule.updatedAt,
           severity: "warn",
@@ -2907,6 +2912,7 @@ export class TaskService {
         botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
         subject: tr("rules.subject", { title: rule.title }),
         status: tr(paused ? "rules.failingPaused" : "rules.failing", { count: rule.failures }),
+        head: tr(paused ? "rules.headFailingPaused" : "rules.headFailing", { title: rule.title, count: rule.failures }),
         line: last ? clip(oneLine((last.outcome === "failed" && last.report?.message) || errorText(last.error || RUN_ERROR.noReport)), 200) : "",
         since: last?.endedAt || rule.updatedAt,
         severity: paused ? "err" : "warn",
@@ -2930,13 +2936,15 @@ export class TaskService {
     const good = this.store.ruleRuns(rule.id, { mode: "observe", outcome: "done", version: rule.version, limit: RULE_SUGGEST_AFTER });
     if (good.length < RULE_SUGGEST_AFTER) return undefined;
     const last = good[0];
+    const subject = tr("rules.suggest", { title: rule.title, count: RULE_SUGGEST_AFTER });
     return {
       id: `suggest:${rule.id}`,
       kind: "suggest",
       botId: rule.botId,
       botName: this.store.getBot(rule.botId)?.name ?? rule.botId,
-      subject: tr("rules.suggest", { title: rule.title, count: RULE_SUGGEST_AFTER }),
+      subject,
       status: "",
+      head: subject,
       line: runLine(last, rule.kind, this.carrier(last)),
       since: last.endedAt || last.queuedAt,
       severity: "warn",

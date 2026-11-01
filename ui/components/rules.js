@@ -1,4 +1,4 @@
-// 规则（3d）：信息面板「任务」组里一条规则一行——时间表 · 标题，下面一行是状态和下次运行（观察够了要不要改为执行，在「需要你」里问，
+// 规则（3d）：信息面板「任务」组里一条规则一行——时间表 · 标题，下面一句状态和下次运行（观察够了要不要改为执行，在「需要你」里问，
 // 从不推送）。点开是规则的详情：用户的原话、模式（观察 / 执行 / 关）、立即运行、编辑、删除，
 // 和运行记录（一次一行：时间 · 模式 · 本会发送 / 保持安静 / 失败 / 跳过），每行再点开看报告、步骤、版本和权限；运行记录可以导出成
 // Markdown（3f）。编辑器里有每次、每月的预算（3f，检查才有）。
@@ -29,22 +29,22 @@ export function fmtRunAt(at, now = Date.now()) {
   return t("time.dateTime", { date: shortDate(d), time: hm(d) });
 }
 
-/** 下次运行：今天 15:00 / 明天 08:00 / 周一 09:00 / 11/20 09:00 */
+/** 下次运行（放在句子里，英文小写）：今天 15:00 / 明天 08:00 / 周一 09:00 / 11/20 09:00 */
 export function fmtNext(at, now = Date.now()) {
   const d = new Date(at);
   const n = dayDiff(at, now);
-  if (n <= 0) return t("time.today", { time: hm(d) });
+  if (n <= 0) return t("rules.today", { time: hm(d) });
   if (n === 1) return t("rules.tomorrow", { time: hm(d) });
   if (n < 7) return t("rules.weekdayTime", { day: d.toLocaleDateString(locale(), { weekday: "short" }), time: hm(d) });
   return t("time.dateTime", { date: shortDate(d), time: hm(d) });
 }
 
-/** 行的第二行：观察中 · 下次 明天 08:00；正在运行；已暂停 · 连续失败 3 次 / 本月预算用完（状态文字由服务端按界面语言给） */
+/** 行的第二行，一句话：观察中，明天 08:00 再运行；明天 08:00 提醒你；正在运行；连续失败 3 次，已暂停（其余的状态文字由服务端按界面语言给） */
 export function ruleSub(rule, now = Date.now()) {
-  if (rule.live) return t(rule.live.state === "queued" ? "rules.queued" : "rules.running", { state: rule.state.label });
+  if (rule.live) return t(rule.live.state === "queued" ? "rules.queued" : "rules.running");
   if (rule.state.key === "paused") return rule.pausedReason === "budget" ? t("rules.pausedBudget") : t("rules.paused", { count: rule.failures });
-  if (rule.state.key === "off" || rule.state.key === "done") return rule.state.label;
-  return rule.nextRunAt ? t("rules.sub", { state: rule.state.label, next: fmtNext(rule.nextRunAt, now) }) : rule.state.label;
+  const next = { observe: "rules.observeNext", act: "rules.actNext", remind: "rules.remindNext" }[rule.state.key];
+  return next && rule.nextRunAt ? t(next, { next: fmtNext(rule.nextRunAt, now) }) : rule.state.label;
 }
 
 async function put(rule, body, done) {

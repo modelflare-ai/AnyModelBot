@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Store } from "../src/store/db.js";
 import { ApprovalCenter } from "../src/agent/approvals.js";
 import { Attention, approvalItems, botLine, notificationOf, trayTitle, type AttentionItem } from "../src/tasks/attention.js";
+import { withLang } from "../src/i18n/index.js";
 
 const item = (o: Partial<AttentionItem> & Pick<AttentionItem, "id" | "kind">): AttentionItem => ({
   botId: "b",
   botName: "小蓝",
   subject: "GPU 价格调研",
   status: "等你回答",
+  head: "「GPU 价格调研」在等你回答",
   line: "报告用中文还是英文？",
   since: 1,
   severity: "warn",
@@ -72,8 +74,8 @@ describe("Attention", () => {
   });
 
   it("每个机器人几件、最早那件（侧栏机器人行的第二行）", () => {
-    att.addSource(() => [item({ id: "a", kind: "question", since: 1 }), item({ id: "b", kind: "failed", since: 2, status: "失败" }), item({ id: "c", kind: "login", botId: "g", botName: "绿草", subject: "微信登录已过期", status: "" })]);
-    expect(att.byBot()).toEqual({ b: { n: 2, line: "GPU 价格调研等你回答" }, g: { n: 1, line: "微信登录已过期" } });
+    att.addSource(() => [item({ id: "a", kind: "question", since: 1 }), item({ id: "b", kind: "failed", since: 2, status: "失败", head: "「GPU 价格调研」失败了" }), item({ id: "c", kind: "login", botId: "g", botName: "绿草", subject: "微信登录已过期", status: "", head: "微信登录已过期" })]);
+    expect(att.byBot()).toEqual({ b: { n: 2, line: "「GPU 价格调研」在等你回答" }, g: { n: 1, line: "微信登录已过期" } });
   });
 
   it("系统通知每项最多一次，重启后也不再给；处理掉的项从记录里清掉", () => {
@@ -112,12 +114,13 @@ describe("Attention", () => {
 
   it("系统通知的样子：标题「小蓝 需要你」，正文「GPU 价格调研：报告用中文还是英文？」", () => {
     expect(notificationOf(item({ id: "a", kind: "question" }))).toEqual({ title: "小蓝 需要你", body: "GPU 价格调研：报告用中文还是英文？" });
-    expect(notificationOf(item({ id: "l", kind: "login", subject: "微信登录已过期", status: "", line: "" }))).toEqual({ title: "小蓝 需要你", body: "微信登录已过期" });
-    expect(botLine(item({ id: "f", kind: "failed", status: "失败" }))).toBe("GPU 价格调研失败");
-    expect(trayTitle("AnyModelBot", 3)).toBe("AnyModelBot · 3 件事需要你");
+    expect(notificationOf(item({ id: "l", kind: "login", subject: "微信登录已过期", status: "", head: "微信登录已过期", line: "" }))).toEqual({ title: "小蓝 需要你", body: "微信登录已过期" });
+    expect(botLine(item({ id: "f", kind: "failed", status: "失败", head: "「GPU 价格调研」失败了" }))).toBe("「GPU 价格调研」失败了");
+    expect(trayTitle("AnyModelBot", 3)).toBe("AnyModelBot 有 3 件事需要你");
+    expect(withLang("en", () => [trayTitle("AnyModelBot", 1), trayTitle("AnyModelBot", 3)])).toEqual(["AnyModelBot has 1 thing that needs you", "AnyModelBot has 3 things that need you"]);
   });
 
-  it("审批中心那一份：任务的以任务名为题，聊天里的以渠道为题", () => {
+  it("审批中心那一份：任务的以任务名为题，聊天里的以渠道为题；那一句（界面上的标题行）是一句话", () => {
     store.createBot({ id: "b", name: "小蓝" });
     store.ensureConversation("b", "weixin", "owner", "owner");
     const c = new ApprovalCenter(store);
@@ -126,8 +129,9 @@ describe("Attention", () => {
     const a = c.create({ kind: "approval", botId: "b", conversationId: "b:weixin:owner", sessionId: "task-t_1", tool: "bash", detail: "rm -rf build/", reason: "", taskId: "t_1" });
     const q = c.create({ kind: "question", botId: "b", conversationId: "b:weixin:owner", sessionId: "chat", tool: "ask_user_question", detail: "继续吗？", reason: "", payload: JSON.stringify([{ id: "q", question: "继续吗？" }]) });
     const items = approvalItems(store, c.pendingAll());
-    expect(items.find((x) => x.id === `approval:${a.id}`)).toMatchObject({ kind: "approval", subject: "清理旧构建", status: "等你批准", line: "rm -rf build/", actions: ["approve", "deny"], taskId: "t_1", code: a.code, channel: "weixin" });
-    expect(items.find((x) => x.id === `approval:${q.id}`)).toMatchObject({ kind: "question", subject: "微信", status: "等你回答", line: "继续吗？", actions: ["answer"], questions: [{ id: "q", question: "继续吗？" }] });
+    expect(items.find((x) => x.id === `approval:${a.id}`)).toMatchObject({ kind: "approval", subject: "清理旧构建", status: "等你批准", head: "「清理旧构建」在等你批准", line: "rm -rf build/", actions: ["approve", "deny"], taskId: "t_1", code: a.code, channel: "weixin" });
+    expect(items.find((x) => x.id === `approval:${q.id}`)).toMatchObject({ kind: "question", subject: "微信", status: "等你回答", head: "微信里有个问题等你回答", line: "继续吗？", actions: ["answer"], questions: [{ id: "q", question: "继续吗？" }] });
+    expect(withLang("en", () => approvalItems(store, c.pendingAll()).map((x) => x.head)).sort()).toEqual(["WeChat has a question for you", "“清理旧构建” is waiting for your approval"]);
     expect(items.find((x) => x.id === `approval:${q.id}`)!.taskId).toBeUndefined();
     expect(items.find((x) => x.id === `approval:${q.id}`)!.note).toBeUndefined();
   });

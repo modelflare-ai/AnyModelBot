@@ -113,8 +113,6 @@ button.head-bot:active { background: var(--pill-press); }
    每步一行：状态点 + 类别图标 + 名称 + 等宽摘要 + 用时；有参数或输出的步骤再点开看全文 */
 .work-line.toggle { width: 100%; text-align: left; transition: color var(--t-fast); }
 .work-line.toggle:hover { color: var(--fg); }
-.work-line .steps { color: var(--muted); }
-.work-line .steps::before { content: "·"; margin-right: var(--space-1-5); }
 .work-line .chev, .act-head .chev { flex: none; transition: transform var(--t-fast); }
 [aria-expanded="true"] > .chev { transform: rotate(90deg); }
 .activity { display: grid; grid-template-columns: minmax(0, 1fr); }
@@ -355,7 +353,7 @@ button.act-head:active { background: var(--pill-hover); }
 .send .spinner { width: 12px; height: 12px; }
 .composer-disabled { pointer-events: auto; width: var(--col); margin: 0 auto var(--space-2); }
 
-/* —— 后台任务：请求那条消息的回复下面一个胶囊「后台任务 · 标题 · 进行中 ›」（静默填充，不描边）；
+/* —— 后台任务：请求那条消息的回复下面一个胶囊，一句话「后台任务「GPU 价格调研」进行中 ›」（静默填充，不描边；太长时只截标题）；
    点开是最新进展、文件夹、每次运行折叠的处理过程（和回复上方的"用时"同一种写法）和停止 —— */
 .task-chip { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; margin-top: var(--space-2); }
 .task-pill {
@@ -365,9 +363,8 @@ button.act-head:active { background: var(--pill-hover); }
 }
 .task-pill:hover { background: var(--pill-hover); color: var(--fg); }
 .task-pill:active { background: var(--pill-press); transform: scale(var(--press)); }
-.task-pill .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: var(--fw-medium); }
-.task-pill :is(.k, .sep, .st) { flex: none; }
-.task-pill .sep { color: var(--muted); }
+.task-pill .l { display: flex; min-width: 0; white-space: nowrap; }
+.task-pill .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-weight: var(--fw-medium); }
 .task-pill .chev { flex: none; color: var(--muted); transition: transform var(--t-fast); }
 .task-detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); width: 100%; margin-top: var(--space-3); }
 /* 详情里一行一样：小标签 + 值 + 行尾的大小、文字按钮（改预算、打开、保留）；每次运行一行折叠的处理过程，行间不画线 */

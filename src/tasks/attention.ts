@@ -37,8 +37,13 @@ export interface AttentionItem {
   botName: string;
   /** 说的是什么：任务名、渠道名（"微信"），或一句话（"微信登录已过期"） */
   subject: string;
-  /** 状态：等你回答 / 等你批准 / 失败 / 未送达；没有就不显示 */
+  /** 状态：等你回答 / 等你批准 / 失败 / 未送达；没有就是空 */
   status: string;
+  /**
+   * 界面上的那一句（不带机器人名）：「「GPU 价格调研」在等你回答」「微信登录已过期」。几个机器人时界面在前面加上名字
+   * （「小蓝的「GPU 价格调研」在等你回答」）；侧栏机器人行的第二行也是它
+   */
+  head: string;
   /** 第二行：问题、命令、失败原因、没送到的那句话 */
   line: string;
   /** 有默认回答的提问：不回答会怎样（「不回复就按中文做」）；任务这时还在做 */
@@ -187,7 +192,7 @@ const channelLabel = (c: string) => (c === "weixin" ? tr("tasks.chWeixin") : c =
 
 /**
  * 审批中心那一份：还在等的提问和审批（聊天回合里的、后台任务的）。任务的以任务名为题，聊天里的以渠道为题：
- * 「小蓝 · GPU 价格调研 · 等你回答」「小蓝 · 微信 · 等你批准」。
+ * 「「GPU 价格调研」在等你回答」「微信里有个操作等你批准」。
  */
 export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[] {
   return rows.map((r) => {
@@ -197,6 +202,12 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
     const qs = questionsOf(r);
     const line = r.kind === "approval" ? r.detail || r.reason || r.tool : qs.map((q) => q.question).join(" / ") || r.detail;
     const note = r.kind === "question" ? defaultLine(r) : undefined;
+    const budget = r.kind === "question" && r.tool === BUDGET_TOOL;
+    const head = task
+      ? tr(r.kind === "approval" ? "tasks.headApproval" : budget ? "tasks.headBudget" : "tasks.headAnswer", { title: task.title })
+      : rule
+        ? tr(r.kind === "approval" ? "rules.headApproval" : "rules.headAnswer", { title: rule.title })
+        : tr(r.kind === "approval" ? "tasks.headChatApproval" : "tasks.headChatAnswer", { channel: channelLabel(channel) ?? tr("tasks.chWeb") });
     return {
       id: `approval:${r.id}`,
       kind: r.kind,
@@ -204,7 +215,8 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
       botName: store.getBot(r.botId)?.name ?? r.botId,
       subject: task?.title ?? (rule ? tr("rules.subject", { title: rule.title }) : (channelLabel(channel) ?? tr("tasks.chWeb"))),
       // 任务预算用完时问的那个：状态是预算用完（第二行就是「已用约 $1.00，再给 $1 继续？」）
-      status: r.kind === "approval" ? tr("tasks.stageApproval") : r.tool === BUDGET_TOOL ? tr("tasks.stageBudget") : tr("tasks.stageAnswer"),
+      status: r.kind === "approval" ? tr("tasks.stageApproval") : budget ? tr("tasks.stageBudget") : tr("tasks.stageAnswer"),
+      head,
       line: line.length > 300 ? line.slice(0, 299) + "…" : line,
       ...(note ? { note } : {}),
       since: r.createdAt,
@@ -222,7 +234,7 @@ export function approvalItems(store: Store, rows: ApprovalRow[]): AttentionItem[
 }
 
 /**
- * 出站队列那一份（core/delivery.ts）：没送到的结果，一个会话一行。「1 条结果未送达微信 · 在微信里发条消息就能收到」，
+ * 出站队列那一份（core/delivery.ts）：没送到的结果，一个会话一行。「1 条结果未送达微信，在微信里发条消息就能收到」，
  * 第二行是没送到的那几句（在这里就能看到）；一直失败的可以重试、放弃了的可以不再提示
  */
 export function deliveryItem(d: DeliveryItem, botName: string): AttentionItem {
@@ -234,6 +246,7 @@ export function deliveryItem(d: DeliveryItem, botName: string): AttentionItem {
     botName,
     subject: d.title,
     status: d.line,
+    head: d.line ? tr("delivery.head", { title: d.title, line: d.line }) : d.title,
     line: text.length > 300 ? text.slice(0, 299) + "…" : text,
     since: d.since,
     severity: d.severity === "error" ? "err" : "warn",
@@ -243,17 +256,17 @@ export function deliveryItem(d: DeliveryItem, botName: string): AttentionItem {
   };
 }
 
-/** 列表变没变：id + 状态 + 第二行 */
+/** 列表变没变：id + 那一句 + 第二行 */
 function signature(items: AttentionItem[]): string {
-  return items.map((it) => `${it.id}|${it.status}|${it.line}`).join("\n");
+  return items.map((it) => `${it.id}|${it.head}|${it.line}`).join("\n");
 }
 
-/** 侧栏机器人行的第二行："GPU 价格调研等你回答"、"微信登录已过期" */
+/** 侧栏机器人行的第二行：「「GPU 价格调研」在等你回答」「微信登录已过期」 */
 export function botLine(it: AttentionItem): string {
-  return it.status ? `${it.subject}${it.status}` : it.subject;
+  return it.head;
 }
 
-/** 系统通知：标题「小蓝 需要你」，正文「GPU 价格调研：报告用中文还是英文？」（设计第 6 节） */
+/** 系统通知：标题「小蓝 需要你」，正文「GPU 价格调研：报告用中文还是英文？」（设计第 6 节）；没有第二行时是那一句 */
 export function notificationOf(it: AttentionItem): { title: string; body: string } {
   const body = it.line ? `${it.subject}：${it.line}` : botLine(it);
   return { title: tr("tasks.notifyTitle", { name: it.botName }), body: body.length > 120 ? body.slice(0, 119) + "…" : body };

@@ -84,7 +84,7 @@
 .notif time { font-size: var(--fs-2xs); color: var(--muted); }
 
 /* 需要你（screens/needs-you.js）：和设置页同一种页面；一组 .list，一件事一块，块间一条细线。
-   左边一列是状态点，右边一列从上到下：谁 · 什么 · 状态（可点：展开任务详情）、问题或命令、行内操作 */
+   左边一列是状态点，右边一列从上到下：一句话说谁的什么怎么了（可点：展开任务详情）、问题或命令、行内操作 */
 .needs-list .need {
   display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-2-5); row-gap: var(--space-2);
   padding: var(--space-3-5) var(--space-4);

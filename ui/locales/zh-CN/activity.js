@@ -20,5 +20,5 @@ export default {
   noSteps: "还没有步骤",
   expand: "查看处理过程",
   collapse: "收起处理过程",
-  steps: { other: "{count} 步" },
+  stepFor: "{step}，已用 {d}",
 };

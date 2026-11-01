@@ -452,7 +452,7 @@ describe("预算（假宿主、假时钟）", () => {
     ]);
     expect(store.listRuns({ taskId: t.id })[0].error).toBe("reserve");
     expect(svc.get(t.id)!.stage.key).toBe("working/queued");
-    expect(svc.attention()).toEqual([{ id: "reserve:b", kind: "budget", botId: "b", botName: "小蓝", subject: "后台工作已停", status: "", line: "机器人预算只剩约 $1.95（共 $10），留给聊天", since: now, severity: "warn", actions: ["open"] }]);
+    expect(svc.attention()).toEqual([{ id: "reserve:b", kind: "budget", botId: "b", botName: "小蓝", subject: "后台工作已停", status: "", head: "后台工作已停", line: "机器人预算只剩约 $1.95（共 $10），留给聊天", since: now, severity: "warn", actions: ["open"] }]);
     expect(approvals.pendingAll()).toEqual([]);
     // 不开新任务（聊天代理照实说）；规则到点跳过
     const r = await svc.chatTool({ botId: "b", sessionId: "chat-1", op: "start", args: { title: "又一个", brief: "" } });

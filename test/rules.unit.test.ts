@@ -132,7 +132,7 @@ describe("时间表：下一次、上一次、宽限期", () => {
 });
 
 describe("界面：规则的一行（健康时只有状态和下次）", () => {
-  it("第二行：观察中 · 下次 明天 08:00；正在运行；暂停了说连续失败几次；关了、跑完了只有状态；运行记录的时间", async () => {
+  it("第二行是一句话：观察中，明天 08:00 再运行；正在运行；连续失败 3 次，已暂停；关了、跑完了只有状态；运行记录的时间", async () => {
     (globalThis as any).window ??= { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} };
     // @ts-expect-error 界面代码是不经构建的 JS
     const { ruleSub, fmtRunAt, fmtNext } = await import("../ui/components/rules.js");
@@ -142,10 +142,14 @@ describe("界面：规则的一行（健康时只有状态和下次）", () => {
     const now = new Date(2026, 10, 2, 7, 30).getTime();
     const t = (d: number, h: number, m = 0) => new Date(2026, 10, 2 + d, h, m).getTime();
     const r = (o: any) => ({ failures: 0, nextRunAt: t(1, 8), state: { key: "observe", label: "观察中" }, ...o });
-    expect(ruleSub(r({}), now)).toBe("观察中 · 下次 明天 08:00");
-    expect(ruleSub(r({ state: { key: "act", label: "执行中" }, nextRunAt: t(0, 15) }), now)).toBe("执行中 · 下次 今天 15:00");
-    expect(ruleSub(r({ live: { state: "running" } }), now)).toBe("观察中 · 正在运行");
-    expect(ruleSub(r({ state: { key: "paused", label: "已暂停" }, failures: 3, nextRunAt: 0 }), now)).toBe("已暂停 · 连续失败 3 次");
+    expect(ruleSub(r({}), now)).toBe("观察中，明天 08:00 再运行");
+    expect(ruleSub(r({ state: { key: "act", label: "执行中" }, nextRunAt: t(0, 15) }), now)).toBe("执行中，今天 15:00 再运行");
+    expect(ruleSub(r({ state: { key: "remind", label: "提醒" }, nextRunAt: t(1, 12) }), now)).toBe("明天 12:00 提醒你");
+    expect(ruleSub(r({ live: { state: "running" } }), now)).toBe("正在运行");
+    expect(ruleSub(r({ live: { state: "queued" } }), now)).toBe("排队中");
+    expect(ruleSub(r({ state: { key: "paused", label: "已暂停" }, failures: 3, nextRunAt: 0 }), now)).toBe("连续失败 3 次，已暂停");
+    expect(ruleSub(r({ state: { key: "paused", label: "已暂停" }, pausedReason: "budget", nextRunAt: 0 }), now)).toBe("本月预算用完，已暂停");
+    expect(ruleSub(r({ nextRunAt: 0 }), now)).toBe("观察中");
     expect(ruleSub(r({ state: { key: "off", label: "已关闭" } }), now)).toBe("已关闭");
     expect(ruleSub(r({ state: { key: "done", label: "已结束" }, nextRunAt: 0 }), now)).toBe("已结束");
     expect([fmtRunAt(t(0, 8), now), fmtRunAt(t(-1, 8), now), fmtRunAt(t(-6, 8), now)]).toEqual(["今天 08:00", "昨天 08:00", "10/27 08:00"]);
@@ -153,8 +157,11 @@ describe("界面：规则的一行（健康时只有状态和下次）", () => {
     expect([fmtNext(t(3, 9), now), fmtNext(t(10, 9), now)]).toEqual(["周四 09:00", "11/12 09:00"]);
     // 英文：状态文字是服务端按界面语言给的，这里只换了界面自己的那部分
     ui.setLangPref("en");
-    expect(ruleSub(r({ state: { key: "observe", label: "Observing" } }), now)).toBe("Observing · Next: Tomorrow 08:00");
-    expect(ruleSub(r({ state: { key: "paused", label: "Paused" }, failures: 3, nextRunAt: 0 }), now)).toBe("Paused · failed 3 times in a row");
+    expect(ruleSub(r({ state: { key: "observe", label: "Observing" } }), now)).toBe("Observing, next run tomorrow 08:00");
+    expect(ruleSub(r({ state: { key: "act", label: "Acting" }, nextRunAt: t(0, 15) }), now)).toBe("Acting, next run today 15:00");
+    expect(ruleSub(r({ state: { key: "remind", label: "Reminder" }, nextRunAt: t(1, 12) }), now)).toBe("Reminds you tomorrow 12:00");
+    expect(ruleSub(r({ state: { key: "paused", label: "Paused" }, failures: 3, nextRunAt: 0 }), now)).toBe("Failed 3 times in a row, so it's paused");
+    expect(ruleSub(r({ state: { key: "paused", label: "Paused" }, pausedReason: "budget", nextRunAt: 0 }), now)).toBe("Used up this month's budget, so it's paused");
     expect([fmtRunAt(t(-1, 8), now), fmtNext(t(3, 9), now)]).toEqual(["Yesterday 08:00", "Thu 09:00"]);
     ui.setLangPref("zh-CN");
   });
@@ -448,6 +455,7 @@ describe("规则（假宿主、假时钟）", () => {
         botName: "小蓝",
         subject: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行",
         status: "",
+        head: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行",
         line: "本会做：在 X 的页面上点「降价提醒」",
         since: runsOf(rule.id).at(-1)!.endedAt,
         severity: "warn",
@@ -463,7 +471,7 @@ describe("规则（假宿主、假时钟）", () => {
     expect(store.listOutbox({ limit: 100 })).toEqual([]);
     const att = new Attention({ store });
     att.addSource(() => svc.ruleAttention());
-    att.addSource(() => [{ id: "cleanup:b", kind: "cleanup", botId: "b", botName: "小蓝", subject: "1 个任务文件夹 11月9日 删除", status: "", line: "", since: now + H, severity: "warn", actions: ["keep", "dismiss"] }]);
+    att.addSource(() => [{ id: "cleanup:b", kind: "cleanup", botId: "b", botName: "小蓝", subject: "1 个任务文件夹 11月9日 删除", status: "", head: "1 个任务文件夹 11月9日 删除", line: "", since: now + H, severity: "warn", actions: ["keep", "dismiss"] }]);
     expect(att.list().map((a) => a.id)).toEqual(["cleanup:b", `suggest:${rule.id}`]);
     expect(att.count()).toBe(2);
     expect(att.takeNew().map((a) => a.id)).toEqual(["cleanup:b"]);
@@ -587,14 +595,14 @@ describe("规则（假宿主、假时钟）", () => {
     expect(store.getRule(rule.id)!.failures).toBe(0);
     await day("2026-11-04", report("failed", "X 的页面打不开"));
     await day("2026-11-05", report("failed", "X 的页面打不开"));
-    expect(svc.ruleAttention().map((a) => [a.kind, a.subject, a.status, a.severity, a.line])).toEqual([["rule", "规则「看 X 价格」", "连续失败 2 次", "warn", "X 的页面打不开"]]);
+    expect(svc.ruleAttention().map((a) => [a.kind, a.subject, a.status, a.head, a.severity, a.line])).toEqual([["rule", "规则「看 X 价格」", "连续失败 2 次", "规则「看 X 价格」连续失败 2 次", "warn", "X 的页面打不开"]]);
     expect(pushes()).toEqual([]);
     await day("2026-11-06", report("failed", "X 的页面打不开"));
     expect(store.getRule(rule.id)).toMatchObject({ failures: 3, pausedReason: "failures", nextRunAt: 0 });
     expect(svc.getRuleView(rule.id)!.state).toEqual({ key: "paused", label: "已暂停", dot: "err" });
     const last = runsOf(rule.id).at(-1)!;
     expect(pushes().map((r) => [r.id, r.purpose, r.body.text])).toEqual([[`rule:${rule.id}:paused:${last.id}`, "failure", "⚠️ 规则「看 X 价格」连续失败 3 次，已暂停：X 的页面打不开"]]);
-    expect(svc.ruleAttention()[0]).toMatchObject({ status: "连续失败 3 次，已暂停", severity: "err", actions: ["retry"], ruleId: rule.id });
+    expect(svc.ruleAttention()[0]).toMatchObject({ status: "连续失败 3 次，已暂停", head: "规则「看 X 价格」连续失败 3 次，已暂停", severity: "err", actions: ["retry"], ruleId: rule.id });
     // 暂停了就不再到点开 run
     const n = host.prompts.length;
     await go(at("2026-11-07T08:00"));
@@ -945,7 +953,7 @@ describe("规则（假宿主、假时钟）", () => {
     try {
       for (const date of ["2026-11-04", "2026-11-05", "2026-11-06"]) await day(date, report("failed", "", {}));
       expect(pushes().find((r) => r.purpose === "failure")!.body.text).toBe("⚠️ Rule “看 X 价格” failed 3 times in a row and is paused: no result");
-      expect(svc.ruleAttention()[0]).toMatchObject({ subject: "Rule “看 X 价格”", status: "Failed 3 times in a row, paused", line: "no result" });
+      expect(svc.ruleAttention()[0]).toMatchObject({ subject: "Rule “看 X 价格”", status: "Failed 3 times in a row, paused", head: "Rule “看 X 价格” failed 3 times in a row and is paused", line: "no result" });
       expect(svc.listText(CONV)).toBe("Rules:\n1. 看 X 价格 · Paused: Daily 08:00\nSend /stop <number> to stop one.");
       // 有任务又有规则：同一种写法、同一种语言，规则接着任务编号
       expect(svc.create({ botId: "b", conversationId: CONV, title: "GPU prices", brief: "compare" }).task).toBeDefined();

@@ -13,7 +13,7 @@ const DOT = { ok: "ok", error: "err", running: "warn" };
 const stepDur = (ms) => (ms < 100 ? t("activity.lessThanTenth") : ms < 1000 ? t("activity.seconds", { s: (ms / 1000).toFixed(1) }) : fmtDur(ms));
 const kTokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n));
 
-/** 正在进行的那一步，用在工作状态行上："运行 bash" / "等待 grok-4.7 回复" */
+/** 正在进行的那一步，用在工作状态行上："运行 bash" / "等待 grok-4.7 回复"（和用时合成一句：activity.stepFor） */
 export function currentStep(steps) {
   const s = (steps || []).findLast((x) => x.status === "running");
   if (!s) return "";
@@ -95,7 +95,7 @@ export function ActivityLine({ label, phase, live, steps, count = 0, load }) {
   if (!n) return html`<div class="work-line live" aria-live="off">${text}</div>`;
   return html`<div class=${`activity${open ? " open" : ""}`}>
     <button type="button" class=${`work-line toggle${live ? " live" : ""}`} aria-expanded=${open} aria-live="off" title=${t(open ? "activity.collapse" : "activity.expand")} onClick=${() => setOpen(!open)}>
-      ${text}<span class="steps num">${t("activity.steps", { count: n })}</span><${Icon} name="chevRight" size=${12} class="chev" />
+      ${text}<${Icon} name="chevRight" size=${12} class="chev" />
     </button>
     ${open && (list ? html`<${ActivityList} steps=${list} />` : html`<div class="act-list empty"><span class="hint">${err || t("common.loading")}</span></div>`)}
   </div>`;

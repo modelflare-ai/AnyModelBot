@@ -20,5 +20,5 @@ export default {
   noSteps: "No steps yet",
   expand: "Show activity",
   collapse: "Hide activity",
-  steps: { one: "{count} step", other: "{count} steps" },
+  stepFor: "{step}, {d} so far",
 };

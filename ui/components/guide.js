@@ -336,7 +336,7 @@ export function MediaDemo({ prompt }) {
       </div>
       <figcaption class="t-meta" role="status">
         ${stage === "gen" ? t("guide.demo.generating") : t("guide.demo.caption")}
-        ${stage === "done" && !g.media && html` · <a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">${t("guide.demo.enable")}</a>`}
+        ${stage === "done" && !g.media && html` <a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">${t("guide.demo.enable")}</a>`}
       </figcaption>
     </figure>`}
     ${stage === "cancel" && html`<p class="t-meta">${t("guide.demo.cancelled")} <button type="button" class="text" onClick=${() => setStage("ask")}>${t("guide.demo.again")}</button></p>`}

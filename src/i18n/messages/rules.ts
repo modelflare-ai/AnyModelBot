@@ -63,6 +63,12 @@ export const zh = {
   failingPaused: { other: "连续失败 {count} 次，已暂停" },
   failing: { other: "连续失败 {count} 次" },
   suggest: { other: "规则「{title}」已观察 {count} 次，需要你来决定是否执行" },
+  // 「需要你」那一行的那一句（不带机器人名）
+  headAnswer: "规则「{title}」在等你回答",
+  headApproval: "规则「{title}」在等你批准",
+  headFailing: { other: "规则「{title}」连续失败 {count} 次" },
+  headFailingPaused: { other: "规则「{title}」连续失败 {count} 次，已暂停" },
+  headMonth: "规则「{title}」本月预算用完了",
   // 推送：连续失败暂停了（执行中的规则）
   pausedPush: "⚠️ 规则「{title}」连续失败 {count} 次，已暂停：{why}",
   // 建规则时建议给用户的那句（经聊天代理转述）
@@ -153,6 +159,11 @@ export const en: Catalog<typeof zh> = {
   failingPaused: { one: "Failed {count} time in a row, paused", other: "Failed {count} times in a row, paused" },
   failing: { one: "Failed {count} time in a row", other: "Failed {count} times in a row" },
   suggest: { one: "Rule “{title}” has observed {count} time; decide whether it should act", other: "Rule “{title}” has observed {count} times; decide whether it should act" },
+  headAnswer: "Rule “{title}” is waiting for your answer",
+  headApproval: "Rule “{title}” is waiting for your approval",
+  headFailing: { one: "Rule “{title}” failed {count} time in a row", other: "Rule “{title}” failed {count} times in a row" },
+  headFailingPaused: { one: "Rule “{title}” failed {count} time in a row and is paused", other: "Rule “{title}” failed {count} times in a row and is paused" },
+  headMonth: "Rule “{title}” used up this month's budget",
   pausedPush: "⚠️ Rule “{title}” failed {count} times in a row and is paused: {why}",
   createdReply: "Rule set: {title}, {when}. It watches quietly for a few days; switch it to act under Tasks.",
   remindReply: "OK, reminder set for {when}.",

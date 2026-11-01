@@ -179,7 +179,10 @@ function LiveTurn({ turn, convId }) {
   };
   const idle = turn.lastProgress ? now - turn.lastProgress : 0;
   const cur = currentStep(turn.steps);
-  const label = `${t("info.turn.processing", { d: fmtDur(now - turn.since) })}${cur ? ` · ${cur}` : turn.lastProgress ? "" : t("info.turn.waitingAgent")}`;
+  // 一句话：有一步在做时是那一步（「运行 bash，已用 12 秒」），代理进程还没接手时说在等它
+  const d = fmtDur(now - turn.since);
+  const step = cur || (turn.lastProgress ? "" : t("info.turn.waitingAgent"));
+  const label = step ? t("activity.stepFor", { step, d }) : t("info.turn.processing", { d });
   return html`<div class="transcript-turn">
     <${ActivityLine} label=${label} live steps=${turn.steps} />
     <div class="cluster">

@@ -1,18 +1,18 @@
-// 后台任务（3a，3f 补全）：对话里请求那条消息下面的任务胶囊「后台任务 · 标题 · 进行中 ›」，点开是任务的详情；
+// 后台任务（3a，3f 补全）：对话里请求那条消息下面的任务胶囊「后台任务「GPU 价格调研」进行中 ›」，点开是任务的详情；
 // 信息面板的「任务」组（TaskGroup）是一个机器人的全部任务和规则：进行中、等你的、规则，结束了的收在最后一行「已结束 3」里，
 // 点开才列出来。一个任务一行，点开是同一块里的详情（和规则一样，像普通的折叠一样展开）。
 // 详情：来自（渠道、时间、原话）、它问你的问题（有默认回答时下面一句「不回复就按中文做」）、最新进展、预算（约 $0.08 / $1.00，
 // 可以改）、文件夹（大小、打开）、要清理时的日期和保留、每次运行折叠的处理过程，以及停止 / 导出 / 删除。
 // 状态是"点 + 文字"：绿 = 进行中（问了个有默认回答的问题、接着在做的也是：「进行中，有个问题等你回答」），黄 = 等你，
 // 红 = 失败，灰 = 已完成 / 已停止。
-// 健康时不多占地方：花费有了才写，清理只在定了日期时出现。
+// 健康时不多占地方：花费有了才写，清理只在定了日期时出现。行、胶囊、每次运行都是一句话（「已进行 12 分钟，花了约 $0.08」）。
 import { useEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, Notice } from "./ui.js";
 import { ActivityLine } from "./activity.js";
 import { RuleRow } from "./rules.js";
 import { api } from "../lib/api.js";
 import { confirmSheet, failed, toast } from "../lib/store.js";
-import { fmtAgo, fmtDay, fmtDur, fmtSep, fmtSize } from "../lib/format.js";
+import { fmtClock, fmtDay, fmtDur, fmtSep, fmtSize } from "../lib/format.js";
 import { channelName } from "../lib/access.js";
 import { t, has, getLang } from "../lib/i18n.js";
 
@@ -29,14 +29,42 @@ export function stageDot(stage) {
 export const hasCost = (usd) => Number(usd) >= 0.005;
 export const money = (usd) => `$${Number(usd || 0).toFixed(2)}`;
 
-/** 每次运行怎么来的（launch、followup、recover、retry、continue、answer、manual） */
-const cause = (c) => (has(`tasks.cause.${c}`) ? t(`tasks.cause.${c}`) : c);
+/** 运行一行：「第 1 次运行，用了 12 分钟」「第 2 次运行，已进行 3 分钟」「第 2 次运行，排队中」 */
+export function runLabel(r, i, now = Date.now()) {
+  const n = i + 1;
+  if (r.state === "queued") return t("tasks.runQueued", { n });
+  if (!r.startedAt) return t("tasks.run", { n });
+  return t(r.state === "ended" ? "tasks.runTook" : "tasks.runGoing", { n, d: fmtDur((r.endedAt || now) - r.startedAt) });
+}
 
-/** 运行一行："第 2 次 · 重启后继续 · 3 分钟" */
-function runLabel(r, i, now) {
-  const ms = (r.endedAt || now) - (r.startedAt || r.queuedAt);
-  const tail = r.state === "queued" ? t("tasks.queued") : r.startedAt ? fmtDur(ms) : "";
-  return [t("tasks.run", { n: i + 1 }), cause(r.cause), tail].filter(Boolean).join(" · ");
+/** 阶段在词典里的名字：needs-you/answer → answer，working/asking → asking */
+const stageName = (stage) => stage.key.split("/").pop();
+
+/** 句子里的时间：刚刚 / 5 分钟前 / 15:33 / 10月26日（英文：just now / 5 min ago / at 15:33 / on Oct 26） */
+function whenIn(at, now = Date.now()) {
+  const s = (now - at) / 1000;
+  if (s < 60) return t("tasks.when.now");
+  if (s < 3600) return t("time.minutesAgo", { count: Math.floor(s / 60) });
+  if (new Date(now).toDateString() === new Date(at).toDateString()) return t("tasks.when.clock", { time: fmtClock(at) });
+  return t("tasks.when.day", { date: fmtDay(at) });
+}
+
+/**
+ * 行的第二行，一句话：进行中的说做了多久、花了多少（「已进行 12 分钟，花了约 $0.08」；问了有默认回答的问题时说这个，不写花费）；
+ * 等你的说什么时候怎么了（「5 分钟前问了你一个问题」）；结束了的再加花了多少（「15:33 完成，花了约 $0.02」）
+ */
+export function taskSub(task, now = Date.now()) {
+  const k = stageName(task.stage);
+  const spent = hasCost(task.spentUsd) ? money(task.spentUsd) : "";
+  if (task.stage.group === "working") {
+    if (k === "queued") return task.stage.label;
+    const d = t("tasks.minutes", { count: Math.max(1, Math.round((now - task.createdAt) / 60_000)) });
+    if (k === "asking") return t("tasks.sub.asking", { d });
+    return spent ? t("tasks.sub.workingCost", { d, spent }) : t("tasks.sub.working", { d });
+  }
+  if (!has(`tasks.sub.${k}`)) return task.stage.label;
+  const line = t(`tasks.sub.${k}`, { when: whenIn(task.endedAt || task.updatedAt, now) });
+  return task.stage.group === "ended" && spent ? t("tasks.sub.withCost", { line, spent }) : line;
 }
 
 export async function stopTask(task) {
@@ -155,14 +183,16 @@ export function TaskDetail({ task, onChanged, origin = true, question = true, on
   </div>`;
 }
 
-/** 对话里的任务胶囊：「后台任务 · 标题 · 进行中 ›」，点开看详情（data 给了就不去取：样例页） */
+/** 对话里的任务胶囊，一句话：「后台任务「GPU 价格调研」进行中 ›」，标题太长时只截标题；点开看详情（data 给了就不去取：样例页） */
 export function TaskChip({ task, onChanged, data }) {
   const [open, setOpen] = useState(false);
   const dot = stageDot(task.stage);
+  const k = `tasks.chipLine.${stageName(task.stage)}`;
+  const title = html`<span class="t">${task.title}</span>`;
   return html`<div class=${`task-chip${open ? " open" : ""}`}>
     <button type="button" class="task-pill" aria-expanded=${open} title=${open ? t("tasks.collapse") : t("tasks.view")} onClick=${() => setOpen(!open)}>
       <span class=${`dot ${dot}`} aria-hidden="true"></span>
-      <span class="k">${t("tasks.chip")}</span><span class="sep">·</span><span class="t">${task.title}</span><span class="sep">·</span><span class="st">${task.stage.label}</span>
+      <span class="l">${has(k) ? t(k, { title }) : t("tasks.chipAny", { title, stage: task.stage.label })}</span>
       <${Icon} name="chevRight" size=${12} class="chev" />
     </button>
     ${open && html`<${TaskDetail} task=${task} origin=${false} onChanged=${onChanged} data=${data} />`}
@@ -170,13 +200,12 @@ export function TaskChip({ task, onChanged, data }) {
 }
 
 /**
- * 信息面板里的一行：状态点 + 标题，下面一行是状态、多久了（进行中）或什么时候结束的、花了多少（有了花费才写）；
+ * 信息面板里的一行：状态点 + 标题，下面一句话（taskSub：做了多久、什么时候怎么了、花了多少）；
  * 进行中的可以直接停止。点开是同一块里的详情（data 给了就是样例页）
  */
 export function TaskRow({ task, onChanged, open, onToggle, onOpenConv, data }) {
   const [stopping, setStopping] = useState(false);
   const working = task.stage.group === "working";
-  const when = working ? t("tasks.minutes", { count: Math.max(1, Math.round((Date.now() - task.createdAt) / 60_000)) }) : fmtAgo(task.endedAt || task.updatedAt);
   const stop = async (e) => {
     e.stopPropagation();
     setStopping(true);
@@ -188,7 +217,7 @@ export function TaskRow({ task, onChanged, open, onToggle, onOpenConv, data }) {
       <span class=${`dot ${stageDot(task.stage)}`} aria-hidden="true"></span>
       <div class="who">
         <div class="name">${task.title}</div>
-        <div class="sub">${task.stage.label} · ${when}${hasCost(task.spentUsd) ? ` · ${t("tasks.costShort", { spent: money(task.spentUsd) })}` : ""}</div>
+        <div class="sub">${taskSub(task)}</div>
       </div>
       ${working && !open && html`<button type="button" class="text danger" disabled=${stopping} onClick=${stop} onKeyDown=${(e) => e.stopPropagation()}>${stopping ? t("tasks.stopping") : t("tasks.stop")}</button>`}
     </div>

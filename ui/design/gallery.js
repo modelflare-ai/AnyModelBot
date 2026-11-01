@@ -411,7 +411,7 @@ function Gallery() {
         <${Demo} col title="容器与层次" note="一组东西 = 底色深一级（--well）+ 间距；里面不再套框；描边只留给输入框（≥ 3:1）和浮层玻璃" code=${`.card { background: var(--well); border-radius: var(--r-well); }        /* 不描边、不加投影 */
 .card .cmd { font-family: var(--code); }                                /* 卡片里的命令是一行等宽字，不再套底 */
 .notice.red { --notice-bg: var(--red-wash); --notice-ic: var(--red); }  /* 提示：淡底 + 图标 + --fg 字，不描边、无色条 */`}>
-          ${() => html`<div class="card"><div class="meta">需要你的批准 · <span class="num">A7K2</span></div><div class="q">机器人想在工作区之外写入文件</div>
+          ${() => html`<div class="card"><div class="meta">需要你的批准，编号 <span class="num">A7K2</span></div><div class="q">机器人想在工作区之外写入文件</div>
               <div class="cmd">write_file  ~/Documents/周报/2026-W44.md</div>
               <div class="actions"><${Button} variant="primary">允许（仅本次）<//><${Button}>拒绝<//></div></div>
             <${Notice} tone="red">模型请求失败：HTTP 529 上游繁忙，请稍后重试<//>
@@ -610,12 +610,12 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <${NeedsRow} count=${3} onClick=${() => {}} /><${NeedsRow} count=${2} on onClick=${() => {}} /><${NeedsRow} count=${0} />
           </div>`}
         <//>
-        <${Demo} flush col title="列表" note="NeedItem：等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天 / 清理文件夹 / 观察够了，要不要改为执行（不推送）">
+        <${Demo} flush col title="列表" note="NeedItem：标题行是一句话，几个机器人时带上名字（「小蓝的「GPU 价格调研」在等你回答」）。等你回答 / 等你回答（任务接着在做，不回复就按默认）/ 等你批准 / 预算用完（再给 $1 继续？）/ 未送达 / 失败 / 规则本月预算用完 / 登录过期 / 预算留给聊天 / 清理文件夹 / 观察够了，要不要改为执行（不推送）">
           ${() => html`<div class="list needs-list">${NEEDS.map((it) => html`<${NeedItem} item=${it} multiBot onAct=${async () => {}} />`)}</div>`}
         <//>
       <//>
 
-      <${Section} id="rules" title="规则" lead="信息面板「任务」组里一条规则一行：时间表 · 标题，状态和下次运行。观察够了要不要改为执行，在「需要你」里问（从不推送）。点开是同一块里的详情和运行记录，记录一次一行、不画分隔线，再点开一行看报告。">
+      <${Section} id="rules" title="规则" lead="信息面板「任务」组里一条规则一行：时间表 · 标题，下面一句状态和下次运行（「观察中，明天 08:00 再运行」）。观察够了要不要改为执行，在「需要你」里问（从不推送）。点开是同一块里的详情和运行记录，记录一次一行、不画分隔线，再点开一行看报告。">
         <${Demo} title="行" note="RuleRow：观察中 / 执行中 / 暂停 / 提醒">
           ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
             <div class="list">${RULES.map((r) => html`<${RuleRow} rule=${r} open=${false} onToggle=${() => {}} />`)}</div>
@@ -633,7 +633,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <//>
       <//>
 
-      <${Section} id="tasks" title="任务" lead="信息面板的「任务」组就是一个机器人的全部任务和规则：进行中、等你的在前，规则其次，结束了的收在最后一行里，点开才列出来（留 30 天）。一个任务一行，点开是同一块里的详情：来自、最新进展、预算（可以改）、文件夹（大小、打开）、要清理时的日期和保留、每次运行折叠的处理过程。什么都没有时整组不画。">
+      <${Section} id="tasks" title="任务" lead="信息面板的「任务」组就是一个机器人的全部任务和规则：进行中、等你的在前，规则其次，结束了的收在最后一行里，点开才列出来（留 30 天）。一个任务一行，第二行是一句话（「已进行 12 分钟，花了约 $0.08」「15:33 完成」），点开是同一块里的详情：来自、最新进展、预算（可以改）、文件夹（大小、打开）、要清理时的日期和保留、每次运行折叠的处理过程。什么都没有时整组不画。">
         <${Demo} title="「任务」组" note="TaskGroup：进行中 / 进行中，有个问题等你回答（问了个有默认回答的问题，接着在做）/ 等你回答 / 规则 / 已结束 1（点开列出结束了的，那个文件夹 3 天后清理）">
           ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
             <${TaskGroup} botId="b" tasks=${TASKS} rules=${[RULES[0]]} ended=${ENDED} details=${{ t1: TASK_DETAIL, t4: ASKING_DETAIL, t2: ASK_DETAIL, t3: ENDED_DETAIL }} />
@@ -644,11 +644,11 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
             <div class="list"><${TaskRow} task=${ASKING} open data=${ASKING_DETAIL} onToggle=${() => {}} onOpenConv=${() => {}} /></div>
           </div>`}
         <//>
-        <${Demo} col title="对话里的胶囊" note="TaskChip：进行中 / 进行中，有个问题等你回答；点开是详情（不写来自）">
+        <${Demo} col title="对话里的胶囊" note="TaskChip：一句话「后台任务「GPU 价格调研」进行中」，太长时只截标题；点开是详情（不写来自）">
           ${() => html`<div class="gal-chat"><div class="msg-row assistant"><${TaskChip} task=${TASKS[0]} data=${TASK_DETAIL} /></div>
             <div class="msg-row assistant"><${TaskChip} task=${ASKING} data=${ASKING_DETAIL} /></div></div>`}
         <//>
-        <${Demo} title="详情" note="TaskRow 展开：来自 · 最新进展 · 预算 约 $0.08 / $1.00（改） · 文件夹 2.3 MB（打开） · 第 1 次 · 开始 · 停止 / 导出">
+        <${Demo} title="详情" note="TaskRow 展开：来自 · 最新进展 · 预算 约 $0.08 / $1.00（改） · 文件夹 2.3 MB（打开） · 第 1 次运行，已进行 12 分钟 · 停止 / 导出">
           ${() => html`<div class="panel-body" style="width: 340px; flex: none; padding: var(--space-2); border-radius: var(--r-pane); background: var(--grain), var(--glass-panel)">
             <div class="list"><${TaskRow} task=${TASKS[0]} open data=${TASK_DETAIL} onToggle=${() => {}} onOpenConv=${() => {}} /></div>
           </div>`}
@@ -678,18 +678,18 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
 
 /** 「需要你」的样例（单人：一个人用自己的机器人） */
 const NEEDS = [
-  { id: "q", kind: "question", botName: "小蓝", subject: "GPU 价格调研", status: "等你回答", line: "报告用中文还是英文？", since: Date.now() - 2 * 60_000, severity: "warn", questions: [{ id: "a", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }] },
-  { id: "qd", kind: "question", botName: "小蓝", subject: "竞品周报", status: "等你回答", line: "报告用中文还是英文？", note: "不回复就按中文做", since: Date.now() - 3 * 60_000, severity: "warn", taskId: "t4", questions: [{ id: "answer", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }], default: "中文" }] },
-  { id: "a", kind: "approval", botName: "小蓝", subject: "清理旧构建", status: "等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
-  { id: "bq", kind: "question", botName: "小蓝", subject: "季度报告 PPT", status: "预算用完", line: "已用约 $1.00，再给 $1 继续？", since: Date.now() - 8 * 60_000, severity: "warn", questions: [{ id: "budget", question: "已用约 $1.00，再给 $1 继续？", options: [{ label: "继续" }, { label: "停止" }] }] },
-  { id: "d", kind: "delivery", botName: "小蓝", subject: "1 条结果未送达微信", status: "在微信里发条消息就能收到", line: "季度报告做好了，在 tasks 文件夹里。", since: Date.now() - 20 * 60_000, severity: "warn", actions: [] },
-  { id: "f", kind: "failed", botName: "红魔", subject: "季度报告", status: "失败", line: "X 云的价格页要登录，我进不去", since: Date.now() - 40 * 60_000, severity: "err" },
-  { id: "r", kind: "rule", botName: "红魔", subject: "规则「每日 issue 巡检」", status: "连续失败 3 次，已暂停", line: "GitHub 返回 401：令牌可能过期了", since: Date.now() - 90 * 60_000, severity: "err", actions: ["retry"] },
-  { id: "rb", kind: "rule", botName: "小蓝", subject: "规则「看 X 价格」", status: "本月预算用完", line: "已用约 $3.00，下月自动恢复。再给 $3 继续？", since: Date.now() - 2 * 3600_000, severity: "warn", actions: ["continue"] },
-  { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
-  { id: "rs", kind: "budget", botName: "小蓝", subject: "后台工作已停", status: "", line: "机器人预算只剩约 $1.80（共 $10），留给聊天", since: Date.now() - 4 * 3600_000, severity: "warn", actions: ["open"] },
-  { id: "c", kind: "cleanup", botName: "小蓝", subject: "2 个任务文件夹 11月4日 删除", status: "", line: "整理下载目录和旧照片归档 · 30 天没动过", since: Date.now() - 5 * 3600_000, severity: "warn", actions: ["keep", "dismiss"] },
-  { id: "s", kind: "suggest", botName: "小蓝", subject: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", status: "", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", since: Date.now() - 6 * 3600_000, severity: "warn", actions: ["act", "dismiss"], ruleTitle: "看 X 价格" },
+  { id: "q", kind: "question", botName: "小蓝", subject: "GPU 价格调研", status: "等你回答", head: "「GPU 价格调研」在等你回答", line: "报告用中文还是英文？", since: Date.now() - 2 * 60_000, severity: "warn", questions: [{ id: "a", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }] }] },
+  { id: "qd", kind: "question", botName: "小蓝", subject: "竞品周报", status: "等你回答", head: "「竞品周报」在等你回答", line: "报告用中文还是英文？", note: "不回复就按中文做", since: Date.now() - 3 * 60_000, severity: "warn", taskId: "t4", questions: [{ id: "answer", question: "报告用中文还是英文？", options: [{ label: "中文" }, { label: "英文" }], default: "中文" }] },
+  { id: "a", kind: "approval", botName: "小蓝", subject: "清理旧构建", status: "等你批准", head: "「清理旧构建」在等你批准", line: "rm -rf build/", since: Date.now() - 5 * 60_000, severity: "warn" },
+  { id: "bq", kind: "question", botName: "小蓝", subject: "季度报告 PPT", status: "预算用完", head: "「季度报告 PPT」预算用完了", line: "已用约 $1.00，再给 $1 继续？", since: Date.now() - 8 * 60_000, severity: "warn", questions: [{ id: "budget", question: "已用约 $1.00，再给 $1 继续？", options: [{ label: "继续" }, { label: "停止" }] }] },
+  { id: "d", kind: "delivery", botName: "小蓝", subject: "1 条结果未送达微信", status: "在微信里发条消息就能收到", head: "1 条结果未送达微信，在微信里发条消息就能收到", line: "季度报告做好了，在 tasks 文件夹里。", since: Date.now() - 20 * 60_000, severity: "warn", actions: [] },
+  { id: "f", kind: "failed", botName: "红魔", subject: "季度报告", status: "失败", head: "「季度报告」失败了", line: "X 云的价格页要登录，我进不去", since: Date.now() - 40 * 60_000, severity: "err" },
+  { id: "r", kind: "rule", botName: "红魔", subject: "规则「每日 issue 巡检」", status: "连续失败 3 次，已暂停", head: "规则「每日 issue 巡检」连续失败 3 次，已暂停", line: "GitHub 返回 401：令牌可能过期了", since: Date.now() - 90 * 60_000, severity: "err", actions: ["retry"] },
+  { id: "rb", kind: "rule", botName: "小蓝", subject: "规则「看 X 价格」", status: "本月预算用完", head: "规则「看 X 价格」本月预算用完了", line: "已用约 $3.00，下月自动恢复。再给 $3 继续？", since: Date.now() - 2 * 3600_000, severity: "warn", actions: ["continue"] },
+  { id: "l", kind: "login", botName: "绿草", subject: "微信登录已过期", status: "", head: "微信登录已过期", line: "", since: Date.now() - 3 * 3600_000, severity: "err" },
+  { id: "rs", kind: "budget", botName: "小蓝", subject: "后台工作已停", status: "", head: "后台工作已停", line: "机器人预算只剩约 $1.80（共 $10），留给聊天", since: Date.now() - 4 * 3600_000, severity: "warn", actions: ["open"] },
+  { id: "c", kind: "cleanup", botName: "小蓝", subject: "2 个任务文件夹 11月4日 删除", status: "", head: "2 个任务文件夹 11月4日 删除", line: "整理下载目录和旧照片归档 30 天没动过了", since: Date.now() - 5 * 3600_000, severity: "warn", actions: ["keep", "dismiss"] },
+  { id: "s", kind: "suggest", botName: "小蓝", subject: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", status: "", head: "规则「看 X 价格」已观察 3 次，需要你来决定是否执行", line: "本会发送：“X 降价了，现在 ¥199（昨天 ¥259）”", since: Date.now() - 6 * 3600_000, severity: "warn", actions: ["act", "dismiss"], ruleTitle: "看 X 价格" },
 ];
 
 /** 任务的样例（单人：自己的机器人小蓝）：在调研的、问了个有默认回答的问题接着在做的、等你回答的、昨天做完的（文件夹 3 天后清理） */

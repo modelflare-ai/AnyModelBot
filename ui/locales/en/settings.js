@@ -87,7 +87,7 @@ export default {
     guide: {
       name: "Getting-started checklist",
       hidden: "Hidden. Start over to bring it back on the chat page and at the bottom of the sidebar",
-      progress: "Learn what your bots can do, one step at a time · {done}/{total} done",
+      progress: "Learn what your bots can do, one step at a time. {done} of {total} done",
       keys: "guide onboarding tutorial checklist getting started",
       restart: "Start over",
       restarted: "Checklist restarted",
@@ -156,7 +156,7 @@ export default {
     account: {
       name: "Modelflare account",
       signedIn: "Signed in",
-      enterprise: "{name} · Billed to your organization's wallet",
+      enterprise: "{name}, billed to your organization's wallet",
       signedOut: "Sign in to see usage, notifications and your invite link, and to set budgets for individual bots",
       keys: "account sign in sign up log in log out login",
       logout: "Sign out",

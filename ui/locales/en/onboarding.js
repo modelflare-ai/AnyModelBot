@@ -36,7 +36,7 @@ export default {
     copyLink: "Copy link",
   },
   model: {
-    found: { one: "Connected · {n} model found", other: "Connected · {n} models found" },
+    found: { one: "Connected and found {n} model", other: "Connected and found {n} models" },
     hint: "Pick a default model. You can switch anytime in a chat.",
     filter: "Filter models",
     default: "Default model",

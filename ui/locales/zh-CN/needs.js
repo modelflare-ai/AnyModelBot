@@ -1,6 +1,8 @@
 // needs · zh-CN（screens/needs-you.js：「需要你」）
 export default {
   title: "需要你",
+  head: "{bot}的{what}",
+  headSpaced: "{bot}的 {what}",
   collapse: "收起",
   viewTask: "查看任务",
   viewRule: "查看规则",

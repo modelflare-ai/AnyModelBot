@@ -55,6 +55,8 @@ export interface AgentManagerOptions {
   contextWindow?: (model: string) => Promise<number | undefined>;
   /** 模型支持的接口与是否推理（Modelflare 模型资料），DSH 按它选对话接口 */
   apiInfo?: (model: string) => Promise<ModelApiInfo | undefined>;
+  /** 桌面版：系统给这个地址用的代理（PAC 写法）；代理进程的环境里没设代理时用它 */
+  systemProxy?: (url: string) => Promise<string | undefined>;
   /**
    * 服务端压缩（见 server-compaction.ts）：listed = 价格目录是否列出该模型的压缩端点（只是提示，用前还要探测）；
    * endpoint = 该模型（网关里的名字）直连的压缩端点。缺省则不做。
@@ -237,6 +239,7 @@ export class AgentManager {
         onWake: (conv) => this.onWake?.(botId, conv),
         onTaskEvent: (root, n) => this.tasks?.onEvent(botId, root, n),
         idle: () => this.idle(botId),
+        systemProxy: this.o.systemProxy,
       });
       // 代理进程退出（中止宽限期内没停下、设置变化、崩溃、重启、停止）：进程里的压缩跟着没了，不再等它；跑着的后台任务记为中断、排恢复。
       // 空闲时换掉的（recycled）上面什么都没在跑：之后才开始的 run 已经在用新的进程，不能当成被打断

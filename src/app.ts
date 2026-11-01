@@ -69,6 +69,8 @@ export interface DesktopHooks {
   secretBox?: SecretBox;
   /** 走 Chromium 网络栈的 fetch（Electron net.fetch：系统代理、系统证书）；下载内置 PowerShell 用，缺省时用 Node 的 fetch */
   fetch?: typeof fetch;
+  /** 系统给这个地址用的代理（Electron resolveProxy：系统设置和 PAC），PAC 写法，如 "PROXY 127.0.0.1:7890" 或 "DIRECT" */
+  resolveProxy?(url: string): Promise<string>;
 }
 
 export interface ModelflareStatus {
@@ -208,6 +210,8 @@ export class App {
       approvalTtlMs: config.agent.approvalTtlMs,
       // 上下文长度来自 Modelflare 的模型资料（和模型选择器里显示的一致）；内置兜底表跟不上新模型
       contextWindow: async (model) => (await this.infoOf(model))?.context,
+      // 桌面版：代理执行的命令用系统代理（环境里没设代理时）；命令行、Docker 只认环境变量
+      systemProxy: async (url) => this.desktop?.resolveProxy?.(url),
       // 代理的对话接口按 Modelflare 目录选（Responses / Anthropic Messages / Chat）；外部端点只当它会 Chat
       apiInfo: async (model) => {
         if (!this.magpie) return undefined;

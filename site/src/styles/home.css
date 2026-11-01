@@ -83,8 +83,8 @@
   .hero:has([data-step~="c"]) { --hz-glow: var(--bot-green-glow); --hero-hue: 158; }
   /* 浅色：顶光就是卡片本身的白，机器人色再压一半；完全不用黄绿 */
   [data-theme="light"] .hero {
-    --hero-core: rgba(255, 255, 255, .7);
-    --hero-panel-top: oklch(.968 .012 250);  /* 顶上一层很淡的晴空冷灰（白云要靠它才看得出来），往下回到卡片底色 */
+    --hero-core: rgba(255, 255, 255, .45);   /* 顶光收一点，标题背后不至于把蓝天洗白 */
+    --hero-panel-top: oklch(.968 .012 250);  /* 浅色下只用在小胶囊里头像的描边上；卡片顶上的蓝天见下面的 .hero__bg */
     --hero-star: oklch(.66 .07 var(--hero-hue)); --hero-star-a: 1;
     --hero-rim: #ffffff;
     --hero-glow-a: 4%;
@@ -98,6 +98,16 @@
     background: linear-gradient(var(--hero-panel-top), var(--bg-feature) 46%);
     box-shadow: inset 0 0 0 1px var(--line);
   }
+  /* 浅色·蓝天：顶上是一片清透的浅天蓝（不是灰），往下越来越淡，到说明文字附近已经回到卡片的白；
+     用 px 定位而不是百分比，Hero 高矮不同时蓝天的厚度不变。白云和闪光都靠这层蓝才立得住 */
+  [data-theme="light"] .hero__bg {
+    background: linear-gradient(
+      oklch(.86 .075 238),
+      oklch(.9 .056 238) 140px,
+      oklch(.945 .032 240) 300px,
+      oklch(.975 .013 242) 460px,
+      var(--bg-feature) 620px);
+  }
   .hero__bg::after { content: ""; position: absolute; inset: 0; z-index: 6; background: var(--hero-grain); }
   /* 顶光：一层很淡的中性白光，顶上 160px 淡入——光像是从卡片里面亮起来的，顶边不会被切出一条亮带 */
   .hero__beam {
@@ -106,7 +116,7 @@
     -webkit-mask-image: linear-gradient(transparent, #000 160px); mask-image: linear-gradient(transparent, #000 160px);
   }
   /* 顶部天空（.hero__sky）：只占卡片上半部，整层往下渐隐；点在 Hero.astro 里伪随机生成，标题背后有意稀一些。
-     深色是星空（约 340 颗冷白小星，少数偏蓝 / 偏暖，几颗亮星带一圈光）；浅色是晴空（冷灰的顶 + 三朵白云 + 四十来个四角形细小闪光）。
+     深色是星空（约 340 颗冷白小星，少数偏蓝 / 偏暖，几颗亮星带一圈光）；浅色是晴空（浅天蓝的顶 + 三朵白云 + 四十来个四角形细小闪光）。
      动画都很轻（用户 2026-10-31 明确要的，是"背景不做动画"规矩里写明的例外）：
        深色：约五分之一的星（.tw）慢慢明暗闪烁，各自周期、起点不同；两颗流星隔十几、二十秒才划过一次，每次不到一秒。
        浅色：三朵云极慢地从左往右飘（横穿一次 3–5 分钟，几乎察觉不到在动）；约六成闪光亮起来、转 45° 再隐去，各自错开。
@@ -120,11 +130,11 @@
   .hero__dots .c { fill: #bfd4ff; }
   .hero__dots .w { fill: #ffe7c9; }
   .hero__glints { display: none; }
-  /* 浅色·晨光：四角形的细小闪光，颜色跟着当前机器人的色调；每三个里一个用中性的灰蓝，不至于整片同色 */
+  /* 浅色·晨光：四角形的细小闪光，颜色跟着当前机器人的色调；每三个里一个是白的（蓝天上的亮点），不至于整片同色 */
   [data-theme="light"] .hero__dots { display: none; }
   [data-theme="light"] .hero__glints { display: inline; }
   .hero__glints path { scale: var(--s); transform-box: fill-box; transform-origin: center; }
-  .hero__glints g:nth-child(3n) path { fill: #a3abc0; }
+  .hero__glints g:nth-child(3n) path { fill: #fff; }
   /* 浅色·白云：四团白色的圆叠成一朵积云，边缘糊开；底下压一层极淡的中性灰影子，白底上才分得出云和天。深色下不显示 */
   .hero__clouds { display: none; }
   [data-theme="light"] .hero__clouds { display: block; }

@@ -6,7 +6,7 @@ export const pricingConfig: PricingConfig = {
   sampleUsage: { days: 30, msgs: 50, inTok: 3000, outTok: 600 },
 };
 
-/** 示例人设配的模型（§6.9，可在 App 里随时更换）；白纸（blank）不配模型 */
+/** 示例人设配的模型（§6.9，可在 App 里随时更换） */
 export const personaModels = {
   pair: "claude-sonnet-5-5",
   expenses: "gpt-5.6-sol",

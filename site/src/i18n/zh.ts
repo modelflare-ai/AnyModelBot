@@ -49,7 +49,7 @@ export const zh = {
     demo: "看演示",
     trust: ["App 免费开源", "模型按量付费", "Windows / macOS / Linux"],
     appUiNote: "",
-    // 标题上方的小胶囊（链到"由你定义"那一节）
+    // 标题上方的小胶囊（链到"认识你的机器人"）
     eyebrow: "它是谁，由你来写",
     // 首屏底下那台 App 窗口、手机和两侧流动卡片里的字；其余对话复用 tour.ui、handson、bots、window 的文案
     stage: {
@@ -262,7 +262,7 @@ export const zh = {
     },
   },
   kicker: {
-    bots: "由你定义",
+    bots: "认识它们",
     features: "能做什么",
     models: "模型与价格",
     data: "数据去向",
@@ -318,44 +318,42 @@ export const zh = {
   },
   bots: {
     h2: "它是谁，你说了算。",
-    h2dim: "没有固定的岗位，只有你写的人设。",
-    lead: "同一个天天，可以是结对程序员，也可以是德语陪练。写几句话告诉它做什么、怎么说话，它就照着来；想法变了，改一句，下一条消息就生效。",
-    tabsLabel: "比如这样写",
-    looksLabel: "挑个角色",
-    looksNote: "换个角色，人设一个字不变；名字也能改成你喜欢的。",
+    h2dim: "挑一个，或者全都养着。",
+    lead: "六个毛绒角色，只有名字和长相不同。它做什么、怎么说话，都由你写的人设决定。戳一下试试——它们会回嘴。",
+    tabsLabel: "选择角色",
     cost: "≈ {amount} / 月",
-    card: { org: "AnyModelBot", tag: "由你填写", hello: "你好，我叫", persona: "人设", model: "模型", spend: "花费", spendNote: "日常用量估算", blankModel: "从 {modelCount} 个模型里挑一个", blankSpend: "按量付费，没有月费" },
+    badge: { org: "AnyModelBot", staff: "正式员工", no: "工号", job: "岗位：你来定", persona: "人设", model: "模型", salary: "月薪", salaryNote: "日常用量估算", onDuty: "在岗" },
+    personaNote: "示例，可以写成任何样子",
     modelNote: "示例模型，可随时更换",
-    phoneNote: "以上都是示例，你的人设可以完全不一样。手机画面为示意：在微信或飞书里就是这样聊",
+    phoneNote: "示意：在微信或飞书里就是这样聊",
     phoneInput: "发消息…",
     phoneStatus: "在线 · 运行在你的电脑上",
     phoneDay: "今天 21:08",
-    swipeHint: "左右滑动换人设",
-    where: { pc: "住在你的电脑里", phone: "在手机上，它就这样回你" },
+    swipeHint: "左右滑动换角色",
+    where: { pc: "住在你的电脑里", phone: "在手机上找它" },
     link: "微信 / 飞书",
     perks: [
       { title: "人设就是一段话", body: "不用配流程，用你自己的话写。模板只是起点，每个字都能改。" },
       { title: "各用各的模型和工作区", body: "每个机器人有自己的模型、文件夹和记忆，预算也能分开设。" },
       { title: "想建几个建几个", body: "一个写代码，一个管家务，一个陪你练外语，互不打扰。" },
     ],
-    // 六个角色：名字取自最显眼的配饰，只有名字和长相不同。介绍只讲配饰，不写岗位：机器人做什么由人设决定
+    // 六个角色：名字取自最显眼的配饰（tag），只有名字和长相不同。介绍只讲配饰，不写岗位：机器人做什么由人设决定
     looks: {
-      blue: { name: "天天", alias: "Ping", motto: "头顶的天线天天在线，消息一到就接住。" },
-      yellow: { name: "闪闪", alias: "Twinkle", motto: "头顶一颗小星星，一笑就闪闪发亮，还会脸红。" },
-      green: { name: "芽芽", alias: "Sprout", motto: "头顶一株嫩芽，每天都长高一点。" },
-      red: { name: "哒哒", alias: "Beat", motto: "耳机一戴，节拍就哒哒哒响个不停。" },
-      purple: { name: "晶晶", alias: "Crystal", motto: "头顶结着一颗水晶，转起来亮晶晶。" },
-      orange: { name: "飞飞", alias: "Pilot", motto: "飞行护目镜一戴，随时准备起飞。" },
+      blue: { name: "天天", alias: "Ping", tag: "天线", motto: "头顶的天线天天在线，消息一到就接住。" },
+      yellow: { name: "闪闪", alias: "Twinkle", tag: "星星", motto: "头顶一颗小星星，一笑就闪闪发亮，还会脸红。" },
+      green: { name: "芽芽", alias: "Sprout", tag: "嫩芽", motto: "头顶一株嫩芽，每天都长高一点。" },
+      red: { name: "哒哒", alias: "Beat", tag: "耳机", motto: "耳机一戴，节拍就哒哒哒响个不停。" },
+      purple: { name: "晶晶", alias: "Crystal", tag: "水晶", motto: "头顶结着一颗水晶，转起来亮晶晶。" },
+      orange: { name: "飞飞", alias: "Pilot", tag: "护目镜", motto: "飞行护目镜一戴，随时准备起飞。" },
     },
-    // 示例人设，和角色不做配对：tab 是这段人设的用途。首屏、"在哪都能用"、演示导览的界面示意也用这些对话
+    // 示例人设，不是角色的职责（对应关系在 lib/bots.ts 的 CHAR_PERSONA）。工牌、手机、首屏、"在哪都能用"、演示导览的对话都从这里取
     personas: {
-      pair: { tab: "写代码的搭档", persona: "你是我的结对程序员。先读代码再动手，改完告诉我怎么验证。别夸我，有问题直说。", user: "跑一下测试。", bot: "全部通过，用时 12 秒。不过第 48 行的判断永远为真，要我顺手改掉吗？" },
-      expenses: { tab: "管报销", persona: "你帮我管报销。发票按月份归档到「报销」文件夹，金额对不上就问我，别自己猜。", user: "上个月的报销弄完了吗？", bot: "归档了 9 张，合计 ¥3,280。有一张抬头不对，放在「待确认」里了。" },
-      secretary: { tab: "工作秘书", persona: "你是我的工作秘书。每天 17:00 把讨论整理成日报，记住我的习惯，说过的事别再问。", user: "今天的日报好了吗？", bot: "好了：3 个决定、2 个待办，已存入记忆。" },
-      german: { tab: "德语陪练", persona: "你是我的德语陪练，只用德语和我聊。我说错了，在句末用中文纠正一处就好。", user: "Gestern ich bin ins Kino gegangen.", bot: "Schön! Welchen Film hast du gesehen?（语序：Gestern bin ich…）" },
-      editor: { tab: "毒舌编辑", persona: "你是我的编辑，说话直接。看到空话就划掉，说清为什么。不要鼓励，只要改法。", user: "看看这句：我们致力于打造卓越的用户体验。", bot: "划掉。这句放在哪家公司都成立。你们到底做了什么？写那件事。" },
-      home: { tab: "家里的小管家", persona: "你是我家的小管家。记住家人的生日和忌口，每周五提醒我买菜，语气轻松点。", user: "周末做点什么吃？", bot: "妈妈不吃香菜，小宇这周想吃鱼。清蒸鲈鱼配番茄炒蛋？要的话我列个菜单～" },
-      blank: { tab: "你来写", persona: "写下你想让它成为的样子……", user: "", bot: "我还没有人设。你想让我成为谁？" },
+      pair: { persona: "你是我的结对程序员。别夸我，有问题直说。", user: "跑一下测试。", bot: "全部通过，用时 12 秒。不过第 48 行的判断永远为真，要我顺手改掉吗？" },
+      editor: { persona: "你是我的编辑，说话直接。看到空话就划掉。", user: "看看这句：我们致力于打造卓越的用户体验。", bot: "划掉。这句放在哪家公司都成立。你们到底做了什么？写那件事。" },
+      secretary: { persona: "你是我的工作秘书。每天 17:00 整理日报。", user: "今天的日报好了吗？", bot: "好了：3 个决定、2 个待办，已存入记忆。" },
+      german: { persona: "你是我的德语陪练，只用德语和我聊。", user: "Gestern ich bin ins Kino gegangen.", bot: "Schön! Welchen Film hast du gesehen?（语序：Gestern bin ich…）" },
+      home: { persona: "你是我家的小管家。记住生日和忌口。", user: "周末做点什么吃？", bot: "妈妈不吃香菜，小宇这周想吃鱼。清蒸鲈鱼配番茄炒蛋？要的话我列个菜单～" },
+      expenses: { persona: "你帮我管报销。金额对不上就问我，别猜。", user: "上个月的报销弄完了吗？", bot: "归档了 9 张，合计 ¥3,280。有一张抬头不对，放在「待确认」里了。" },
     },
   },
   // 戳一戳、撸一撸、打瞌睡被吵醒时说的话（lib/eyes.ts）；poke 按顺序轮流说。只逗长相和配饰，不提任何工作：机器人做什么由人设决定

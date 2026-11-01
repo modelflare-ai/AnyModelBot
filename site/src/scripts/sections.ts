@@ -175,25 +175,22 @@ const track = (n: string, p?: object) => { try { (window as any).umami?.track(n,
   chips.forEach((c) => c.addEventListener("click", () => $$("[role=option]", demo).find((o) => o.dataset.model === c.dataset.orbitModel)?.click()));
 })();
 
-// —— 由你定义：人设是 WAI-ARIA tabs，角色是单选，两根轴互不相干 ——
-// 换人设：名牌绕竖轴翻面、挂绳晃一下，人设逐字写出来，手机里再按这段人设回话；脸和名字不变。
-// 换角色：名牌上、手机里的脸和名字一起换，打个招呼，其余几张脸转头看它；人设一个字不动。
-// 鼠标拨过名牌它会晃（阻尼弹簧，转轴在挂绳顶端，写 --swing）。窄屏上一排人设可横滑，选中的滚到中间；舞台上左右滑动也能换人设。
+// —— 认识你的机器人：一排角色是 WAI-ARIA tabs ——
+// 换角色：工牌绕竖轴翻面换人、挂绳往换人的方向晃一下，证件照打招呼；在岗的那个低头看工牌，其余几个转头看它；
+// 手机里的回复先"正在输入"再逐字打出。鼠标拨过工牌它会晃（阻尼弹簧，转轴在挂绳顶端，写 --swing）。
+// 窄屏上一排角色可横滑，选中的滚到中间；舞台上左右滑动也能换角色。
 (() => {
-  const tabs = $$<HTMLButtonElement>("[data-persona-tabs] [role=tab]");
+  const tabs = $$<HTMLButtonElement>("[data-bot-tabs] [role=tab]");
   const crew = $("[data-crew]");
   if (!tabs.length || !crew) return;
   const list = tabs[0].parentElement!;
   const stage = $("[data-bot-stage]", crew);
   const hang = $("[data-badge]", crew);
   const card = $("[data-badge-card]", crew);
-  const photo = $(".badge-card__photo", crew);
-  const looks = $$<HTMLButtonElement>("[data-looks] [role=radio]", crew);
-  const log = $(".phone__log", crew);
   const faceOf = (el: Element | null | undefined) => el?.querySelector<HTMLElement>(".bot-face") ?? null;
-  const bigFace = (k: string) => faceOf($(`.badge-card__photo [data-for-look="${k}"]`, crew));
+  const tabOf = (k: string) => tabs.find((t) => t.dataset.bot === k)!;
 
-  // 名牌的摆：角度 a（度）、角速度 v（度/秒）；劲度 70、阻尼 5，|a| ≤ 7°
+  // 工牌的摆：角度 a（度）、角速度 v（度/秒）；劲度 70、阻尼 5，|a| ≤ 7°
   let a = 0, v = 0, last = 0, raf = 0;
   const step = (now: number) => {
     const dt = Math.min(0.032, (now - last) / 1000);
@@ -211,7 +208,7 @@ const track = (n: string, p?: object) => { try { (window as any).umami?.track(n,
   };
   if (hang && !reduce) {
     let lx = NaN;
-    // 指针往右推，名牌下沿往右荡（CSS 里顺时针为正，所以取反）
+    // 指针往右推，工牌下沿往右荡（CSS 里顺时针为正，所以取反）
     hang.addEventListener("pointermove", (e) => {
       if (e.pointerType === "mouse" && !Number.isNaN(lx)) kick(Math.max(-24, Math.min(24, (lx - e.clientX) * 0.9)));
       lx = e.clientX;
@@ -219,101 +216,78 @@ const track = (n: string, p?: object) => { try { (window as any).umami?.track(n,
     hang.addEventListener("pointerleave", () => (lx = NaN));
   }
 
-  // 先写人设（总长约 0.9 秒），手机里显示"正在输入"的三个点，人设写完再逐字打出回答；连续切换时上一段直接补全
+  // 先显示"正在输入"的三个点，再逐字打出；连续切换时上一段直接补全
   let token = 0;
-  const fullText = (el: HTMLElement) => el.dataset.text || (el.dataset.text = el.textContent ?? "");
-  const settle = () => $$<HTMLElement>("[data-text]", crew).forEach((el) => { el.textContent = el.dataset.text!; el.classList.remove("is-typing"); });
-  const typeOut = async (el: HTMLElement, ms: number, me: number) => {
-    const text = fullText(el);
-    for (let i = 1; i <= text.length; i++) {
-      if (me !== token) return false;
-      el.textContent = text.slice(0, i);
-      await wait(ms);
-    }
-    el.classList.remove("is-typing");
-    return me === token;
-  };
-  const write = async (p: string) => {
+  const typeReply = async (view: HTMLElement) => {
+    const reply = $<HTMLElement>(".msg--bot", view);
+    if (!reply || reduce) return;
     const me = ++token;
-    settle();
-    if (reduce) return;
-    const persona = $<HTMLElement>(`[data-panel="${p}"] [data-persona-text]`, crew);
-    const reply = $<HTMLElement>(`.msg--bot[data-view="${p}"]`, crew);
-    if (!persona || !reply) return;
-    const words = fullText(persona).length;
-    fullText(reply);
-    persona.textContent = ""; persona.classList.add("is-typing");
-    reply.textContent = ""; reply.classList.add("is-typing");
-    if (!(await typeOut(persona, Math.max(8, Math.min(22, 900 / words)), me))) return;
-    await wait(320);
-    if (me === token) await typeOut(reply, 26, me);
+    const text = reply.dataset.text || (reply.dataset.text = reply.textContent ?? "");
+    const done = () => { reply.textContent = text; reply.classList.remove("is-typing"); };
+    reply.textContent = "";
+    reply.classList.add("is-typing");
+    await wait(620);
+    for (let i = 1; i <= text.length; i++) {
+      if (me !== token) return done();
+      reply.textContent = text.slice(0, i);
+      await wait(26);
+    }
+    done();
   };
 
   let flip = 0;
-  const select = (p: string, focus = false, quiet = false) => {
-    const prev = crew.dataset.persona ?? p;
+  const select = (k: string, focus = false, quiet = false) => {
+    const prev = crew.dataset.char ?? k;
     tabs.forEach((t) => {
-      const on = t.dataset.personaTab === p;
+      const on = t.dataset.bot === k;
       t.setAttribute("aria-selected", String(on)); t.tabIndex = on ? 0 : -1;
       if (on && focus) t.focus({ preventScroll: true });
       if (on && list.scrollWidth > list.clientWidth) list.scrollTo({ left: t.offsetLeft - (list.clientWidth - t.offsetWidth) / 2, behavior: reduce ? "auto" : "smooth" });
     });
-    crew.dataset.persona = p;
+    crew.dataset.char = k;
 
-    // 名牌翻面：转到侧面（看不见的那一刻）换内容，再转回来。脸和名字不换：人设和角色无关
+    // 工牌翻面：转到侧面（看不见的那一刻）换人，再转回来
     const swap = () => {
-      $$("[data-panel]", crew).forEach((el) => el.classList.toggle("is-off", el.dataset.panel !== p));
-      $$("[data-view]", crew).forEach((el) => (el.hidden = el.dataset.view !== p));
-      if (log && !reduce) { log.classList.remove("is-swap"); void log.offsetWidth; log.classList.add("is-swap"); }
-      const f = bigFace(crew.dataset.char ?? "");
+      $$("[data-panel]", crew).forEach((p) => (p.hidden = p.dataset.panel !== k));
+      const f = faceOf($(`[data-panel="${k}"] .badge-card__photo`, crew));
       if (f) playShot(f, "hello");
-      write(p);
     };
     const me = ++flip;
-    if (reduce || !card || prev === p) swap();
+    if (reduce || !card || prev === k) swap();
     else {
       card.classList.add("is-out");
       setTimeout(() => { if (me === flip) { swap(); card.classList.remove("is-out"); } }, 170);
-      const order = tabs.map((t) => t.dataset.personaTab);
-      kick((order.indexOf(p) > order.indexOf(prev) ? -1 : 1) * 46);
+      kick((tabs.indexOf(tabOf(k)) > tabs.indexOf(tabOf(prev)) ? -1 : 1) * 46);
     }
-    if (!quiet) track("persona_select", { persona_id: p });
-  };
 
-  // 选中的那张脸看大头像，其余几张转头看它
-  const gazeLooks = (k: string) => {
-    const sel = faceOf(looks.find((b) => b.dataset.look === k));
-    looks.forEach((b) => { const f = faceOf(b); if (f) gazeAt(f, b.dataset.look === k ? photo : sel); });
-  };
-  const pick = (k: string, focus = false) => {
-    looks.forEach((b) => {
-      const on = b.dataset.look === k;
-      b.setAttribute("aria-checked", String(on)); b.tabIndex = on ? 0 : -1;
-      if (on && focus) b.focus({ preventScroll: true });
+    // 在岗的低头看工牌，其余几个转头看它
+    const sel = faceOf(tabOf(k));
+    tabs.forEach((t) => { const f = faceOf(t); if (f) gazeAt(f, t.dataset.bot === k ? card : sel); });
+
+    $$("[data-phone]", crew).forEach((p) => {
+      if (p.hidden && p.dataset.phone !== k) return;
+      const reply = $<HTMLElement>(".msg--bot", p);
+      if (reply?.dataset.text) { reply.textContent = reply.dataset.text; reply.classList.remove("is-typing"); }
+      p.hidden = p.dataset.phone !== k;
+      if (p.hidden || reduce) return;
+      const log = $(".phone__log", p)!; log.classList.remove("is-swap"); void log.offsetWidth; log.classList.add("is-swap");
+      typeReply(p);
     });
-    crew.dataset.char = k;
-    $$("[data-for-look]", crew).forEach((el) => (el.hidden = el.dataset.forLook !== k));
-    $$("[data-look-id]", crew).forEach((el) => el.classList.toggle("is-off", el.dataset.lookId !== k));
-    const f = bigFace(k);
-    if (f) playShot(f, "hello");
-    gazeLooks(k);
-    track("look_select", { look_id: k });
+    if (!quiet) track("bot_select", { bot_id: k });
   };
-
   const current = () => Math.max(0, tabs.findIndex((t) => t.getAttribute("aria-selected") === "true"));
 
-  // 第一次滚到名牌：打个招呼，把人设和回答写一遍（看名牌而不是整张舞台卡：窄屏上舞台卡比一屏高，永远到不了阈值）
+  // 第一次滚到工牌：当前角色打个招呼、把回复打一遍（看工牌而不是整张舞台卡：窄屏上舞台卡比一屏高，永远到不了阈值）
   const intro = $(".crew__badge", crew);
   if (intro) {
     const io = new IntersectionObserver((es) => {
       if (!es[0].isIntersecting) return;
       io.disconnect();
-      gazeLooks(crew.dataset.char ?? "");
-      select(tabs[current()].dataset.personaTab!, false, true);
+      select(tabs[current()].dataset.bot!, false, true);
     }, { threshold: 0.4 });
     io.observe(intro);
   }
-  // 触屏横向滑过舞台换人设；纵向滚动交给浏览器（CSS 里 touch-action: pan-y）
+  // 触屏横向滑过舞台换角色；纵向滚动交给浏览器（CSS 里 touch-action: pan-y）
   if (stage) {
     let x0 = 0, y0 = 0, id = -1;
     stage.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") { x0 = e.clientX; y0 = e.clientY; id = e.pointerId; } });
@@ -323,25 +297,16 @@ const track = (n: string, p?: object) => { try { (window as any).umami?.track(n,
       id = -1;
       const dx = e.clientX - x0, dy = e.clientY - y0;
       if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-      select(tabs[(current() + (dx < 0 ? 1 : -1) + tabs.length) % tabs.length].dataset.personaTab!);
+      select(tabs[(current() + (dx < 0 ? 1 : -1) + tabs.length) % tabs.length].dataset.bot!);
     });
   }
   tabs.forEach((t, i) => {
-    t.addEventListener("click", () => select(t.dataset.personaTab!));
+    t.addEventListener("click", () => select(t.dataset.bot!));
     t.addEventListener("keydown", (e) => {
       const k = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
       if (k == null) return;
       e.preventDefault();
-      select(tabs[(k + tabs.length) % tabs.length].dataset.personaTab!, true);
-    });
-  });
-  looks.forEach((b, i) => {
-    b.addEventListener("click", () => pick(b.dataset.look!));
-    b.addEventListener("keydown", (e) => {
-      const k = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1 }[e.key];
-      if (k == null) return;
-      e.preventDefault();
-      pick(looks[(k + looks.length) % looks.length].dataset.look!, true);
+      select(tabs[(k + tabs.length) % tabs.length].dataset.bot!, true);
     });
   });
 })();

@@ -1,6 +1,6 @@
 @layer tokens, base, components, app, utilities;
 /* 首页第 3–8 节的版式与动效：能动手 / 会记住、模型与价格、数据去向、在哪都能用、常见问题、收尾（views/Home.astro 引入）。
-   视觉语言和第 2 节"由你定义"同一套：深底舞台卡（.stage，在 home.css）+ 一圈细线 + 大圆角，底光用这一节主持机器人的颜色
+   视觉语言和第 2 节"认识你的机器人"同一套：深底舞台卡（.stage，在 home.css）+ 一圈细线 + 大圆角，底光用这一节主持机器人的颜色
    （--stage-glow / --tint：动手橙、记忆绿、模型紫、数据去向绿、多端蓝、问答黄）。
    叙事参考 bevel.health：短标题 + 一句话，然后一块会动的大示意——分章边滚边讲、设备上叠浮层、收尾和首屏呼应。
    品牌黄绿只留给主操作（下载、获取 Key）；其余强调用机器人的颜色，而且压得很淡。
@@ -343,7 +343,7 @@
              玻璃才磨得出层次。屏幕里面再分层：App 的主面板、标签页、地址栏、输入框是更实一点的 --glass-strong。
              底下一团静止的中性落影把三块屏幕放在同一张"桌面"上。不铺角色色的大面，只有记忆标签染一点天天的蓝。
      界面照真实的样子画：浏览器有标签页（App 标志 + 名称）、前进后退和本机地址栏、左边一列机器人头像；
-             App 有毛玻璃侧栏（红绿灯、新建、搜索、三行机器人：头像 + 名称 + 时间 + 岗位）、浮起的主面板（顶栏、对话、玻璃输入框：
+             App 有毛玻璃侧栏（红绿灯、新建、搜索、三行机器人：头像 + 名称 + 时间 + 最近一条消息）、浮起的主面板（顶栏、对话、玻璃输入框：
              加号、模型胶囊、发送）；手机有灵动岛、状态栏（时间、信号、电量）、聊天软件的顶栏（返回、头像、名称 + 渠道）、日期、输入栏和底部横条。
              "我"的气泡是实心深色（浅色下是中性深灰，不用偏绿的墨色），发送键同色；黄绿不出现。
      第一次滚进视口时三块屏幕依次升起，随后回答出现，最后三处的记忆标签同时亮起（内容的出现，不循环）。
@@ -357,18 +357,20 @@
     --span: calc(100% - var(--phone-w) + var(--overlap));   /* 浏览器左边到 App 右边 */
     position: relative; isolation: isolate; height: clamp(480px, 42vw, 520px);
   }
+  /* 每团光都要在盒子里收完（圆心 ± 半径 × 70% 不能超出 0–100%），否则盒子边会把它切出一条直线。
+     顶上那团白光的圆心放在舞台顶边以下：既不被切，也不会盖到章节头的说明文字。 */
   .reach__lights {
     position: absolute; inset: -80px -60px -40px; z-index: -1; pointer-events: none;
     background:
       radial-gradient(36% 46% at 34% 44%, color-mix(in srgb, var(--bot-blue-glow) calc(34% * var(--glow-k)), transparent), transparent 70%),
       radial-gradient(30% 42% at 74% 58%, color-mix(in srgb, var(--bot-purple-glow) calc(24% * var(--glow-k)), transparent), transparent 70%),
-      radial-gradient(28% 32% at 56% 12%, rgba(255, 255, 255, .07), transparent 70%);
+      radial-gradient(28% 30% at 56% 22%, rgba(255, 255, 255, .07), transparent 70%);
   }
   [data-theme="light"] .reach__lights {
     background:
       radial-gradient(38% 48% at 34% 44%, rgba(100, 116, 139, .18), transparent 70%),
       radial-gradient(32% 44% at 74% 58%, rgba(148, 163, 184, .22), transparent 70%),
-      radial-gradient(30% 34% at 56% 12%, rgba(255, 255, 255, .95), transparent 70%);
+      radial-gradient(30% 31% at 56% 22%, rgba(255, 255, 255, .95), transparent 70%);
   }
   .reach__stage::after {
     content: ""; position: absolute; left: 8%; right: 8%; bottom: -12px; z-index: -1; height: 48px; border-radius: 50%; pointer-events: none;

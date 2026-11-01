@@ -2,7 +2,7 @@
 /* 首页（views/Home.astro）的版式，按页面从上到下排列。演示导览（tour.css）也只在首页，复用这里的窗口、聊天和手机 mock。
    断点：sm <768 / md 768–1023 / lg ≥1024 */
 
-/* "由你定义"舞台的底光、挂绳颜色：注册成 <color> 才能在换角色时渐变过去 */
+/* "认识你的机器人"舞台的底光、挂绳颜色：注册成 <color> 才能在换角色时渐变过去 */
 @property --stage-glow { syntax: "<color>"; inherits: true; initial-value: transparent; }
 /* Hero：地平线上方光晕的颜色、App 窗口环境光的色相、背景整体的色相（极光、眼睛、光点、浅色下的关键词），换幕时渐变过去 */
 @property --hz-glow { syntax: "<color>"; inherits: true; initial-value: #2a9dff; }
@@ -15,7 +15,7 @@
   /* 中文页面里，等宽字只留给模型 ID、命令、路径、文件名和数字；下面这些写的是中文句子，英文版才用等宽 */
   :lang(zh) :is(.steps-card, .desk__step, .crew__wire-label, .flow__wire-label, .memfile__refused) { font-family: var(--font-sans); }
 
-  /* 舞台卡：和"由你定义"的 .crew 同一套——深底、一圈细线、大圆角，底光用这一块主角机器人的颜色
+  /* 舞台卡：和"认识机器人"的 .crew 同一套——深底、一圈细线、大圆角，底光用这一块主角机器人的颜色
      （--stage-glow 写在标签上：动手橙、记忆绿、模型紫、数据去向绿）。UI 强调色仍是品牌黄绿。 */
   .stage {
     --stage-glow: transparent; --glow-at: 78% 100%; --glow-mix: 14%;
@@ -201,7 +201,7 @@
   [data-theme="light"] .hero__horizon::before { box-shadow: inset 0 1px 0 var(--hero-rim), inset 0 4px 12px -4px color-mix(in srgb, var(--hz-glow) 14%, transparent); }
 
   .hero__inner { position: relative; z-index: 2; display: grid; justify-items: center; text-align: center; }
-  /* 小胶囊：六个角色叠成一排 + 一句话 + 箭头，链到"由你定义"；悬停时角色散开、箭头往前探 */
+  /* 小胶囊：六个角色叠成一排 + 一句话 + 箭头，链到"认识你的机器人"；悬停时角色散开、箭头往前探 */
   .hero__eyebrow {
     display: inline-flex; align-items: center; gap: 10px; height: 36px; margin-bottom: var(--space-6); padding: 0 14px 0 5px;
     border-radius: var(--r-btn); background: var(--grain), var(--glass); color: var(--text); box-shadow: var(--glass-ring);
@@ -602,9 +602,9 @@
   .composer i { display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; border-radius: 50%; background: var(--signal-bg); }
   .composer i::before { content: ""; width: 10px; height: 10px; border-left: 2px solid var(--signal-fg); border-top: 2px solid var(--signal-fg); transform: translateY(2px) rotate(45deg); }
 
-  /* —— 手机 mock（由你定义、演示导览） ——
+  /* —— 手机 mock（认识机器人、演示导览） ——
      外框是一圈带金属光泽的边（深浅主题各一套），屏幕从上到下：状态栏 → 对话顶栏 → 消息 → 输入框 → 底部横条。
-     状态栏、侧键、头像回复、加号 / 发送键和底部横条只在 .phone--full（由你定义）里有；演示导览的手机只有顶栏、消息和输入框。 */
+     状态栏、侧键、头像回复、加号 / 发送键和底部横条只在 .phone--full（认识机器人）里有；演示导览的手机只有顶栏、消息和输入框。 */
   .phone {
     --phone-frame: linear-gradient(150deg, #3a3c3f, #161717 36%, #0f1010 64%, #2c2d30);
     --phone-key: #26272a; --phone-bg: #0b0c0b; --phone-bubble: #1a1b1a; --phone-bar: rgba(11, 12, 11, .8);
@@ -623,6 +623,8 @@
   .phone--full::before { left: -3px; top: 21%; height: 10%; border-radius: 2px 0 0 2px; }
   .phone--full::after { right: -3px; top: 28%; height: 15%; border-radius: 0 2px 2px 0; }
   .phone__screen { position: relative; display: flex; flex-direction: column; height: 100%; border-radius: 38px; background: var(--phone-bg); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+  .phone__view { display: contents; }
+  .phone__view[hidden] { display: none; }
   .phone__status { position: relative; display: flex; flex: none; align-items: center; justify-content: space-between; height: 46px; padding: 4px 24px 0 32px; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .phone__island { position: absolute; left: 50%; top: 11px; width: 92px; height: 26px; border-radius: 13px; background: #000; translate: -50% 0; }
   .phone__sys { width: 58px; height: 11px; }
@@ -658,13 +660,14 @@
   html.js .phone__log.is-swap { animation: fade-swap var(--dur-base) var(--ease-out); }
   @keyframes fade-swap { from { opacity: 0; transform: translateY(6px); } }
 
-  /* —— 2 由你定义：机器人没有预设的岗位，名牌上都是你填的 ——
-     舞台卡从上到下：一排人设示例 → 细线 → 细线上垂下挂绳，挂着名牌（脸 → 六个角色 → 名字和介绍 → 人设 → 模型 · 花费）｜ 连线 ｜ 手机。
-     挂绳、底光都用当前角色的颜色（--stage-glow 在文件开头注册成 <color>，换角色时渐变过去）；UI 强调色仍是品牌黄绿。
-     名牌的晃动角度 --swing 由 scripts/sections.ts 的弹簧写入，转轴在挂绳顶端。 */
+  /* —— 2 认识你的机器人：发工牌，但岗位由你定 ——
+     舞台卡从上到下：一排六个角色（选中的头顶打一束角色色的光、名字下面写"在岗"，其余几个转头看它）→ 细线 →
+     细线上垂下挂绳，挂着工牌（证件照 → "岗位：你来定" / 名字 / 一句介绍 → 人设 · 模型 · 月薪 → 条形码和工号）｜ 连线 ｜ 手机。
+     挂绳、底光、聚光灯都用角色色（--stage-glow 在文件开头注册成 <color>，换角色时渐变过去）；UI 强调色仍是品牌黄绿。
+     工牌的晃动角度 --swing 由 scripts/sections.ts 的弹簧写入，转轴在挂绳顶端。 */
   .crew {
     --stage-glow: var(--bot-blue-glow); --strap-h: clamp(52px, 6vw, 84px);
-    --photo-mix: 34%;   /* 脸背后的底光：浅色下收一档 */
+    --beam-mix: 30%; --photo-mix: 34%; --dot-glow: 70%;   /* 角色色的聚光灯、证件照底光、职位圆点的光晕：浅色下都收一档 */
     --badge-bg: #121412; --badge-photo: #0d0e0d; --badge-shadow: 0 0 0 1px rgba(255, 255, 255, .09), 0 1px 0 rgba(255, 255, 255, .06) inset, 0 40px 70px -34px rgba(0, 0, 0, .85), 0 16px 30px -18px rgba(0, 0, 0, .6);
     position: relative; isolation: isolate; overflow: clip;
     display: grid; padding: 0 var(--card-pad) clamp(24px, 3vw, 36px); border-radius: var(--r-banner);
@@ -676,10 +679,10 @@
     transition: --stage-glow .7s var(--ease-out);
   }
   [data-theme="light"] .crew {
-    /* 角色色（尤其芽芽 #2ee88a、闪闪 #ffc21a）在浅底上饱和度太高：底光减淡 */
-    --photo-mix: 20%;
+    /* 角色色（尤其芽芽 #2ee88a、闪闪 #ffc21a）在浅底上饱和度太高：光束、底光减淡，圆点不再发光 */
+    --beam-mix: 18%; --photo-mix: 20%; --dot-glow: 0%;
     --badge-bg: #ffffff; --badge-photo: #f4f5f7; --badge-shadow: 0 0 0 1px rgba(17, 24, 39, .07), 0 36px 64px -36px rgba(17, 24, 39, .22), 0 12px 24px -16px rgba(17, 24, 39, .1);
-    /* 舞台底不铺角色色（当前角色由挂绳和脸背后的底光表示），和其他舞台卡一样是半透明的白 */
+    /* 舞台底不铺角色色（选中谁由头顶那束光和挂绳的颜色表示），和其他舞台卡一样是半透明的白 */
     background: var(--grain), radial-gradient(46% 42% at 27% 60%, rgba(255, 255, 255, .9), transparent 76%), linear-gradient(180deg, rgba(255, 255, 255, .82), rgba(255, 255, 255, .56));
     box-shadow: var(--glass-ring), var(--card-shadow);
   }
@@ -689,15 +692,32 @@
   .crew[data-char="purple"] { --stage-glow: var(--bot-purple-glow); }
   .crew[data-char="orange"] { --stage-glow: var(--bot-orange-glow); }
 
-  /* 一排人设示例：站在细线上，挂绳从这条线垂下去；白纸那一个用虚线框 */
-  .personas { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 14px; margin-inline: calc(-1 * var(--card-pad)); padding: clamp(18px, 2.2vw, 26px) var(--card-pad); border-bottom: 1px solid var(--line); }
-  .personas__label { flex: none; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
-  .personas__list { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-  .chip--blank { padding-inline: 13px; border: 1px dashed var(--line-strong); background: none; box-shadow: none; }
-  .chip--blank:hover { background: var(--hover); }
-  .chip--blank[aria-selected="true"] { border-color: color-mix(in srgb, var(--accent-fg), transparent 40%); background: var(--chip-on-bg); }
+  /* 一排角色：等宽六列，站在细线上；选中的往上一跳、头顶一束光、线上一道黄绿短线 */
+  .lineup { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-inline: calc(-1 * var(--card-pad)); padding: clamp(20px, 2.4vw, 28px) var(--card-pad) 0; border-bottom: 1px solid var(--line); }
+  .lineup__bot { position: relative; display: grid; justify-items: center; padding: 4px 4px 18px; border-radius: 18px 18px 0 0; text-align: center; color: var(--text-2); }
+  .lineup__bot::before {
+    content: ""; position: absolute; inset: -40px 6% 0; z-index: -1; pointer-events: none; opacity: 0;
+    clip-path: polygon(36% 0, 64% 0, 100% 100%, 0 100%);
+    background: linear-gradient(color-mix(in srgb, var(--c) var(--beam-mix), transparent), color-mix(in srgb, var(--c) 6%, transparent) 70%, transparent);
+    transition: opacity var(--dur-slow) var(--ease-out);
+  }
+  .lineup__bot::after { content: ""; position: absolute; left: 50%; bottom: -1px; width: 28px; height: 2px; border-radius: 1px; background: var(--accent-fg); translate: -50% 0; scale: 0 1; transition: scale var(--dur-base) var(--ease-out); }
+  .lineup__bot .bot-face { margin-bottom: 10px; transition: translate .45s var(--ease-out); }
+  .lineup__name { font-size: var(--fs-body-sm); font-weight: 600; line-height: 1.3; color: var(--text); white-space: nowrap; }
+  .lineup__job { display: grid; margin-top: 4px; font-size: var(--fs-eyebrow); line-height: 1.4; }
+  .lineup__job > span { grid-area: 1 / 1; transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-base) var(--ease-out); }
+  .lineup__duty { display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--accent-fg); font-weight: 500; opacity: 0; translate: 0 4px; }
+  .lineup__duty::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px var(--accent-wash); }
+  .lineup__bot:hover .lineup__name { color: var(--text); }
+  .lineup__bot:hover .bot-face { translate: 0 -3px; }
+  .lineup__bot[aria-selected="true"]::before { opacity: 1; }
+  .lineup__bot[aria-selected="true"]::after { scale: 1 1; }
+  .lineup__bot[aria-selected="true"] .bot-face { translate: 0 -8px; }
+  .lineup__bot[aria-selected="true"] .lineup__job > :first-child { opacity: 0; translate: 0 -4px; }
+  .lineup__bot[aria-selected="true"] .lineup__duty { opacity: 1; translate: 0 0; }
+  .lineup__bot:focus-visible { outline-offset: -2px; border-radius: 18px; }
 
-  /* 舞台：名牌 ｜ 连线 ｜ 手机 */
+  /* 舞台：工牌 ｜ 连线 ｜ 手机 */
   .crew__stage { display: grid; grid-template-columns: minmax(0, 1fr) clamp(84px, 10vw, 140px) minmax(0, 1fr); align-items: start; touch-action: pan-y pinch-zoom; }
   .crew__badge, .crew__phone { display: grid; justify-items: center; }
   .crew__phone { padding-top: calc(var(--strap-h) - 6px); }
@@ -706,7 +726,7 @@
   .crew__note { margin-top: 20px; text-align: center; }
   .crew__swipe { display: none; }
 
-  /* 挂绳 + 夹子 + 名牌；整串绕挂绳顶端转（--swing），名牌本身换人设时绕竖轴翻面 */
+  /* 挂绳 + 夹子 + 工牌；整串绕挂绳顶端转（--swing），工牌本身换人时绕竖轴翻面 */
   .badge-hang { --swing: 0deg; position: relative; display: grid; width: min(340px, 100%); padding-top: var(--strap-h); transform-origin: 50% 0; rotate: var(--swing); perspective: 1600px; }
   .badge-hang__strap {
     position: absolute; top: 0; left: 50%; z-index: 1; width: 18px; height: calc(var(--strap-h) + 4px); translate: -50% 0;
@@ -722,7 +742,6 @@
   }
   .badge-hang__clip::after { content: ""; position: absolute; left: 50%; bottom: 5px; width: 12px; height: 4px; margin-left: -6px; border-radius: 2px; background: rgba(0, 0, 0, .3); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
   .badge-card {
-    --c: var(--stage-glow);
     position: relative; display: grid; border-radius: 22px; background: var(--badge-bg); box-shadow: var(--badge-shadow);
     transition: transform .22s var(--ease-out);
   }
@@ -730,11 +749,12 @@
   .badge-card__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 20px 14px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; color: var(--text-2); }
   .badge-card__top::before { content: ""; position: absolute; top: 9px; left: 50%; width: 44px; height: 7px; margin-left: -22px; border-radius: 4px; background: var(--bg-feature); box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text) 22%, transparent); }
   .badge-card__org { display: inline-flex; align-items: center; gap: 7px; color: var(--text); font-family: var(--font-sans); font-size: 13px; font-weight: 600; letter-spacing: -.01em; }
-  .badge-card__tag { padding: 3px 9px; border-radius: var(--r-btn); background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent); text-transform: uppercase; }
-  :lang(zh) .badge-card__tag { font-family: var(--font-sans); letter-spacing: .04em; }
-  /* 脸：当前角色色的底光 + 一层细横纹，头像落在下沿 */
+  .badge-card__staff { padding: 3px 9px; border-radius: var(--r-btn); background: color-mix(in srgb, var(--c, var(--stage-glow)) 16%, transparent); color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stage-glow) 40%, transparent); text-transform: uppercase; }
+  :lang(zh) .badge-card__staff { font-family: var(--font-sans); letter-spacing: .04em; }
+  .badge-card__panel { display: grid; }
+  /* 证件照：角色色的底光 + 一层细横纹，头像落在下沿 */
   .badge-card__photo {
-    position: relative; display: grid; place-items: end center; height: 150px; margin: 0 14px; border-radius: 14px;
+    position: relative; display: grid; place-items: end center; height: 200px; margin: 0 14px; border-radius: 14px;
     background:
       radial-gradient(64% 70% at 50% 100%, color-mix(in srgb, var(--c) var(--photo-mix), transparent), transparent 72%),
       repeating-linear-gradient(180deg, transparent 0 7px, color-mix(in srgb, var(--text) 3.5%, transparent) 7px 8px),
@@ -742,34 +762,17 @@
     box-shadow: inset 0 0 0 1px var(--line);
   }
   .badge-card__photo .bot-face { margin-bottom: 4px; }
-  /* 六个角色：和 App 新建页的头像选择器一样，一排单选 */
-  .looks { display: flex; justify-content: center; gap: 2px; padding: 10px 14px 0; }
-  .looks__opt { flex: 0 1 44px; display: grid; place-items: center; min-width: 0; height: 44px; border-radius: 12px; transition: background var(--dur-fast), box-shadow var(--dur-fast); }
-  .looks__opt:hover { background: var(--hover); }
-  .looks__opt[aria-checked="true"] { background: color-mix(in srgb, var(--c) 14%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 55%, transparent); }
-  .looks__note { padding: 6px 20px 0; color: var(--text-2); font-size: 12px; line-height: 1.45; text-align: center; }
-  /* 所有人设叠在同一格里，名牌按最长的那段定高，换人设时不跳 */
-  .badge-card__panels { display: grid; }
-  .badge-card__panel { grid-area: 1 / 1; display: grid; align-content: start; }
-  .badge-card__panel.is-off { visibility: hidden; }
-  /* 名字和介绍跟着角色走，同样叠在一格里：介绍有长有短，换角色时下面的人设不跳 */
-  .badge-card__ids { display: grid; }
-  .badge-card__id { grid-area: 1 / 1; display: grid; align-content: start; gap: 2px; padding: 12px 22px 0; }
-  .badge-card__id.is-off { visibility: hidden; }
+  .badge-card__id { display: grid; gap: 6px; padding: 20px 22px 0; }
+  /* 职位用全站统一的 .eyebrow，名字用块标题（.subhead）那一档 */
+  .badge-card__job { display: inline-flex; align-items: center; gap: 8px; }
+  .badge-card__job::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px color-mix(in srgb, var(--c) var(--dot-glow), transparent); }
   .badge-card__name { line-height: 1.1; }
   :lang(zh) .badge-card__name { line-height: 1.2; }
-  /* 中文页名字旁边写着英文名：小一号、次要色，和名字同一种无衬线 */
+  .badge-card__motto { color: var(--text-2); font-size: var(--fs-body-sm); line-height: 1.55; }
+  /* 名字旁边写着另一种语言的名字（中文页是英文名、英文页是中文名）：小一号、次要色，和名字同一种无衬线 */
   .badge-card__alias { margin-left: .2em; color: var(--text-2); font-size: .5em; font-weight: 500; letter-spacing: .02em; vertical-align: .22em; }
-  .badge-card__motto { margin-top: 2px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
-  /* 人设：一块像输入框的底，里面是你写的那段话 */
-  .badge-card__persona { display: grid; gap: 3px; margin: 10px 22px 0; padding: 9px 12px 10px; border-radius: 10px; background: var(--badge-photo); box-shadow: inset 0 0 0 1px var(--line); }
-  .badge-card__persona > span { color: var(--text-2); font-size: 11.5px; }
-  .badge-card__persona p { font-size: 13.5px; line-height: 1.55; }
-  .badge-card__persona p.is-typing::after { content: ""; display: inline-block; width: 1.5px; height: 1em; margin-left: 1px; vertical-align: -.15em; background: currentColor; animation: bot-caret 1s steps(1) infinite; }
-  .is-blank .badge-card__persona p { color: var(--text-2); }
-  .badge-card__fields { display: grid; margin: 8px 22px 16px; }
-  .badge-card__fields > div { display: grid; grid-template-columns: 3.6em minmax(0, 1fr); gap: 12px; padding: 9px 0; font-size: 14px; line-height: 1.45; }
-  .badge-card__fields > div + div { border-top: 1px dashed var(--line); }
+  .badge-card__fields { display: grid; margin: 16px 22px 0; border-top: 1px solid var(--line); }
+  .badge-card__fields > div { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 14px; line-height: 1.45; }
   .badge-card__fields dt { color: var(--text-2); font-size: 12.5px; padding-top: 1px; }
   .badge-card__fields dd { display: grid; justify-items: start; gap: 1px; margin: 0; min-width: 0; }
   .badge-card__fields dd .mono { font-size: 13px; overflow-wrap: anywhere; }
@@ -777,9 +780,11 @@
   .badge-card__fields a { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
   .badge-card__fields a .icon { transition: translate var(--dur-fast) var(--ease-out); }
   .badge-card__fields a:hover .icon { translate: 3px 0; }
-  html.js .badge-card__id:not(.is-off) > * { animation: badge-in .5s var(--ease-out) both; }
-  html.js .badge-card__id:not(.is-off) > :nth-child(2) { animation-delay: 60ms; }
-  html.js .badge-card__id:not(.is-off) > :nth-child(3) { animation-delay: 120ms; }
+  .badge-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 20px 20px; color: var(--text-2); font-size: 11px; letter-spacing: .06em; }
+  .badge-card__foot svg { width: 110px; height: 22px; fill: currentColor; opacity: .75; }
+  html.js .badge-card__panel:not([hidden]) .badge-card__id > * { animation: badge-in .5s var(--ease-out) both; }
+  html.js .badge-card__panel:not([hidden]) .badge-card__id > :nth-child(2) { animation-delay: 60ms; }
+  html.js .badge-card__panel:not([hidden]) .badge-card__id > :nth-child(3) { animation-delay: 120ms; }
   @keyframes badge-in { from { opacity: 0; translate: 0 6px; } }
 
   /* 电脑 ↔ 手机：一条虚线，一个光点来回跑，下面写走哪个渠道 */
@@ -801,9 +806,8 @@
   .phone__log .msg--bot.is-typing:not(:empty)::after { content: ""; display: inline-block; width: 1.5px; height: 1em; margin-left: 1px; vertical-align: -.15em; background: currentColor; animation: bot-caret 1s steps(1) infinite; }
   @keyframes bot-typing { 50% { opacity: .35; } }
   @keyframes bot-caret { 50% { opacity: 0; } }
-  .look-stack { flex: none; display: grid; }
 
-  /* 卡片下面三条好处（"还有这些"也用这个版式）：细线起头，图标 → 短标题 → 一行说明 */
+  /* 卡片下面三条手机端的好处：细线起头，图标 → 短标题 → 一行说明 */
   .crew-perks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px var(--grid-gap); margin-top: var(--stack-head); }
   .crew-perks li { display: grid; align-content: start; gap: 8px; padding-top: 24px; border-top: 1px solid var(--line); }
   .crew-perks__ico { display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 8px; border-radius: 10px; background: var(--accent-wash); color: var(--accent-fg); }
@@ -833,16 +837,17 @@
   @media (max-width: 1023px) and (prefers-reduced-motion: reduce) { .crew__wire i { left: 50%; top: 50%; } }
   @media (max-width: 767px) {
     .crew { --strap-h: 44px; padding: 0 16px 22px; border-radius: var(--r-feature); }
-    .personas { flex-direction: column; flex-wrap: nowrap; align-items: stretch; margin-inline: -16px; padding: 16px 0; }
-    .personas__label { padding-inline: 16px; }
-    .personas__list { flex-wrap: nowrap; justify-content: flex-start; padding-inline: 16px; overflow-x: auto; scrollbar-width: none; }
-    .personas__list::-webkit-scrollbar { display: none; }
-    .personas__list .chip { flex: none; }
-    .badge-card__photo { height: 136px; }
-    .badge-card__photo .bot-face { --s: 112px !important; }
-    .badge-card__id { padding: 12px 18px 0; }
-    .badge-card__persona { margin-inline: 18px; }
+    .lineup { grid-template-columns: repeat(6, minmax(52px, 1fr)); margin-inline: -16px; padding: 18px 10px 0; overflow-x: auto; scrollbar-width: none; }
+    .lineup::-webkit-scrollbar { display: none; }
+    .lineup__bot { padding: 2px 2px 14px; }
+    .lineup__bot .bot-face { --s: 44px !important; margin-bottom: 8px; }
+    .lineup__name { font-size: var(--fs-xs); }
+    .lineup__job { display: none; }
+    .badge-card__photo { height: 176px; }
+    .badge-card__photo .bot-face { --s: 152px !important; }
+    .badge-card__id { padding: 18px 18px 0; }
     .badge-card__fields { margin-inline: 18px; }
+    .badge-card__foot { padding: 14px 18px 18px; }
     .phone--full { width: min(300px, 100%); }
   }
 

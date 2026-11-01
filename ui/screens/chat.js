@@ -252,11 +252,11 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const demoReq = useStore(demo);
   const { sendKey } = useStore(prefs);
   const born = useRef(Date.now());
-  // 生图的预置演示：只在本地对话流里放一遍（你的那句话 + 演示卡片），不发给机器人，刷新后就没了
+  // 生图的预置演示：只在本地对话流里放一遍（你的那句话 + 演示的回复），不发给机器人，刷新后就没了
   useEffect(() => {
     if (!demoReq || demoReq.at < born.current) return;
     stick.current = true;
-    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: demoReq.text, at: Date.now(), enter: true }, { kind: "media-demo", id: uid(), text: demoReq.text, enter: true }]);
+    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: demoReq.text, at: Date.now(), enter: true }, { kind: "media-demo", id: uid(), enter: true }]);
   }, [demoReq && demoReq.at]);
   useEffect(() => {
     if (justDone && justDone.at > born.current) setCue({ kind: "done", at: justDone.at });
@@ -690,7 +690,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       } else if (it.kind === "prompt") {
         out.push(html`<div class=${cls} key=${it.id}><${PromptCard} requestId=${it.requestId} fallback=${it.prompt} /></div>`);
       } else if (it.kind === "media-demo") {
-        out.push(html`<div class=${cls} key=${it.id}><${MediaDemo} prompt=${it.text} /></div>`);
+        out.push(html`<div class=${cls} key=${it.id}><${MediaDemo} onLoad=${onMedia} /></div>`);
       } else if (it.kind === "error") {
         out.push(html`<div class=${cls} key=${it.id}>
           ${(it.activity?.length || it.steps) && html`<${WorkLine} workedMs=${it.workedMs} steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}

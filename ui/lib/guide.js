@@ -114,7 +114,7 @@ export function hideGuide() {
 
 export const fillComposer = (text) => fill.set({ text, at: Date.now() });
 
-/** 放一遍生图的预置演示：流程和真的一样（先确认 → 生成中 → 出图），图是客户端自带的示例，不调用模型、不扣费 */
+/** 放一遍生图的预置演示：流程和真的一样（直接生成 → 图片显示在对话里），图是客户端自带的示例，不调用模型、不扣费 */
 export function runMediaDemo() {
   demo.set({ text: stepText(STEPS.find((s) => s.id === "media"), "try"), at: Date.now() });
 }

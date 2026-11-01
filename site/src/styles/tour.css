@@ -4,7 +4,8 @@
    字体也用 App 的系统字体；组件的尺寸、圆角、层次对照 ui/css/shell.css、chat.css、settings.css 和 ui/design/components。
    .on-fade / .on-rise 在 home.css（和"它能动手"的循环示意共用）。 */
 @layer app {
-  dialog.tour { width: min(920px, 100% - 32px); }
+  /* 导览比普通对话框宽、也更高：舞台跟着屏幕高度伸缩，整个对话框一屏放得下（252 是舞台以外的标题、步骤、字幕和边距） */
+  dialog.tour { width: min(1120px, 100% - 32px); max-height: min(92vh, 860px); }
 
   /* —— 舞台：一块"桌面"，App 窗口浮在上面（四周留 16） —— */
   .tour__viewport { position: relative; margin: 16px 24px 0; }
@@ -32,7 +33,7 @@
     --a-shadow-lg: 0 4px 14px rgba(0, 0, 0, .35), 0 28px 70px rgba(0, 0, 0, .6);
     --a-shadow-pane: 0 0 0 1px rgba(255, 255, 255, .08), 0 8px 30px rgba(0, 0, 0, .35);
     --a-win-shadow: 0 0 0 1px rgba(255, 255, 255, .1), 0 40px 90px -30px #000, 0 18px 40px -20px rgba(0, 0, 0, .7);
-    position: relative; height: 452px; overflow: hidden; border-radius: 18px; isolation: isolate;
+    position: relative; height: clamp(452px, 92vh - 252px, 600px); overflow: hidden; border-radius: 18px; isolation: isolate;
     background: var(--a-desk); box-shadow: inset 0 0 0 1px var(--line);
     color: var(--a-fg); font-family: var(--a-font); font-size: 13px; line-height: 1.5; letter-spacing: 0; text-align: left;
   }
@@ -303,7 +304,8 @@
   .tim__card small { color: var(--a-muted); font-size: 12px; line-height: 1.5; }
   .tim__bot { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding-top: 12px; width: 100%; border-top: 1px solid var(--a-line2); font-size: 12.5px; font-weight: 500; }
   .tim__bot .tw-dot { margin-left: auto; }
-  .tour__phone { flex: none; width: 200px; aspect-ratio: 300 / 600; padding: 8px; border-radius: 30px; }
+  /* 选择器写两个类：.phone 在 home.css 里，打包后排在这里后面，同优先级会盖掉这里的尺寸 */
+  .phone.tour__phone { flex: none; width: 200px; aspect-ratio: 300 / 600; padding: 8px; border-radius: 30px; }
   .tour__phone .phone__screen { border-radius: 24px; }
   .tour__phone .phone__head { gap: 8px; padding: 10px 12px; }
   .tim__who { display: grid; line-height: 1.25; }

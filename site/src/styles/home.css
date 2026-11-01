@@ -61,7 +61,13 @@
      文字间距取自 4px 尺度：胶囊 → 标题 24 · 标题 → 说明 24 · 说明 → 按钮 32 · 按钮 → 要点 24（手机 16 / 16 / 24 / 16）。 */
   .hero {
     --hero-top: clamp(40px, 7vw, 104px);
-    --stage-h: 640px;
+    /* 舞台的尺寸从内容宽度算（--hero-frame 和 .container 同一个算法）：窗口居中，手机的外沿正好落在内容右边线上，高度跟着宽度走 */
+    --hero-frame: min(var(--container), 100vw - 2 * var(--gutter));
+    --win-out: .11;           /* 手机探出窗口右边多少（窗口宽度的比例） */
+    --win-w: calc(var(--hero-frame) / (1 + 2 * var(--win-out)));
+    --win-h: max(440px, var(--win-w) * .59);
+    --win-x: 0px;
+    --stage-h: calc(var(--win-h) + 130px);
     --hz-y: 210px;            /* 地平线顶沿在舞台里的高度 */
     --hz-w: max(2600px, 190%);
     --hz-glow: var(--bot-blue-glow);
@@ -259,7 +265,7 @@
      App 的语义 token 抄到 --a-* 上（ui/design/tokens/semantic.css，深浅两套），窗口、流动卡片都只用这一层，质感和 App 一致：
      环境光 + 毛玻璃 + 半透明填充 + 细描边 + 磨砂颗粒；字体也用 App 的系统字体。 */
   .hstage {
-    --tilt: 0deg; --win-w: 880px; --win-h: 520px; --side-w: 232px;
+    --tilt: 0deg; --side-w: 232px;
     --a-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
     --a-code: ui-monospace, "SF Mono", Menlo, Consolas, "Microsoft YaHei UI", monospace;
     --a-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.05'/%3E%3C/svg%3E");
@@ -321,7 +327,7 @@
   .hstage__lane { position: absolute; top: var(--bleed); bottom: calc(var(--stage-h) * .18); width: 50%; overflow: clip; display: none; container-type: size; }
   .hstage__lane--in { left: 0; }
   .hstage__lane--out { right: 0; }
-  @media (min-width: 1280px) and (prefers-reduced-motion: no-preference) { html.js .hstage__lane { display: block; } }
+  @media (min-width: 1360px) and (prefers-reduced-motion: no-preference) { html.js .hstage__lane { display: block; } }
   .hs-flow {
     --k: 0;
     position: absolute; left: 50%; top: 50%; display: grid; width: max-content; pointer-events: none;
@@ -350,7 +356,7 @@
   .hs-card--code ins, .acode ins { color: var(--a-green); text-decoration: none; }
   .aic { flex: none; stroke-width: 1.6; }
 
-  .hstage__devices { position: relative; z-index: 1; width: min(var(--win-w), 100% - 2 * var(--gutter)); height: 100%; margin-inline: auto; perspective: 2000px; }
+  .hstage__devices { position: relative; left: var(--win-x); z-index: 1; width: var(--win-w); height: 100%; margin-inline: auto; perspective: 2000px; }
 
   /* —— App 窗口（ui/css/shell.css）：环境光（--bg + 左上品牌黄绿 + 左下机器人色相光 + 右上邻近色）上盖毛玻璃侧栏，
      主区是浮在环境光上的圆角面板。色相（--aura-hue）跟着当前机器人慢慢过渡，和 App 换机器人时一样。 —— */
@@ -478,9 +484,10 @@
   html.js .hs-item:not(.hs-item--static, .on) { grid-template-rows: 0fr; opacity: 0; }
   .hs-log .phone__day { justify-self: center; margin-bottom: 0; }
 
-  /* 手机：压在窗口右下角，跟着窗口一起仰，自己再歪一点 */
-  .hstage__phone {
-    position: absolute; right: -11%; top: 150px; z-index: 2; width: 196px; padding: 7px; border-radius: 34px;
+  /* 手机：压在窗口右下角，跟着窗口一起仰，自己再歪一点。选择器写两个类：.phone 在这个文件后面，同优先级会盖掉这里的定位和尺寸 */
+  .phone.hstage__phone {
+    --phone-w: clamp(176px, var(--win-w) * .222, 216px);
+    position: absolute; right: calc(var(--win-w) * var(--win-out) * -1); top: calc(var(--win-h) + 20px - var(--phone-w) * 2); z-index: 2; width: var(--phone-w); padding: 7px; border-radius: 34px;
     transform-origin: 50% 100%; transform: rotateX(calc(var(--tilt) * .6)) rotate(3deg);
   }
   .hstage__phone .phone__screen { border-radius: 28px; }
@@ -489,14 +496,16 @@
   .hstage__phone .phone__log .msg { max-width: 88%; padding: 7px 11px; font-size: 12px; }
   .hstage__phone .phone__input { height: 32px; margin: 0 8px 8px; padding: 0 12px; font-size: 11.5px; }
 
-  @media (min-width: 1024px) and (max-width: 1439px) { .hstage { --win-w: 820px; } .hs-card { max-width: 210px; } }
+  @media (min-width: 1024px) and (max-width: 1439px) { .hs-card { max-width: 210px; } }
+  /* 两侧有流动卡片的宽度：窗口给右道留出至少 100px（右边还要减去手机探出的部分） */
+  @media (min-width: 1360px) { .hero { --win-w: calc(min(var(--hero-frame), 100vw - 216px) / (1 + 2 * var(--win-out))); } }
+  /* 平板：没有流动卡片，窗口 + 手机这一组正好占满内容宽度（窗口贴左边线，手机贴右边线） */
   @media (max-width: 1023px) {
+    .hero { --win-out: .07; --win-w: calc(var(--hero-frame) / (1 + var(--win-out))); --win-x: calc(var(--win-w) * var(--win-out) / -2); }
     .hstage { --side-w: 200px; }
-    .hstage__phone { right: -7%; }
   }
   @media (max-width: 767px) {
-    .hero { --stage-h: 470px; --hz-y: 130px; --hz-w: 1500px; }
-    .hstage { --win-h: 390px; }
+    .hero { --win-w: var(--hero-frame); --win-h: 390px; --win-x: 0px; --stage-h: 470px; --hz-y: 130px; --hz-w: 1500px; }
     .hero__bg { inset: 6px 6px 0; border-radius: var(--r-card); }
     .hero__eyebrow { margin-bottom: var(--space-4); font-size: var(--fs-xs); }
     .hero__crew .bot-face:nth-child(n + 4) { display: none; }

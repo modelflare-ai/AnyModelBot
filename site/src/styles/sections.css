@@ -97,6 +97,17 @@
       transition: opacity .5s var(--ease-out), transform .8s var(--ease-out), filter .5s var(--ease-out), visibility 0s linear .8s;
     }
     html.js .story__scene[data-scene="1"] { padding-top: 44px; }
+    /* 动手这一幕铺满舞台卡：左边窗口、右边操作记录，两块等宽等高；文件排成 3 列 4 行，跟着窗口高度伸缩 */
+    html.js .story__scene[data-scene="0"] { align-content: stretch; }
+    html.js .desk { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    html.js .desk__win { display: flex; flex-direction: column; }
+    html.js .desk__files { flex: 1; min-height: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; }
+    html.js .desk__file { aspect-ratio: auto; }
+    html.js .desk__log {
+      padding: 14px; border-radius: var(--r-pop); background: var(--grain), var(--glass);
+      box-shadow: var(--glass-ring), 0 0 0 1px var(--line); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    }
+    html.js[data-theme="light"] .desk__log { box-shadow: var(--glass-ring), var(--card-shadow); }
     html.js .story__scene.is-past { transform: translateY(-48px) scale(.96); }
     html.js .story__scene.is-on {
       opacity: 1; visibility: visible; transform: none; filter: none;
@@ -327,7 +338,7 @@
      合成图：浏览器（左后）、桌面 App（正中、最大）、手机里的聊天软件（右前）三块屏幕错落叠放，显示同一段和天天的对话，
              回答下面挂着同一条"记忆"标签——三处一模一样，就是"一份记忆"。
      材质：屏幕是真正的磨砂玻璃——半透明（--glass）+ 背景模糊（--glass-blur-lg）+ 颗粒 + 顶边高光 + 一道斜向的反光；
-             三块屏幕叠得较深（App 压住浏览器的右三分之一、手机压住 App 的输入框），透过前面的玻璃能看到后面屏幕被磨砂的内容；
+             三块屏幕叠得较深（App 压住浏览器的右三分之一、手机压住 App 右边一条），透过前面的玻璃能看到后面屏幕被磨砂的内容，文字都让开被压住的那一条；
              背后垫一层静止的柔光（.reach__lights：深色是天天的蓝和紫钻的紫两团很淡的光 + 一点白；浅色只用中性的冷灰和白），
              玻璃才磨得出层次。屏幕里面再分层：App 的主面板、标签页、地址栏、输入框是更实一点的 --glass-strong。
              底下一团静止的中性落影把三块屏幕放在同一张"桌面"上。不铺角色色的大面，只有记忆标签染一点天天的蓝。
@@ -339,7 +350,13 @@
      入口：一条磨砂玻璃底座，四栏、栏与栏之间一根细线；悬停的那一栏铺一层淡底、图标片浮起一点、箭头往前走。
      接入指南：对话框（--glass-strong），顶上一排标签，下面是命令或步骤；无 JS 时直接展开在页面里。
      窄屏：合成图去掉浏览器，只留桌面 + 手机；手机上只留手机。底座两列 → 一列。 */
-  .reach__stage { position: relative; isolation: isolate; height: 480px; max-width: 1100px; margin-inline: auto; }
+  /* 合成图和下面的底座同宽：浏览器贴内容左边线，手机贴右边线，App 夹在中间 */
+  .reach__stage {
+    --phone-w: clamp(212px, 19vw, 240px);
+    --overlap: 76px;                                        /* 手机压住 App 的宽度 */
+    --span: calc(100% - var(--phone-w) + var(--overlap));   /* 浏览器左边到 App 右边 */
+    position: relative; isolation: isolate; height: clamp(480px, 42vw, 520px);
+  }
   .reach__lights {
     position: absolute; inset: -80px -60px -40px; z-index: -1; pointer-events: none;
     background:
@@ -367,9 +384,9 @@
   /* 一道斜向的反光：玻璃的边角比中间亮一点 */
   .rs::after { content: ""; position: absolute; inset: 0; z-index: 5; border-radius: inherit; pointer-events: none; background: linear-gradient(135deg, rgba(255, 255, 255, .07), transparent 34%); }
   [data-theme="light"] .rs::after { background: linear-gradient(135deg, rgba(255, 255, 255, .55), transparent 36%); }
-  .rs--browser { --av: 30px; left: 0; top: 96px; width: 40%; height: 304px; border-radius: 14px; }
-  .rs--app { --av: 34px; left: 21%; top: 0; z-index: 2; width: 55%; height: 420px; border-radius: 18px; }
-  .rs--phone { left: calc(76% - 76px); top: 64px; z-index: 3; width: 226px; height: 412px; padding: 0 6px 6px; border-radius: 42px; }
+  .rs--browser { --av: 30px; left: 0; top: 96px; bottom: 80px; width: calc(var(--span) * .48); border-radius: 14px; }
+  .rs--app { --av: 34px; left: calc(var(--span) * .32); top: 0; bottom: 60px; z-index: 2; width: calc(var(--span) * .68); border-radius: 18px; }
+  .rs--phone { right: 0; bottom: 4px; z-index: 3; width: var(--phone-w); height: calc(var(--phone-w) * 1.82); padding: 0 6px 6px; border-radius: 42px; }
   /* 灵动岛：深色下比屏幕更黑，浅色下是中性的深灰（不用偏绿的墨色） */
   .rs--phone::before { content: ""; position: absolute; top: 11px; left: 50%; z-index: 6; width: 72px; height: 22px; border-radius: 12px; translate: -50% 0; background: #050505; }
   [data-theme="light"] .rs--phone::before { background: rgba(17, 24, 39, .9); }
@@ -444,6 +461,10 @@
   /* 同一段对话：你的问题（实心深色气泡）→ 天天的回答 → 挂在回答下面的记忆标签（三块屏幕上一模一样） */
   .rs__thread { flex: 1; min-height: 0; display: grid; align-content: end; gap: 9px; padding: 14px 14px 12px; }
   .rs--phone .rs__thread { padding: 12px 10px 12px; }
+  /* 对话和输入框让开被前一块屏幕压住的那一条。浏览器：百分比相对对话这一列（比窗口少一列头像），所以多加 14 补回来 */
+  .rs--browser .rs__thread { padding-right: calc(33.33% + 28px); }
+  .rs--app .rs__thread { padding-right: calc(var(--overlap) + 14px); }
+  .rs--app .rs__composer { margin-right: calc(var(--overlap) + 10px); }
   .rs__msg { max-width: 86%; margin: 0; padding: 8px 11px; border-radius: 14px; font-size: 12px; line-height: 1.45; }
   .rs--phone .rs__msg, .rs--browser .rs__msg { font-size: 11.5px; }
   .rs__msg--me { justify-self: end; border-bottom-right-radius: 4px; background: var(--text); color: var(--bg); }
@@ -528,10 +549,9 @@
   html:not(.js) .reach-guide .icon-btn { display: none; }
 
   @media (max-width: 1023px) {
-    .reach__stage { height: 440px; }
+    .reach__stage { --phone-w: 212px; height: 440px; }
     .rs--browser { display: none; }
-    .rs--app { left: 0; width: 74%; }
-    .rs--phone { left: auto; right: 0; }
+    .rs--app { left: 0; bottom: 20px; width: var(--span); }
     .reach__ways { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 56px; }
     .reach__way:nth-child(3)::before { display: none; }
     .reach__way:nth-child(n + 3) { box-shadow: inset 0 1px 0 var(--line); border-radius: 0 0 18px 18px; }
@@ -539,7 +559,7 @@
   @media (max-width: 767px) {
     .reach__stage { height: auto; display: grid; justify-items: center; padding-bottom: 8px; }
     .rs--app { display: none; }
-    .rs--phone { position: relative; left: auto; right: auto; top: auto; width: min(270px, 82%); height: 420px; }
+    .rs--phone { position: relative; right: auto; bottom: auto; width: min(270px, 82%); height: 420px; }
     .reach__ways { grid-template-columns: minmax(0, 1fr); margin-top: 40px; }
     .reach__way + .reach__way::before { display: none; }
     .reach__way + .reach__way { box-shadow: inset 0 1px 0 var(--line); border-radius: 0 0 18px 18px; }

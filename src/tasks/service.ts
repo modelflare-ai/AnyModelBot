@@ -72,7 +72,6 @@ import {
   RULE_DENY_PREFIX,
   RULE_FAILS_TO_PAUSE,
   RULE_FAILS_TO_SHOW,
-  RULE_OBSERVE_AFTER_EDIT,
   RULE_RUN_CAP_MS,
   RULE_SUGGEST_AFTER,
   RUN_ERROR,
@@ -88,7 +87,7 @@ import {
   type RuleRunView,
   type RuleView,
 } from "./rules.js";
-import { lang, t as tr } from "../i18n/index.js";
+import { t as tr } from "../i18n/index.js";
 import { KEEP_MS, SWEEP_MS, WARN_MS, dirBytes, hasFiles, taskFolder } from "./retention.js";
 import { ruleMarkdown, taskMarkdown, type ExportedTaskRun } from "./export.js";
 
@@ -278,8 +277,6 @@ export function slugOf(title: string): string {
 const NOTES = "task-notes:";
 /** 还没删掉的会话记录（"<机器人>:<任务>"，会话开在代理进程里时删不了，下次清理再删） */
 const TRASH = "tasks:session-trash";
-/** 「需要你」里清理文件夹那一行点过「知道了」：到哪个清理时间为止不再显示（每个机器人一个） */
-const CLEANUP_SEEN = "tasks:cleanup-seen:";
 /** 「需要你」里问要不要改为执行的那一行点过「继续观察」：哪一版不再问（每条规则一个；删规则时一起删） */
 const SUGGEST_SEEN = "rules:suggest-seen:";
 
@@ -1713,7 +1710,6 @@ export class TaskService {
         actions: ["open"],
       });
     }
-    out.push(...this.cleanupAttention());
     return out;
   }
 
@@ -1864,7 +1860,8 @@ export class TaskService {
    * 保留与清理（启动时一次，之后每小时一次；决定 9）：每个没在跑的任务看它多久没动了（最近的输入、结果、改预算、保留）：
    * - 不到 27 天：什么都不做（之前定了清理的取消：用户又用了它）；
    * - 文件夹是空的：到 30 天归档（没什么会丢的，不打扰）；
-   * - 有文件、还没告诉过：定在 3 天后（且不早于第 30 天）清理，「需要你」里一行（cleanupAttention）；
+   * - 有文件、还没定：定在 3 天后（且不早于第 30 天）清理。不问用户、不发通知（产品负责人 2026-11-01）：任务详情里写着
+   *   哪天清理，可以保留；
    * - 到了定的时间、也满 30 天了：删文件夹，归档（连同 DSH 里的会话记录）。
    * 运行记录只留 30 天（本月的规则运行留着：本月花费从它们汇总）。之前删不掉的会话记录（还开在代理进程里）再删一次。
    */
@@ -1902,7 +1899,7 @@ export class TaskService {
     if (!task.cleanupAt) {
       const at = Math.max(now + WARN_MS, last + KEEP_MS);
       this.store.updateTask(task.id, { cleanupAt: at });
-      log.info("task folder unused for a while; telling the user before cleaning it up", { task: task.id, at: new Date(at).toISOString() });
+      log.info("task folder unused for a while; cleanup date set", { task: task.id, at: new Date(at).toISOString() });
       this.changed(task.id);
       return;
     }
@@ -1967,56 +1964,6 @@ export class TaskService {
     log.info("task folder kept", { task: task.id });
     this.changed(task.id);
     return this.get(task.id);
-  }
-
-  /** 「需要你」里的保留：这个机器人定了清理的文件夹都保留 */
-  keepCleanup(botId: string): boolean {
-    const tasks = this.store.listTasks({ botId, limit: 500 }).filter((t) => t.cleanupAt > 0);
-    for (const t of tasks) this.keepFolder(t.id);
-    return tasks.length > 0;
-  }
-
-  /** 「需要你」里的知道了：这一行不再显示（到时照样清理）；之后又有文件夹要清理时再出现 */
-  dismissCleanup(botId: string): boolean {
-    const at = Math.max(0, ...this.store.listTasks({ botId, limit: 500 }).map((t) => t.cleanupAt));
-    if (!at) return false;
-    this.store.setKV(CLEANUP_SEEN + botId, String(at));
-    this.changed(botId);
-    return true;
-  }
-
-  /**
-   * 「需要你」里清理文件夹那一份：一个机器人一行，「2 个任务文件夹 11月4日 删除」，第二行是哪几个任务。不推送：
-   * 只在应用里（和一次系统通知）。可以保留（再算 30 天）或知道了。
-   */
-  private cleanupAttention(): AttentionItem[] {
-    const out: AttentionItem[] = [];
-    const byBot = new Map<string, TaskRow[]>();
-    for (const t of this.store.listTasks({ limit: 500 })) if (t.cleanupAt > 0) byBot.set(t.botId, [...(byBot.get(t.botId) ?? []), t]);
-    const l = lang();
-    for (const [botId, tasks] of byBot) {
-      const seen = Number(this.store.getKV(CLEANUP_SEEN + botId) || 0);
-      if (tasks.every((t) => t.cleanupAt <= seen)) continue;
-      const first = Math.min(...tasks.map((t) => t.cleanupAt));
-      const date = new Intl.DateTimeFormat(l === "en" ? "en-US" : "zh-CN", { month: l === "en" ? "short" : "long", day: "numeric", timeZone: this.timeZone }).format(first);
-      const names = tasks.slice(0, 3).map((t) => t.title);
-      const titles = new Intl.ListFormat(l === "en" ? "en" : "zh-CN", { type: "conjunction" }).format(names) + (tasks.length > 3 ? "…" : "");
-      const subject = tr("tasks.cleanupSubject", { count: tasks.length, date });
-      out.push({
-        id: `cleanup:${botId}`,
-        kind: "cleanup",
-        botId,
-        botName: this.store.getBot(botId)?.name ?? botId,
-        subject,
-        status: "",
-        head: subject,
-        line: tr("tasks.cleanupLine", { titles, count: tasks.length }),
-        since: first - WARN_MS,
-        severity: "warn",
-        actions: ["keep", "dismiss"],
-      });
-    }
-    return out;
   }
 
   /** 删掉任务（任务详情里的删除）：在跑的先停下，等着的提问、审批作废，没发出去的结果不发了，文件夹和 DSH 里的会话记录、运行记录一起删 */
@@ -2134,8 +2081,9 @@ export class TaskService {
   }
 
   /**
-   * 新规则（聊天代理的 rule_create、界面）：检查从观察开始；固定提醒没什么要判断的，直接执行（决定 6），
-   * 不受免打扰限制（时间是用户定的）。时间表或事件触发二选一。
+   * 新规则（聊天代理的 rule_create、界面）：直接执行，用户的原话就是授权，和让做的任务一样（产品负责人 2026-11-01）；
+   * 用户说了先观察（mode observe）的检查才观察。固定提醒没什么要判断的，总是执行（决定 6），不受免打扰限制（时间是用户定的）。
+   * 时间表或事件触发二选一。
    */
   createRule(o: {
     botId: string;
@@ -2143,6 +2091,8 @@ export class TaskService {
     title: string;
     instruction: string;
     kind?: RuleKind;
+    /** 检查的模式：默认执行；observe = 用户要先观察 */
+    mode?: "observe" | "act";
     message?: string;
     schedule?: Schedule;
     trigger?: RuleTrigger;
@@ -2173,7 +2123,7 @@ export class TaskService {
     }
     const now = this.now();
     const id = `rl_${hex(6)}`;
-    const mode: RuleMode = kind === "remind" ? "act" : "observe";
+    const mode: RuleMode = kind === "check" && o.mode === "observe" ? "observe" : "act";
     const rule = this.store.insertRule({
       id,
       botId: o.botId,
@@ -2191,14 +2141,14 @@ export class TaskService {
       createdAt: now,
       updatedAt: now,
     });
-    log.info("rule created", { bot: o.botId, rule: id, kind, trigger: trigger.kind, conversationId: conv.id });
+    log.info("rule created", { bot: o.botId, rule: id, kind, mode, trigger: trigger.kind, conversationId: conv.id });
     this.ruleChanged(id);
     return { rule };
   }
 
   /**
-   * 改规则（界面、rule_update）。改原话：版本加 1；执行中的检查先观察 1 次再回到执行（决定 7）。只改时间表：模式不变。
-   * 改模式：重新开的清掉连续失败和暂停。正在跑的那次照它开始时的版本跑完。
+   * 改规则（界面、rule_update）。改原话：版本加 1，模式不变（执行中的照样执行，不再先观察：产品负责人 2026-11-01）。
+   * 只改时间表：模式不变。改模式：重新开的清掉连续失败和暂停。正在跑的那次照它开始时的版本跑完。
    */
   updateRule(
     id: string,
@@ -2245,12 +2195,8 @@ export class TaskService {
     if (patch.mode !== undefined && patch.mode !== rule.mode) {
       if (rule.kind === "remind" && patch.mode === "observe") return { error: tr("rules.remindNoObserve") };
       mode = next.mode = patch.mode;
-      next.observeLeft = 0;
     }
-    if (reworded) {
-      next.version = rule.version + 1;
-      if (rule.kind === "check" && mode === "act") next.observeLeft = RULE_OBSERVE_AFTER_EDIT;
-    }
+    if (reworded) next.version = rule.version + 1;
     // 重新开（关着、暂停了 → 开着）：连续失败清零
     const reopened = patch.mode !== undefined && mode !== "off" && (rule.mode === "off" || !!rule.pausedReason || patch.mode !== rule.mode);
     if (reopened) (next.failures = 0), (next.pausedReason = "");
@@ -2269,7 +2215,7 @@ export class TaskService {
     if (!rule) return { error: "rule not found" };
     if (rule.pausedReason === "budget" && this.monthSpent(rule) >= rule.monthBudgetUsd) return { error: tr("rules.monthUsed", { spent: usdText(this.monthSpent(rule)) }) };
     if (rule.pausedReason || rule.failures) {
-      const mode = rule.mode === "off" ? (rule.kind === "remind" ? "act" : "observe") : rule.mode;
+      const mode = rule.mode === "off" ? "act" : rule.mode;
       this.store.updateRule(id, { failures: 0, pausedReason: "", mode, nextRunAt: this.nextFor({ trigger: rule.trigger, mode, pausedReason: "" }, this.now()), updatedAt: this.now() });
     }
     return this.runRuleNow(id);
@@ -2540,7 +2486,7 @@ export class TaskService {
     return { text: l.mode === "observe" ? "Recorded as what you would have said (observe mode: nothing is sent). End your turn now." : "Recorded. End your turn now: the app sends your message to the user." };
   }
 
-  /** 结束规则的 run：存下步骤、报告、本会做的事；之后按结果更新规则（连续失败、先观察的次数）、送出那一句 */
+  /** 结束规则的 run：存下步骤、报告、本会做的事；之后按结果更新规则（连续失败）、送出那一句 */
   private endRule(l: Live, outcome: RunOutcome, report?: TaskReport, error = ""): void {
     this.forget(l);
     const now = this.now();
@@ -2556,16 +2502,13 @@ export class TaskService {
   }
 
   /**
-   * 一次运行之后：成功清零连续失败，改了原话后先观察的那一次跑完了就回到执行；有要说的那一句（观察时是「本会发送」）用主模型写，
-   * 执行时发出去。失败加 1（超出单次预算也算），连续 3 次自动暂停：执行中的规则推一句 ⚠️，观察中的只在「需要你」里。
+   * 一次运行之后：成功清零连续失败；有要说的那一句（观察时是「本会发送」）用主模型写，执行时发出去。
+   * 失败加 1（超出单次预算也算），连续 3 次自动暂停：执行中的规则推一句 ⚠️，观察中的只在「需要你」里。
    * 最后看本月的预算：用完了就暂停到下个月。
    */
   private afterRuleRun(rule: RuleRow, runId: string, mode: "observe" | "act", outcome: RunOutcome, report: TaskReport | undefined, error: string): void {
-    const run = this.store.getRun(runId);
     if (outcome === "done") {
-      const patch: Partial<RuleRow> = { failures: 0 };
-      if (mode === "observe" && rule.mode === "act" && rule.observeLeft > 0 && run?.ruleVersion === rule.version) patch.observeLeft = rule.observeLeft - 1;
-      this.store.updateRule(rule.id, patch);
+      this.store.updateRule(rule.id, { failures: 0 });
       if (report?.message) void this.ruleResult(rule, runId, mode, report);
     } else if (outcome === "failed" || (outcome === "budget" && error === RUN_ERROR.runBudget)) {
       const failures = rule.failures + 1;
@@ -2754,20 +2697,21 @@ export class TaskService {
 
   // ---------- 规则：聊天代理的工具 ----------
 
-  /** rule_create：用户原话、一行时间表、检查还是提醒 */
+  /** rule_create：用户原话、一行时间表、检查还是提醒；检查默认执行，用户说先观察时 mode 是 observe */
   private ruleCreateTool(conv: Conversation, a: Record<string, unknown>): { text?: string; error?: string } {
     const s = parseSchedule(String(a.schedule ?? ""), this.timeZone, this.now());
     if (!s.schedule) return { error: s.error };
     const kind: RuleKind = a.kind === "remind" ? "remind" : "check";
-    const r = this.createRule({ botId: conv.botId, conversationId: conv.id, title: String(a.title ?? ""), instruction: String(a.instruction ?? ""), kind, message: String(a.message ?? ""), schedule: s.schedule });
+    const mode = a.mode === "observe" ? "observe" : "act";
+    const r = this.createRule({ botId: conv.botId, conversationId: conv.id, title: String(a.title ?? ""), instruction: String(a.instruction ?? ""), kind, mode, message: String(a.message ?? ""), schedule: s.schedule });
     if (!r.rule) return { error: r.error };
     // 建议给用户的那几句按应用的语言（模型照着说，聊天的语言不同时它会自己换）；其余是给模型的指示
     const when = whenOf(r.rule);
+    const title = r.rule.title;
     const wx = conv.channel === "weixin" ? ` This chat is WeChat, so also say: 「${tr("rules.weixinNote")}」` : "";
     if (kind === "remind") return { text: `Created reminder ${r.rule.id}: ${when} the user gets 「${r.rule.message}」. Confirm in one sentence, e.g. 「${tr("rules.remindReply", { when })}」${wx}` };
-    return {
-      text: `Created rule ${r.rule.id} 「${r.rule.title}」 (${when}) in observe mode: it only records what it would say until the user switches it to act. Tell the user in one sentence: 「${tr("rules.createdReply", { when, title: r.rule.title })}」${wx}`,
-    };
+    if (r.rule.mode === "observe") return { text: `Created rule ${r.rule.id} 「${title}」 (${when}) in observe mode: it only records what it would say until the user switches it to act. Tell the user in one sentence: 「${tr("rules.createdObserveReply", { when, title })}」${wx}` };
+    return { text: `Created rule ${r.rule.id} 「${title}」 (${when}): each run checks and messages the user only when something matters. Tell the user in one sentence: 「${tr("rules.createdReply", { when, title })}」${wx}` };
   }
 
   /** rule_update：改模式（执行 / 观察 / 关）、原话、时间表，或删掉 */
@@ -2795,8 +2739,7 @@ export class TaskService {
     const r = this.updateRule(rule.id, patch);
     if (!r.rule) return { error: r.error };
     const v = this.ruleView(r.rule);
-    const extra = r.rule.observeLeft > 0 && runMode(r.rule) === "observe" && r.rule.mode === "act" ? " The instruction changed, so its next run only observes; then it acts again." : "";
-    return { text: `Updated rule 「${v.title}」: ${v.when}, ${v.state.label}.${extra} Tell the user in one short sentence.` };
+    return { text: `Updated rule 「${v.title}」: ${v.when}, ${v.state.label}. Tell the user in one short sentence.` };
   }
 
   // ---------- 规则：查看 ----------
@@ -2821,7 +2764,6 @@ export class TaskService {
       trigger: rule.trigger,
       when: whenOf(rule),
       mode: rule.mode,
-      observeLeft: rule.observeLeft,
       state: ruleState(rule, !!live),
       nextRunAt: rule.nextRunAt,
       ...(last ? { last: { at: last.queuedAt, outcome: last.outcome, line: runLine(last, rule.kind, this.carrier(last)) } } : {}),
@@ -2926,7 +2868,7 @@ export class TaskService {
   }
 
   /**
-   * 观察中、没暂停的检查，这一版好好观察了 3 次（做完了的；失败、跳过的不算）：「需要你」里问要不要改为执行，第二行是最近那次
+   * 用户选了观察、没暂停的检查，这一版好好观察了 3 次（做完了的；失败、跳过的不算）：「需要你」里问要不要改为执行，第二行是最近那次
    * 运行记录里的那一行。只在应用里：不推送、不发系统通知。改为执行、关掉、暂停、删掉就消失；继续观察了的这一版不再问
    * （改了原话版本加 1，新的一版再好好观察 3 次再问）。
    */

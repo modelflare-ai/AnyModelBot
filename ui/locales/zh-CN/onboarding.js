@@ -43,7 +43,7 @@ export default {
     filter: "筛选模型",
     default: "默认模型",
     noMatch: "没有匹配的模型",
-    mediaHint: "生成图片和视频时默认用的模型。每次生成前都会先问你，也可以当场换。",
+    mediaHint: "生成图片和视频时默认用的模型。",
     image: "图片",
     imageLabel: "默认图片模型",
     video: "视频",

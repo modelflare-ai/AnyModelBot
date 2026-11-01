@@ -1,11 +1,11 @@
 /**
  * 任务视图的接口（3f）：真实的 App 和本机服务（代理关着，任务和规则直接写库）。
  * GET /tasks?group= 按进行中 / 等你 / 结束了分组（归档了的不列，组名不对 400）；详情里有来自、大小；改预算（加多少、改成多少、
- * 不对的金额、停了的任务）；删除连同文件夹；保留文件夹（详情里、「需要你」里）；打开文件夹只在桌面版；规则编辑器的预算；
- * 规则运行记录和任务导出成 Markdown（下载的文件名、按 ?lang= 的语言）。
+ * 不对的金额、停了的任务）；删除连同文件夹；保留文件夹（只在详情里：清理不进「需要你」）；打开文件夹只在桌面版；
+ * 规则编辑器的预算和模式（检查默认执行，可以选观察）；规则运行记录和任务导出成 Markdown（下载的文件名、按 ?lang= 的语言）。
  * 问了个有默认回答的问题、接着在做的任务：在进行中那组，「进行中，有个问题等你回答」；详情、「需要你」、对话里的卡片都有那一句
  * 「不回复就按中文做」（按界面的语言）。
- * 观察够了的规则：「需要你」里问要不要改为执行；改为执行（同 PUT /rules/:id 切模式）、继续观察（这一版不再问）。
+ * 用户选了观察的规则观察够了：「需要你」里问要不要改为执行；改为执行（同 PUT /rules/:id 切模式）、继续观察（这一版不再问）。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -113,17 +113,12 @@ describe("任务视图的接口", () => {
     expect((await api(`/tasks/nope/budget`, { method: "POST", body: { addUsd: 1 } })).status).toBe(404);
   });
 
-  it("保留文件夹：详情里的保留、「需要你」里的保留和知道了", async () => {
-    app.store.updateTask(done, { cleanupAt: Date.now() + 3 * 86400_000 });
-    const item = (await api("/attention")).data.items.find((i: any) => i.id === "cleanup:default");
-    expect(item).toMatchObject({ kind: "cleanup", actions: ["keep", "dismiss"], line: "整理下载目录 30 天没动过了" });
-    expect(item.head).toBe(item.subject);
-    expect((await api("/attention/cleanup:default/dismiss", { method: "POST", body: {} })).data.items.find((i: any) => i.kind === "cleanup")).toBeUndefined();
-    app.store.updateTask(failed, { cleanupAt: Date.now() + 4 * 86400_000 });
-    expect((await api("/attention")).data.items.filter((i: any) => i.kind === "cleanup")).toHaveLength(1);
-    await api("/attention/cleanup:default/keep", { method: "POST", body: {} });
-    expect([app.store.getTask(done)!.cleanupAt, app.store.getTask(failed)!.cleanupAt]).toEqual([0, 0]);
-    app.store.updateTask(done, { cleanupAt: Date.now() + 86400_000 });
+  it("保留文件夹：定了清理日期不进「需要你」，详情里有日期和保留", async () => {
+    const due = Date.now() + 3 * 86400_000;
+    app.store.updateTask(done, { cleanupAt: due });
+    expect((await api(`/tasks/${done}`)).data.task).toMatchObject({ cleanupAt: due });
+    expect((await api("/attention")).data.items.filter((i: any) => i.taskId === done || String(i.id).startsWith("cleanup"))).toEqual([]);
+    expect((await api("/attention/cleanup:default/keep", { method: "POST", body: {} })).status).toBe(409);
     expect((await api(`/tasks/${done}/keep`, { method: "POST", body: {} })).data.task).toMatchObject({ cleanupAt: 0 });
   });
 
@@ -135,11 +130,16 @@ describe("任务视图的接口", () => {
     expect(md).toMatch(/^# 整理下载目录\n\nDone · about \$0\.00 of \$1\.00\n\n- From: WeChat · \d{4}-\d\d-\d\d \d\d:\d\d\n/);
     expect(md).toContain("## Run 1 · Started · ");
     const rule = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", title: "看 X 价格", instruction: "每天早上看看 X 的价格", schedule: { kind: "daily", time: "08:00" }, runBudgetUsd: 0.2, monthBudgetUsd: 5 } })).data.rule;
-    expect(rule).toMatchObject({ runBudgetUsd: 0.2, monthBudgetUsd: 5, mode: "observe" });
+    // 编辑器新建的检查默认执行；选了观察的才观察；别的模式不收
+    expect(rule).toMatchObject({ runBudgetUsd: 0.2, monthBudgetUsd: 5, mode: "act", state: { key: "act" } });
+    const watch = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", mode: "observe", title: "看 Y 价格", instruction: "每天早上看看 Y 的价格", schedule: { kind: "daily", time: "08:00" } } })).data.rule;
+    expect(watch).toMatchObject({ mode: "observe", state: { key: "observe", label: "观察中" } });
+    expect((await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", mode: "off", title: "x", instruction: "x", schedule: { kind: "daily", time: "08:00" } } })).status).toBe(400);
+    await api(`/rules/${watch.id}`, { method: "DELETE" });
     expect((await api(`/rules/${rule.id}`, { method: "PUT", body: { runBudgetUsd: 0.15, monthBudgetUsd: 4 } })).data.rule).toMatchObject({ runBudgetUsd: 0.15, monthBudgetUsd: 4 });
     expect((await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", title: "x", instruction: "x", schedule: { kind: "daily", time: "08:00" }, monthBudgetUsd: 0 } })).status).toBe(400);
     const zh = await (await fetch(`${base}/amb/api/rules/${rule.id}/export`)).text();
-    expect(zh).toMatch(/^# 看 X 价格\n\n> 每天早上看看 X 的价格\n\n每天 08:00（Asia\/Shanghai） · 观察中 · 本月 约 \$0\.00 \/ \$4\.00\n\n导出于 .+\n\n## 运行记录\n\n还没有运行过。\n$/);
+    expect(zh).toMatch(/^# 看 X 价格\n\n> 每天早上看看 X 的价格\n\n每天 08:00（Asia\/Shanghai） · 执行中 · 本月 约 \$0\.00 \/ \$4\.00\n\n导出于 .+\n\n## 运行记录\n\n还没有运行过。\n$/);
     const en = await (await fetch(`${base}/amb/api/rules/${rule.id}/export?lang=en`)).text();
     expect(en).toContain("## Run log");
   });
@@ -178,9 +178,9 @@ describe("问了还在做：有默认回答的提问", () => {
 });
 
 describe("观察够了的规则：「需要你」里问要不要改为执行", () => {
-  /** 一条观察中的检查和它这一版的 n 次好好观察（直接写库；最近那次「本会发送」） */
+  /** 一条用户选了观察的检查和它这一版的 n 次好好观察（直接写库；最近那次「本会发送」） */
   const observed = async (title: string, n: number): Promise<string> => {
-    const rule = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", title, instruction: `每天看看${title}`, schedule: { kind: "daily", time: "08:00" } } })).data.rule;
+    const rule = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", mode: "observe", title, instruction: `每天看看${title}`, schedule: { kind: "daily", time: "08:00" } } })).data.rule;
     for (let i = 0; i < n; i++) {
       const at = Date.now() - (n - i) * 86400_000;
       const id = `r_${rule.id.slice(3, 9)}${String(i).padStart(6, "0")}`;

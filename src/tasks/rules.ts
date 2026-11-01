@@ -2,7 +2,7 @@
  * 规则（3d）的纯函数部分：状态、给人看的一行、每种模式的权限和去掉的工具。写库的是任务服务（service.ts，唯一的写入者）。
  *
  * 状态（第一条符合的为准）：暂停了（连续失败 3 次、本月预算用完）→ 已暂停；关了 → 已关闭；一次性的跑过了 → 已结束；提醒 → 提醒；
- * 观察中（含改了原话后先观察的那一次）→ 观察中；其余 → 执行中。状态是"点 + 文字"：红 = 连续失败暂停，黄 = 本月预算用完暂停，
+ * 观察中 → 观察中；其余 → 执行中。新的检查直接执行（用户的原话就是授权，和让做的任务一样）；观察要用户自己选。状态是"点 + 文字"：红 = 连续失败暂停，黄 = 本月预算用完暂停，
  * 绿 = 执行中、提醒，灰 = 观察、关闭、结束。
  * 给人看的文字跟着语言（src/i18n 的 rules.*）；跳过、失败的原因存成代码（RUN_ERROR），显示时再翻。
  */
@@ -14,10 +14,8 @@ import { describe } from "./schedule.js";
 export const RULE_FAILS_TO_PAUSE = 3;
 /** 连续失败几次出现在「需要你」里 */
 export const RULE_FAILS_TO_SHOW = 2;
-/** 这一版好好观察了几次（做完了的；失败、跳过的不算）之后，「需要你」里问要不要改为执行 */
+/** 用户选了观察的规则：这一版好好观察了几次（做完了的；失败、跳过的不算）之后，「需要你」里问要不要改为执行 */
 export const RULE_SUGGEST_AFTER = 3;
-/** 改了原话之后先观察几次（产品负责人：1 次） */
-export const RULE_OBSERVE_AFTER_EDIT = 1;
 /** 每个机器人最多几条规则 */
 export const MAX_RULES = 30;
 /** 一次运行最长多久（不算等批准的时间） */
@@ -37,10 +35,10 @@ export const RULE_DENY: Readonly<Record<"observe" | "act", string[]>> = {
 /** 按前缀拒绝的工具（MCP 的电脑操作，名字随平台变化，没法列全） */
 export const RULE_DENY_PREFIX = ["mcp__computer-use__"];
 
-/** 这次运行用的模式：改了原话后先观察 observeLeft 次 */
-export function runMode(rule: Pick<RuleRow, "mode" | "observeLeft" | "kind">): "observe" | "act" {
+/** 这次运行用的模式：提醒总是执行；检查照规则的模式（改了原话也不再先观察，产品负责人 2026-11-01） */
+export function runMode(rule: Pick<RuleRow, "mode" | "kind">): "observe" | "act" {
   if (rule.kind === "remind") return "act";
-  return rule.mode === "act" && rule.observeLeft <= 0 ? "act" : "observe";
+  return rule.mode === "act" ? "act" : "observe";
 }
 
 /** DSH 的沙箱：观察只读；执行是机器人的预设和可写工作区里取小的（完全权限的机器人也一样，决定 12） */
@@ -79,8 +77,6 @@ export interface RuleView {
   /** 时间表的话：每天 08:00；事件触发的是来源 */
   when: string;
   mode: RuleMode;
-  /** 改了原话后还要先观察几次 */
-  observeLeft: number;
   state: RuleState;
   nextRunAt: number;
   /** 最近一次：时间、结果、一行 */

@@ -1,8 +1,9 @@
 /**
  * 保留与清理、删除、导出、改预算（3f）：TaskService 对着假宿主和假时钟。
  * 30 天没动过的任务归档（不再列出、不能追加，等着的提问作废）；运行记录只留 30 天（任务最近的那个 run 和本月的规则运行留着）；
- * 有文件的文件夹第 27 天在「需要你」里说一次（不推送），至少 3 天后、满 30 天才删，连同 DSH 里的会话记录（开在代理进程里的下次再删）；
- * 保留、又用了它都会重新算；知道了只是不再显示。状态都在库里：重启、应用关了很久都照样。删任务删文件夹。导出成 Markdown。
+ * 有文件的文件夹第 27 天定下清理的日期，至少 3 天后、满 30 天才删，连同 DSH 里的会话记录（开在代理进程里的下次再删）。
+ * 不问用户（产品负责人 2026-11-01）：「需要你」里没有它，也没有系统通知；日期和「保留」在任务详情里。保留、又用了它都会重新算。
+ * 状态都在库里：重启、应用关了很久都照样。删任务删文件夹。导出成 Markdown。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -16,7 +17,7 @@ import { DEFAULT_SETTINGS } from "../src/agent/settings.js";
 import { Outbox } from "../src/core/outbox.js";
 import { Delivery } from "../src/core/delivery.js";
 import { Store, type RunOutcome } from "../src/store/db.js";
-import { withLang } from "../src/i18n/index.js";
+import { Attention } from "../src/tasks/attention.js";
 
 const TZ = "Asia/Shanghai";
 const at = (s: string) => Date.parse(`${s}${s.length === 16 ? ":00" : ""}+08:00`);
@@ -117,7 +118,6 @@ describe("保留与清理（假宿主、假时钟）", () => {
     }
     return id;
   };
-  const cleanupItems = () => svc.attention().filter((i) => i.kind === "cleanup");
   const sessionDirs = (id: string) => taskSessionDirs(host.home, id).length;
 
   it("没文件的任务：30 天没动过就归档（不再列出、不能追加、会话记录删掉），不打扰用户；运行记录只留 30 天，最近的那个留着", async () => {
@@ -129,7 +129,7 @@ describe("保留与清理（假宿主、假时钟）", () => {
     svc.retain();
     expect(store.getTask(t)!.endReason).toBe("done");
     expect(store.getRun("r_old")).toBeUndefined();
-    expect(cleanupItems()).toEqual([]);
+    expect(svc.attention()).toEqual([]);
     now += DAY_MS;
     svc.retain();
     expect(store.getTask(t)).toMatchObject({ endReason: "archived", cleanupAt: 0 });
@@ -139,16 +139,22 @@ describe("保留与清理（假宿主、假时钟）", () => {
     expect(sessionDirs(t)).toBe(0);
     expect((await svc.message(t, "再看看")).error).toBe("「整理下载目录」已归档，不能再追加；需要的话开个新任务。");
     expect((await svc.retry(t)).error).toMatch(/已归档/);
-    expect(cleanupItems()).toEqual([]);
+    expect(svc.attention()).toEqual([]);
   });
 
-  it("有文件的文件夹：第 27 天在「需要你」里说一次（不推送），满 30 天删掉文件夹和会话记录、归档；等着的提问作废", async () => {
+  it("有文件的文件夹：第 27 天定下日期（不问、不通知，任务详情里看得到），满 30 天删掉文件夹和会话记录、归档；等着的提问作废", async () => {
     const t = ended("GPU 价格调研", now, { files: 3, outcome: "failed", sessions: [] });
     // 换过一次会话（task-<id>-2）：两份记录都要删
     for (const s of [`task-${t}`, `task-${t}-2`]) (fs.mkdirSync(path.join(host.home, "sessions", "--p--", s), { recursive: true }), fs.writeFileSync(path.join(host.home, "sessions", "--p--", s, "v4.jsonl"), "{}\n"));
     // 别的任务的记录不碰
     fs.mkdirSync(path.join(host.home, "sessions", "--p--", `task-${t}x`), { recursive: true });
     approvals.create({ kind: "question", botId: "b", conversationId: CONV, sessionId: `task-${t}`, tool: "task_report", detail: "要不要再查一家？", reason: "", payload: JSON.stringify([{ id: "answer", question: "要不要再查一家？" }]), taskId: t, runId: "", blocking: false, ttlMs: 0 });
+    // 「需要你」和系统通知：定下清理日期前后一样（只有这个失败了的任务那一行，早就有了）
+    const attention = new Attention({ store });
+    attention.addSource(() => svc.attention());
+    attention.takeNew();
+    const before = svc.attention();
+    const pushed = store.listOutbox({ limit: 100 }).map((r) => r.id);
     now += KEEP_MS - WARN_MS - 3600_000;
     svc.retain();
     expect(store.getTask(t)!.cleanupAt).toBe(0);
@@ -156,12 +162,11 @@ describe("保留与清理（假宿主、假时钟）", () => {
     svc.retain();
     const due = store.getTask(t)!.cleanupAt;
     expect(due).toBe(now + WARN_MS);
+    // 任务详情里有日期（和保留）；「需要你」里没有多出什么，也没有系统通知、推送
     expect(svc.get(t)!.cleanupAt).toBe(due);
-    expect(cleanupItems()).toEqual([
-      expect.objectContaining({ id: "cleanup:b", kind: "cleanup", botName: "小蓝", subject: "1 个任务文件夹 12月1日 删除", head: "1 个任务文件夹 12月1日 删除", line: "GPU 价格调研 30 天没动过了", severity: "warn", actions: ["keep", "dismiss"], since: now }),
-    ]);
-    // 只在应用里：出站队列里没有它
-    expect(store.listOutbox({ limit: 100 }).filter((r) => r.id.includes("cleanup"))).toEqual([]);
+    expect(svc.attention()).toEqual(before);
+    expect(attention.takeNew()).toEqual([]);
+    expect(store.listOutbox({ limit: 100 }).map((r) => r.id)).toEqual(pushed);
     // 再看一次：不会再定一次
     now += DAY_MS;
     svc.retain();
@@ -174,53 +179,33 @@ describe("保留与清理（假宿主、假时钟）", () => {
     expect(taskSessionDirs(host.home, t)).toEqual([]);
     expect(fs.existsSync(path.join(host.home, "sessions", "--p--", `task-${t}x`))).toBe(true);
     expect(approvals.pendingForTask(t)).toEqual([]);
-    expect(cleanupItems()).toEqual([]);
     expect(svc.attention().filter((i) => i.taskId === t)).toEqual([]);
   });
 
-  it("保留：再算 30 天；定了清理之后又用了它（追加、改预算），清理取消", async () => {
+  it("保留（任务详情）：再算 30 天，别的照样清理；定了清理之后又用了它（追加、改预算），清理取消", async () => {
     const a = ended("A", now, { files: 1 });
     const b = ended("B", now, { files: 1 });
     now += KEEP_MS - WARN_MS;
     svc.retain();
-    expect(cleanupItems()[0].subject).toBe("2 个任务文件夹 12月1日 删除");
-    expect(cleanupItems()[0].line).toBe("A和B 30 天没动过了");
-    expect(withLang("en", () => cleanupItems()[0].line)).toBe("A and B haven't been used in 30 days");
-    expect(svc.keepCleanup("b")).toBe(true);
-    expect(store.getTask(a)!.cleanupAt).toBe(0);
-    expect(cleanupItems()).toEqual([]);
+    expect([svc.get(a)!.cleanupAt, svc.get(b)!.cleanupAt]).toEqual([now + WARN_MS, now + WARN_MS]);
+    expect(svc.keepFolder(a)!.cleanupAt).toBe(0);
     now += WARN_MS + DAY_MS;
     svc.retain();
     expect(store.getTask(a)).toMatchObject({ endReason: "done", cleanupAt: 0 });
-    // 又过了 27 天：再说一次
+    expect(store.getTask(b)!.endReason).toBe("archived");
+    expect(fs.existsSync(path.join(host.ws, store.getTask(a)!.folder))).toBe(true);
+    expect(fs.existsSync(path.join(host.ws, store.getTask(b)!.folder))).toBe(false);
+    // 又过了 27 天：再定一次，还是至少 3 天后
     now += KEEP_MS - WARN_MS;
     svc.retain();
     expect(store.getTask(a)!.cleanupAt).toBeGreaterThan(now);
-    // 用了它：改预算（任务详情）→ 下次看时清理取消，那一行跟着消失
+    // 用了它：改预算（任务详情）→ 下次看时清理取消
     await svc.setBudget(a, 3);
-    await svc.setBudget(b, 3);
     svc.retain();
-    expect([store.getTask(a)!.cleanupAt, store.getTask(b)!.cleanupAt]).toEqual([0, 0]);
-    expect(cleanupItems()).toEqual([]);
+    expect(store.getTask(a)!.cleanupAt).toBe(0);
   });
 
-  it("知道了：这一行不再显示，到时照样清理；之后又有文件夹要清理时再出现", async () => {
-    const a = ended("A", now, { files: 1 });
-    now += KEEP_MS - WARN_MS;
-    svc.retain();
-    expect(svc.dismissCleanup("b")).toBe(true);
-    expect(cleanupItems()).toEqual([]);
-    const b = ended("B", now - (KEEP_MS - WARN_MS) + DAY_MS, { files: 1 });
-    now += DAY_MS;
-    svc.retain();
-    expect(cleanupItems().map((i) => i.subject)).toEqual(["2 个任务文件夹 12月1日 删除"]);
-    now = store.getTask(a)!.cleanupAt;
-    svc.retain();
-    expect(store.getTask(a)!.endReason).toBe("archived");
-    expect(store.getTask(b)!.endReason).toBe("done");
-  });
-
-  it("重启和应用关了很久：告诉过的记在库里；关了 60 天也要先说一次、至少 3 天后才删", async () => {
+  it("重启和应用关了很久：定下的日期记在库里；关了 60 天也要先定日期、至少 3 天后才删", async () => {
     const t = ended("GPU 价格调研", now, { files: 2 });
     now += 60 * DAY_MS;
     svc.stop();
@@ -229,13 +214,13 @@ describe("保留与清理（假宿主、假时钟）", () => {
     const due = store.getTask(t)!.cleanupAt;
     expect(due).toBe(now + WARN_MS);
     expect(fs.existsSync(path.join(host.ws, store.getTask(t)!.folder))).toBe(true);
-    // 重启：不会再定一次，「需要你」那一行还在
+    // 重启：不会再定一次，任务详情里还是那个日期
     now += DAY_MS;
     svc.stop();
     svc = make();
     svc.start();
     expect(store.getTask(t)!.cleanupAt).toBe(due);
-    expect(cleanupItems()).toHaveLength(1);
+    expect(svc.get(t)!.cleanupAt).toBe(due);
     // 关着过了清理时间：下次启动时删
     svc.stop();
     now = due + 10 * DAY_MS;
@@ -337,7 +322,7 @@ describe("保留与清理（假宿主、假时钟）", () => {
         "",
       ].join("\n"),
     );
-    const rule = svc.createRule({ botId: "b", conversationId: CONV, title: "看 X 价格", instruction: "每天早上看看 X 的价格，降到 200 以下告诉我", schedule: { kind: "daily", time: "08:00", tz: TZ } }).rule!;
+    const rule = svc.createRule({ botId: "b", conversationId: CONV, title: "看 X 价格", instruction: "每天早上看看 X 的价格，降到 200 以下告诉我", mode: "observe", schedule: { kind: "daily", time: "08:00", tz: TZ } }).rule!;
     store.insertEndedRun({ id: "r_x1", botId: "b", ruleId: rule.id, ruleVersion: 1, mode: "observe", cause: "schedule", outcome: "done", error: "", queuedAt: at("2026-11-01T08:00"), endedAt: at("2026-11-01T08:01") });
     store.updateRun("r_x1", { costUsd: 0.03, permission: "read-only", report: { state: "done", summary: "X 现在 ¥199", message: "X 降价了，现在 ¥199", at: 0 } });
     store.insertEndedRun({ id: "r_x0", botId: "b", ruleId: rule.id, ruleVersion: 1, mode: "observe", cause: "schedule", outcome: "skipped", error: "app_off", queuedAt: at("2026-10-31T08:00"), endedAt: at("2026-10-31T08:00") });

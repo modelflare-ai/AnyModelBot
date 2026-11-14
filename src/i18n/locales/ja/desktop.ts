@@ -1,5 +1,7 @@
 import type { TranslatedCatalog } from "../../index.js";
 export default {
+  instanceLockUnavailable: "今回の起動では単一インスタンスのロックを取得できませんでした。別のインスタンスが実行中か、ロックの作成に失敗した可能性があります。起動ログで結果と実際のデータフォルダーを確認してください。",
+
   "updateReady": "バージョン {version} のダウンロードが完了しました。準備ができたら再起動して更新してください。",
   "updateInstallFailed": "更新のインストールが完了しませんでした。アプリを再起動します。しばらくしてから再試行してください。",
   "trayOpen": "{product} を開く",

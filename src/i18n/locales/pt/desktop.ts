@@ -1,5 +1,7 @@
 import type { TranslatedCatalog } from "../../index.js";
 export default {
+  instanceLockUnavailable: "Esta inicialização não obteve o bloqueio de instância única. Outra instância pode estar em execução ou a criação do bloqueio pode ter falhado. Confira o resultado e a pasta real de dados no log de inicialização.",
+
   updateReady: "A versão {version} foi baixada. Reinicie para atualizar quando quiser.",
   updateInstallFailed: "A instalação da atualização não foi concluída. O app vai reiniciar. Tente de novo mais tarde.",
   trayOpen: "Abrir {product}",

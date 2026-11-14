@@ -80,6 +80,16 @@ describe("界面接口 /guide", () => {
     app.store.addMessage(c.id, "user", "Hi"); app.store.addMessage(c.id, "assistant", "⚠️ no credits");
     expect((await api("/guide")).json.done).toEqual([]);
   });
+  it("模板和自动整理的记忆不完成教学，对话保存成功才完成且不回退", async () => {
+    const scope = { kind: "bot" as const, id: "default" };
+    app.agent.memory.remember(scope, "模板自带偏好", { source: "template:writer" });
+    app.agent.memory.remember(scope, "自动推断的偏好", { source: "review" });
+    expect((await api("/guide")).json.done).not.toContain("memory");
+    app.agent.memory.remember(scope, "回答简短，结论优先", { source: "chat:web" });
+    expect((await api("/guide")).json.done).toContain("memory");
+    app.agent.memory.forget(scope, "回答简短，结论优先", { by: "test" });
+    expect((await api("/guide")).json.done).toContain("memory");
+  });
   it("完成前四步再跳过渠道可结束；完成里程碑不因数据删除消失", async () => {
     await api("/guide", { done: ["hello", "memory", "second", "hands"] });
     const r = (await api("/guide", { skip: "weixin" })).json;

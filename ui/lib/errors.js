@@ -4,7 +4,7 @@
 import { t } from "./i18n.js";
 
 // 各类报错的特征（服务商和 Modelflare 的英文、中文报错都认）
-const BALANCE = /insufficient[_ ]?(user[_ ])?(quota|balance|credit|funds)|余额不足|额度不足|quota (is )?(exceeded|not enough|insufficient)|not enough (quota|balance|credit)|pre[- ]?consum|预扣费?(额度)?失败|credit balance is too low|exceeded your current quota/i; // i18n-ignore
+const BALANCE = /insufficient[_ ]?(user[_ ])?(quota|balance|credit|funds)|余额不足|额度不足|quota (is )?(exceeded|not enough|insufficient)|not enough (quota|balance|credit)|unable to reserve quota|pre[- ]?consum|预扣费?(额度)?失败|credit balance is too low|exceeded your current quota/i; // i18n-ignore
 const AUTH = /invalid[_ ]api[_ ]key|incorrect api key|\bunauthori[sz]ed\b|invalid[_ ]token|token (is )?(invalid|expired|revoked)|无效的令牌|令牌.{0,6}(无效|过期)|api key.{0,20}(invalid|expired|revoked|not valid)/i; // i18n-ignore
 const MODEL = /model[_ ]not[_ ]found|model\b.{0,60}\b(does not exist|not found|not available|not supported|is not enabled)|no such model|unknown model|模型不存在|无可用渠道|no available channel|model_not_available/i; // i18n-ignore
 const TOOLS = /unsupported.{0,60}(?:tools?|function)|(?:tools?|function.?calling).{0,70}(?:not supported|unsupported|not available)|(?:does not|doesn.t|cannot|can.t) support.{0,40}(?:tools?|function)|不支持.{0,12}(?:工具|函数)|(?:工具|函数)调用.{0,12}不支持/i; // i18n-ignore
@@ -16,7 +16,7 @@ function statusOf(s) {
   const m =
     /\b(?:HTTP|status(?:[ _]code)?|code)["'\s:=]*([45]\d\d)\b/i.exec(s) ||
     /\b([45]\d\d)\s+(?:Bad Request|Unauthorized|Payment Required|Forbidden|Not Found|Too Many Requests|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)\b/i.exec(s) ||
-    /^\s*([45]\d\d)\b/.exec(s);
+    /\b([45]\d\d)\b/.exec(s);
   return m ? Number(m[1]) : 0;
 }
 

@@ -68,6 +68,7 @@
    单行控件定高、居中：字号调大时只是字变大，按钮还是 28 高、左右还是 --ctl-px-sm（不靠上下内边距撑高）。
    形状只给真的按钮和链接：别处借 .text 取颜色的文字（侧栏分组名）不带内边距，字仍在所在行的内容线上 —— */
 :is(button, a).text { display: inline-flex; align-items: center; min-height: var(--ctl-sm); padding: 0 var(--ctl-px-sm); }
+:is(button, a).text:has(> .ic) { gap: var(--space-1-5); }
 .text {
   font-size: var(--fs-sm); color: var(--ctl-fg); border-radius: var(--r-ctl); white-space: nowrap;
   transition: background var(--t-fast), color var(--t-fast);

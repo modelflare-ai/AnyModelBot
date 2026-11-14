@@ -31,7 +31,7 @@ export function TemplateGallery({ bots }) {
         <span class="template-description">${item.desc}</span><span class="template-sample">${t("templates.try", { prompt: item.sample })}</span>
         <span class="template-meta">${item.appIds.length ? html`<span title=${item.appIds.map((id) => appName(apps, id, lang)).join(", ")}>${t("templates.worksWith", { apps: item.appIds.map((id) => appName(apps, id, lang)).join(", ") })}</span>` : null}
           ${item.rule && html`<span>${t("templates.includesRule")}</span>`}</span></button>
-      <button type="button" class="btn ghost sm template-add" onClick=${() => preview(item.id)} aria-label=${t("templates.addLabel", { name: item.name, category: t(`templates.categories.${item.category}`) })}>${t("templates.add")}</button>
+      <button type="button" class="btn ghost sm template-add" onClick=${() => preview(item.id)} aria-label=${t("templates.addLabel", { name: item.name, category: t(`templates.categories.${item.category}`) })}><${Icon} name="plus" size="sm" />${t("templates.add")}</button>
     </article>`)}</div></section>`;
 }
 export function TemplatePreview({ id, bots, models, modelsError, reloadModels, defaultModel, account, onCreated }) {
@@ -84,7 +84,7 @@ export function TemplatePreview({ id, bots, models, modelsError, reloadModels, d
   return html`<section class="template-preview" data-screen="template-preview">
     <header class="chat-head"><span>${t("templates.previewTitle")}</span></header>
     <form class="template-preview-body" onSubmit=${added}>
-      <button type="button" class="text template-back" disabled=${draft.busy} onClick=${back}>${t("templates.backArrow")}</button>
+      <button type="button" class="text template-back" disabled=${draft.busy} onClick=${back}><${Icon} name="arrowLeft" size="sm" />${t("templates.back")}</button>
       <fieldset disabled=${draft.busy} class="template-columns">
         <div class="template-identity"><${BotAvatar} char=${draft.avatar} size=${96} lively /><${AvatarPicker} value=${draft.avatar} onChange=${(avatar) => patch({ avatar })} size=${36} />
           <p class="hint">${t("templates.avatarHint")}</p>

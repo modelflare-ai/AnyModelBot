@@ -337,7 +337,7 @@ const STATE_ROWS = [
     ["聚焦", () => html`<label class="side-search is-focus" style="width: 200px; margin: 0"><${Icon} name="search" size="sm" /><input value="日报" tabindex="-1" /></label>`],
     ["账户 · 悬停", () => html`<button type="button" class="account is-hover" style="width: 200px"><${UserAvatar} name="root" class="me" /><span class="who">root</span></button>`],
     ["账户 · 打开", () => html`<button type="button" class="account on" style="width: 200px"><${UserAvatar} name="root" class="me" /><span class="who">root</span></button>`]] },
-  { name: "侧栏提示", note: ".side-note · 一行淡灰 + 小点；悬停、按下深一级，不铺红、不铺品牌色", ctx: "side", cells: basic((c) => html`<a class=${`side-note ${c}`} href="#states" style="width: 220px; margin: 0"><span class="side-note-main"><span class="dot warn"></span><span class="v">余额不多了</span><span class="go">充值 ↗</span></span></a>`) },
+  { name: "更新入口", note: ".side-update · 账户旁的带底色图标按钮，下载完成后变为重启更新", ctx: "side", cells: basic((c) => html`<button type="button" class=${`icon-btn side-update ${c}`} aria-label="下载更新"><${Icon} name="down" size="md" /></button>`) },
   { name: "选角色", note: ".avatar-opt · 选中比悬停深一级、名字变实，不描边", cells: [
     ...basic((c) => html`<button type="button" class=${`avatar-opt ${c}`}><${BotAvatar} char="green" size=${36} /><span class="avatar-name">${BOT_CHARS.green.name}</span></button>`),
     ["选中", () => html`<button type="button" class="avatar-opt on" aria-checked="true" role="radio"><${BotAvatar} char="blue" size=${36} /><span class="avatar-name">${BOT_CHARS.blue.name}</span></button>`]] },
@@ -413,8 +413,8 @@ function WinApp({ screen = "chat", open: initial = false }) {
     <aside class="side">
       ${settings
         ? html`<div class="side-top start"><button type="button" class="side-back"><${Icon} name="arrowLeft" size="md" />返回应用</button></div>`
-        : html`<div class="side-top"><span class="side-brand"><img src="/amb/static/assets/favicon-64.png" alt="" /><span>AnyModelBot</span></span><span class="grow"></span>
-            <${IconButton} icon="sidebar" iconSize="md" class="side-toggle" label="收起侧栏" /><${IconButton} icon="search" iconSize="md" class="side-search-btn" label="搜索聊天记录" /><${IconButton} icon="plus" iconSize="md" class="side-new" label="新建机器人" /></div>`}
+        : html`<div class="side-top"><${IconButton} icon="sidebar" iconSize="md" class="side-toggle" label="收起侧栏" /><span class="side-brand"><img src="/amb/static/assets/favicon-64.png" alt="" /><span>AnyModelBot</span></span><span class="grow"></span>
+            <${IconButton} icon="search" iconSize="md" class="side-search-btn" label="搜索聊天记录" /><${IconButton} icon="plus" iconSize="md" class="side-new" label="新建机器人" /></div>`}
       ${settings && html`<label class="side-search"><${Icon} name="search" size="sm" /><input type="search" placeholder="查找设置" /></label>`}
       <nav class="side-list">
         ${settings
@@ -590,7 +590,7 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         ${STATE_ROWS.map((r) => html`<${StateRow} key=${r.name} ...${r} />`)}
       <//>
 
-      <${Section} id="icons" title="图标" lead="16 格画布的线性图标，五档尺寸 xs 12 · sm 14 · md 16 · lg 20 · xl 24；线宽按显示像素算（--ic-stroke 1.25px），任何尺寸都一样细，实心面上的图标用 strong（1.6px）。默认 sm，顶栏、侧栏和对话输入框用 md。">
+      <${Section} id="icons" title="图标" lead="Heroicons 2.2.0 Outline 的 24 格线性图标，五档尺寸 xs 12 · sm 14 · md 16 · lg 20 · xl 24；线宽按显示像素算（--ic-stroke 1.5px），任何尺寸都一样细，实心面上的图标用 strong（1.75px）。Icon 默认 md，菜单与行内操作用 sm，顶栏、侧栏和对话输入框用 md。">
         <${Demo} title="全部图标" note="sm · 14px" code=${`<${"${Icon}"} name="gear" size="sm" />   /* 尺寸只用 xs / sm / md / lg / xl */
 .pick .ic { --ic-size: var(--ic-xs); }   /* 上下文改尺寸只改 --ic-size，线宽自动跟着换算 */`}>
           ${() => ICONS.map((n) => html`<span class="gal-icon" key=${n} title=${n}><${Icon} name=${n} size="sm" /><span class="t-meta">${n}</span></span>`)}
@@ -710,9 +710,9 @@ const { mounted, leaving } = usePresence(open);   /* design/motion.js：退场�
         <${Demo} col title="回合中间说的话与交付的文件" note="模型在工具调用之间说的话按顺序写在回复里，最后的回复接在后面，处理过程只列步骤；present 交付的文件挂在文字下面：图片直接显示（限宽 320、限高 240，保持比例，点开看大图），其它是文件卡片（桌面版点开用系统程序打开，右边在文件夹中显示；网页里点开在新标签页打开），找不到的文件不能点">
           ${() => html`<div class="gal-chat">
             <div class="msg-row user"><div class="msg">把下载目录里的截图整理一下，挑一张做封面</div></div>
-            <div class="msg-row assistant live"><div class="activity"><button type="button" class="work-line toggle live" aria-expanded="false"><span class="wl shimmer">运行 bash，已用 6 秒</span><${Icon} name="chevRight" size=${12} class="chev" /></button></div>
+            <div class="msg-row assistant live"><div class="activity"><button type="button" class="work-line toggle live" aria-expanded="false"><span class="wl shimmer">运行 bash，已用 6 秒</span><${Icon} name="chevRight" size="xs" class="chev" /></button></div>
               <div class="msg"><${Markdown} text="我先看看下载目录里有什么。" /></div></div>
-            <div class="msg-row assistant last"><div class="activity"><button type="button" class="work-line toggle" aria-expanded="false"><span class="wl">用时 18 秒</span><${Icon} name="chevRight" size=${12} class="chev" /></button></div>
+            <div class="msg-row assistant last"><div class="activity"><button type="button" class="work-line toggle" aria-expanded="false"><span class="wl">用时 18 秒</span><${Icon} name="chevRight" size="xs" class="chev" /></button></div>
               <div class="msg"><${Markdown} text=${INTERIM_REPLY} /></div>
               <div class="msg-files">
                 <button type="button" class="msg-img" title="打开 cover.png"><img src="../assets/guide-demo.svg" alt="cover.png" /></button>

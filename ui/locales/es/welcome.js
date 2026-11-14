@@ -3,13 +3,13 @@ export default {
   "namedTitle": "Hola, soy {name}",
   "subtitle": "¿Qué puedo hacer por ti? Empieza por algo pequeño:",
   "samples": {
-    "hello": "Hoy debo presentar gastos, preparar la reunión de mañana y responder a un cliente. Ordena las prioridades y explica por qué.",
+    "hello": "Ayúdame a priorizar tres cosas que debo hacer hoy y explica por qué.",
     "memory": "Recuerda: responde brevemente y empieza por la conclusión.",
     "rewrite": "Hazlo más informal: La reunión semanal se ha cambiado al jueves a las 15:00. Por favor, tomen nota."
   },
   "discover": "Explora los Bots oficiales →",
   "orDiscover": "O explora los Bots oficiales →",
-  "normalBody": "Di lo que necesitas. Puedes conectarlo a WeChat, Feishu, Telegram y más desde el panel de información.",
+  "normalBody": "Solo di lo que necesitas. Puedes conectarlo a Slack, Telegram o Discord desde el panel de información.",
   "collapse": "Minimizar a la barra lateral",
   "hiddenToast": "Lista oculta. Puedes volver a mostrarla en Ajustes › General.",
   "showAgain": "Volver a mostrar",
@@ -19,11 +19,11 @@ export default {
     "hello": {
       "title": "Saluda a {name}",
       "desc": "Habla aquí mismo. Las respuestas aparecen mientras se escriben.",
-      "try": "Hoy debo presentar gastos, preparar la reunión de mañana y responder a un cliente. Ordena las prioridades y explica por qué."
+      "try": "Ayúdame a priorizar tres cosas que debo hacer hoy y explica por qué."
     },
     "memory": {
       "title": "Deja que te recuerde",
-      "desc": "Cuéntale tus preferencias para nuevos chats y apps conectadas. No guardes contraseñas ni claves en la memoria.",
+      "desc": "Cuéntale tus preferencias. Las recuerda en chats nuevos y en Slack, Telegram o Discord. No guarda contraseñas ni claves.",
       "try": "Recuerda: responde brevemente y empieza por la conclusión."
     },
     "second": {
@@ -32,12 +32,12 @@ export default {
     },
     "hands": {
       "title": "Pídele que te entregue un archivo",
-      "desc": "Puede escribir archivos y ejecutar comandos en su espacio de trabajo, y entregarte el resultado.",
-      "try": "Crea \"today.md\" con tres tareas: presentar gastos, preparar la reunión y responder a un cliente. Envíame el archivo."
+      "desc": "Puede escribir archivos y ejecutar comandos en su propio espacio de trabajo, y luego entregarte el resultado.",
+      "try": "Crea \"hoy.md\" en tu espacio de trabajo con tres cosas que hacer hoy y envíamelo."
     },
     "weixin": {
       "title": "Conecta una app de chat",
-      "desc": "Una vez conectado, úsalo desde WeChat, Feishu, Telegram y más. Puedes omitir este paso."
+      "desc": "Una vez conectado, puedes hablarle desde Slack, Telegram o Discord. Puedes omitir este paso."
     }
   },
   "templates": {
@@ -66,9 +66,9 @@ export default {
   "nextReminderChannel": "Recordatorio diario: envíalo a {channel} a las 9:00",
   "reminderSample": "Recuérdame en esta app mis tareas cada mañana a las 9:00.",
   "reminderChannel": "Recuérdame mis tareas por {channel} cada mañana a las 9:00.",
-  "nextDraw": "Pídele un dibujo: describe lo que imaginas",
+  "nextDraw": "Pídele un dibujo: describe lo que imaginas y lo dibujará para ti",
   "drawSample": "Dibuja un pueblo costero al amanecer, en acuarela.",
-  "connectDraw": "Conecta Modelflare para dibujar. Tus claves de API se conservan.",
+  "connectDraw": "Conecta Modelflare para dibujar imágenes. Tus claves API se conservan tal como están.",
   "seeExample": "Ver un ejemplo",
   "sampleBadge": "Imagen de ejemplo. Sin gastar créditos.",
   "sampleAlt": "Ejemplo: pequeño robot azul con auriculares, ilustración plana",
@@ -116,5 +116,8 @@ export default {
   "removeBody": "Se quitará de la barra lateral y se eliminarán sus chats, tareas y reglas. Puedes volver a añadirlo desde Descubrir.",
   "removeKeep": "Conservar sus archivos y su espacio de trabajo para continuar al volver a añadirlo",
   "removeDone": "Se quitó {name}. Puedes volver a añadirlo desde Descubrir",
-  "toolsUnsupported": "Este modelo no admite herramientas y no puede completar la acción. Cambia a uno compatible e inténtalo de nuevo."
+  "toolsUnsupported": "Este modelo no admite herramientas y no puede completar la acción. Cambia a uno compatible e inténtalo de nuevo.",
+  "drawConnectLink": "Conecta Modelflare",
+  "drawConnectBefore": "¿Quieres una propia? ",
+  "drawConnectAfter": " y podrá empezar a dibujar. Tus claves API se conservan tal como están."
 };

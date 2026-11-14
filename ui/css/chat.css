@@ -432,6 +432,9 @@ button.task-origin:hover { color: var(--fg); }
 .err-meta code { font-family: var(--code); overflow-wrap: anywhere; }
 .err-raw { margin: var(--space-1) 0; max-height: calc(var(--fs-xs) * 12); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: var(--code); font-size: var(--fs-2xs); color: var(--fg-2); }
 .notice:has(.err-details) { align-items: flex-start; flex-wrap: wrap; }
+.notice:has(.err-main) { align-items: flex-start; flex-wrap: wrap; }
+.notice:has(.err-main) .notice-text { flex: 1 1 calc(100% - var(--ctl-lg)); }
+.notice .err-actions { display: flex; flex-wrap: wrap; gap: var(--ctl-gap); width: 100%; padding-left: calc(var(--ic-sm) * 1px + var(--space-2)); }
 .notice .notice-text { min-width: 0; overflow-wrap: anywhere; }
 
 /* 电脑操作的系统权限（第 18 项）：贴在输入框上面，按缺的那几项列出来 */

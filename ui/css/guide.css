@@ -2,6 +2,9 @@
    清单卡是内容里的一组（--well，不描边）；引导卡片是浮层玻璃（和菜单同一种材质）；
    要点的地方亮一圈 accent（和键盘焦点同一种语言），输入框借用拖入文件时的样子。 */
 @layer app {
+/* 示例图说明是一段正文，只有连接入口可点；允许窄窗口自然换行。 */
+.guide-demo-note .guide-inline-link { display: inline; height: auto; padding: 0; font: inherit; line-height: inherit; vertical-align: baseline; color: var(--fg); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: .2em; }
+.guide-demo-note .guide-inline-link:hover { background: none; text-decoration-color: currentColor; }
 
 /* —— 进度格：做完的格子是主操作色 —— */
 .guide-bar { display: grid; grid-template-columns: repeat(var(--n, 6), minmax(0, 1fr)); gap: var(--space-1); }

@@ -67,7 +67,7 @@ export default {
     "details": "Error details",
     "status": "Status {status}",
     "copy": "Copy details",
-    "retry": "Send again",
+    "retry": "Retry",
     "retryHint": "Runs this message again from the start",
     "retryTitle": "Run this message again?",
     "retryBody": "Sending it again runs the whole task from the start, not just the step that failed. Actions that already completed last time (such as edited files or sent messages) may happen again.",

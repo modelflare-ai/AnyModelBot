@@ -3,13 +3,13 @@ export default {
   "namedTitle": "안녕하세요, {name}입니다",
   "subtitle": "무엇을 도와드릴까요? 작은 일부터 시작해 보세요:",
   "samples": {
-    "hello": "오늘 경비 제출, 내일 아침 회의 자료 준비, 고객 메일 답장을 해야 해요. 우선순위와 이유를 알려주세요.",
+    "hello": "오늘 해야 할 세 가지 일의 우선순위를 정하고 이유를 설명해 줘.",
     "memory": "기억해 주세요: 답변은 짧게, 결론부터 말해 주세요.",
     "rewrite": "이 문장을 더 자연스럽게 바꿔 주세요: 이번 주 정기 회의가 목요일 오후 3시로 변경되었으니 참고 바랍니다."
   },
   "discover": "바로 쓸 수 있는 공식 Bot 둘러보기 →",
   "orDiscover": "또는 공식 Bot 둘러보기 →",
-  "normalBody": "원하는 일을 말해 주세요. 정보 패널에서 WeChat, Feishu, Telegram 등에 연결할 수 있어요.",
+  "normalBody": "원하는 일을 바로 말해 주세요. 정보 패널에서 Slack, Telegram 또는 Discord에 연결할 수 있습니다.",
   "collapse": "사이드바로 접기",
   "hiddenToast": "시작 목록을 숨겼어요. 설정 › 일반에서 다시 표시할 수 있어요.",
   "showAgain": "다시 표시",
@@ -19,11 +19,11 @@ export default {
     "hello": {
       "title": "{name}에게 인사하기",
       "desc": "여기서 바로 대화하세요. 답변이 작성되는 대로 표시돼요.",
-      "try": "오늘 경비 제출, 내일 아침 회의 자료 준비, 고객 메일 답장을 해야 해요. 우선순위와 이유를 알려주세요."
+      "try": "오늘 해야 할 세 가지 일의 우선순위를 정하고 이유를 설명해 줘."
     },
     "memory": {
       "title": "나를 기억하게 하기",
-      "desc": "선호를 알려주면 새 대화와 연결된 채팅 앱에서도 활용해요. 비밀번호와 키는 기억에 넣지 마세요.",
+      "desc": "취향을 알려 주세요. 새 대화나 Slack, Telegram, Discord에서도 기억합니다. 비밀번호나 키는 저장하지 않습니다.",
       "try": "기억해 주세요: 답변은 짧게, 결론부터 말해 주세요."
     },
     "second": {
@@ -32,12 +32,12 @@ export default {
     },
     "hands": {
       "title": "파일을 만들어 받기",
-      "desc": "자신의 작업 공간에서 파일을 쓰고 명령을 실행한 뒤 결과를 전달해요.",
-      "try": "작업 공간에 \"today.md\"를 만들어 경비 제출, 회의 자료 준비, 고객 메일 답장을 적고 파일을 보내 주세요."
+      "desc": "자신의 작업 공간에서 파일을 작성하고 명령을 실행한 뒤 결과를 전달합니다.",
+      "try": "작업 공간에 \"오늘 할 일.md\"를 만들고 오늘 할 일 세 가지를 적은 다음 보내 줘."
     },
     "weixin": {
       "title": "채팅 앱 연결하기",
-      "desc": "연결하면 WeChat, Feishu, Telegram 등에서도 대화할 수 있어요. 이 단계는 건너뛸 수 있어요."
+      "desc": "연결하면 Slack, Telegram 또는 Discord에서도 대화할 수 있습니다. 이 단계는 건너뛸 수 있습니다."
     }
   },
   "templates": {
@@ -66,9 +66,9 @@ export default {
   "nextReminderChannel": "매일 알림 설정: 오전 9시에 {channel}로 보내기",
   "reminderSample": "매일 오전 9시에 이 앱에서 오늘 할 일을 알려 주세요.",
   "reminderChannel": "매일 오전 9시에 {channel}에서 오늘 할 일을 알려 주세요.",
-  "nextDraw": "그림 그리기: 원하는 장면 말하기",
+  "nextDraw": "그림을 요청해 보세요: 원하는 장면을 설명하면 그려서 보내 줍니다",
   "drawSample": "새벽의 바닷가 마을을 수채화 스타일로 그려 주세요.",
-  "connectDraw": "Modelflare에 연결하면 그림을 그릴 수 있어요. 기존 API 키는 유지돼요.",
+  "connectDraw": "Modelflare에 연결하면 그림을 그릴 수 있습니다. 기존 API 키는 그대로 유지됩니다.",
   "seeExample": "예시 보기",
   "sampleBadge": "예시 이미지. 크레딧 미사용.",
   "sampleAlt": "예시: 헤드폰을 쓴 파란 작은 로봇의 평면 일러스트",
@@ -116,5 +116,8 @@ export default {
   "removeBody": "사이드바에서 제거되고 대화 기록, 작업, 규칙도 삭제됩니다. 둘러보기에서 다시 추가할 수 있습니다.",
   "removeKeep": "파일과 작업 공간 내용을 보관해 다시 추가하면 이어서 쓰기",
   "removeDone": "{name}을(를) 제거했습니다. 둘러보기에서 다시 추가할 수 있습니다",
-  "toolsUnsupported": "이 모델은 도구 호출을 지원하지 않아 작업을 완료할 수 없어요. 도구를 지원하는 모델로 바꾼 뒤 다시 시도하세요."
+  "toolsUnsupported": "이 모델은 도구 호출을 지원하지 않아 작업을 완료할 수 없어요. 도구를 지원하는 모델로 바꾼 뒤 다시 시도하세요.",
+  "drawConnectLink": "Modelflare 연결",
+  "drawConnectBefore": "나만의 그림을 원하나요? ",
+  "drawConnectAfter": " 후 그림을 그릴 수 있습니다. 기존 API 키는 그대로 유지됩니다."
 };

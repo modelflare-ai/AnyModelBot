@@ -6,6 +6,7 @@ export default {
   restoreButton: "復元",
   createdCard: "ルールを作成しました · {name}",
   undoneCard: "取り消し済み · {name}",
+  undoneCardBody: "取り消し済み · {name} は実行されません。10分以内なら復元できます。",
 
   monthlyDay: "毎月 {day} 日 {time}",
   monthlyLast: "毎月末日 {time}",
@@ -15,7 +16,7 @@ export default {
   groupDestination: "グループ · {group}",
   undoExpired: "この操作は取り消し・復元できません。現在のルールを確認してください。",
   undoNote: "ユーザーが「{name}」を取り消しました。再作成しないでください。",
-  undoneReply: "「{name}」を取り消しました。実行されません。10 分以内に「restore」と返信すると復元できます。",
+  undoneReply: "「{name}」を取り消しました。今後は送信されません。10分以内に「restore」と返信すると復元できます。",
   updateUndone: "「{name}」の変更を取り消しました。",
   restoredReply: "「{name}」を復元しました。",
   undoHint: "「undo」と返信すると取り消せます。デスクトップアプリで確認・変更できます。",

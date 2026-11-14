@@ -4,8 +4,9 @@
 // 外观（主题、字体、动画…）和对话习惯（发送键、通知）是本机界面偏好，存在浏览器里（lib/theme.js、lib/prefs.js）；
 // 其余设置走服务端 /settings。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, IconButton, Seg, Switch, Sheet, CopyButton, Skeleton, MenuButton } from "../components/ui.js";
-import { AccountButton, Balance, UpdateNotice, SideActions } from "./sidebar.js";
+import { html, Button, Icon, IconButton, Seg, Switch, Sheet, CopyButton, Skeleton, MenuButton } from "../components/ui.js";
+import { AccountButton, SideActions } from "./sidebar.js";
+import { AccountBalance, balanceText } from "../components/account-balance.js";
 import { PickModel, effortOptions, setEffort, shortModel, showsStrategy, strategyOptions, useEffort } from "../components/model-picker.js";
 import { DomainConnection } from "../components/domain-connection.js";
 import { NotificationsSheet, UsageSheet } from "./account.js";
@@ -202,7 +203,6 @@ export function SettingsSide({ tab, query, onQuery, onTab, onBack, username, acc
           onClick=${() => { onQuery(""); onTab(id); }}><${Icon} name=${icon} size="md" /><span>${tabLabel(label)}</span></button>`;
       })}
     </nav>
-    <${UpdateNotice} update=${update} onChanged=${onUpdateChanged} />
     <div class="side-foot"><${AccountButton} username=${username} account=${account} update=${update} onUpdateChanged=${onUpdateChanged} settingsOn onSettings=${() => onTab("general")} onModelflare=${() => { onQuery(""); onTab("modelflare"); }} /></div>
   </aside>`;
 }
@@ -214,6 +214,8 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
   const [notices, setNotices] = useState(false);
   const [sheet, setSheet] = useState(""); // usage | notifications | login
   const [leaving, setLeaving] = useState(false);
+  const [balanceRefreshing, setBalanceRefreshing] = useState(false);
+  const balanceRequest = useRef(null);
   // 官方 API：各家的连接状态；keySheet 是正在填 Key 的那一家
   const [official, setOfficial] = useState(null);
   const [keySheet, setKeySheet] = useState(null);
@@ -276,10 +278,15 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       failed(e);
     }
   };
-  const refreshBalance = () =>
-    api("/account/refresh", { method: "POST", body: {} })
+  const refreshBalance = () => {
+    if (balanceRequest.current) return balanceRequest.current;
+    setBalanceRefreshing(true);
+    balanceRequest.current = api("/account/refresh", { method: "POST", body: { maxAgeMs: 3000 } })
       .then(onAccount)
-      .catch(failed);
+      .catch(failed)
+      .finally(() => { balanceRequest.current = null; setBalanceRefreshing(false); });
+    return balanceRequest.current;
+  };
   // 账户操作只放在常规页底部，保留运行中任务提示和退出前的确认。
   const leaveAccount = async () => {
     if (leaving) return;
@@ -339,6 +346,9 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
   };
   const managed = mf && mf.mode === "managed";
   const signedIn = !!(acct && acct.state === "signed_in");
+  useEffect(() => {
+    if (tab === "modelflare" && managed && mf.connected && acct) void refreshBalance();
+  }, [tab, managed, !!mf?.connected, !!acct]);
   useEffect(() => {
     if (managed && tab === "modelflare") api("/official").then((r) => setOfficial(r.providers)).catch(failed);
   }, [managed, tab]);
@@ -426,14 +436,14 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       managed && acct && { tab: "modelflare", searchOnly: true, id: "account", name: t("settings.rows.account.name"),
         sub: signedIn ? (acct.billedToEnterprise ? t("settings.rows.account.enterprise", { name: acct.name || t("welcome.accountFallback") }) : acctName) : acct.state === "unavailable" ? acct.error : t("settings.rows.account.signedOut"), keys: t("settings.rows.account.keys"),
         ctl: signedIn
-          ? html`${!acct.name && html`<a class="text" href=${acct.profileUrl} target="_blank" rel="noopener noreferrer">${t("welcome.setNickname")}</a>`}<span class="badge ok"><${Icon} name="check" size="xs" />${t("settings.rows.account.signedIn")}</span>`
+          ? html`${!acct.name && html`<a class="text" href=${acct.profileUrl} target="_blank" rel="noopener noreferrer">${t("welcome.setNickname")}</a>`}<span class="badge ok">${t("settings.rows.account.signedIn")}</span>`
           : acct.state === "signed_out" ? html`<button type="button" class="btn" onClick=${() => setSheet("login")}>${t("settings.rows.account.login")}</button>` : null },
       !managed && { tab: "modelflare", id: "connection", name: t("settings.rows.connection.name"), sub: t("settings.rows.connection.subExternal"), keys: "",
         ctl: html`<span class="val" title=${mf && mf.baseUrl}>${mf && mf.baseUrl}</span>` },
       managed && acct && mf.connected && { tab: "modelflare", searchOnly: true, id: "balance", name: t("settings.rows.balance.name"),
         sub: acct.error ? t("settings.rows.balance.error", { error: acct.error }) : acct.updatedAt ? t("settings.rows.balance.updated", { time: fmtTimeOfDay(acct.updatedAt) }) : t("common.reading"), keys: t("settings.rows.balance.keys"),
-        ctl: html`${acct.lowBalance && html`<span class="dot warn"></span>`}<span class="balance">${usd(acct.balanceUsd)}</span>
-          <button type="button" class="icon-btn" title=${t("common.refresh")} aria-label=${t("settings.rows.balance.refresh")} onClick=${refreshBalance}><${Icon} name="refresh" size="sm" /></button>
+        ctl: html`${acct.lowBalance && !acct.error && html`<span class="dot warn"></span>`}<span class="balance">${balanceText(acct)}</span>
+          <${Button} variant="ghost" size="sm" icon="refresh" aria-label=${t("settings.rows.balance.refresh")} loading=${balanceRefreshing} onClick=${refreshBalance}>${t("common.refresh")}<//>
           <a class="btn" href=${acct.topupUrl || MF_TOPUP} target="_blank" rel="noopener noreferrer">${t("settings.rows.balance.topUp")}</a>` },
       managed && acct && mf.connected && { tab: "modelflare", group: "account", id: "low-balance", name: t("settings.rows.lowBalance.name"), sub: t("settings.rows.lowBalance.sub"), keys: t("settings.rows.lowBalance.keys"),
         ctl: html`<${Seg} label=${t("settings.rows.lowBalance.name")} value=${acct.alerts.lowBalanceUsd} onChange=${(v) => putAlerts({ lowBalanceUsd: v })}
@@ -530,7 +540,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
       { tab: "about", id: "links", name: "Modelflare", sub: t("settings.rows.links.sub"),
         ctl: html`<a class="text" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">modelflare.dev ↗</a><a class="text" href=${MF_DOCS_LINK} target="_blank" rel="noopener noreferrer">${t("settings.rows.links.docs")}</a>` },
     ].filter(Boolean);
-  }, [s, mf, mode, p, models, modelsError, cu, status, update, bots, acct, invite, unread, g, media, lang, langPref, conn.accounts, conn.channelAccounts, effort, official, leaving]);
+  }, [s, mf, mode, p, models, modelsError, cu, status, update, bots, acct, invite, unread, g, media, lang, langPref, conn.accounts, conn.channelAccounts, effort, official, leaving, balanceRefreshing]);
 
   const needle = q.trim().toLowerCase();
   const shown = needle ? rows.filter((r) => !r.custom && `${r.name} ${r.sub || ""} ${r.keys || ""}`.toLowerCase().includes(needle)) : rows.filter((r) => r.tab === tab && !r.searchOnly);
@@ -550,10 +560,7 @@ export function SettingsScreen({ tab, query: q, onQuery: setQ, onTab, focusRow, 
         <${ThemeCards} value=${mode} flash=${flash === "theme"} onChange=${(m) => { setThemeMode(m); saved(); }} />`}
       ${s && !needle && tab === "modelflare" && acctRow && html`<div class="list acct-card">
         <${Row} id=${acctRow.id} name=${acctRow.name} sub=${acctRow.sub} title=${acctRow.sub} flash=${flash === acctRow.id}>${acctRow.ctl}<//>
-        ${balRow && html`<div class=${`acct-bal${flash === balRow.id ? " flash" : ""}`} id="set-balance">
-          <${Balance} account=${acct} note=${html`<span>${balRow.sub}</span><${IconButton} icon="refresh" size="xs" iconSize="xs" label=${t("settings.rows.balance.refresh")} onClick=${refreshBalance} />`} />
-          <a class=${`btn${acct.lowBalance ? " primary" : ""}`} href=${acct.topupUrl || MF_TOPUP} target="_blank" rel="noopener noreferrer">${t("settings.rows.balance.topUp")}</a>
-        </div>`}
+        ${balRow && html`<${AccountBalance} account=${acct} refreshing=${balanceRefreshing} onRefresh=${refreshBalance} flash=${flash === balRow.id} />`}
       </div>`}
       ${s && !needle && tab === "troubleshoot" ? html`<${TroubleshootPane} bots=${bots} desktop=${desktop} />` : parts.map(({ label, note, rows: list }) => html`${label && html`<div class="set-part">${label}</div>`}${note && html`<p class="set-note">${note}</p>`}
         <div class="list">${list.map((r) => r.custom || html`<${Row} key=${r.id} id=${r.id} name=${r.name} sub=${r.sub} title=${r.title || r.sub} flash=${flash === r.id || conn.fresh === r.id}>${r.ctl}<//>`)}</div>`)}

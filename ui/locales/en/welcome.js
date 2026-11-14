@@ -3,13 +3,13 @@ export default {
   "namedTitle": "Hi, I'm {name}",
   "subtitle": "What can I take off your plate? Start with something small:",
   "samples": {
-    "hello": "Today I need to submit expenses, prepare for tomorrow morning's meeting and reply to a client. Prioritize these and explain why.",
+    "hello": "Help me prioritize three things I need to do today, and explain why.",
     "memory": "Remember: keep answers short and lead with the conclusion.",
     "rewrite": "Make this sound more casual: This week's regular meeting has been rescheduled to Thursday at 3 p.m. Please take note."
   },
   "discover": "Browse ready-made official Bots →",
   "orDiscover": "Or browse ready-made official Bots →",
-  "normalBody": "Just say what you need. Connect it to WeChat, Feishu, Telegram and more from the info panel.",
+  "normalBody": "Just say what you need. You can connect it to Slack, Telegram or Discord from the info panel.",
   "collapse": "Minimize to sidebar",
   "hiddenToast": "Checklist hidden. You can turn it back on in Settings › General.",
   "showAgain": "Show again",
@@ -19,11 +19,11 @@ export default {
     "hello": {
       "title": "Say hi to {name}",
       "desc": "Chat with it right here. Replies stream in as they're written.",
-      "try": "Today I need to submit expenses, prepare for tomorrow morning's meeting and reply to a client. Prioritize these and explain why."
+      "try": "Help me prioritize three things I need to do today, and explain why."
     },
     "memory": {
       "title": "Let it remember you",
-      "desc": "Tell it your preferences to use in new chats and connected chat apps. Keep passwords and keys out of memory.",
+      "desc": "Tell it your preferences. It remembers them in new chats and in Slack, Telegram or Discord. It won't store passwords or keys.",
       "try": "Remember: keep answers short and lead with the conclusion."
     },
     "second": {
@@ -32,12 +32,12 @@ export default {
     },
     "hands": {
       "title": "Have it hand you a file",
-      "desc": "It can write files and run commands in its workspace, then hand you the result.",
-      "try": "Create \"today.md\" in your workspace listing three tasks: submit expenses, prepare meeting notes and reply to a client. Send me the file."
+      "desc": "It can write files and run commands in its own workspace, then hand you the result.",
+      "try": "Create \"today.md\" in your workspace with three things to do today, then send it to me."
     },
     "weixin": {
       "title": "Connect a chat app",
-      "desc": "Once connected, reach it from WeChat, Feishu, Telegram and more. You can skip this step."
+      "desc": "Once connected, you can reach it from Slack, Telegram or Discord. You can skip this step."
     }
   },
   "templates": {
@@ -66,7 +66,7 @@ export default {
   "nextReminderChannel": "Set a daily reminder: send it to {channel} at 9 a.m.",
   "reminderSample": "Remind me in this app every morning at 9 a.m. of what I need to do today.",
   "reminderChannel": "Remind me on {channel} every morning at 9 a.m. of today's to-dos.",
-  "nextDraw": "Ask it to draw a picture: describe what you have in mind",
+  "nextDraw": "Ask it to draw a picture: describe what you have in mind and it'll draw it for you",
   "drawSample": "Draw me a picture: a seaside town at dawn, in watercolor.",
   "connectDraw": "Connect Modelflare to draw pictures. Your API keys stay as they are.",
   "seeExample": "See an example",
@@ -116,5 +116,8 @@ export default {
   "removeBody": "It will be removed from the sidebar, and its chats, tasks and rules will be deleted. You can add it again from Discover.",
   "removeKeep": "Keep its files and workspace so you can continue after adding it again",
   "removeDone": "Removed {name}. You can add it again from Discover",
-  "toolsUnsupported": "This model does not support tools, so it cannot finish this action. Switch to a model with tool support and retry."
+  "toolsUnsupported": "This model does not support tools, so it cannot finish this action. Switch to a model with tool support and retry.",
+  "drawConnectLink": "Connect Modelflare",
+  "drawConnectBefore": "Want one of your own? ",
+  "drawConnectAfter": " and it can start drawing. Your API keys stay as they are."
 };

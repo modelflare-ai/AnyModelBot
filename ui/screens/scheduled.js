@@ -20,8 +20,8 @@ export function ScheduledSync() {
 export function ScheduledButton({ active }) {
   const { rules } = useStore(scheduled);
   const count = rules.filter((r) => r.needsAttention).length;
-  const label = t(count ? "scheduled.attention" : "scheduled.title", { count });
-  return html`<button type="button" class=${`icon-btn scheduled-nav${active ? " on" : ""}`} title=${label} aria-label=${label} aria-current=${active ? "page" : undefined} onClick=${openScheduled}><${Icon} name="clock" size="md" />${count > 0 && html`<span class="scheduled-dot" aria-hidden="true"></span>`}</button>`;
+  const label = t(count === 1 ? "scheduled.attentionOne" : count ? "scheduled.attention" : "scheduled.title", { count });
+  return html`<button type="button" class=${`nav-item scheduled-nav${active ? " sel" : ""}`} title=${label} aria-label=${label} aria-current=${active ? "page" : undefined} onClick=${openScheduled}><${Icon} name="clock" size="md" /><span class="label">${t("scheduled.title")}</span>${count > 0 && html`<span class="scheduled-dot" aria-hidden="true"></span>`}</button>`;
 }
 export function NewRuleHost({ bots }) {
   const [open, setOpen] = useState(false);
@@ -49,13 +49,13 @@ export function ScheduledPage({ bots }) {
   const refresh = () => loadRules().catch(failed);
   const rows = data.rules.filter((r) => filter !== "needs" || r.needsAttention);
   return html`<section class="scheduled-page" data-screen="scheduled">
-    <header class="scheduled-head"><div><h1>${t("scheduled.title")}</h1><p class="hint">${t("scheduled.description", { zone: data.timeZone })}</p></div><${Button} variant="primary" onClick=${newRule}>${t("scheduled.newRule")}<//></header>
+    <header class="scheduled-head"><div><h1>${t("scheduled.title")}</h1><p class="hint">${t("scheduled.description", { zone: data.timeZone })}</p></div><${Button} variant="primary" icon="plus" onClick=${newRule}>${t("scheduled.newRule")}<//></header>
     <${Seg} label=${t("scheduled.title")} options=${[["all", `${t("scheduled.all")} ${data.rules.length}`], ["needs", `${t("scheduled.needs")} ${count}`]]} value=${filter} onChange=${setFilter} />
     ${!data.loaded && html`<${Spinner} />`}
-    ${data.loaded && !data.rules.length && html`<div class="empty-state"><h2>${t("scheduled.empty")}</h2><p>${t("scheduled.example")}</p><${Button} onClick=${newRule}>${t("scheduled.newRule")}<//></div>`}
+    ${data.loaded && !data.rules.length && html`<div class="empty-state"><p>${t("scheduled.empty")} ${t("scheduled.example")}</p><${Button} icon="plus" onClick=${newRule}>${t("scheduled.newRule")}<//></div>`}
     ${ordered.map((bot) => {
       const rules = rows.filter((r) => r.botId === bot.id).sort((a, b) => Number(a.mode === "off") - Number(b.mode === "off") || (a.nextRunAt || Infinity) - (b.nextRunAt || Infinity) || a.createdAt - b.createdAt);
-      return rules.length ? html`<section class="scheduled-group" key=${bot.id}><h2>${bot.name}</h2>${rules.map((rule) => html`<${RuleRow} key=${rule.id} full rule=${rule} open=${open === rule.id} onToggle=${() => setOpen(open === rule.id ? "" : rule.id)} onChanged=${refresh} />`)}</section>` : null;
+      return rules.length ? html`<section class="scheduled-group" key=${bot.id}><h2>${bot.name}</h2>${rules.map((rule) => html`<${RuleRow} key=${rule.id} full rule=${rule} timeZone=${data.timeZone} open=${open === rule.id} onToggle=${() => setOpen(open === rule.id ? "" : rule.id)} onChanged=${refresh} />`)}</section>` : null;
     })}
   </section>`;
 }

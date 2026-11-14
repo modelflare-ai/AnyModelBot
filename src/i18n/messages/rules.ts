@@ -10,6 +10,7 @@ export const zh = {
   restoreButton: "恢复",
   createdCard: "已建好规则 · {name}",
   undoneCard: "已撤销 · {name}",
+  undoneCardBody: "已撤销 · {name} 不会再运行。10 分钟内可以恢复。",
 
   monthlyDay: "每月 {day} 日 {time}",
   monthlyLast: "每月最后一天 {time}",
@@ -19,7 +20,7 @@ export const zh = {
   groupDestination: "群聊 · {group}",
   undoExpired: "这次操作已无法撤销或恢复，请查看规则当前设置。",
   undoNote: "用户撤销了「{name}」，不要再建回来。",
-  undoneReply: "已撤销「{name}」，不会再运行。10 分钟内回复「恢复」可以找回。",
+  undoneReply: "已撤销「{name}」，不会再发了。10 分钟内回复「恢复」可以找回。",
   updateUndone: "已撤销对「{name}」的修改。",
   restoredReply: "已恢复「{name}」。",
   undoHint: "回复「撤销」可以取消；在桌面端可以查看和修改。",
@@ -137,6 +138,7 @@ export const en: Catalog<typeof zh> = {
   restoreButton: "Restore",
   createdCard: "Rule created · {name}",
   undoneCard: "Undone · {name}",
+  undoneCardBody: "Undone · {name} won't run. You can restore it within 10 minutes.",
 
   monthlyDay: "Monthly on day {day} at {time}",
   monthlyLast: "Last day of each month at {time}",
@@ -146,7 +148,7 @@ export const en: Catalog<typeof zh> = {
   groupDestination: "Group · {group}",
   undoExpired: "This change can no longer be undone or restored. Review the current rule.",
   undoNote: "The user undid \"{name}\". Do not create it again.",
-  undoneReply: "Undid \"{name}\". It will not run. Reply \"restore\" within 10 minutes to get it back.",
+  undoneReply: "Undid \"{name}\". It won't be sent again. Reply \"restore\" within 10 minutes to get it back.",
   updateUndone: "Undid the changes to \"{name}\".",
   restoredReply: "Restored \"{name}\".",
   undoHint: "Reply \"undo\" to cancel. You can review and change it in the desktop app.",

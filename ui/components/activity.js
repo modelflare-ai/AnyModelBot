@@ -49,12 +49,12 @@ function Step({ s, now }) {
   const more = !!(s.input || s.output || s.tokens);
   const ms = s.status === "running" ? now - s.at : s.ms;
   const head = html`<span class=${`dot ${DOT[s.status] || ""}`} aria-hidden="true"></span>
-    <${Icon} name=${KIND_ICON[s.kind] || "info"} size=${14} class="k" />
+    <${Icon} name=${KIND_ICON[s.kind] || "info"} size="sm" class="k" />
     <span class="t">${s.kind === "model" && (s.status === "running" || s.cut) ? t("activity.waitingModel", { model: s.title }) : s.title}</span>
     ${s.summary && html`<span class="s">${s.summary}</span>`}
     <span class="grow"></span>
     ${ms != null && html`<span class=${`d num${s.status === "running" ? " shimmer" : ""}`}>${stepDur(ms)}</span>`}
-    ${more && html`<${Icon} name="chevRight" size=${12} class="chev" />`}`;
+    ${more && html`<${Icon} name="chevRight" size="xs" class="chev" />`}`;
   const label = t("activity.stepLabel", { status: t(s.status === "error" ? "activity.failed" : s.status === "running" ? "activity.running" : "activity.done"), title: s.title });
   return html`<li class=${`act-step ${s.status}${open ? " open" : ""}`}>
     ${more
@@ -95,7 +95,7 @@ export function ActivityLine({ label, phase, live, steps, count = 0, load }) {
   if (!n) return html`<div class="work-line live" aria-live="off">${text}</div>`;
   return html`<div class=${`activity${open ? " open" : ""}`}>
     <button type="button" class=${`work-line toggle${live ? " live" : ""}`} aria-expanded=${open} aria-live="off" title=${t(open ? "activity.collapse" : "activity.expand")} onClick=${() => setOpen(!open)}>
-      ${text}<${Icon} name="chevRight" size=${12} class="chev" />
+      ${text}<${Icon} name="chevRight" size="xs" class="chev" />
     </button>
     ${open && (list ? html`<${ActivityList} steps=${list} />` : html`<div class="act-list empty"><span class="hint">${err || t("common.loading")}</span></div>`)}
   </div>`;

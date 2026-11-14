@@ -1,4 +1,3 @@
-// firstUse · es
 export default {
   "login": "Iniciar sesión / Registrarse",
   "accountHint": "Usa tu cuenta de Modelflare para iniciar sesión en AnyModelBot",
@@ -56,10 +55,10 @@ export default {
   "noFirstModel": "No se encontró un modelo económico adecuado para el primer uso (debe admitir herramientas, y tanto la reserva por solicitud como una tarea típica deben caber dentro del crédito de prueba). Elige uno de la lista de abajo.",
   "writerWords": "redac|escrit|autor|editor|copy|writer|writing",
   "errors": {
-    "balance": "Tu saldo es demasiado bajo para continuar con esta tarea por ahora.",
-    "balanceHint": "Recarga y vuelve a enviarla, o prueba otro modelo (puede que aun así no alcance).",
-    "balanceOfficial": "Tu cuenta de {name} no tiene saldo suficiente para continuar con esta tarea.",
-    "balanceOfficialHint": "Esto usa tu propia clave de API de {name}. Revisa el saldo o la cuota en la consola de {name} y vuelve a enviarla.",
+    "balance": "Tu saldo es insuficiente para continuar esta tarea ahora.",
+    "balanceHint": "Recarga y vuelve a enviarlo, o prueba otro modelo (puede que aun así no sea suficiente).",
+    "balanceOfficial": "Tu cuenta de {name} no tiene crédito suficiente para continuar esta tarea.",
+    "balanceOfficialHint": "Se usa tu propia clave API de {name}. Comprueba el saldo o la cuota en la consola de {name} y vuelve a enviarlo.",
     "model": "El modelo actual no está disponible o se retiró, así que la tarea no terminó.",
     "modelHint": "Cambia a un modelo disponible en el servicio actual y vuelve a enviarla.",
     "rate": "El servicio de modelos está limitando las solicitudes. Espera un momento y vuelve a enviarla.",
@@ -68,7 +67,7 @@ export default {
     "details": "Detalles del error",
     "status": "Estado {status}",
     "copy": "Copiar detalles",
-    "retry": "Volver a enviar",
+    "retry": "Reintentar",
     "retryHint": "Vuelve a ejecutar este mensaje desde el principio",
     "retryTitle": "¿Volver a ejecutar este mensaje?",
     "retryBody": "Al volver a enviarlo, se ejecuta toda la tarea desde el principio, no solo el paso que falló. Las acciones que ya se completaron la última vez (como archivos editados o mensajes enviados) podrían repetirse.",

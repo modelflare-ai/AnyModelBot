@@ -147,6 +147,7 @@ export function apply(ctx) {
       description: 'Change a rule accessible to the current user when the user asks (the owner can manage all rules of this bot; ask which rule if names are ambiguous): mode act (results are sent), observe (only records) or off; new instruction or schedule; or delete.',
       parameters: {
         rule: { type: 'string', required: true, description: 'Rule id or part of its title.' },
+        title: { type: 'string', description: 'New rule name, only when the user asks to rename it.' },
         mode: { type: 'string', enum: ['observe', 'act', 'off'] },
         instruction: { type: 'string' },
         schedule: { type: 'string' },

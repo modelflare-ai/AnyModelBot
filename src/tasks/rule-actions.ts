@@ -5,6 +5,7 @@ export interface RuleAction {
   id: string;
   ruleId: string;
   conversationId: string;
+  actor?: string;
   title: string;
   kind: "create" | "update";
   before?: RuleRow;

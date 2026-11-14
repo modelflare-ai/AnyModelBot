@@ -33,7 +33,6 @@ const uid = () => `l${++seq}`;
 export const isError = (s) => typeof s === "string" && s.startsWith("⚠️");
 export const errText = (s) => s.replace(/^⚠️\s*/, "");
 // 服务端报错的文字（两种语言都认）
-const isAuthError = (s) => /HTTP 401\b|\b401\b.*(key|密钥|unauthor)/i.test(s); // i18n-ignore
 
 // steps：代理回合的活动记录有几步（展开时按 mid 取）；interim：模型在回合中间说的话；files：交付的文件
 function toItems(messages) {
@@ -246,8 +245,8 @@ export function MsgActions({ text, at }) {
  */
 export function ErrorNotice({ text, onRetry, onFixKey, onSwitchModel, source = "", ranSteps = false, topupUrl = "" }) {
   const e = classifyError(text);
-  const auth = e.kind === "auth" || isAuthError(text);
-  const kind = auth ? "auth" : e.kind;
+  const kind = e.kind;
+  const auth = kind === "auth";
   const main = auth
     ? source ? t("chat.error.officialKeyInvalid", { name: source }) : t("chat.error.authInvalid")
     : kind === "balance" ? (source ? t("firstUse.errors.balanceOfficial", { name: source }) : t("firstUse.errors.balance"))
@@ -261,11 +260,11 @@ export function ErrorNotice({ text, onRetry, onFixKey, onSwitchModel, source = "
   };
   const details = kind !== "unfinished" || e.raw;
   const detailText = redact(text);
-  return html`<${Notice} tone="red" action=${html`
+  return html`<${Notice} tone="red" action=${html`<div class="err-actions">
       ${kind === "balance" && !source && html`<a class="btn primary" href=${topupUrl || MF_TOPUP} target="_blank" rel="noopener noreferrer">${t("sidebar.topUp")}</a>`}
       ${auth && onFixKey && html`<button type="button" class="btn" onClick=${onFixKey}>${source ? t("chat.error.fixOfficialKey") : t("chat.error.fixKey")}</button>`}
       ${(kind === "balance" || kind === "model") && onSwitchModel && html`<button type="button" class="btn" onClick=${onSwitchModel}>${t("chat.menu.switchModel")}</button>`}
-      ${onRetry && kind !== "auth" && html`<button type="button" class="btn" title=${t("firstUse.errors.retryHint")} onClick=${retry}>${t("firstUse.errors.retry")}</button>`}`}>
+      ${onRetry && kind !== "auth" && html`<button type="button" class="btn" title=${t("firstUse.errors.retryHint")} onClick=${retry}>${t("firstUse.errors.retry")}</button>`}</div>`}>
     <div class="err-main">${main}</div>
     ${hint && html`<div class="err-hint">${hint}</div>`}
     ${details && html`<details class="err-details">

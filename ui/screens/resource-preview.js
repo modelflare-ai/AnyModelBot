@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { html, IconButton } from "../components/ui.js";
+import { html, Button, IconButton, MenuButton } from "../components/ui.js";
 import { Markdown } from "../components/markdown.js";
 import { api } from "../lib/api.js";
 import { failed } from "../lib/store.js";
@@ -9,16 +9,16 @@ import { t } from "../lib/i18n.js";
 function WebsiteForm() {
   const [url, setUrl] = useState("");
   const [invalid, setInvalid] = useState(false);
-  return html`<form class="preview-address" onSubmit=${(e) => {
+  return html`<form class="preview-address" noValidate onSubmit=${(e) => {
     e.preventDefault();
     const resource = websiteResource(url);
     setInvalid(!resource);
     if (resource) { openResource(resource); setUrl(""); }
   }}>
     <label for="preview-address">${t("info.preview.address")}</label>
-    <div class="cluster"><input id="preview-address" type="url" required placeholder="https://" value=${url} aria-invalid=${invalid || undefined}
-      onInput=${(e) => { setUrl(e.currentTarget.value); setInvalid(false); }} /><button type="submit" class="btn">${t("common.open")}</button></div>
-    ${invalid && html`<p class="hint" role="alert">${t("info.preview.invalidUrl")}</p>`}
+    <div class="preview-address-row"><input id="preview-address" class="field" type="url" inputMode="url" autoCapitalize="none" spellCheck=${false} required placeholder="https://" value=${url} aria-invalid=${invalid || undefined} aria-describedby=${invalid ? "preview-address-error" : undefined}
+      onInput=${(e) => { setUrl(e.currentTarget.value); setInvalid(false); }} /><${Button} type="submit">${t("common.open")}<//></div>
+    ${invalid && html`<p id="preview-address-error" class="preview-address-error" role="alert">${t("info.preview.invalidUrl")}</p>`}
   </form>`;
 }
 
@@ -61,9 +61,7 @@ export function ResourcePreview({ state = { items: [], active: "" }, onSelect, o
   const href = item.type === "website" ? item.url : resourceFileUrl(item);
   return html`<div class="resource-preview">
     <div class="preview-toolbar">
-      <select aria-label=${t("info.preview.opened")} value=${item.id} onChange=${(e) => onSelect(e.currentTarget.value)}>
-        ${state.items.map((x) => html`<option key=${x.id} value=${x.id}>${x.name}</option>`)}
-      </select>
+      <${MenuButton} label=${t("info.preview.opened")} value=${item.id} options=${state.items.map((x) => [x.id, x.name])} onChange=${onSelect} />
       <${IconButton} icon="refresh" label=${t("common.refresh")} onClick=${() => setRevision((v) => v + 1)} />
       <${IconButton} icon="close" label=${t("info.preview.closeFile")} onClick=${() => onRemove(item.id)} />
     </div>

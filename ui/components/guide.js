@@ -180,5 +180,7 @@ export function MediaDemo({ onLoad, account }) {
   return html`<div class="guide-demo"><span class="badge">${t("welcome.sampleBadge")}</span>
     <div class="msg-files"><button type="button" class=${`msg-img${big ? " big" : ""}`} aria-expanded=${big} onClick=${() => setBig(!big)}>
       <img src="/amb/static/assets/guide-demo.svg" alt=${t("welcome.sampleAlt")} onLoad=${onLoad} /></button></div>
-    <p class="guide-demo-note t-meta">${t("welcome.wantOwn")} <button type="button" class="text" onClick=${() => signedIn ? fillComposer(t("welcome.drawSample")) : signInForDrawing()}>${t(signedIn ? "welcome.describeDraw" : "welcome.connectDraw")}</button></p></div>`;
+    <p class="guide-demo-note t-meta">${signedIn
+      ? html`${t("welcome.wantOwn")} <button type="button" class="text" onClick=${() => fillComposer(t("welcome.drawSample"))}>${t("welcome.describeDraw")}</button>`
+      : html`${t("welcome.drawConnectBefore")}<button type="button" class="text guide-inline-link" onClick=${signInForDrawing}>${t("welcome.drawConnectLink")}</button>${t("welcome.drawConnectAfter")}`}</p></div>`;
 }

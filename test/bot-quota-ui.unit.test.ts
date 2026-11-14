@@ -1,5 +1,5 @@
 /**
- * 界面：账户行右边的圆环（Bot 额度 / 余额）、悬停提示、点开的额度卡片、金额格式，以及处理完一件事后刷新额度用的节流。
+ * 设置中的余额概览、Bot 额度、金额状态，以及处理完一件事后刷新额度用的节流。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -29,10 +29,10 @@ const load = async (lang = "zh-CN") => {
   const i18n = await import("../ui/lib/i18n.js");
   i18n.setLangPref(lang);
   // @ts-expect-error 同上
-  const sidebar = await import("../ui/screens/sidebar.js");
+  const balance = await import("../ui/components/account-balance.js");
   // @ts-expect-error 同上
   const links = await import("../ui/lib/links.js");
-  return { ...sidebar, ...links };
+  return { ...balance, ...links };
 };
 
 const account = (over: Record<string, unknown> = {}) => ({
@@ -46,84 +46,63 @@ const account = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-describe("额度卡片（点圆环弹出）", () => {
+describe("设置中的余额概览", () => {
   const cls = (v: any, c: string) => find(v, (n) => n.props?.class === c);
-  it("有 Bot 额度：顶上灰字说明、细线、Bot 额度剩余百分比和余额（两位小数）、细线、带账户标识的充值链接和订阅加赠", async () => {
-    const { QuotaCard } = await load();
-    const v = QuotaCard({ account: account() });
-    expect(text(cls(v, "quota-head")[0])).toBe("Bot 额度只能在 AnyModelBot 里使用");
-    expect(cls(v, "quota-row").map(text)).toEqual(["Bot 额度剩余 83%", "余额$12.35"]);
-    expect(find(v, (n) => n.type === "hr")).toHaveLength(2);
-    const link = find(v, (n) => n.type === "a")[0];
-    expect(link.props).toMatchObject({ class: "quota-action", href: account().topupUrl, target: "_blank" });
-    expect(text(link)).toBe("充值↗订阅套餐另送套餐额度 10% 的 Bot 额度");
-    expect(cls(v, "quota-note")).toHaveLength(0);
+  it("直接展示余额和 Bot 额度，充值链接带当前账户标识", async () => {
+    const { AccountBalance } = await load();
+    const v = AccountBalance({ account: account() });
+    expect(text(cls(v, "account-balance-value")[0])).toBe("余额$12.35");
+    expect(text(cls(v, "account-credit-heading")[0])).toBe("Bot 额度$0.83剩余 83%");
+    expect(text(v)).toContain("Bot 额度只能在 AnyModelBot 里使用");
+    expect(find(v, (n) => n.props?.role === "meter")[0].props["aria-valuenow"]).toBe(83);
+    expect(find(v, (n) => n.type === "a")[0].props).toMatchObject({ href: account().topupUrl, target: "_blank" });
   });
-
-  it("用完时显示剩余 0%；余额很小也按两位小数", async () => {
-    const { QuotaCard } = await load();
-    const v = QuotaCard({ account: account({ bot: { balanceUsd: 0, remainingPercent: 0 }, balanceUsd: 0.004 }) });
-    expect(cls(v, "quota-row").map(text)).toEqual(["Bot 额度剩余 0%", "余额$0.00"]);
+  it("真实的零额度正常显示，很小的余额保留精度", async () => {
+    const { AccountBalance } = await load();
+    const v = AccountBalance({ account: account({ balanceUsd: 0.004, bot: { balanceUsd: 0, remainingPercent: 0 } }) });
+    expect(text(v)).toContain("余额$0.0040");
+    expect(text(cls(v, "account-credit-heading")[0])).toBe("Bot 额度$0.00剩余 0%");
   });
-
-  it("没有 Bot 额度（或服务端还不返回）：只有余额和充值，没有 Bot 额度那一行和顶上说明", async () => {
-    const { QuotaCard } = await load();
-    const v = QuotaCard({ account: account({ bot: null }) });
-    expect(cls(v, "quota-head")).toHaveLength(0);
-    expect(cls(v, "quota-row").map(text)).toEqual(["余额$12.35"]);
-    expect(text(find(v, (n) => n.type === "a")[0])).toBe("充值↗");
+  it("没有 Bot 额度时只显示余额，不显示空额度区域", async () => {
+    const { AccountBalance } = await load();
+    const v = AccountBalance({ account: account({ bot: null }) });
+    expect(cls(v, "account-credit")).toHaveLength(0);
+    expect(text(cls(v, "account-balance-value")[0])).toBe("余额$12.35");
   });
-
-  it("余额加载中、读取失败时不显示成 0；失败时也不显示 Bot 额度", async () => {
-    const { QuotaCard } = await load();
-    expect(cls(QuotaCard({ account: account({ balanceUsd: null, bot: null }) }), "quota-row").map(text)).toEqual(["余额加载中"]);
-    expect(cls(QuotaCard({ account: account({ error: "boom" }) }), "quota-row").map(text)).toEqual(["余额暂不可用"]);
+  it("加载中和读取失败不显示零或旧额度", async () => {
+    const { AccountBalance, balanceText } = await load();
+    expect(balanceText(account({ balanceUsd: null }))).toBe("加载中");
+    const v = AccountBalance({ account: account({ error: "连接失败" }) });
+    expect(text(cls(v, "account-balance-value")[0])).toBe("余额暂不可用");
+    expect(cls(v, "account-credit")).toHaveLength(0);
+    expect(text(v)).not.toContain("$12.35");
   });
-
-  it("余额低于提醒线时卡片里多一行说明", async () => {
-    const { QuotaCard } = await load();
-    const v = QuotaCard({ account: account({ balanceUsd: 3, lowBalance: true }) });
-    expect(text(cls(v, "quota-note")[0])).toBe("低于提醒线 $5.00");
+  it("低余额提示直接展示，错误状态不重复提示低余额", async () => {
+    const { AccountBalance } = await load();
+    expect(text(cls(AccountBalance({ account: account({ lowBalance: true }) }), "account-balance-warning")[0])).toBe("低于提醒线 $5.00");
+    expect(cls(AccountBalance({ account: account({ lowBalance: true, error: "fail" }) }), "account-balance-warning")).toHaveLength(0);
   });
-
-  it("没有服务端给的充值地址时用默认的充值页", async () => {
-    const { QuotaCard, MF_TOPUP } = await load();
-    const v = QuotaCard({ account: account({ topupUrl: "" }) });
+  it("刷新时保留已有数字，并将刷新按钮置为加载中", async () => {
+    const { AccountBalance } = await load();
+    const refresh = vi.fn();
+    const v = AccountBalance({ account: account(), refreshing: true, onRefresh: refresh });
+    expect(v.props["aria-busy"]).toBe(true);
+    expect(text(v)).toContain("$12.35");
+    const button = find(v, (n) => n.props?.["aria-label"] === "刷新余额")[0];
+    expect(button.props.loading).toBe(true);
+    expect(button.props.onClick).toBe(refresh);
+  });
+  it("没有账户充值链接时使用默认充值页", async () => {
+    const { AccountBalance, MF_TOPUP } = await load();
+    const v = AccountBalance({ account: account({ topupUrl: "" }) });
     expect(find(v, (n) => n.type === "a")[0].props.href).toBe(MF_TOPUP);
   });
-
-  it("英文界面", async () => {
-    const { QuotaCard } = await load("en");
-    const v = QuotaCard({ account: account() });
-    expect(text(cls(v, "quota-head")[0])).toBe("Bot credits are usable only in AnyModelBot");
-    expect(cls(v, "quota-row").map(text)).toEqual(["Bot credits83% left", "Balance$12.35"]);
-    expect(text(find(v, (n) => n.type === "a")[0])).toBe("Top up ↗Subscriptions add Bot credits worth 10% of the plan");
-  });
-});
-
-describe("圆环悬停提示", () => {
-  it("有 Bot 额度时是剩余百分比，没有时是余额；低于提醒线补一句；读取失败不说百分比", async () => {
-    const { quotaTip } = await load();
-    expect(quotaTip(account())).toBe("Bot 额度剩余 83%");
-    expect(quotaTip(account({ bot: { balanceUsd: 0, remainingPercent: 0 } }))).toBe("Bot 额度剩余 0%");
-    expect(quotaTip(account({ bot: null }))).toBe("余额 $12.35");
-    expect(quotaTip(account({ bot: null, balanceUsd: 3, lowBalance: true }))).toBe("余额 $3.00 · 余额较低");
-    expect(quotaTip(account({ error: "boom" }))).toBe("余额 暂不可用");
-  });
-});
-
-describe("圆环", () => {
-  const arc = (v: any) => find(v, (n) => n.props?.class === "quota-ring-arc")[0];
-  it("弧长按剩余百分比；0% 和没有 Bot 额度时只剩底圈；超出范围的夹住；中间的记号一直在", async () => {
-    const { QuotaRing } = await load();
-    const c = 2 * Math.PI * 7;
-    expect(arc(QuotaRing({ percent: 83 })).props["stroke-dasharray"]).toBe(`${((c * 83) / 100).toFixed(2)} ${c.toFixed(2)}`);
-    expect(arc(QuotaRing({ percent: 100 })).props["stroke-dasharray"]).toBe(`${c.toFixed(2)} ${c.toFixed(2)}`);
-    expect(arc(QuotaRing({ percent: 0 }))).toBeUndefined();
-    expect(arc(QuotaRing({ percent: undefined }))).toBeUndefined();
-    expect(find(QuotaRing({ percent: null }), (n) => n.props?.class === "quota-ring-track")).toHaveLength(1);
-    expect(find(QuotaRing({ percent: null }), (n) => n.props?.class === "quota-ring-mark")).toHaveLength(1);
-    expect(arc(QuotaRing({ percent: 180 })).props["stroke-dasharray"]).toBe(`${c.toFixed(2)} ${c.toFixed(2)}`);
+  it("英文界面展示同样的信息", async () => {
+    const { AccountBalance } = await load("en");
+    const v = AccountBalance({ account: account() });
+    expect(text(cls(v, "account-balance-value")[0])).toBe("Balance$12.35");
+    expect(text(cls(v, "account-credit-heading")[0])).toBe("Bot credits$0.8383% left");
+    expect(text(v)).toContain("Bot credits are usable only in AnyModelBot");
   });
 });
 

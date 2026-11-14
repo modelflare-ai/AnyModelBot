@@ -3,7 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { html, Icon, Button } from "./ui.js";
 import { api } from "../lib/api.js";
 import { createStore, failed, useStore } from "../lib/store.js";
-import { allDrafts } from "../lib/chat-view.js";
+import { relaunchDrafts } from "../lib/relaunch.js";
 import { t } from "../lib/i18n.js";
 
 export const permissionState = createStore(null);
@@ -36,23 +36,23 @@ export function CuPermissionCard({ botId, messageId }) {
   const later = () => api(`/computer-use/permissions/blocked/${encodeURIComponent(botId)}`, { method: "DELETE" }).then((v) => permissionState.set(v)).catch(failed);
   const reopen = async () => {
     setBusy(true);
-    try { await api("/computer-use/permissions/relaunch", { method: "POST", body: { drafts: allDrafts() } }); } catch (e) { failed(e); setBusy(false); }
+    try { await api("/computer-use/permissions/relaunch", { method: "POST", body: relaunchDrafts() }); } catch (e) { failed(e); setBusy(false); }
   };
   const done = !missing.length;
+  const needsReopen = v.restartSuggested && missing.includes("screen") && !missing.includes("accessibility");
   const continuing = blocked.state === "continuing" || blocked.state === "done";
-  const heading = done ? t(key(blocked.background ? "nextRun" : continuing ? "continuing" : "ready")) : t(key("title"), { count: missing.length });
-  if (blocked.collapsed && !done) return html`<div class="cu-permission-collapsed"><span>${t(key("collapsed"))}</span><button type="button" class="text" disabled=${busy} onClick=${enable}>${t(key("turnOn"))}</button></div>`;
-  return html`<div class=${`cu-permission-card${done ? " granted" : ""}`} role="status">
+  const heading = done ? t(key(blocked.background ? "nextRun" : continuing ? "continuing" : "ready")) : needsReopen ? t(key("reopenTitle")) : t(key(missing.length === 1 ? "titleOne" : "title"), { count: missing.length });
+  if (blocked.collapsed && !done) return html`<div class="cu-permission-collapsed"><span>${t(key(needsReopen ? "reopenTitle" : "collapsed"))}</span><button type="button" class="text" disabled=${busy} onClick=${needsReopen ? reopen : enable}>${t(key(needsReopen ? "reopen" : "turnOn"))}</button></div>`;
+  return html`<div class=${`cu-permission-card${done ? " granted" : ""}`} role="status" aria-busy=${busy}>
     <div class="actions"><${Icon} name=${done ? "check" : "info"} size="md" /><b>${heading}</b></div>
-    ${!done && html`<p class="hint">${t(key("explanation"))}</p>`}
+    ${!done && html`<p class="hint">${t(key(needsReopen ? "reopenHint" : "explanation"))}</p>`}
     ${blocked.missing.map((k) => html`<div class="cu-perm-row" key=${k}><div class="cu-perm-what"><b>${t(`firstUse.cu.${k}`)}</b><span class="hint">${t(`firstUse.cu.${k}Why`)}</span></div><span class="hint">${t(key(v.checking ? "checking" : v.status[k] === "granted" ? "on" : "off"))}</span></div>`)}
     <div class="actions">
-      ${!done && html`<${Button} variant="primary" loading=${busy} onClick=${enable}>${t(key("turnOn"))}<//><button type="button" class="text" onClick=${later}>${t(key("later"))}</button>`}
+      ${!done && html`<${Button} variant="primary" loading=${busy} onClick=${needsReopen ? reopen : enable}>${t(key(needsReopen ? "reopen" : "turnOn"))}<//><button type="button" class="text" disabled=${busy} onClick=${later}>${t(key("later"))}</button>`}
       ${done && !continuing && !blocked.background && html`<${Button} variant="primary" loading=${busy} onClick=${() => call("continue", { botId })}>${t(key("continue"))}<//>`}
     </div>
-    ${!done && html`<details open=${manual} onToggle=${(e) => setManual(e.currentTarget.open)}><summary>${t(key("manual"))}</summary>
+    ${!done && !needsReopen && html`<details open=${manual} onToggle=${(e) => setManual(e.currentTarget.open)}><summary>${t(key("manual"))}</summary>
       <p class="hint">${t(key("path"), { item: t(`firstUse.cu.${missing[0]}`) })}</p><button type="button" class="text" onClick=${() => call("open", { kind: missing[0] })}>${t("firstUse.cu.openSettings")}</button>
-      ${v.restartSuggested && html`<p class="hint">${t(key("restart"))}</p><${Button} disabled=${busy} onClick=${reopen}>${t(key("reopen"))}<//>`}
     </details>`}
   </div>`;
 }

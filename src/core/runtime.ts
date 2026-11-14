@@ -368,7 +368,9 @@ export class BotRuntime {
     // 前面还有消息在处理：代理回合进行中就把这条并进去（模型下一步看到，回复一起给），否则排在它们后面。
     // 命令（/model、/reset…）不并入，等前面的处理完
     if (prior) {
-      if (agent?.available && !signal.aborted && !text.startsWith("/") && (await this.steer(agent, bot.id, convId, text, images, out, run))) {
+      if (agent?.available && !signal.aborted && !text.startsWith("/")
+        && (ev.conversation.kind !== "group" || agent.turnsInProgress.get(convId)?.senderId === ev.sender.id)
+        && (await this.steer(agent, bot.id, convId, text, images, out, run))) {
         await prior;
         // 应用正在退出、它并进的那一轮没做完：重启标记留着（下次启动告诉用户）
         if (this.closing) run.interrupted = true;
@@ -410,7 +412,7 @@ export class BotRuntime {
     let note = "";
     if (agent?.available) {
       const place: ChatPlace = { channel: ev.channel, kind: ev.conversation.kind === "group" ? "group" : "dm" };
-      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, place, out, seen, run);
+      const handled = await this.handleAgent(agent, bot.id, conv.id, text, routed, place, out, seen, run, ev.sender.id);
       if (handled === true) return;
       // 应用正在退出：代理进程没了不是该改用纯对话的时候，留给下次启动提醒
       if (this.closing) {
@@ -509,7 +511,7 @@ export class BotRuntime {
     if (!agent) return { handled: false };
     // 审批、提问的回复；后台任务的只认引用、编号开头，或它是机器人最后一条消息时的选项编号（见 ApprovalCenter.handleReply）
     const { quote, plain } = quoteOf(ev);
-    const ruleAction = tasks?.ruleReplyAction(convId, quote ? plain : text, quote || "");
+    const ruleAction = tasks?.ruleReplyAction(convId, quote ? plain : text, quote || "", ev.sender.id);
     if (ruleAction?.handled) return { handled: true, ack: ruleAction.text };
     const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`, { ...tasks?.replyContext(convId), ...(quote ? { quote, plain } : {}) });
     if (r.handled) return r;
@@ -606,6 +608,7 @@ export class BotRuntime {
     out: ReplySession,
     images: TurnImage[],
     inflight: Inflight,
+    senderId?: string,
   ): Promise<boolean | "starting"> {
     const { store } = this.opts;
     const signal = inflight.abort.signal;
@@ -682,6 +685,7 @@ export class BotRuntime {
         // runTurn 同步登记回合，之后的停止交给代理（TurnStopped，会重启代理进程）
         const turn = agent.runTurn(botId, {
           conversationId: convId,
+          senderId,
           text: input,
           model,
           ...(images.length ? { images } : {}),
@@ -760,7 +764,7 @@ export class BotRuntime {
       if (permission) {
         const desktop = store.ensureConversation(botId, "web", "console", "控制台");
         const cardId = desktop.id === convId ? messageId : store.addMessage(desktop.id, "assistant", t("cu.waiting"), undefined, { permissionWait: true });
-        agent.cuPermissions?.attach(botId, { conversationId: convId, sessionId: store.getAgentSession(convId), messageId: cardId, lastUserId: store.listMessages(convId, 30).filter((m) => m.role === "user").at(-1)?.id || 0, background: false, requestText: text });
+        agent.cuPermissions?.attach(botId, { senderId, conversationId: convId, sessionId: store.getAgentSession(convId), messageId: cardId, lastUserId: store.listMessages(convId, 30).filter((m) => m.role === "user").at(-1)?.id || 0, background: false, requestText: text });
       }
       await out.apply({ type: "stream.finish", text: msg });
       this.answered(convId, inflight);
@@ -814,7 +818,7 @@ export class BotRuntime {
       const routed = model && this.opts.route ? this.opts.route(botId, model) : model;
       const result = await this.handleAgent(agent, botId, convId,
         `[系统权限恢复] 所需的系统权限已开启。继续本会话中因 ${pending.tool} 缺少权限而被拦下的请求，从尚未完成的步骤接着做。先检查之前的步骤、已交付结果和当前应用状态，不要重复已完成的操作；不要重新执行整个原始请求。\n[待继续的请求]\n${pending.requestText || "见本会话中被权限拦下的那一轮"}`,
-        routed, { channel: conv.channel, kind: conv.kind }, reply?.out || { apply: async () => undefined }, [], inflight);
+        routed, { channel: conv.channel, kind: conv.kind }, reply?.out || { apply: async () => undefined }, [], inflight, pending.senderId);
       if (result !== true) throw new Error("The agent is not ready to continue.");
     } finally { done.leave(); reply?.done?.(); }
   }

@@ -6,6 +6,7 @@ export default {
   restoreButton: "Restaurar",
   createdCard: "Regra criada · {name}",
   undoneCard: "Desfeita · {name}",
+  undoneCardBody: "Desfeita · {name} não será executada. Você pode restaurá-la em até 10 minutos.",
 
   monthlyDay: "Todo mês, no dia {day} às {time}",
   monthlyLast: "Último dia de cada mês às {time}",
@@ -15,7 +16,7 @@ export default {
   groupDestination: "Grupo · {group}",
   undoExpired: "Esta alteração não pode mais ser desfeita ou restaurada. Confira a regra atual.",
   undoNote: "O usuário desfez “{name}”. Não a crie novamente.",
-  undoneReply: "“{name}” foi desfeita e não será executada. Responda “restore” em até 10 minutos para recuperá-la.",
+  undoneReply: "\"{name}\" foi desfeita. Não será enviada novamente. Responda \"restore\" em até 10 minutos para recuperá-la.",
   updateUndone: "As alterações de “{name}” foram desfeitas.",
   restoredReply: "“{name}” foi restaurada.",
   undoHint: "Responda “undo” para cancelar. Você pode revisar e alterar na aplicação desktop.",

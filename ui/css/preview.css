@@ -1,7 +1,7 @@
 @layer app {
-  .preview-pane, .resource-preview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .preview-pane, .resource-preview { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .preview-toolbar { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-2) var(--pane-px); }
-  .preview-toolbar select { flex: 1; min-width: 0; }
+  .preview-toolbar .pick { flex: 1; min-width: 0; max-width: none; }
   .preview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: 0 var(--pane-px) var(--space-2); }
   .preview-hint { margin: 0; padding: 0 var(--pane-px) var(--space-2); color: var(--muted); font-size: var(--fs-xs); }
   .preview-content { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; background: var(--card); }
@@ -13,5 +13,9 @@
   .preview-image img { max-width: 100%; height: auto; }
   .preview-empty { padding: var(--space-5) var(--pane-px); color: var(--fg-2); overflow: auto; }
   .preview-address { display: grid; gap: var(--space-2); margin-top: var(--space-5); }
-  .preview-address input { flex: 1; min-width: 0; }
+  .preview-address > label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--fg); }
+  .preview-address-row { display: flex; align-items: center; gap: var(--ctl-gap); }
+  .preview-address .field { flex: 1; min-width: 0; font-size: var(--fs-sm); }
+  .preview-address .btn { --btn-h: var(--ctl-lg); --btn-px: var(--ctl-px-lg); flex: none; }
+  .preview-address-error { margin: 0; font-size: var(--fs-xs); line-height: var(--lh-normal); color: var(--red); }
 }

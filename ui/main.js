@@ -29,7 +29,7 @@ import { WhatsNewHost, openWhatsNew } from "./components/whats-new.js";
 import { api } from "./lib/api.js";
 import { clearCatalogRemoved } from "./lib/catalog.js";
 import { loadGuide, leaveGuideSession, refreshGuide, isActive, setFocus, templateDraft } from "./lib/guide.js";
-import { restoreDrafts } from "./lib/chat-view.js";
+import { restoreRelaunchDrafts } from "./lib/relaunch.js";
 import { previewText } from "./lib/errors.js";
 import { PREVIEW_EVENT, addResource, emptyResources, removeResource } from "./lib/resource-preview.js";
 import { setThemeMode } from "./lib/theme.js";
@@ -191,8 +191,9 @@ function App() {
     return () => window.removeEventListener("amb-connection-change", changed);
   }, []);
   // 系统要求重新打开应用（电脑操作权限）前暂存的草稿：放回输入框，取一次就删
+  const [restoringDrafts, setRestoringDrafts] = useState(true);
   useEffect(() => {
-    api("/computer-use/relaunch-drafts").then((d) => restoreDrafts(d.drafts)).catch(() => {});
+    api("/computer-use/relaunch-drafts").then(restoreRelaunchDrafts).catch(() => {}).finally(() => setRestoringDrafts(false));
   }, []);
   const [previews, setPreviews] = useState({});
   const [pending, setPending] = useState({});
@@ -266,7 +267,7 @@ function App() {
     window.addEventListener("focus", on);
     return () => window.removeEventListener("focus", on);
   }, [connected, managed]);
-  // 额度要最新的时候请后端立刻读一次（3 秒内读过就沿用）：打开额度卡片时（sidebar.js 发 amb-account-refresh），
+  // 额度要最新的时候请后端立刻读一次（3 秒内读过就沿用）：手动请求刷新时（amb-account-refresh），
   // 以及每处理完一件事（下面看"工作中"的变化）。后者 10 秒内最多一次，期间又处理完的到时补一次
   const refreshAccount = useRef(null);
   refreshAccount.current = () => connected && managed && api("/account/refresh", { method: "POST", body: { maxAgeMs: 3000 } }).then(setAccount).catch(() => {});
@@ -631,7 +632,7 @@ function App() {
   ];
 
   // —— 渲染 ——
-  if (!mf) {
+  if (!mf || restoringDrafts) {
     return html`<main class="onboard" data-screen=${mfErr ? "error" : "loading"}>
       ${mfErr
         ? html`<div class="onboard-col"><div class="onboard-hero"><${BotAvatar} char=${MAIN_CHAR} size=${88} state="sleep" lively pokeable /></div>
@@ -652,11 +653,12 @@ function App() {
   const appChatTarget = returnTarget && (returnTarget.target?.startsWith("group:") ? groups.some((g) => g.id === returnTarget.id) : (bots || []).some((b) => b.id === returnTarget.id)) ? returnTarget : null;
   const routedGroup = view === "group" ? groups.find((g) => g.id === route.groupId) : null;
   const shownPanel = panelFx.mounted ? panel || lastPanel.current : null;
-  // 带工作台的面板更宽：关上时滑出的那一小会儿也保持原来的宽度
-  const wide = shownPanel?.kind === "app" || panelTab[shownPanel?.kind] === "resources";
+  // 宽度由面板类型决定，切换标签沿用同一宽度与拖动设置；关闭过渡也保持原宽度。
+  const wide = shownPanel?.kind === "app" || shownPanel?.kind === "resources";
   const routedBot = view === "bot-settings" && bots ? bots.find((b) => b.id === route.botId) : null;
   const sideOff = sideHidden;
   const sideView = view === "chat" && bots && !bots.length ? "new" : view;
+  // SideRail 放在 main 后面：Electron 依次合并 drag / no-drag 区域，主区顶栏不能覆盖浮动按钮的 no-drag。
   return html`<div class=${`app${panel ? " with-panel" : ""}${wide ? " panel-wide" : ""}${workExpanded ? " panel-expanded" : ""}${sideOff ? " side-off" : ""}${fromSearch && route.messageId ? " search-reading" : ""}`} ref=${appRef}>
     ${view === "settings"
       ? html`<${SettingsSide} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} onTab=${(t) => openSettings(t)} onBack=${() => openChat()}
@@ -668,9 +670,7 @@ function App() {
           groups=${groups} groupsLoaded=${!!groupsData} groupId=${route.groupId} onNewGroup=${() => setGroupSheet({})} onSelectGroup=${openGroup} onEditGroup=${(group) => setGroupSheet({ group })} onDeletedGroup=${onDeletedGroup}
           catalog=${catalog} catalogId=${route.catalogId} onDiscover=${openDiscover} onOpenCatalog=${openCatalog}
           onOpenSearch=${openSearch} />`}
-    ${sideOff
-      ? html`<${SideRail} bots=${bots} view=${sideView} onToggleSide=${toggleSide} onOpenSearch=${openSearch} onNew=${newBot} onTemplates=${() => openTemplates()} onNewGroup=${() => setGroupSheet({})} />`
-      : html`<${Splitter} class="split-side" size="--side-w" label=${t("app.resizeSide")} value=${sideW} room=${room("--panel-track")} onCommit=${(v) => setPrefs({ sideW: v })} />`}
+    ${!sideOff && html`<${Splitter} class="split-side" size="--side-w" label=${t("app.resizeSide")} value=${sideW} room=${room("--panel-track")} onCommit=${(v) => setPrefs({ sideW: v })} />`}
     <main class="main">
       ${mf.keyChangeNotice && html`<div class="key-change-note"><${Notice} action=${html`<${IconButton} icon="close" label=${t("common.close")} onClick=${async () => { await api("/account/key-notice", { method: "DELETE" }); reloadMf(); }} />`}>${t("firstUse.keyChanged")}<//></div>`}
       <div class="route-content" inert=${searchOpen || undefined}>
@@ -710,6 +710,7 @@ function App() {
       </div>
       <${MessageSearchScreen} open=${searchOpen} query=${searchQuery} onQuery=${setSearchQuery} bots=${bots || []} groups=${groups} onClose=${closeSearch} onSelect=${openSearchHit} onBot=${openChat} onGroup=${openGroup} focusToken=${searchFocus} />
     </main>
+    ${sideOff && html`<${SideRail} bots=${bots} view=${sideView} onToggleSide=${toggleSide} onOpenSearch=${openSearch} onNew=${newBot} onTemplates=${() => openTemplates()} onNewGroup=${() => setGroupSheet({})} />`}
     ${panel && html`<${Splitter} key=${wide ? "work" : "info"} class="split-panel" size=${wide ? "--work-w" : "--panel-w"} edge="end" label=${t("app.resizePanel")} value=${wide ? workW : panelW} room=${room("--side-col")}
       onCommit=${(v) => setPrefs(wide ? { workW: v } : { panelW: v })} />`}
     ${shownPanel && html`<div class=${`panel-scrim${panelFx.leaving ? " leaving" : ""}`} onClick=${() => setPanelOpen(false)}></div>`}

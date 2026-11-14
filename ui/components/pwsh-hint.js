@@ -28,7 +28,7 @@ export function PwshHint() {
     html`<button type="button" class=${cls} disabled=${!!busy} aria-busy=${busy === what || undefined} onClick=${run(what, fn)}>${busy === what ? busyLabel : label}</button>`;
   const dismiss = btn("dismiss", t("pwsh.dismiss"), dismissPwsh);
   const box = (icon, title, body, actions, tone = "") => html`<div class=${`notice pwsh-hint${tone ? ` ${tone}` : ""}`} role=${kind === "installing" ? "status" : "note"} aria-label=${title}>
-    ${icon === "spinner" ? html`<${Spinner} />` : html`<${Icon} name=${icon} size=${14} />`}
+    ${icon === "spinner" ? html`<${Spinner} />` : html`<${Icon} name=${icon} size="sm" />`}
     <div class="pwsh-body">
       <p><b>${title}</b>${body}</p>
       ${actions && html`<div class="pwsh-actions">${actions}</div>`}
@@ -60,7 +60,7 @@ export function PwshHint() {
   if (kind === "unsupported") return box("info", t("pwsh.unsupportedTitle"), t("pwsh.unsupportedBody", { reason: p.reason, slow }), dismiss);
   // missing：改回了系统默认、关了自动安装，或者还没开始装
   return html`<div class="notice pwsh-hint" role="note" aria-label=${t("pwsh.title")}>
-    <${Icon} name="info" size=${14} />
+    <${Icon} name="info" size="sm" />
     <div class="pwsh-body">
       <p><b>${t("pwsh.title")}</b>${t("pwsh.body", { slow, canInstall: p.supported ? t("pwsh.canInstall") : "" })}</p>
       <div class="pwsh-cmd"><span class="t-meta">${t("pwsh.orRun")}</span><code>${PWSH_WINGET}</code><${CopyButton} text=${PWSH_WINGET} label=${t("pwsh.copyCommand")} /></div>

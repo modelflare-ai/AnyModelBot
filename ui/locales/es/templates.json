@@ -9,7 +9,7 @@
     "learning": "Aprendizaje e investigación",
     "coding": "Programación"
   },
-  "add": "+ Añadir",
+  "add": "Añadir",
   "addLabel": "Añadir {name}, {category}",
   "addedBefore": "Ya añadida",
   "try": "Prueba: «{prompt}»",
@@ -108,7 +108,7 @@
     "work-report": {
       "name": "Asistente de informes de trabajo",
       "desc": "Escribe informes diarios y semanales y recuerda tu formato y progreso.",
-      "sample": "Haz un informe semanal: nuevo inicio de sesión, 3 errores de pago corregidos y sistema de miembros la próxima semana.",
+      "sample": "Convierte esto en un informe semanal: publicamos el rediseño del inicio de sesión; corregimos 3 errores de pago; la próxima semana empezamos el sistema de membresías.",
       "memoryTitle": "Formato del informe",
       "memory": [
         "Formato: hecho / próxima semana / riesgos y apoyo; destinatario: (vacío); último avance: (vacío)."
@@ -145,7 +145,7 @@
     "digest": {
       "name": "Asistente de resúmenes de grupo",
       "desc": "Resume conversaciones del grupo en decisiones, tareas y responsables.",
-      "sample": "Resume el chat: Wang anuncia el lanzamiento el viernes; Li entrega pruebas el jueves; presupuesto pendiente.",
+      "sample": "Convierte este registro de chat grupal en un resumen diario: …",
       "memoryTitle": "Temas de interés",
       "memory": [
         "Temas que sigo: (vacío); personas que sigo: (vacío)."
@@ -156,19 +156,19 @@
       },
       "persona": "Resume solo los mensajes del grupo elegido recibidos por la app. Hasta tres conclusiones, luego tareas con responsables y fechas, y preguntas abiertas. No inventes contenido ni autores. Omite charla trivial, emojis y repeticiones, y separa las peticiones dirigidas a mí. Si no hay registros legibles, dilo. No afirmes acceso al historial completo ni leas otros grupos. Con memoria activa, prioriza los temas y personas que me importan.",
       "memoryHint": "Recuerda: Temas de interés.",
-      "channelHint": "Úsalo en grupos de la app o compatibles de Slack, Telegram o Discord. Solo resume mensajes recibidos."
+      "channelHint": "También puedes añadirlo a un grupo de Slack, Telegram o Discord."
     },
     "researcher": {
       "name": "Investigador",
       "desc": "Investiga una pregunta y entrega un resumen con fuentes.",
-      "sample": "Compara RSS y suscripciones por correo con dos fuentes oficiales y enlázalas.",
+      "sample": "¿Qué ha cambiado este año en las exportaciones de vehículos eléctricos de China? Incluye las fuentes.",
       "persona": "Investiga una pregunta: conclusión de hasta tres líneas, fundamentos con enlaces y detalles sin verificar. Prioriza comunicados oficiales, datos originales y artículos académicos. Fecha lo variable y muestra fuentes discrepantes. No conviertas suposiciones en conclusiones; indica carencias y qué comprobar. Limita la búsqueda según la pregunta, sin prometer tiempo ni coste fijo. Para análisis completos de empresas o bolsa estadounidense, recomienda los Bots oficiales en Descubrir.",
       "memoryHint": "Recuerda: temas de investigación y preferencias de fuentes."
     },
     "study-buddy": {
       "name": "Compañero de estudio",
       "desc": "Explica paso a paso, te pone a prueba y anota qué repasar.",
-      "sample": "Explica la recursión para principiantes y hazme una pregunta sencilla.",
+      "sample": "Explícame la recursividad como si estuviera empezando a programar y luego hazme una pregunta sencilla.",
       "memoryTitle": "Progreso de estudio",
       "memory": [
         "Materias: (vacío); fechas de examen: (vacío); temas a repasar: (vacío)."
@@ -179,14 +179,14 @@
     "coding-partner": {
       "name": "Compañero de programación",
       "desc": "Lee y edita código, ejecuta pruebas y explica los cambios.",
-      "sample": "Explica este código y un caso límite: function average(xs) { return xs.reduce((a, b) => a + b, 0) / xs.length; }",
+      "sample": "Mira cómo está organizado este proyecto y explícamelo en unas frases.",
       "persona": "Trabaja en el proyecto o código que proporcione. Lee lo relevante antes de cambiar, sigue el estilo y limita los cambios al pedido. Explica brevemente el plan; ejecuta pruebas existentes pertinentes e informa resultados y partes no verificadas. Resume qué cambió, por qué y cómo se comprobó. Sin proyecto, analiza solo el fragmento recibido. No hagas push, publiques, borres ramas o archivos ni instales entornos adicionales sin permiso explícito. Respeta las aprobaciones fuera de tu espacio.",
       "memoryHint": "Recuerda: convenciones del proyecto, estilo y comandos habituales."
     },
     "support": {
       "name": "Asistente de soporte",
       "desc": "Responde con tus datos y recomienda atención humana si hay dudas.",
-      "sample": "Norma: se admiten devoluciones sin uso hasta 7 días desde la entrega. Compró hace una semana. Redacta una respuesta e indica qué confirmar.",
+      "sample": "Un cliente pregunta: ¿puedo devolverlo después de una semana? ¿Cómo deberíamos responder según nuestra información?",
       "memoryTitle": "Información de soporte",
       "memory": [
         "Información del producto: (vacío); precios: (vacío); posventa: (vacío)."

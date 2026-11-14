@@ -6,6 +6,7 @@ export default {
   restoreButton: "Restaurar",
   createdCard: "Regla creada · {name}",
   undoneCard: "Deshecha · {name}",
+  undoneCardBody: "Deshecha · {name} no se ejecutará. Puedes restaurarla en un plazo de 10 minutos.",
 
   monthlyDay: "Cada mes, el día {day} a las {time}",
   monthlyLast: "Último día de cada mes a las {time}",
@@ -15,7 +16,7 @@ export default {
   groupDestination: "Grupo · {group}",
   undoExpired: "Ya no puedes deshacer ni restaurar este cambio. Revisa la regla actual.",
   undoNote: "El usuario deshizo «{name}». No la crees de nuevo.",
-  undoneReply: "Se deshizo «{name}». No se ejecutará. Responde «restore» en los próximos 10 minutos para recuperarla.",
+  undoneReply: "Se deshizo «{name}». No se volverá a enviar. Responde «restore» en los próximos 10 minutos para recuperarla.",
   updateUndone: "Se deshicieron los cambios de «{name}».",
   restoredReply: "Se restauró «{name}».",
   undoHint: "Responde «undo» para cancelar. Puedes revisar y modificar la regla en la aplicación de escritorio.",

@@ -151,7 +151,9 @@ export interface TaskNotification {
 }
 
 export interface TaskServiceOptions {
-  canManageAllRules?: (conversation: Conversation) => boolean;
+  canManageAllRules?: (conversation: Conversation, senderId?: string) => boolean;
+  /** 可信入站消息的操作者；群聊里的不同成员不能改彼此创建的规则。 */
+  ruleActor?: (conversation: Conversation) => string | undefined;
   canKeepAwake?: () => boolean;
   catchupDelayMs?: number;
   onRuleResult?: (botId: string, messageId: number, text: string) => void;
@@ -2257,6 +2259,16 @@ export class TaskService {
     if (mode === "off") next.pausedReason = "";
     if (next.trigger || next.mode !== undefined || reopened) next.nextRunAt = this.nextFor({ trigger, mode, pausedReason: reopened ? "" : rule.pausedReason }, now);
     this.store.updateRule(id, next);
+    // 开关、投递位置等操作不替换内容版本，也不延长撤销期限；只让当前有效的撤销动作跟进 revision。
+    const contentChanged = reworded || (next.title !== undefined && next.title !== rule.title)
+      || (next.trigger !== undefined && JSON.stringify(next.trigger) !== JSON.stringify(rule.trigger));
+    if (!contentChanged) {
+      for (const action of storedActions(this.store)) {
+        if (action.ruleId === id && action.state === "active" && action.revision === (rule.revision ?? 1)) {
+          saveAction(this.store, { ...action, revision: next.revision! });
+        }
+      }
+    }
     if (reopened) this.store.setKV(`rule.attentionClearedRun:${id}`, this.store.ruleRuns(id, { limit: 5 }).find((r) => r.state === "ended")?.id || "");
     if (mode === "off") this.stopRuleRuns(id);
     // 自己选了观察（从执行、关着切回来）：这一版算是决定过了，「需要你」里不再问要不要改为执行（改了原话的新一版照样会问）
@@ -2312,6 +2324,7 @@ export class TaskService {
     const l = [...this.live.values()].find((x) => x.ruleId === id);
     if (l) this.forget(l);
     this.store.deleteRule(id);
+    this.store.deleteKV(`rule.creator:${id}`);
     for (const a of storedActions(this.store).filter((x) => x.ruleId === id)) saveAction(this.store, { ...a, before: undefined, restoreUntil: 0 });
     this.store.deleteKV(SUGGEST_SEEN + id);
     if (l) await this.o.host.stop(l.botId, l.sessionId).catch(() => undefined);
@@ -2832,13 +2845,24 @@ export class TaskService {
   // ---------- 规则：聊天代理的工具 ----------
 
   private manageableRules(conv: Conversation): RuleRow[] {
-    return this.store.listRules(conv.channel === "web" || this.o.canManageAllRules?.(conv) ? { botId: conv.botId } : { botId: conv.botId, conversationId: conv.id });
+    const rules = this.store.listRules({ botId: conv.botId });
+    if (conv.channel === "web" || this.o.canManageAllRules?.(conv)) return rules;
+    const actor = this.o.ruleActor?.(conv);
+    return rules.filter((rule) => {
+      const raw = this.store.getKV(`rule.creator:${rule.id}`);
+      if (!raw) return conv.kind === "dm" && rule.conversationId === conv.id;
+      try {
+        const creator = JSON.parse(raw);
+        return creator.conversationId === conv.id && (conv.kind === "dm" || !!actor && creator.senderId === actor);
+      } catch { return false; }
+    });
   }
 
   private recordRuleAction(conv: Conversation, rule: RuleRow, before?: RuleRow): void {
+    if (!before) this.store.setKV(`rule.creator:${rule.id}`, JSON.stringify({ conversationId: conv.id, senderId: this.o.ruleActor?.(conv) || "" }));
     const sequence = Number(this.store.getKV("rule.actionSequence") || 0) + 1;
     this.store.setKV("rule.actionSequence", String(sequence));
-    saveAction(this.store, { id: `ra_${hex(8)}`, sequence, ruleId: rule.id, conversationId: conv.id, title: rule.title, kind: before ? "update" : "create", before: before ?? rule, revision: rule.revision ?? 1, createdAt: this.now(), expiresAt: this.now() + 86400_000, messageId: 0, state: "active", restoreUntil: 0 });
+    saveAction(this.store, { id: `ra_${hex(8)}`, sequence, ruleId: rule.id, conversationId: conv.id, actor: this.o.ruleActor?.(conv), title: rule.title, kind: before ? "update" : "create", before: before ?? rule, revision: rule.revision ?? 1, createdAt: this.now(), expiresAt: this.now() + 86400_000, messageId: 0, state: "active", restoreUntil: 0 });
   }
 
   ruleActions(conversationId: string) {
@@ -2860,7 +2884,7 @@ export class TaskService {
     if (!a) return undefined;
     const view = this.ruleActions(a.conversationId).find((x) => x.id === id)!;
     const title = tr(a.state === "undone" ? "rules.undoneCard" : a.kind === "update" ? "rules.updatedCard" : "rules.createdCard", { name: view.rule?.title || a.title });
-    const text = a.state === "undone" ? tr("rules.undoneReply", { name: a.title }) : view.rule ? `${view.rule.when} (${view.rule.trigger.kind === "schedule" ? view.rule.trigger.schedule.tz : this.timeZone})\n${view.rule.destination || ""}` : tr("rules.notFound");
+    const text = a.state === "undone" ? tr("rules.undoneCardBody", { name: a.title }) : view.rule ? `${view.rule.when} (${view.rule.trigger.kind === "schedule" ? view.rule.trigger.schedule.tz : this.timeZone})\n${view.rule.destination || ""}` : tr("rules.notFound");
     const op = view.canUndo ? "undo" : view.canRestore ? "restore" : "";
     return { title, text, buttons: op ? [{ label: tr(op === "undo" ? "rules.undoButton" : "rules.restoreButton"), value: { amb: "rule", id, op } }] : [] };
   }
@@ -2872,7 +2896,7 @@ export class TaskService {
     if (!a || !c || c.channel !== "feishu" || (c.account || c.botId) !== account || !person || person.senderId !== operator || !["owner", "allowed"].includes(person.status) || !["undo", "restore"].includes(op)) return { toast: tr("rules.notFound"), ok: false };
     const r = op === "undo" ? this.undoRuleAction(id) : this.restoreRuleAction(id);
     const card = this.ruleActionCard(id);
-    return { ok: !r.error, toast: r.error || tr(op === "undo" ? a.kind === "update" ? "rules.updateUndone" : "rules.undoneReply" : "rules.restoredReply", { name: a.title }), ...(card ? { card: actionCardSpec(card.title, card.text, card.buttons) } : {}) };
+    return { ok: !r.error, toast: r.error || tr(op === "undo" ? a.kind === "update" ? "rules.updateUndone" : "rules.undoneCardBody" : "rules.restoredReply", { name: a.title }), ...(card ? { card: actionCardSpec(card.title, card.text, card.buttons) } : {}) };
   }
 
   finishRuleActions(conversationId: string, messageId: number): void {
@@ -2918,11 +2942,14 @@ export class TaskService {
   }
 
   /** 只认最近的确认或引用的确认；其他「撤销」留给普通对话询问。 */
-  ruleReplyAction(conversationId: string, text: string, quoted = ""): { handled: boolean; text?: string } {
+  ruleReplyAction(conversationId: string, text: string, quoted = "", senderId?: string): { handled: boolean; text?: string } {
     const op = /^(撤销|undo)$/i.test(text.trim()) ? "undo" : /^(恢复|restore)$/i.test(text.trim()) ? "restore" : "";
     if (!op) return { handled: false };
     const latest = this.store.listMessages(conversationId, 30).filter((m) => m.role === "assistant").at(-1);
+    const conv = this.store.getConversation(conversationId);
     const matching = storedActions(this.store, conversationId).filter((a) => {
+      if (conv?.kind === "group" && conv.channel !== "web" && !this.o.canManageAllRules?.(conv, senderId)
+        && (!senderId || a.actor !== senderId)) return false;
       const ref = this.store.getMessage(a.messageId)?.content;
       return (op === "undo" ? a.state === "active" : a.state === "undone") && (quoted ? !!ref && quoted.includes(ref) : latest?.id === (a.acknowledgementId || a.messageId));
     });
@@ -2973,6 +3000,7 @@ export class TaskService {
       patch.mode = a.mode;
     }
     if (typeof a.instruction === "string" && a.instruction.trim()) patch[rule.kind === "remind" ? "message" : "instruction"] = a.instruction;
+    if (typeof a.title === "string" && a.title.trim()) patch.title = a.title;
     if (typeof a.schedule === "string" && a.schedule.trim()) {
       const s = parseSchedule(a.schedule, rule.trigger.kind === "schedule" ? rule.trigger.schedule.tz : this.timeZone, this.now());
       if (!s.schedule) return { error: s.error };
@@ -2982,7 +3010,8 @@ export class TaskService {
     const r = this.updateRule(rule.id, patch);
     if (!r.rule) return { error: r.error };
     const v = this.ruleView(r.rule);
-    this.recordRuleAction(conv, r.rule, rule);
+    if (r.rule.title !== rule.title || r.rule.instruction !== rule.instruction || r.rule.message !== rule.message
+      || JSON.stringify(r.rule.trigger) !== JSON.stringify(rule.trigger)) this.recordRuleAction(conv, r.rule, rule);
     return { text: `Updated rule 「${v.title}」: ${v.when}, ${v.state.label}. Tell the user in one short sentence.` };
   }
 

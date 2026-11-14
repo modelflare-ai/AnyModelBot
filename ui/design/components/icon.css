@@ -1,13 +1,13 @@
-/* 线性图标 svg.ic（ui.js 的 Icon）。规范见 README「图标」。
-   16 格画布、currentColor、圆头圆角。尺寸只取 --ic-xs … --ic-xl 五档；线宽 --ic-stroke 是显示出来的像素，
-   这里把它换算回画布单位（× 16 / 尺寸），所以图标放大缩小，线都一样细。
+/* Heroicons Outline 线性图标 svg.ic（ui.js 的 Icon）。规范见 README「图标」。
+   保留官方 24 格画布、currentColor、圆头圆角。尺寸只取 --ic-xs … --ic-xl 五档；线宽 --ic-stroke 是显示出来的像素，
+   这里把它换算回画布单位（× 24 / 尺寸），所以图标放大缩小，线都一样细。
    上下文要换尺寸就覆盖 --ic-size（.pick .ic { --ic-size: var(--ic-xs) }），不要直接写 width / height——那样线会跟着变粗变细。
    这里全部包在 :where() 里：任何上下文选择器都能盖过 Icon 的 size / strong。 */
 :where(svg.ic) {
   --ic-size: var(--ic-md);
   --ic-w: var(--ic-stroke);
   width: calc(var(--ic-size) * 1px); height: calc(var(--ic-size) * 1px); flex: none; display: block;
-  stroke-width: calc(var(--ic-w) * 16px / var(--ic-size));
+  stroke-width: calc(var(--ic-w) * 24px / var(--ic-size));
 }
 :where(svg.ic.ic-xs) { --ic-size: var(--ic-xs); }
 :where(svg.ic.ic-sm) { --ic-size: var(--ic-sm); }

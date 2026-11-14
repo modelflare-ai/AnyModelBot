@@ -206,12 +206,25 @@ export function previewSchedule(s: Schedule, now: number): { times: number[]; mo
     times.push(at);
     at = nextRun(s, at);
   }
-  if (s.kind === "every") return { times, monthlyRuns: Math.round(30 * 1440 / s.minutes) };
+  const end = now + 30 * DAY_MS;
+  if (s.kind === "every") {
+    const first = times[0];
+    return { times, monthlyRuns: first === undefined || first > end ? 0 : Math.floor((end - first) / (s.minutes * MIN)) + 1 };
+  }
   let monthlyRuns = 0;
   if (s.kind === "once") monthlyRuns = s.at > now && s.at <= now + 30 * DAY_MS ? 1 : 0;
   else {
     const cron = s.kind === "cron" ? parseCron(s.cron) : undefined;
-    for (let i = 0; i < 30; i++) monthlyRuns += minutesOn(s, dayAt(now, i, s.tz), cron).length;
+    const runs = new Set<number>();
+    // 包含窗口末端的本地日期，并按实际时刻过滤；夏令时顺延到同一时刻的计划只算一次。
+    for (let i = 0; i <= 31; i++) {
+      const day = dayAt(now, i, s.tz);
+      for (const minute of minutesOn(s, day, cron)) {
+        const run = localTime(day.y, day.mo, day.d, minute, s.tz);
+        if (run > now && run <= end) runs.add(run);
+      }
+    }
+    monthlyRuns = runs.size;
   }
   return { times, monthlyRuns };
 }

@@ -185,8 +185,9 @@ export function systemRoutes(ctx: WebContext): Route {
         // 至少有一个渠道真的连上了（只填了配置不算）
         channelBound: () => channelConnected,
         // 机器人自己的记忆或团队记忆里真的有条目（主文件 + 各主题）
-        memoryCount: (id) => memoryDone ? 0 : [{ kind: "bot" as const, id }, { kind: "team" as const, id: "" }].reduce((n, scope) =>
-          n + app.agent.memory.entries(scope).filter((e) => !/^source:\s*template:/.test(e.meta)).length + app.agent.memory.topics(scope).reduce((count, topic) => count + app.agent.memory.entries(scope, topic).filter((e) => !/^source:\s*template:/.test(e.meta)).length, 0), 0),
+        memoryCount: (id) => memoryDone ? 0 : [{ kind: "bot" as const, id }, { kind: "team" as const, id: "" },
+          ...app.store.listConversations(id).filter((c) => c.kind === "group").map((c) => ({ kind: "group" as const, id: c.id }))].reduce((n, scope) =>
+          n + app.agent.memory.entries(scope).filter((e) => /^source:\s*chat:/.test(e.meta)).length + app.agent.memory.topics(scope).reduce((count, topic) => count + app.agent.memory.entries(scope, topic).filter((e) => /^source:\s*chat:/.test(e.meta)).length, 0), 0),
       });
       const merged = mergeGuide(current, derived);
       if (migration || inherited || !saved || JSON.stringify(merged) !== JSON.stringify(current) || (!current.seen.includes("completed") && allDone(current))) save(merged);

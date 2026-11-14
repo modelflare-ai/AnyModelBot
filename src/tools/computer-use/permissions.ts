@@ -59,6 +59,7 @@ export interface CuBlocked {
   state?: "waiting" | "ready" | "continuing" | "done";
   completedAt?: number;
   requestText?: string;
+  senderId?: string;
 }
 
 export interface CuPermissionView {

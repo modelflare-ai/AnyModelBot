@@ -3,13 +3,13 @@ export default {
   "namedTitle": "你好，我是{name}",
   "subtitle": "有什么事情交给我？先从一件小事开始：",
   "samples": {
-    "hello": "今天要提交报销、准备明早的会议材料、回复客户邮件，帮我排个优先级并说明理由。",
+    "hello": "帮我把今天要做的三件事排个优先级，并说明理由。",
     "memory": "记住：回答尽量简短，结论放在最前面。",
     "rewrite": "帮我把这段话改得更口语一点：本周例会时间调整为周四下午三点，请各位知悉。"
   },
   "discover": "看看现成的官方 Bot →",
   "orDiscover": "或者看看现成的官方 Bot →",
-  "normalBody": "直接说你想做什么。在信息面板里可以把它接到微信、飞书、Telegram 等聊天工具。",
+  "normalBody": "直接说你想做什么。在信息面板里可以把它接到微信、飞书。",
   "collapse": "收起到左下角",
   "hiddenToast": "已隐藏上手清单，可以在「设置 › 常规」里重新打开。",
   "showAgain": "重新显示",
@@ -19,11 +19,11 @@ export default {
     "hello": {
       "title": "跟{name}打个招呼",
       "desc": "在这里直接和它聊天，回复会边写边出来。",
-      "try": "今天要提交报销、准备明早的会议材料、回复客户邮件，帮我排个优先级并说明理由。"
+      "try": "帮我把今天要做的三件事排个优先级，并说明理由。"
     },
     "memory": {
       "title": "让它记住你",
-      "desc": "告诉它你的习惯，新对话和聊天渠道里都能沿用。不要把密码、密钥写进记忆。",
+      "desc": "告诉它你的习惯，开新对话、到微信里它都记得。密码、密钥这类内容它不会记。",
       "try": "记住：回答尽量简短，结论放在最前面。"
     },
     "second": {
@@ -33,11 +33,11 @@ export default {
     "hands": {
       "title": "让它交一份文件给你",
       "desc": "它能在自己的工作区写文件、跑命令，做好的文件会交给你。",
-      "try": "在你的工作区建一个「今日待办.md」，列出提交报销、准备会议材料、回复客户邮件三件事，然后把文件发给我。"
+      "try": "在你的工作区建一个「今日待办.md」，列三件今天要做的事，然后发给我。"
     },
     "weixin": {
       "title": "接到常用聊天工具",
-      "desc": "连接后，在微信、飞书、Telegram 等工具里也能找它。这一步可以跳过。"
+      "desc": "连接后，在微信、飞书里也能找它。这一步可以跳过。"
     }
   },
   "templates": {
@@ -68,7 +68,7 @@ export default {
   "reminderChannel": "每天早上 9 点在{channel}提醒我今天要做的事。",
   "nextDraw": "让它画一张图：说说想要的画面，它画好发给你",
   "drawSample": "帮我画一张图：清晨的海边小镇，水彩风格。",
-  "connectDraw": "连接 Modelflare 后可以画图，原有的 API Key 照常保留",
+  "connectDraw": "连接 Modelflare 后可以画图：原有的 API Key 照常保留",
   "seeExample": "先看看示例",
   "sampleBadge": "示例图，未消耗额度",
   "sampleAlt": "示例图：戴着耳机的蓝色小机器人，扁平插画风",
@@ -116,5 +116,8 @@ export default {
   "removeBody": "它会从侧边栏移除，聊天记录、任务和规则会被删除。之后可以在发现页重新添加。",
   "removeKeep": "保留它的文件和工作台内容，重新添加后接着用",
   "removeDone": "已移除 {name}，可以在发现页重新添加",
-  "toolsUnsupported": "当前模型不支持工具调用，无法完成这项操作。请换一个支持工具的模型后重试。"
+  "toolsUnsupported": "当前模型不支持工具调用，无法完成这项操作。请换一个支持工具的模型后重试。",
+  "drawConnectLink": "连接 Modelflare",
+  "drawConnectBefore": "想画自己的？",
+  "drawConnectAfter": "后就能画，原有的 API Key 照常保留。"
 };

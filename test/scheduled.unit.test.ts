@@ -87,6 +87,31 @@ describe("定时规则的产品边界", () => {
     const ambiguous = await service.chatTool({ botId: "bot", sessionId: "second", op: "rule_update", args: { rule: "早报", mode: "off" } });
     expect(ambiguous.error).toMatch(/Several rules/);
   });
+  it("切换开关和投递位置保留撤销期限，恢复保留撤销前的关闭状态", async () => {
+    const a = await chatCreate();
+    const destination = store.ensureConversation("bot", "web", "another");
+    service.updateRule(a.ruleId, { mode: "off", conversationId: destination.id });
+    service.updateRule(a.ruleId, { mode: "act" });
+    service.updateRule(a.ruleId, { mode: "off" });
+    expect(service.ruleActions("bot:web:console")[0].canUndo).toBe(true);
+    expect(service.undoRuleAction(a.id)).toEqual({});
+    expect(service.restoreRuleAction(a.id)).toEqual({});
+    expect(store.getRule(a.ruleId)).toMatchObject({ mode: "off", conversationId: destination.id });
+    now += 86400_001;
+    expect(service.ruleActions("bot:web:console")[0].canUndo).toBe(false);
+  });
+  it("通过聊天仅切开关不新建撤销版本，改名会建立新版本", async () => {
+    const a = await chatCreate();
+    await service.chatTool({ botId: "bot", sessionId: "chat", op: "rule_update", args: { rule: a.ruleId, mode: "off" } });
+    expect(service.ruleActions("bot:web:console")).toHaveLength(1);
+    expect(service.ruleActions("bot:web:console")[0].canUndo).toBe(true);
+    await service.chatTool({ botId: "bot", sessionId: "chat", op: "rule_update", args: { rule: a.ruleId, title: "新早报" } });
+    const changes = service.ruleActions("bot:web:console");
+    expect(changes).toHaveLength(2);
+    expect(changes[0].canUndo).toBe(false);
+    expect(service.undoRuleAction(changes[1].id)).toEqual({});
+    expect(store.getRule(a.ruleId)).toMatchObject({ title: "早报", mode: "off" });
+  });
   it("非主人渠道会话不能列出或修改别处规则；撤销只认最近确认", async () => {
     const a = await chatCreate();
     const c = store.ensureConversation("bot", "telegram", "guest"); store.setAgentSession(c.id, "bot", "guest");
@@ -96,6 +121,29 @@ describe("定时规则的产品边界", () => {
     expect(service.ruleReplyAction("bot:web:console", "撤销").handled).toBe(false);
     expect(service.ruleReplyAction("bot:web:console", "撤销", "已建好早报。").handled).toBe(true);
     expect(service.ruleReplyAction("bot:web:console", "恢复").handled).toBe(true);
+  });
+  it("群聊按操作者隔离规则，主人跨会话管理，投递位置改变不改变创建者", async () => {
+    let actor = "owner";
+    service.stop(); service = make({ ruleActor: () => actor, canManageAllRules: () => actor === "owner" });
+    const own = await chatCreate();
+    const group = store.ensureConversation("bot", "telegram", "group", "group", "group");
+    store.setAgentSession(group.id, "bot", "group-session");
+    const call = (op: string, args: object) => service.chatTool({ botId: "bot", sessionId: "group-session", op, args });
+    expect((await call("rule_update", { rule: own.ruleId, schedule: "daily 09:00" })).error).toBeUndefined();
+    actor = "alice";
+    expect((await call("rule_update", { rule: own.ruleId, delete: true })).error).toBeTruthy();
+    await call("rule_create", { title: "Alice", instruction: "Alice reminder", schedule: "daily 08:00" });
+    const created = service.ruleActions(group.id).at(-1)!;
+    service.updateRule(created.ruleId, { conversationId: "bot:web:console" });
+    expect((await call("rule_update", { rule: created.ruleId, mode: "off" })).error).toBeUndefined();
+    actor = "bob";
+    expect((await call("rule_update", { rule: created.ruleId, delete: true })).error).toBeTruthy();
+    expect((await call("list", {})).text).not.toContain("Alice");
+    const confirmation = store.addMessage(group.id, "assistant", "Alice rule created");
+    service.finishRuleActions(group.id, confirmation);
+    expect(service.ruleReplyAction(group.id, "undo", "Alice rule created", "bob").handled).toBe(false);
+    actor = "alice";
+    expect(service.ruleReplyAction(group.id, "undo", "Alice rule created", "alice").handled).toBe(true);
   });
   it("开机等一分钟，19:30 仍补 08:00 的提醒，来源和通知只产生一次", () => {
     const notify = vi.fn(); const r = create({ kind: "remind", message: "看安排" });
@@ -152,6 +200,8 @@ describe("定时规则的产品边界", () => {
     expect(service.ruleCardAction("bot", action.id, "undo", "other").ok).toBe(false);
     const undone = service.ruleCardAction("bot", action.id, "undo", "ou_owner");
     expect(undone.ok).toBe(true); expect(JSON.stringify(undone.card)).toContain('"op":"restore"');
+    expect(undone.toast).not.toMatch(/回复|reply/i);
+    expect(JSON.stringify(undone.card)).not.toMatch(/回复|reply/i);
     expect(service.ruleCardAction("bot", action.id, "restore", "ou_owner").ok).toBe(true);
     expect(store.getRule(action.ruleId)?.mode).toBe("act");
   });

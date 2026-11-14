@@ -482,6 +482,8 @@ export interface TurnImage {
 
 export interface TurnInput {
   conversationId: string;
+  /** 可信渠道入站的操作者，供宿主判断跨会话规则权限；不从模型工具参数读取。 */
+  senderId?: string;
   text: string;
   model: string;
   observer?: TurnObserver;

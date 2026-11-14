@@ -6,6 +6,12 @@ anymodel bot 自身以 MIT 许可发布（见 LICENSE）。以下组件随本程
 
 部分代码移植/改编自 Fei2411/DS-Bot（Apache-2.0），见下文「DS Bot」一节。
 
+## Heroicons（通用操作图标）
+
+通用操作图标选自 Heroicons 2.2.0 的 Outline 图形，以 SVG 节点数据形式随应用分发，见 `ui/icons/heroicons.js`。Heroicons 使用 MIT 许可，版权属于 Tailwind Labs, Inc.。完整许可证见 [ui/icons/LICENSE](./ui/icons/LICENSE)，固定提交与来源校验值见 `ui/icons/heroicons-source.json`。
+
+https://github.com/tailwindlabs/heroicons/releases/tag/v2.2.0
+
 ## magpie（内置模型网关，以二进制形式随附；界面样式部分改编自它）
 
 来源：https://github.com/yetone/magpie （vendor/magpie 子模块，v0.1.1720）

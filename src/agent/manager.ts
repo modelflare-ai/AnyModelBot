@@ -87,6 +87,7 @@ export interface AgentManagerOptions {
 /** 一个进行中的回合（/status、/stop、排队提示、信息面板和故障排查用） */
 export interface TurnProgress {
   botId: string;
+  senderId?: string;
   since: number;
   /** 最近一次有进展的时间；0 = 消息还没交给代理（在等进程、等会话） */
   lastProgress: number;
@@ -393,7 +394,7 @@ export class AgentManager {
 
   private async track(botId: string, input: TurnInput & { onStep?: (step: ActivityStep) => void }, run: (input: TurnInput) => Promise<TurnResult>): Promise<TurnResult> {
     const conv = input.conversationId;
-    const t: TurnProgress = { botId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model, { chat: true }), abort: new AbortController(), tools: new Set(), jobs: new Set(), media: 0, interim: [] };
+    const t: TurnProgress = { botId, senderId: input.senderId, since: Date.now(), lastProgress: 0, activity: new ActivityLog(input.onStep, input.model, { chat: true }), abort: new AbortController(), tools: new Set(), jobs: new Set(), media: 0, interim: [] };
     this.turnsInProgress.set(conv, t);
     // 看门狗：代理已经在处理，却长时间没有进展（模型不回、只在重试），又不是在等用户批准或回答、
     // 也没有工具、命令或生成任务在跑（生视频、转到后台的长命令、子代理里的工具）→ 中止
@@ -729,7 +730,7 @@ export class AgentManager {
     }
     for (const a of ops.add) {
       try {
-        this.memory.remember(scope, a.text, { topic: a.topic, source: "review", by: "review" });
+        this.memory.remember(scope, a.text, { topic: a.topic, source: this.askedToRemember(conv) ? "chat:review" : "review", by: "review" });
         res.added++;
       } catch {
         /* 重复、超限或像密钥：跳过 */
@@ -1108,7 +1109,9 @@ export class AgentManager {
         case "remember": {
           const s = pick();
           if (s.kind === "team" && !st.memory.teamWrite) return { error: "本机器人没有写团队记忆的权限（可在机器人设置中开启）" };
-          return { text: this.memory.remember(s, String(a.text ?? ""), { topic, source: conv?.channel ?? "agent", by: "agent" }) };
+          const session = String(b?.sessionId ?? "");
+          const fromChat = conv && !this.taskOf(botId, session) && !this.ruleOf(botId, session);
+          return { text: this.memory.remember(s, String(a.text ?? ""), { topic, source: fromChat ? `chat:${conv.channel}` : "agent", by: "agent" }) };
         }
         case "forget": {
           const s = pick();

@@ -6,6 +6,7 @@ export default {
   restoreButton: "복원",
   createdCard: "규칙 생성됨 · {name}",
   undoneCard: "취소됨 · {name}",
+  undoneCardBody: "취소됨 · {name}은(는) 실행되지 않습니다. 10분 이내에 복원할 수 있습니다.",
 
   monthlyDay: "매월 {day}일 {time}",
   monthlyLast: "매월 마지막 날 {time}",
@@ -15,7 +16,7 @@ export default {
   groupDestination: "그룹 · {group}",
   undoExpired: "이 작업은 더 이상 취소하거나 복원할 수 없습니다. 현재 규칙을 확인하세요.",
   undoNote: "사용자가 “{name}”을 취소했습니다. 다시 만들지 마세요.",
-  undoneReply: "“{name}”을 취소했습니다. 실행되지 않습니다. 10분 안에 “restore”라고 답하면 복원됩니다.",
+  undoneReply: "\"{name}\"을(를) 취소했습니다. 더 이상 전송되지 않습니다. 10분 이내에 \"restore\"라고 답하면 복원됩니다.",
   updateUndone: "“{name}”의 변경을 취소했습니다.",
   restoredReply: "“{name}”을 복원했습니다.",
   undoHint: "“undo”라고 답하면 취소됩니다. 데스크톱 앱에서 확인하고 수정할 수 있습니다.",

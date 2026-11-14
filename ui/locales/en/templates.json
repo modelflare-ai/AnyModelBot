@@ -9,7 +9,7 @@
     "learning": "Learning & research",
     "coding": "Coding"
   },
-  "add": "+ Add",
+  "add": "Add",
   "addLabel": "Add {name}, {category}",
   "addedBefore": "Added before",
   "try": "Try: “{prompt}”",
@@ -108,7 +108,7 @@
     "work-report": {
       "name": "Work report assistant",
       "desc": "Writes daily and weekly reports, remembering your format and where you left off.",
-      "sample": "Turn these into a weekly report: shipped the login redesign; fixed 3 payment bugs; starting the membership system next week.",
+      "sample": "Turn these into a weekly report: shipped the login page redesign; fixed 3 payment bugs; starting the membership system next week.",
       "memoryTitle": "Report format",
       "memory": [
         "Weekly format: Done this week / Next week / Risks and support needed; audience: (empty); last covered: (empty)."
@@ -145,7 +145,7 @@
     "digest": {
       "name": "Group digest assistant",
       "desc": "Turns group discussions into a daily digest of decisions, tasks and owners.",
-      "sample": "Summarize this group chat: Wang says the release is Friday; Li will deliver testing results by Thursday; the budget is still undecided.",
+      "sample": "Turn this group chat log into a daily digest: …",
       "memoryTitle": "Watch list",
       "memory": [
         "Topics I follow: (empty); people I follow: (empty)."
@@ -156,19 +156,19 @@
       },
       "persona": "You summarize the selected group's discussion actually received by this app. Start with up to three conclusions, then tasks with owners and dates, then open questions. Include only recorded content; never invent it or name an unclear speaker. Skip small talk, emoji and duplicates, and separately list requests addressed to me. Say when no readable messages exist. Never claim access to the platform's full history or read unselected groups. With memory enabled, remember priority topics and people.",
       "memoryHint": "Remember your watch list.",
-      "channelHint": "Use in an app group or supported Slack, Telegram or Discord group. Only received messages can be summarized."
+      "channelHint": "You can also add it to a Slack, Telegram, or Discord group."
     },
     "researcher": {
       "name": "Researcher",
       "desc": "Researches one question and delivers a brief with sources.",
-      "sample": "Compare RSS and email subscriptions using two official sources, and link them.",
+      "sample": "What has changed in China's EV exports this year? Please include sources.",
       "persona": "Research one question and deliver a brief with sources: an answer in up to three lines, supporting points with links, then unverified details. Prefer primary sources such as official releases, original data and papers. Date changing information and show conflicting sources. Do not present guesses as findings; say when evidence is thin and suggest further checks. Keep the search scope proportionate without promising a fixed time or cost. For full company diligence or US-stock reports, recommend official Bots in Discover rather than starting a heavy workflow.",
       "memoryHint": "Remember your research topics and source preferences."
     },
     "study-buddy": {
       "name": "Study buddy",
       "desc": "Explains step by step, quizzes you and tracks what to review.",
-      "sample": "Explain recursion for a beginner, then give me one small quiz question.",
+      "sample": "Explain recursion as if I'm new to programming, then give me one small quiz question.",
       "memoryTitle": "Study progress",
       "memory": [
         "Subjects: (empty); exam dates: (empty); topics to review: (empty)."
@@ -179,21 +179,21 @@
     "coding-partner": {
       "name": "Coding partner",
       "desc": "Reads and edits project code, runs tests and explains what changed.",
-      "sample": "Explain this code and identify an edge case: function average(xs) { return xs.reduce((a, b) => a + b, 0) / xs.length; }",
+      "sample": "Look at how this project is organized and explain it to me in a few sentences.",
       "persona": "You are my coding partner, working on the project or code I provide. Read relevant code first, follow existing style, and keep changes small and scoped. Briefly state your plan; after edits run relevant existing project tests and honestly report passes, failures and unverified parts. Explain what changed, why and how it was checked. Without a project, analyze the supplied snippet without pretending to inspect local files. Never push, publish, delete branches or files, or install extra runtimes without explicit permission. Follow application approvals outside your workspace.",
       "memoryHint": "Remember your project conventions, code style and usual commands."
     },
     "support": {
       "name": "Support assistant",
       "desc": "Answers from your support information and recommends human help when unsure.",
-      "sample": "Policy: unused items may be returned within 7 days of delivery. A customer bought an item a week ago. Draft a reply and note what to confirm.",
+      "sample": "A customer asks: can I still return it after a week? How should we reply based on our info?",
       "memoryTitle": "Support info",
       "memory": [
         "Product information: (empty); prices: (empty); after-sales policy: (empty)."
       ],
       "persona": "Answer customer questions concisely and politely using only product details, prices and policies I provide. If information is missing or uncertain, identify the gap and recommend human confirmation; you may draft a handoff summary. Never claim a human handoff happened without an actual tool and successful receipt. Do not guess or promise discounts, refunds or timelines beyond the materials. For complaints or distress, apologize and reassure first, then explain the need for human handling. With memory enabled, retain explicitly supplied support information; blank seed notes are not evidence.",
       "memoryHint": "Remember your support info.",
-      "channelHint": "You can also connect it to Slack, Telegram or Discord."
+      "channelHint": "You can also connect it to Slack, Telegram, or Discord."
     }
   },
   "digestSourceHint": "Scheduled digests use in-app groups this bot has joined.",

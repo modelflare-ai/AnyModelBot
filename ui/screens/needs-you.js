@@ -66,7 +66,7 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenB
   const who = multiBot ? t(/^[0-9A-Za-z]/.test(item.head) ? "needs.headSpaced" : "needs.head", { bot: html`<b>${item.botName}</b>`, what: item.head }) : item.head;
   const headIn = html`<span class="need-who">${who}</span>
     <span class="need-when num">${fmtAgo(item.since)}</span>
-    ${expands && html`<${Icon} name="chevRight" size=${12} class="chev" />`}`;
+    ${expands && html`<${Icon} name="chevRight" size="xs" class="chev" />`}`;
   return html`<div class=${`need${open ? " open" : ""}`}>
     <span class=${`dot ${item.severity === "err" ? "err" : "warn"}`} aria-hidden="true"></span>
     ${canOpen

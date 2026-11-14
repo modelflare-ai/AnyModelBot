@@ -67,7 +67,7 @@ export default {
     "details": "错误详情",
     "status": "状态码 {status}",
     "copy": "复制详情",
-    "retry": "重新发送",
+    "retry": "重试",
     "retryHint": "从头重新执行这条消息",
     "retryTitle": "重新执行这条消息？",
     "retryBody": "重新发送会从头再执行一次整个任务，不是只重试失败的那一步。上次已经完成的操作（例如修改过的文件、发出的消息）可能会再做一次。",

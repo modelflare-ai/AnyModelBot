@@ -140,7 +140,7 @@ function PwshRows({ ps, busy, onRecheck, onInstall, onMode }) {
   return html`<${Row} id="pwsh" name="PowerShell" sub=${sub}>
     <span class="ts-state"><span class=${`dot ${kind}`}></span>${text}</span>
     ${primary && html`<button type="button" class="text" disabled=${dis} aria-busy=${busy === "pwsh-install" || undefined} onClick=${primary[1]}>${busy === "pwsh-install" ? `${primary[0]}…` : primary[0]}</button>`}
-    <button type="button" class="icon-btn" ref=${more} title=${t("troubleshoot.pwsh.more")} aria-label=${t("troubleshoot.pwsh.moreLabel")} aria-haspopup="menu" aria-expanded=${menu} disabled=${dis} onClick=${() => setMenu(!menu)}><${Icon} name="more" size=${14} /></button>
+    <button type="button" class="icon-btn" ref=${more} title=${t("troubleshoot.pwsh.more")} aria-label=${t("troubleshoot.pwsh.moreLabel")} aria-haspopup="menu" aria-expanded=${menu} disabled=${dis} onClick=${() => setMenu(!menu)}><${Icon} name="more" size="sm" /></button>
     ${menu && html`<${Menu} anchor=${more.current} align="right" width=${300} label="PowerShell" items=${items} onClose=${() => setMenu(false)} />`}
   <//>`;
 }

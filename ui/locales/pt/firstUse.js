@@ -1,4 +1,3 @@
-// firstUse · pt
 export default {
   "login": "Entrar / Criar conta",
   "accountHint": "Use sua conta Modelflare para entrar no AnyModelBot",
@@ -56,10 +55,10 @@ export default {
   "noFirstModel": "Não encontramos um modelo de baixo custo adequado para o primeiro uso (ele precisa ser compatível com ferramentas, e tanto a reserva por requisição quanto uma tarefa típica precisam caber no crédito de teste). Escolha um na lista abaixo.",
   "writerWords": "escrit|redat|redação|redacao|autor|revisor|texto|copy|writer|writing|author|editor",
   "errors": {
-    "balance": "Seu saldo está baixo demais para continuar esta tarefa agora.",
-    "balanceHint": "Recarregue e envie de novo, ou tente outro modelo (talvez ainda não seja suficiente).",
+    "balance": "Seu saldo é insuficiente para continuar esta tarefa agora.",
+    "balanceHint": "Recarregue e envie novamente ou tente outro modelo (isso ainda pode não ser suficiente).",
     "balanceOfficial": "Sua conta {name} não tem crédito suficiente para continuar esta tarefa.",
-    "balanceOfficialHint": "Isto usa sua própria chave de API {name}. Verifique o saldo ou a cota no console de {name} e envie de novo.",
+    "balanceOfficialHint": "Esta tarefa usa sua própria chave de API {name}. Confira o saldo ou a cota no console {name} e envie novamente.",
     "model": "O modelo atual está indisponível ou foi removido, por isso a tarefa não foi concluída.",
     "modelHint": "Mude para um modelo disponível no serviço atual e envie de novo.",
     "rate": "O serviço do modelo está limitando as requisições. Aguarde um pouco e envie de novo.",
@@ -68,7 +67,7 @@ export default {
     "details": "Detalhes do erro",
     "status": "Status {status}",
     "copy": "Copiar detalhes",
-    "retry": "Enviar de novo",
+    "retry": "Tentar novamente",
     "retryHint": "Executa esta mensagem de novo desde o início",
     "retryTitle": "Executar esta mensagem de novo?",
     "retryBody": "Enviar de novo executa a tarefa inteira desde o início, não só a etapa que falhou. Ações já concluídas da última vez (como arquivos editados ou mensagens enviadas) podem acontecer de novo.",

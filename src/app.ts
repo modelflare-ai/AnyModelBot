@@ -349,7 +349,15 @@ export class App {
     });
     this.attention = new Attention({ store: this.store });
     this.tasks = new TaskService({
-      canManageAllRules: (conv) => conv.kind === "dm" && this.access.owner(conv.account || conv.botId, conv.channel)?.peerId === conv.peerId,
+      ruleActor: (conv) => this.agent.turnsInProgress.get(conv.id)?.senderId,
+      canManageAllRules: (conv, senderId) => {
+        const owner = this.access.owner(conv.account || conv.botId, conv.channel);
+        if (!owner) return false;
+        const sender = senderId || this.agent.turnsInProgress.get(conv.id)?.senderId;
+        if (!sender) return conv.kind === "dm" && owner.peerId === conv.peerId;
+        const identity = owner.entryId ? this.store.getAccess(conv.account || conv.botId, conv.channel, owner.peerId)?.senderId : owner.peerId;
+        return sender === identity;
+      },
       canKeepAwake: () => !!this.desktop,
       onRuleResult: (botId, _id, text) => this.desktop?.ruleNotification?.(botId, this.store.getBot(botId)?.name || botId, text),
       store: this.store,

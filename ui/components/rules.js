@@ -64,10 +64,10 @@ async function put(rule, body, done) {
 }
 
 /** 信息面板里的一行：点开是详情（和行同一块，像普通的折叠一样展开） */
-export function RuleRow({ rule, onChanged, open, onToggle, full = false }) {
+export function RuleRow({ rule, onChanged, open, onToggle, full = false, timeZone }) {
   const zone = rule.trigger?.schedule?.tz;
-  const mismatch = zone && zone !== Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const sub = full && !rule.needsAttention ? `${rule.when} · ${rule.mode === "off" ? t("rules.mode.off") : rule.nextRunAt ? t("rules.next", { time: fmtNext(rule.nextRunAt, Date.now(), zone) }) : rule.state.label}` : ruleSub(rule);
+  const mismatch = zone && zone !== (timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const sub = full && (rule.mode === "off" || !rule.needsAttention) ? `${rule.when} · ${rule.mode === "off" ? t("scheduled.offRow") : rule.nextRunAt ? t("rules.next", { time: fmtNext(rule.nextRunAt, Date.now(), zone) }) : rule.state.label}` : ruleSub(rule);
   const run = async () => { try { await api(`/rules/${rule.id}/run`, { method: "POST", body: {} }); rulesChanged(); onChanged?.(); } catch (e) { failed(e); } };
   return html`<div class=${`row compact rule-row${open ? " open" : ""}${full ? " rule-full" : ""}`} data-rule-id=${rule.id}>
     <button type="button" class="rule-row-main" aria-expanded=${open} onClick=${onToggle}>
@@ -75,7 +75,7 @@ export function RuleRow({ rule, onChanged, open, onToggle, full = false }) {
       <div class="who">
         <div class="name">${rule.title}</div>
         <div class=${`sub${rule.needsAttention ? " tone-warning" : ""}`}>${sub}</div>
-        ${mismatch && html`<div class="hint">${t("scheduled.zoneMismatch", { zone })}</div>`}
+        ${mismatch && html`<div class="hint">${t(timeZone ? "scheduled.deliveryZoneMismatch" : "scheduled.zoneMismatch", { zone })}</div>`}
       </div>
     </button>
     ${full && html`<span class=${`rule-destination${rule.destination ? "" : " tone-warning"}`}>${rule.destination || t("scheduled.destinationMissing")}</span>`}
@@ -94,7 +94,7 @@ function RunItem({ rule, run }) {
     <button type="button" class="rule-run-head" aria-expanded=${open} onClick=${() => setOpen(!open)}>
       <span class="at num">${fmtRunAt(run.at, Date.now(), rule.trigger?.schedule?.tz)}</span>${mode && html`<span class="m">${mode}</span>`}<span class="l">${run.line}</span>
       ${hasCost(run.costUsd) && html`<span class="c num">${t("tasks.costShort", { spent: money(run.costUsd) })}</span>`}
-      <${Icon} name="chevRight" size=${12} class="chev" />
+      <${Icon} name="chevRight" size="xs" class="chev" />
     </button>
     ${open && html`<div class="rule-run-body">
       ${run.summary && html`<p class="selectable">${run.summary}</p>`}
@@ -197,9 +197,9 @@ function scheduleOf(f, tz) {
 
 function DestinationPicker({ destinations, value, onChange }) {
   const section = (d) => d.channel !== "web" ? "channels" : d.kind === "group" ? "groups" : "desktop";
-  return html`<div class="rule-destinations" style=${{ maxHeight: destinations.length > 6 ? "312px" : "none" }} role="radiogroup" aria-label=${t("rules.to")}>
+  return html`<div class="rule-destinations" role="radiogroup" aria-label=${t("rules.to")}>
     ${destinations.map((d, i) => html`${(!i || section(destinations[i - 1]) !== section(d)) && html`<span class="t-label">${t(`scheduled.${section(d)}`)}</span>`}<label class="rule-destination-option" key=${d.id}><input type="radio" name="rule-destination" value=${d.id} checked=${value === d.id} onChange=${() => onChange(d.id)} /><span>${d.title}</span>${d.default && html`<span class="hint">${t("scheduled.default")}</span>`}</label>`)}
-  </div>`;
+  </div><p class="hint rule-destination-hint">${t("scheduled.destinationHint")}</p>`;
 }
 function GroupPicker({ groups, value, onChange }) {
   return html`<label>${t("scheduled.groupLabel")}${groups.length ? html`<select class="field" value=${value} onChange=${(e) => onChange(e.target.value)}><option value="">${t("scheduled.groupMissing")}</option>${groups.map((g) => html`<option key=${g.id} value=${g.id}>${g.name}</option>`)}</select>` : html`<span class="hint">${t("scheduled.noGroups")}</span>`}</label>`;
@@ -229,6 +229,7 @@ export function RuleMode({ rule, segments = false, onChanged }) {
   const modes = rule.kind === "remind" ? [["act", t("rules.mode.on")], ["off", t("rules.mode.off")]] : [["observe", t("rules.mode.observe")], ["act", t("rules.mode.act")], ["off", t("rules.mode.off")]];
   return html`${segments ? html`<${Seg} label=${t("rules.modeLabel")} options=${modes} value=${rule.pausedReason ? "off" : rule.mode} disabled=${busy} onChange=${change} />` : html`<${Switch} label=${`${rule.title} · ${t(rule.mode !== "off" && !rule.pausedReason ? "scheduled.on" : "scheduled.off")}`} value=${rule.mode !== "off" && !rule.pausedReason} disabled=${busy} onChange=${(on) => change(on ? "act" : "off")} />`}
     ${activation && html`<${Sheet} title=${t("scheduled.activateTitle")} onClose=${() => setActivation(null)}>
+      <p class="hint rule-activation-hint">${t(rule.requiresGroup ? "scheduled.activateGroupHint" : "scheduled.activateHint")}</p>
       ${!choices ? html`<${Spinner} />` : html`<div class="rule-form">
         ${rule.requiresGroup && html`<${GroupPicker} groups=${choices.groups} value=${activation.sourceGroupId} onChange=${(id) => setActivation({ ...activation, sourceGroupId: id })} />`}
         <span class="t-label">${t("rules.to")}</span><${DestinationPicker} destinations=${choices.destinations} value=${activation.conversationId} onChange=${(id) => setActivation({ ...activation, conversationId: id })} />
@@ -311,7 +312,7 @@ export function RuleEditor({ botId, rule, onClose, onSaved, advanced = false }) 
         </div>
         ${f.kind === "weekly" && html`<div class="rule-days">${DAY_PICKS.map((d) => html`<button type="button" class=${`chip${f.days.includes(d) ? " on" : ""}`} aria-pressed=${f.days.includes(d)} onClick=${() => toggleDay(d)}>${dayName(d)}</button>`)}</div>`}
         <span class="hint">${zone}</span>
-        ${preview && html`<span class="hint">${t("scheduled.next", { times: preview.times.map((at) => fmtNext(at, Date.now(), zone)).join(" · ") })}</span><span class="hint">${t("scheduled.frequency", { count: preview.monthlyRuns })}</span>${!remind && preview.monthlyRuns > 300 && html`<p class="tone-warning">${t("scheduled.frequent")}</p>`}`}
+        ${preview && html`<span class="hint">${t("scheduled.next", { times: preview.times.map((at) => fmtNext(at, Date.now(), zone)).join(" · ") })}</span><span class="hint">${t(preview.monthlyRuns === 1 ? "scheduled.frequencyOne" : "scheduled.frequency", { count: preview.monthlyRuns })}</span>${!remind && preview.monthlyRuns > 300 && html`<p class="tone-warning">${t("scheduled.frequent")}</p>`}`}
         ${error && !unchanged && html`<p class="tone-danger" role="alert">${error}</p>`}
       </div>`}
       ${rule?.requiresGroup && choices && html`<${GroupPicker} groups=${choices.groups} value=${group} onChange=${setGroup} />`}
@@ -323,7 +324,7 @@ export function RuleEditor({ botId, rule, onClose, onSaved, advanced = false }) 
         ${!remind && !rule && html`<div class="actions"><span>${t("scheduled.tryFirst")}</span><span class="grow"></span><${Switch} label=${t("scheduled.tryFirst")} value=${observe} onChange=${setObserve} /></div>`}
         ${f.kind !== "every" && html`<span class="t-label">${t("scheduled.missedPolicy")}</span><${Seg} label=${t("scheduled.missedPolicy")} options=${[["catchup", t("scheduled.catchup")], ["skip", t("scheduled.skip")]]} value=${missed} onChange=${setMissed} />`}
         ${!remind && html`<div class="rule-when-row"><label>${t("rules.perRun")} ($)<input class="field num" type="number" min="0.01" step="0.01" value=${runB} onInput=${(e) => setRunB(e.target.value)} /></label><label>${t("rules.perMonth")} ($)<input class="field num" type="number" min="0.01" step="0.5" value=${monthB} onInput=${(e) => setMonthB(e.target.value)} /></label></div>`}
-        <p class="hint">${t("scheduled.localOnly")}</p>
+        <p class="hint">${t(!event && ["daily", "weekdays", "weekly", "monthly", "once"].includes(f.kind) && missed === "catchup" ? "scheduled.localCatchup" : "scheduled.localOnly")}</p>
       </div></details>
     </div>
     <div class="actions"><${Button} onClick=${onClose}>${t("common.cancel")}<//><${Button} variant="primary" loading=${busy} disabled=${!ok} onClick=${save}>${rule ? t("common.save") : t("rules.create")}<//></div>
@@ -351,7 +352,7 @@ export function RuleCard({ action }) {
   const gone = action.state === "deleted";
   const undone = action.state === "undone";
   return html`<div class=${`rule-chat-card${gone || undone ? " muted" : ""}`}>
-    <div class="actions"><b>${undone ? html`<s>${action.title}</s>` : `${t(action.kind === "update" ? "scheduled.updated" : "scheduled.rule")} · ${rule?.title || action.title}`}</b><span class="grow"></span>${rule && rule.state.key !== "done" && html`<span class="hint">${t(rule.mode !== "off" && !rule.pausedReason ? "scheduled.on" : "scheduled.off")}</span><${RuleMode} rule=${rule} />`}</div>
+    <div class="actions"><b>${undone ? html`<s>${t("scheduled.rule")} · ${action.title}</s>` : `${t(action.kind === "update" ? "scheduled.updated" : "scheduled.rule")} · ${rule?.title || action.title}`}</b><span class="grow"></span>${rule && rule.state.key !== "done" && html`<span class="hint">${t(rule.mode !== "off" && !rule.pausedReason ? "scheduled.on" : "scheduled.off")}</span><${RuleMode} rule=${rule} />`}</div>
     ${gone ? html`<p>${t("scheduled.deleted")}</p>` : undone ? html`<p>${t("scheduled.undone")} · ${t("scheduled.restoreUntil", { time: fmtNext(action.restoreUntil) })}</p>` : rule && html`<p>${rule.when} (${rule.trigger?.schedule?.tz || ""})</p><p>${t("rules.sendsTo", { where: rule.destination || t("scheduled.destinationMissing") })}</p>${rule.nextRunAt > 0 && html`<p>${t("rules.next", { time: fmtNext(rule.nextRunAt, Date.now(), rule.trigger?.schedule?.tz) })}</p>`}`}
     ${action.kind === "update" && action.canUndo && html`<p class="hint">${t("scheduled.updateUndoHint")}</p>`}
     ${action.state === "reverted" && html`<p class="hint">${t("scheduled.updateUndone")}</p>`}

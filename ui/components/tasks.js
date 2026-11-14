@@ -194,7 +194,7 @@ export function TaskChip({ task, onChanged, data }) {
     <button type="button" class="task-pill" aria-expanded=${open} title=${open ? t("tasks.collapse") : t("tasks.view")} onClick=${() => setOpen(!open)}>
       <span class=${`dot ${dot}`} aria-hidden="true"></span>
       <span class="l">${has(k) ? t(k, { title }) : t("tasks.chipAny", { title, stage: task.stage.label })}</span>
-      <${Icon} name="chevRight" size=${12} class="chev" />
+      <${Icon} name="chevRight" size="xs" class="chev" />
     </button>
     ${open && html`<${TaskDetail} task=${task} origin=${false} onChanged=${onChanged} data=${data} />`}
   </div>`;
@@ -273,11 +273,11 @@ export function TaskGroup({ botId, onOpenConv, tasks: givenTasks, rules: givenRu
     <div class="actions"><span class="grow"></span><button type="button" class="text" onClick=${openScheduled}>${t("scheduled.viewAll")}</button></div>
     <div class="list task-group">
       ${list.map(row)}
-      <div class="rules-section-head"><b>${t("scheduled.rule")} ${rs.length}</b><button type="button" class="text" onClick=${() => setCreating(true)}>${t("scheduled.newRule")}</button></div>
+      <div class="rules-section-head"><b>${t("scheduled.rule")} ${rs.length}</b><button type="button" class="text" onClick=${() => setCreating(true)}><${Icon} name="plus" size="sm" />${t("scheduled.newRule")}</button></div>
       ${!rs.length && html`<p class="hint">${t("scheduled.example")}</p>`}
       ${rs.map((r) => html`<${RuleRow} key=${r.id} rule=${r} open=${openId === r.id} onToggle=${() => toggle(r.id)} onChanged=${reload} />`)}
       ${done.length > 0 && html`<button type="button" class=${`row compact clickable task-ended${showEnded ? " open" : ""}`} aria-expanded=${showEnded} onClick=${() => setShowEnded(!showEnded)}>
-        <span class="who"><span class="name">${t("tasks.ended", { count: done.length })}</span></span><${Icon} name="chevRight" size=${12} class="chev" />
+        <span class="who"><span class="name">${t("tasks.ended", { count: done.length })}</span></span><${Icon} name="chevRight" size="xs" class="chev" />
       </button>`}
       ${showEnded && done.map(row)}
     </div>${creating && html`<${RuleEditor} botId=${botId} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); reload(); }} />`}`;

@@ -6,6 +6,12 @@ anymodel bot itself is released under the MIT License (see LICENSE). The compone
 
 Some code is ported or adapted from Fei2411/DS-Bot (Apache-2.0); see the "DS Bot" section below.
 
+## Heroicons (interface icons)
+
+Interface icons are selected from Heroicons 2.2.0 Outline and distributed as SVG node data in `ui/icons/heroicons.js`. Heroicons is MIT licensed, copyright Tailwind Labs, Inc. The full license is included in [ui/icons/LICENSE](./ui/icons/LICENSE). The pinned commit and source checksums are recorded in `ui/icons/heroicons-source.json`.
+
+https://github.com/tailwindlabs/heroicons/releases/tag/v2.2.0
+
 ## magpie (built-in model gateway, shipped as a binary; parts of the UI styling are adapted from it)
 
 Source: https://github.com/yetone/magpie (vendor/magpie submodule, v0.1.1720)

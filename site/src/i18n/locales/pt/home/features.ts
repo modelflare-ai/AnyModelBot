@@ -15,7 +15,7 @@ export default {
       },
       {
         "title": "Prévia de arquivos e sites",
-        "body": "Abra Markdown, texto, PDF, imagens, HTML e sites no painel direito sem perder a conversa de vista. Também é possível baixar ou abrir externamente."
+        "body": "Veja arquivos e sites no painel direito, mantendo a largura ao trocar de aba. Suporta Markdown, texto, PDF, imagens e HTML, com download e abertura externa."
       },
       {
         "title": "Importe suas próprias habilidades",
@@ -39,7 +39,7 @@ export default {
       },
       {
         "title": "Gastos sempre à vista",
-        "body": "Saldo, alertas de saldo baixo e uso diário ficam no app, e cada bot pode ter seu próprio limite de gastos."
+        "body": "Veja o saldo e os créditos de Bot e recarregue em Configurações → Modelos. Há alertas de saldo baixo, uso diário e limites de gastos por bot."
       },
       {
         "title": "Três domínios de API",

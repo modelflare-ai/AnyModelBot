@@ -56,7 +56,7 @@ Conversations, memory, files, and API keys stay on your device. Models can come 
 
 Ready to use after install: background tasks, scheduled rules, and items waiting for your OK are built in.
 
-**0.1.34:** startup logs before the single-instance lock, a `--diagnose-startup` troubleshooting switch, and improved window activation on a second launch. This helps investigate #71; the specific cause on Win11 Build 26300 remains unconfirmed. [Changelog](./CHANGELOG_en.md#0134---2026-11-14)
+**0.1.35:** A cleaner sidebar and Heroicons, balance in Settings, stable preview widths, and fixes for rules, permissions and seven-language copy. [Changelog](./CHANGELOG_en.md#0135---2026-11-14)
 
 📥 [Download](#-download-and-run) · 🌠 [Screenshots](#-screenshots) · 🌟 [Features](#-key-features) · 🆚 [Compare](#-anymodelbot-vs-grok-bot-openai-dots-and-claude-duet) · 🔐 [Privacy](#-how-it-works--privacy)
 

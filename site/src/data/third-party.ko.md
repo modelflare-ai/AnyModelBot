@@ -6,6 +6,12 @@ anymodel bot 자체는 MIT 라이선스로 배포됩니다(LICENSE 참조). 아�
 
 일부 코드는 Fei2411/DS-Bot(Apache-2.0)에서 포팅하거나 수정했습니다. 아래 DS Bot 항목을 확인하세요.
 
+## Heroicons (인터페이스 아이콘)
+
+인터페이스 아이콘은 Heroicons 2.2.0 Outline에서 선택하여 `ui/icons/heroicons.js`에 SVG 노드 데이터로 포함합니다. MIT 라이선스를 따르며 저작권은 Tailwind Labs, Inc.에 있습니다. 전체 라이선스는 [ui/icons/LICENSE](./ui/icons/LICENSE), 고정 커밋과 원본 체크섬은 `ui/icons/heroicons-source.json`에 기록되어 있습니다.
+
+https://github.com/tailwindlabs/heroicons/releases/tag/v2.2.0
+
 ## magpie(내장 모델 게이트웨이, 바이너리 배포 및 일부 화면 스타일 수정)
 
 출처: https://github.com/yetone/magpie (vendor/magpie 서브모듈, v0.1.1720)

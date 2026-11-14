@@ -6,6 +6,12 @@
 
 Часть кода перенесена или адаптирована из Fei2411/DS-Bot (Apache-2.0); см. раздел «DS Bot» ниже.
 
+## Heroicons (значки интерфейса)
+
+Значки интерфейса взяты из Heroicons 2.2.0 Outline и поставляются как данные SVG-узлов в `ui/icons/heroicons.js`. Лицензия MIT, авторские права принадлежат Tailwind Labs, Inc. Полная лицензия находится в [ui/icons/LICENSE](./ui/icons/LICENSE), фиксированный коммит и контрольные суммы исходников — в `ui/icons/heroicons-source.json`.
+
+https://github.com/tailwindlabs/heroicons/releases/tag/v2.2.0
+
 ## magpie — встроенный шлюз моделей и источник части стилей интерфейса
 
 Источник: https://github.com/yetone/magpie (подмодуль vendor/magpie, v0.1.1720).

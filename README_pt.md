@@ -56,7 +56,7 @@ Conversas, memória, arquivos e chaves de API ficam no seu dispositivo. Os model
 
 Pronto para usar logo após a instalação: tarefas em segundo plano, regras agendadas e os itens que aguardam o seu OK já vêm integrados.
 
-**0.1.34:** logs antes do bloqueio, opção `--diagnose-startup` e melhor ativação da janela em uma segunda inicialização. Ajuda a investigar #71; a causa no Win11 Build 26300 ainda não foi confirmada. [Histórico de alterações](./CHANGELOG_pt.md#0134---2026-11-14)
+**0.1.35:** Barra lateral mais simples, Heroicons, saldo nas configurações, largura estável e correções de regras, permissões e textos em sete idiomas. [Histórico de alterações](./CHANGELOG_pt.md#0135---2026-11-14)
 
 📥 [Baixar](#-baixar-e-executar) · 🌠 [Capturas de tela](#-capturas-de-tela) · 🌟 [Recursos](#-principais-recursos) · 🆚 [Comparação](#-anymodelbot-vs-grok-bot-openai-dots-e-claude-duet) · 🔐 [Privacidade](#-como-funciona-e-privacidade)
 

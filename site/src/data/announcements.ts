@@ -49,6 +49,15 @@ export const RELEASE = {
   days: 30,
   /** 各版本的一句话亮点（可选），没有就显示"AnyModelBot {version} 已发布" */
   highlights: {
+    "0.1.35": {
+      "zh": "更简洁的界面、余额展示与规则修复",
+      "en": "Cleaner UI, visible balances and rule fixes",
+      "ja": "すっきりした画面、残高表示とルール修正",
+      "ko": "간결한 화면, 잔액 표시와 규칙 수정",
+      "ru": "Лаконичный интерфейс, баланс и исправления правил",
+      "es": "Interfaz más sencilla, saldo visible y reglas corregidas",
+      "pt": "Interface mais simples, saldo visível e regras corrigidas"
+    },
     "0.1.34": {
       zh: "启动诊断与重复启动处理改进",
       en: "Startup diagnostics and second-launch handling",

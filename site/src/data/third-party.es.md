@@ -6,6 +6,12 @@ El propio anymodel bot se publica bajo la licencia MIT (ver LICENSE). Los compon
 
 Parte del código se portó o adaptó de Fei2411/DS-Bot (Apache-2.0); consulta la sección “DS Bot” más abajo.
 
+## Heroicons (iconos de la interfaz)
+
+Los iconos de la interfaz se seleccionan de Heroicons 2.2.0 Outline y se distribuyen como datos de nodos SVG en `ui/icons/heroicons.js`. Heroicons usa la licencia MIT, con derechos de autor de Tailwind Labs, Inc. La licencia completa está en [ui/icons/LICENSE](./ui/icons/LICENSE). El commit fijado y las sumas de comprobación se registran en `ui/icons/heroicons-source.json`.
+
+https://github.com/tailwindlabs/heroicons/releases/tag/v2.2.0
+
 ## magpie (gateway de modelos integrado, distribuido como binario; parte de los estilos de la interfaz se adaptó de él)
 
 Fuente: https://github.com/yetone/magpie (submódulo vendor/magpie, v0.1.1720)

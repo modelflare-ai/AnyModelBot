@@ -15,7 +15,7 @@ export default {
       },
       {
         "title": "Preview files and websites",
-        "body": "Open Markdown, text, PDFs, images, HTML and websites in the right panel while keeping the conversation in view. Download or open externally when needed."
+        "body": "Preview files and websites in the right panel without changing its width when switching tabs. Supports Markdown, text, PDFs, images and HTML, with download and external-opening options."
       },
       {
         "title": "Import your own skills",
@@ -39,7 +39,7 @@ export default {
       },
       {
         "title": "Spending at a glance",
-        "body": "Balance, low-balance alerts, and daily usage live in the app, and each bot can have its own spending cap."
+        "body": "View your balance and Bot credits and top up in Settings → Models. Low-balance alerts, daily usage and per-bot spending caps are built in."
       },
       {
         "title": "Three API domains",

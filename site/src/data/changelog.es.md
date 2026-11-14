@@ -4,6 +4,18 @@
 
 Aquí se recogen los cambios que notarás en la app. Para versiones anteriores, consulta las [versiones publicadas en GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.35 - 2026-11-14
+
+### Mejoras y correcciones
+
+- **Barra lateral e iconos más sencillos:** las acciones comunes usan Heroicons. Arriba quedan contraer, buscar y crear; Programadas pasa a la navegación con texto. El botón junto a la cuenta descarga actualizaciones y permite reiniciar para instalarlas cuando estén listas.
+- **Saldo visible en Ajustes:** Ajustes → Modelos muestra el saldo, los créditos de Bot y el porcentaje restante, con acciones para actualizar y recargar. Se eliminan el anillo de saldo y la tarjeta al pasar el cursor de la barra lateral.
+- **Vistas previas estables:** el campo de dirección y el selector de recursos usan controles compartidos. Cambiar de pestaña en el panel derecho conserva su anchura, incluidos los ajustes manuales. Se corrige el botón para expandir la barra lateral después de contraerla.
+- **Errores más claros:** los fallos al reservar cuota se clasifican como saldo insuficiente, también con mensajes que llevan prefijos. Las acciones de recuperación corresponden al proveedor y la barra lateral no muestra errores sin procesar.
+- **Permisos del ordenador más claros:** se usa un título singular cuando falta un permiso y reabrir la app pasa a ser la acción principal cuando hace falta. Antes de reabrir se conservan los borradores de chats y formularios y las solicitudes pendientes.
+- **Correcciones de reglas:** cambiar el interruptor o el destino conserva la opción de deshacer. El propietario gestiona reglas entre conversaciones y los miembros de grupos quedan aislados por identidad. La frecuencia se calcula para los próximos 30 días y se sugieren intervalos de tres horas o diarios.
+- **Guías y textos coherentes:** la memoria inicial de las plantillas y las revisiones automáticas ya no completan el paso de recordar al usuario. Ejemplos, mensajes de deshacer, formularios y guías de activación se unifican en siete idiomas.
+
 ## 0.1.34 - 2026-11-14
 
 ### Novedades

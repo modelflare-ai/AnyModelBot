@@ -4,6 +4,18 @@
 
 This covers changes you'll notice in the app. For older versions, see the [GitHub releases](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.35 - 2026-11-14
+
+### Improvements and fixes
+
+- **Cleaner sidebar and icons:** standard actions now use Heroicons. Collapse, search and new stay at the top, while Scheduled becomes a labeled navigation item. The update button beside your account downloads updates and restarts to install when ready.
+- **Balance directly in Settings:** Settings → Models shows your account balance, Bot credits and remaining percentage, with refresh and top-up actions. The sidebar balance ring and hover card are removed.
+- **Stable resource previews:** website entry and resource selection use shared controls. Switching right-panel tabs preserves its width, including manual adjustments. Fixed the sidebar expand button becoming unclickable after collapse.
+- **Clearer error recovery:** quota reservation failures are classified as low balance, including errors with prefixed messages. Recovery actions match the account provider, and sidebar previews no longer expose raw error responses.
+- **Clearer computer permissions:** one missing permission uses a singular heading, and reopening the app becomes the main action when required. Chat and form drafts and pending requests are preserved before reopening.
+- **Rule management fixes:** toggling a rule or changing its destination keeps undo available. Owners can manage rules across conversations; group members remain isolated by identity. Frequency counts cover the next 30 days, with lower-frequency suggestions of every three hours or daily.
+- **Consistent onboarding and copy:** template seed memory and automatic reviews no longer complete the remember-you step. Template samples, undo messages, rule forms and activation guidance are aligned across seven languages.
+
 ## 0.1.34 - 2026-11-14
 
 ### New

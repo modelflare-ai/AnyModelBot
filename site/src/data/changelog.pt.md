@@ -4,6 +4,18 @@
 
 Aqui estão as mudanças que você vai notar no app. Para versões mais antigas, veja as [versões no GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.35 - 2026-11-14
+
+### Melhorias e correções
+
+- **Barra lateral e ícones mais simples:** ações comuns usam Heroicons. No topo ficam recolher, pesquisar e criar; Agendadas passa para a navegação com texto. O botão ao lado da conta baixa atualizações e permite reiniciar para instalar quando estiverem prontas.
+- **Saldo visível nas configurações:** Configurações → Modelos mostra saldo, créditos de Bot e porcentagem restante, com ações para atualizar e recarregar. O anel de saldo e o cartão ao passar o mouse na barra lateral foram removidos.
+- **Prévias estáveis:** endereço e seleção de recursos usam controles compartilhados. Trocar de aba no painel direito preserva a largura, inclusive após ajuste manual. Corrigido o botão de expandir a barra lateral após recolhê-la.
+- **Erros mais claros:** falhas na reserva de cota são classificadas como saldo insuficiente, mesmo com prefixos na mensagem. As ações de recuperação correspondem ao provedor, e a barra lateral não exibe erros brutos.
+- **Permissões do computador mais claras:** uma permissão ausente usa título no singular, e reabrir o app vira a ação principal quando necessário. Rascunhos de conversas e formulários e solicitações pendentes são preservados antes de reabrir.
+- **Correções de regras:** mudar o interruptor ou o destino preserva a opção de desfazer. O proprietário gerencia regras entre conversas e membros de grupos são isolados por identidade. A frequência considera os próximos 30 dias, com sugestões a cada três horas ou diariamente.
+- **Orientações e textos consistentes:** a memória inicial dos modelos e revisões automáticas não concluem mais a etapa de lembrar do usuário. Exemplos, mensagens de desfazer, formulários e orientações de ativação foram alinhados em sete idiomas.
+
 ## 0.1.34 - 2026-11-14
 
 ### Novidades

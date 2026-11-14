@@ -72,7 +72,7 @@ button.guide-step > .ic { color: var(--muted); }
 .guide-coach-arrow { position: absolute; width: 12px; height: 12px; rotate: 45deg; background: var(--glass-pop); backdrop-filter: var(--glass-filter-lg); }
 .guide-coach.up .guide-coach-arrow { left: var(--ax); bottom: 0; translate: -50% 50%; clip-path: polygon(100% 0, 100% 100%, 0 100%); }
 .guide-coach.down .guide-coach-arrow { left: var(--ax); top: 0; translate: -50% -50%; clip-path: polygon(0 0, 100% 0, 0 100%); }
-.guide-coach.left .guide-coach-arrow { top: var(--ay); right: 0; translate: 50% -50%; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+.guide-coach.left .guide-coach-arrow { top: var(--ay, 50%); right: 0; translate: 50% -50%; clip-path: polygon(0 0, 100% 0, 100% 100%); }
 .guide-coach-top { display: flex; align-items: center; gap: var(--space-2); }
 .guide-coach-top .icon-btn { margin-right: calc(-1 * var(--space-1-5)); }
 .guide-done {
@@ -147,7 +147,7 @@ button.guide-step > .ic { color: var(--muted); }
 .guide-demo > .badge { margin-bottom: var(--space-2); }
 .guide-sample-flash { animation: guide-sample-flash var(--dur-slow) var(--ease-out); }
 @keyframes guide-sample-flash { from { opacity: .4; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .guide-sample-flash { animation-duration: .01ms; } }
+@media (prefers-reduced-motion: reduce) { .guide-sample-flash { animation: none; } }
 }
 @layer app {
 .official-guide-notice { margin: var(--space-2) var(--space-4); flex: none; }

@@ -324,9 +324,9 @@ button.need-head:hover, button.need-head:hover .need-who b { color: var(--fg); }
 .onboard-hero p { font-size: var(--fs-sm); font-weight: var(--fw-regular); line-height: var(--lh-normal); margin: 0; }
 .onboard-lang { position: fixed; top: var(--float-inset); right: var(--float-inset); z-index: var(--z-raised); }
 .onboard-back { justify-self: start; text-align: left; }
-.btn.outline { background: var(--surface); border: var(--hairline) solid var(--line-strong); color: var(--fg); }
-.btn.outline:hover { background: var(--well); }
-.btn.outline:active { background: var(--pill); }
+.btn.outline { background: var(--well); border: 0; color: var(--fg); }
+.btn.outline:hover { background: var(--well-hover); }
+.btn.outline:active { background: var(--well-press); }
 .onboard .btn.lg { min-height: var(--ctl-xl); height: auto; padding-block: var(--space-2); text-align: center; white-space: normal; overflow-wrap: anywhere; }
 .onboard-divider { display: flex; align-items: center; gap: var(--space-3); margin-block: var(--space-3); color: var(--muted); font-size: var(--fs-2xs); }
 .onboard-divider::before, .onboard-divider::after { content: ""; flex: 1; height: var(--hairline); background: var(--line); }
@@ -334,7 +334,7 @@ button.need-head:hover, button.need-head:hover .need-who b { color: var(--fg); }
 .onboard .login-gift { justify-content: center; font-size: var(--fs-2xs); font-weight: var(--fw-regular); color: var(--muted); }
 .onboard-alternative { display: grid; gap: var(--space-2); }
 .onboard-alternative .hint { margin: 0; font-size: var(--fs-2xs); text-align: center; }
-.onboard-setup { display: grid; gap: var(--space-3); padding: var(--group-pad); border: var(--hairline) solid var(--line); border-radius: var(--r-card-lg); background: var(--card); text-align: left; }
+.onboard-setup { display: grid; gap: var(--space-3); padding: var(--group-pad); border-radius: var(--r-card-lg); background: var(--well); text-align: left; }
 .onboard-configs { display: grid; gap: var(--space-1); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .onboard-col.returning { gap: var(--space-2); }
 .onboard-col.returning .onboard-hero { margin-bottom: var(--space-1); }

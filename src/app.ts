@@ -259,7 +259,8 @@ export class App {
     this.cuPermissions.bindStore(this.store);
     // "更新了什么"：全新安装第一次启动不弹，直接记成当前版本；升级上来的（库已经在）还没有记录时弹一次这一版
     if (freshData && !this.store.getKV(WHATS_NEW_SEEN) && appVersion()) this.store.setKV(WHATS_NEW_SEEN, appVersion());
-    if (!freshData) this.store.setKV("bots.initialized", "1");
+    // 旧版仅有默认会话的库仍需补齐默认机器人；用户删光机器人时会话也已删除，不重新创建。
+    if (!freshData && (this.store.listBots().length || !this.store.listConversations("default").length)) this.store.setKV("bots.initialized", "1");
     this.userSkills = new UserSkills(config.dataDir, this.store);
     this.outbox = new Outbox(this.store);
     this.delivery = new Delivery({ store: this.store, outbox: this.outbox, timeZone: opts.timeZone, ...opts.deliveryLimits });

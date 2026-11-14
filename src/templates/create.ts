@@ -4,9 +4,13 @@ import path from "node:path";
 import type { App } from "../app.js";
 import { MemoryStore } from "../agent/memory.js";
 import { normalizeSettings, PICKABLE_AVATARS } from "../domain/bot-settings.js";
-import { HttpError } from "../web/http.js";
 import { normalizeSchedule } from "../tasks/schedule.js";
 import { templateCatalog, templateName, templateStrings } from "./catalog.js";
+
+/** Template failures are independent of the HTTP adapter. */
+export class TemplateError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
 
 /** One request creates one owned bot, with closed rules and optional seed memory. */
 export class TemplateCreator {
@@ -15,37 +19,37 @@ export class TemplateCreator {
   create(body: Record<string, unknown>) {
     const allowed = new Set(["templateId", "requestId", "nameBase", "name", "systemPrompt", "avatar", "defaultModel", "memoryEnabled", "onboarding"]);
     const copy = templateStrings();
-    if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, copy.errors.request);
-    for (const field of ["name", "nameBase", "systemPrompt", "avatar", "defaultModel", "templateId", "requestId"]) if (body[field] !== undefined && typeof body[field] !== "string") throw new HttpError(400, copy.errors.fields);
-    for (const field of ["memoryEnabled", "onboarding"]) if (body[field] !== undefined && typeof body[field] !== "boolean") throw new HttpError(400, copy.errors.fields);
-    if (body.onboarding && !["writer", "polish", "minutes"].includes(String(body.templateId))) throw new HttpError(400, copy.errors.fields);
-    if (Object.keys(body).some((key) => !allowed.has(key))) throw new HttpError(400, copy.errors.fields);
-    if (typeof body.requestId !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId)) throw new HttpError(400, copy.errors.request);
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new TemplateError(400, copy.errors.request);
+    for (const field of ["name", "nameBase", "systemPrompt", "avatar", "defaultModel", "templateId", "requestId"]) if (body[field] !== undefined && typeof body[field] !== "string") throw new TemplateError(400, copy.errors.fields);
+    for (const field of ["memoryEnabled", "onboarding"]) if (body[field] !== undefined && typeof body[field] !== "boolean") throw new TemplateError(400, copy.errors.fields);
+    if (body.onboarding && !["writer", "polish", "minutes"].includes(String(body.templateId))) throw new TemplateError(400, copy.errors.fields);
+    if (Object.keys(body).some((key) => !allowed.has(key))) throw new TemplateError(400, copy.errors.fields);
+    if (typeof body.requestId !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId)) throw new TemplateError(400, copy.errors.request);
     const key = `template.create.${crypto.createHash("sha256").update(`${this.app.account.ownerKey}:${body.requestId}`).digest("hex")}`;
     const payload: Record<string, unknown> = { ...body, name: body.nameBase || body.name }; delete payload.requestId;
     const signature = crypto.createHash("sha256").update(JSON.stringify(Object.entries(payload).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
     const existing = this.pending.get(key);
-    if (existing) { if (existing.signature !== signature) throw new HttpError(409, copy.errors.changedRequest); return existing.run; }
+    if (existing) { if (existing.signature !== signature) throw new TemplateError(409, copy.errors.changedRequest); return existing.run; }
     const run = this.run(body, key, signature).finally(() => this.pending.delete(key)); this.pending.set(key, { signature, run }); return run;
   }
   private async run(b: Record<string, unknown>, key: string, signature: string) {
     const app = this.app; const strings = templateStrings();
     const template = templateCatalog().find((x) => x.id === b.templateId);
-    if (!template) throw new HttpError(404, strings.errors.missing);
+    if (!template) throw new TemplateError(404, strings.errors.missing);
     const copy = strings.roles[template.id];
     const stored = app.store.getKV(key);
-    if (stored) { const saved = JSON.parse(stored); if (saved.signature && saved.signature !== signature) throw new HttpError(409, strings.errors.changedRequest); const bot = app.store.getBot(saved.botId); if (!bot) throw new HttpError(409, strings.errors.removed); return { bot, sample: saved.sample }; }
+    if (stored) { const saved = JSON.parse(stored); if (saved.signature && saved.signature !== signature) throw new TemplateError(409, strings.errors.changedRequest); const bot = app.store.getBot(saved.botId); if (!bot) throw new TemplateError(409, strings.errors.removed); return { bot, sample: saved.sample }; }
     const name = typeof b.name === "string" ? b.name.trim() : copy.name;
     const nameBase = typeof b.nameBase === "string" ? b.nameBase.trim() : name;
-    if (!name || name.length > 60 || !nameBase || nameBase.length > 60) throw new HttpError(400, strings.errors.name);
+    if (!name || name.length > 60 || !nameBase || nameBase.length > 60) throw new TemplateError(400, strings.errors.name);
     const persona = typeof b.systemPrompt === "string" ? b.systemPrompt : copy.persona;
-    if (persona.length > 30_000) throw new HttpError(400, strings.errors.persona);
+    if (persona.length > 30_000) throw new TemplateError(400, strings.errors.persona);
     const avatar = typeof b.avatar === "string" ? b.avatar : template.avatar;
-    if (!(PICKABLE_AVATARS as readonly string[]).includes(avatar)) throw new HttpError(400, strings.errors.avatar);
+    if (!(PICKABLE_AVATARS as readonly string[]).includes(avatar)) throw new TemplateError(400, strings.errors.avatar);
     const model = typeof b.defaultModel === "string" ? b.defaultModel : "";
     const effective = model || app.config.llm.defaultModel;
     const models = await app.runtime.listModels().catch(() => null);
-    if (!effective || (models && !models.some((m) => m.replace(/^modelflare\//, "") === effective.replace(/^modelflare\//, ""))) || (!models && !!model)) throw new HttpError(400, strings.errors.model);
+    if (!effective || (models && !models.some((m) => m.replace(/^modelflare\//, "") === effective.replace(/^modelflare\//, ""))) || (!models && !!model)) throw new TemplateError(400, strings.errors.model);
     let id: string;
     do { id = crypto.randomUUID().slice(0, 8); } while (app.store.getBot(id) || fs.existsSync(app.agent.memory.dir({ kind: "bot", id })));
     const staging = fs.mkdtempSync(path.join(app.config.dataDir, ".template-"));

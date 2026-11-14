@@ -1,5 +1,5 @@
 /** 机器人：列表、新建、设置、技能、网页对话（含流式与接上进行中的消息），以及目录 Bot 接口的转发（web/botapp.ts）。 */
-import { TemplateCreator } from "../../templates/create.js";
+import { TemplateCreator, TemplateError } from "../../templates/create.js";
 import { botAppApi } from "../botapp.js";
 import { FilePreviews } from "../file-previews.js";
 import { skillsApi } from "../skills.js";
@@ -45,8 +45,13 @@ export function botsRoutes(ctx: WebContext, previews = new FilePreviews()): Rout
       if (handled) return;
     }
     if (p === "/bots/from-template" && m === "POST") {
-      const result = await templates.create(await readJson(req));
-      return send(res, 201, { bot: publicBot(result.bot), sample: result.sample });
+      try {
+        const result = await templates.create(await readJson(req));
+        return send(res, 201, { bot: publicBot(result.bot), sample: result.sample });
+      } catch (error) {
+        if (error instanceof TemplateError) throw new HttpError(error.status, error.message);
+        throw error;
+      }
     }
     if (seg[0] === "bots") {
       if (seg.length === 1) {

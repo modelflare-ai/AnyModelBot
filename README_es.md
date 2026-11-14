@@ -56,6 +56,8 @@ Las conversaciones, la memoria, los archivos y las claves de API se quedan en tu
 
 Listo para usar desde la instalación: las tareas en segundo plano, las reglas programadas y los asuntos que esperan tu visto bueno ya vienen integrados.
 
+**0.1.33:** página Programado, deshacer y restaurar reglas, recuperación en un plazo de hasta doce horas, diez plantillas de bots y vista previa de archivos y sitios en el panel derecho. También mejoran los espacios de trabajo y los permisos de macOS. [Historial de cambios](./CHANGELOG_es.md#0133---2026-11-14)
+
 📥 [Descargar](#-descargar-y-ejecutar) · 🌠 [Capturas](#-capturas-de-pantalla) · 🌟 [Funciones](#-funciones-principales) · 🆚 [Comparativa](#-anymodelbot-frente-a-grok-bot-openai-dots-y-claude-duet) · 🔐 [Privacidad](#-cómo-funciona-y-privacidad)
 
 ⭐ ¿Te gusta AnyModelBot? Dale una estrella al repositorio para seguir las nuevas versiones.

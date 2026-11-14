@@ -2,12 +2,13 @@
 import path from "node:path";
 import { SseReply } from "../sse-reply.js";
 import { botWorkspace, resolveFile, runnable, sendFile } from "../files.js";
+import { FilePreviews } from "../file-previews.js";
 import { groupPeer } from "../../store/db.js";
 import { ChatSearchInputError } from "../../store/chat-search.js";
 import { t } from "../../i18n/index.js";
 import { HttpError, readJson, send, publicMessage, publicApproval, type Route, type WebContext } from "../http.js";
 
-export function chatRoutes(ctx: WebContext): Route {
+export function chatRoutes(ctx: WebContext, previews = new FilePreviews()): Route {
   const { app, stopConversation, groups, groupTurns, publicGroup, groupMembers } = ctx;
   const cfg = app.config;
   return async (req, res, url, seg, p, m) => {
@@ -127,7 +128,7 @@ export function chatRoutes(ctx: WebContext): Route {
       // 交付的文件（web/files.ts）：GET file?path= 发给浏览器（图片、PDF、纯文本直接显示，其余下载）；
       // 桌面版 POST file/open 用系统的默认程序打开（打开就会运行的只在文件夹中显示），file/reveal 在文件夹中显示。
       // 只给这个会话交付过的文件和这个机器人工作区里的文件
-      if (seg[2] === "file" && (seg.length === 3 ? m === "GET" : seg.length === 4 && (seg[3] === "open" || seg[3] === "reveal") && m === "POST")) {
+      if (seg[2] === "file" && (seg.length === 3 ? m === "GET" : seg.length === 4 && (seg[3] === "preview" ? m === "GET" : (seg[3] === "open" || seg[3] === "reveal") && m === "POST"))) {
         const conv = app.store.getConversation(decodeURIComponent(seg[1]));
         if (!conv) throw new HttpError(404, t("web.conversationNotFound"));
         const desktop = app.desktop;
@@ -136,7 +137,8 @@ export function chatRoutes(ctx: WebContext): Route {
         const ws = botWorkspace(cfg.dataDir, conv.botId);
         const f = ws ? resolveFile(String(input ?? ""), { workspace: ws, dataDir: cfg.dataDir, delivered: app.store.deliveredFiles(conv.id) }) : undefined;
         if (!f) throw new HttpError(404, t("web.fileNotFound"));
-        if (m === "GET") return sendFile(req, res, f);
+        if (m === "GET" && seg[3] === "preview") return send(res, 200, await previews.describe(f, { workspace: ws!, dataDir: cfg.dataDir, delivered: app.store.deliveredFiles(conv.id) }));
+        if (m === "GET") return sendFile(req, res, f, undefined, url.searchParams.get("download") === "1");
         if (seg[3] === "open" && !runnable(f)) {
           desktop!.openPath!(f.path);
           return send(res, 200, { ok: true });

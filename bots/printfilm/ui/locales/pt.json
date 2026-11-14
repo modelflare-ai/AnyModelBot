@@ -214,5 +214,11 @@
   "sheet.time": "Tempo",
   "sheet.words": "Narração / falas",
   "sheet.visual": "Visual",
-  "sheet.media": "Mídia"
+  "sheet.media": "Mídia",
+  "shotDetails": "Descrição e ajustes da cena",
+  "canvas.zoomOut": "Diminuir zoom",
+  "canvas.zoomIn": "Aumentar zoom",
+  "canvas.fit": "Ajustar à tela",
+  "canvas.expand": "Expandir espaço",
+  "canvas.restore": "Voltar ao chat"
 }

@@ -9,9 +9,10 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, Notice } from "./ui.js";
 import { ActivityLine } from "./activity.js";
-import { RuleRow } from "./rules.js";
+import { RuleRow, RuleEditor } from "./rules.js";
+import { openScheduled, ruleFocus, RULES_CHANGED } from "../lib/scheduled.js";
 import { api } from "../lib/api.js";
-import { confirmSheet, failed, toast } from "../lib/store.js";
+import { confirmSheet, failed, toast, useStore } from "../lib/store.js";
 import { fmtClock, fmtDay, fmtDur, fmtSep, fmtSize } from "../lib/format.js";
 import { channelName } from "../lib/access.js";
 import { t, has, getLang } from "../lib/i18n.js";
@@ -234,6 +235,9 @@ const freshRule = (r, now = Date.now()) => r.state.key !== "done" || now - (r.la
  * 右侧面板的「任务」标签里：head=false 不画组名（标签就是组名），empty 是读完了什么都没有时的一行字
  */
 export function TaskGroup({ botId, onOpenConv, tasks: givenTasks, rules: givenRules, ended: givenEnded, details, head = true, empty = "" }) {
+  const [creating, setCreating] = useState(false);
+  const focus = useStore(ruleFocus);
+  const focused = useRef(0);
   const sample = !!givenTasks;
   const [tasks, setTasks] = useState(givenTasks || null);
   const [rules, setRules] = useState(givenRules || null);
@@ -250,25 +254,33 @@ export function TaskGroup({ botId, onOpenConv, tasks: givenTasks, rules: givenRu
     reload();
     const fast = setInterval(() => document.visibilityState === "visible" && (loadTasks(), loadRules()), 4000);
     const slow = setInterval(() => document.visibilityState === "visible" && loadEnded(), 15000);
-    return () => (clearInterval(fast), clearInterval(slow));
+    window.addEventListener(RULES_CHANGED, reload);
+    return () => { clearInterval(fast); clearInterval(slow); window.removeEventListener(RULES_CHANGED, reload); };
   }, [botId]);
+  useEffect(() => {
+    if (!focus || focus.botId !== botId || focused.current === focus.at || !rules?.some((r) => r.id === focus.id)) return;
+    focused.current = focus.at; setOpenId(focus.id);
+    const timer = setTimeout(() => { const el = document.querySelector(`[data-rule-id="${CSS.escape(focus.id)}"]`); el?.scrollIntoView({ block: "nearest" }); el?.classList.add("rule-locate"); setTimeout(() => el?.classList.remove("rule-locate"), 1800); }, 80);
+    return () => clearTimeout(timer);
+  }, [focus, rules?.length, botId]);
   const list = (tasks || []).slice(0, 12);
-  const rs = (rules || []).filter((r) => freshRule(r));
+  const rs = rules || [];
   const done = ended || [];
-  if (!list.length && !rs.length && !done.length)
-    return empty && tasks && rules && ended ? html`<div class="list"><div class="row"><span class="hint">${empty}</span></div></div>` : null;
   const toggle = (id) => setOpenId(openId === id ? "" : id);
   const row = (x) => html`<${TaskRow} key=${x.id} task=${x} open=${openId === x.id} onToggle=${() => toggle(x.id)} onChanged=${reload} data=${details?.[x.id]}
     onOpenConv=${onOpenConv && (() => onOpenConv(x))} />`;
   return html`${head && html`<div class="list-head">${t("info.tasks")}</div>`}
+    <div class="actions"><span class="grow"></span><button type="button" class="text" onClick=${openScheduled}>${t("scheduled.viewAll")}</button></div>
     <div class="list task-group">
       ${list.map(row)}
+      <div class="rules-section-head"><b>${t("scheduled.rule")} ${rs.length}</b><button type="button" class="text" onClick=${() => setCreating(true)}>${t("scheduled.newRule")}</button></div>
+      ${!rs.length && html`<p class="hint">${t("scheduled.example")}</p>`}
       ${rs.map((r) => html`<${RuleRow} key=${r.id} rule=${r} open=${openId === r.id} onToggle=${() => toggle(r.id)} onChanged=${reload} />`)}
       ${done.length > 0 && html`<button type="button" class=${`row compact clickable task-ended${showEnded ? " open" : ""}`} aria-expanded=${showEnded} onClick=${() => setShowEnded(!showEnded)}>
         <span class="who"><span class="name">${t("tasks.ended", { count: done.length })}</span></span><${Icon} name="chevRight" size=${12} class="chev" />
       </button>`}
       ${showEnded && done.map(row)}
-    </div>`;
+    </div>${creating && html`<${RuleEditor} botId=${botId} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); reload(); }} />`}`;
 }
 
 /** 后台工作暂停时，信息面板顶部的一行（没暂停时不画）：任务、规则和主动消息都停着，点「恢复」接着来 */

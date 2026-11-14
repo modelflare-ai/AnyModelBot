@@ -1,11 +1,12 @@
-// 影视创作室的桌面工作区：左边是项目，右边是选中的项目——工具栏（标题、分集、制作设置、停止）+ 五页：
-// 分镜（时间轴 + 选中镜头的预览和操作）、剧本、资产、画布、成片（导出、任务和修改历史）。
+// 影视创作室：面板中用项目选择器，展开后显示项目列表；主要页面是分镜、剧本、资产、成片。
+// 分镜以当前画面为中心，下方切换镜头；描述、版本按需展开。画布与制作设置从工具栏进入。
 // 分镜页只放一个"下一步"主按钮（按进度算：生成分镜 → 补图 → 补视频 → 配音 → 合成），其余操作收进"更多"。
 // 数据都来自 app/state.json 和它指向的项目、分集文件，改数据都交给 Bot（send）。
-import { html, mount, useBot, useEffect, useRef, useState, Button, Field, Notice, Empty } from "/amb/botapp/kit/kit.js";
+import { Workspace, html, mount, useBot, useEffect, useRef, useState, Button, Field, Notice, Empty } from "/amb/botapp/kit/kit.js";
 import { STYLES } from "./styles.js";
+import { CANVAS, dragPosition, fitCanvas, limitZoom } from "./canvas-layout.js";
 
-const TABS = ["storyboard", "script", "assets", "canvas", "exports"];
+const TABS = ["storyboard", "script", "assets", "exports"];
 const types = ["character", "scene", "prop", "material", "voice", "image", "video", "audio"];
 const activeMedia = (o, k) => (o.media?.[k] || []).find((m) => m.id === o.selectedMedia?.[k]) || o.media?.[k]?.at(-1);
 const newId = () => `node-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -81,7 +82,9 @@ function Menu({ label, items, disabled }) {
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, []);
-  return html`<details class="pf-menu" ref=${ref}>
+  return html`<details class="pf-menu" ref=${ref} onKeyDown=${(e) => {
+    if (e.key === "Escape" && ref.current.open) { e.preventDefault(); e.stopPropagation(); ref.current.open = false; ref.current.querySelector("summary")?.focus(); }
+  }}>
     <summary class=${`btn${disabled ? " is-disabled" : ""}`}>${label}</summary>
     <div class="pf-menu-list" role="menu">
       ${items.filter(Boolean).map((it) => html`<button type="button" role="menuitem" disabled=${it.disabled} onClick=${() => { ref.current.open = false; it.run(); }}>${it.label}</button>`)}
@@ -215,7 +218,7 @@ function ShotEditor({ bot, shot: s, project: p, send, done }) {
 }
 
 /** 选中的镜头：左边预览（有视频看视频，没有看画面），右边文字和这一镜的操作 */
-function ShotDetail({ bot, shot: s, project: p, episode: ep, index, send }) {
+function ShotDetail({ bot, shot: s, project: p, episode: ep, index, send, navigation }) {
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [s.id]);
   const video = activeMedia(s, "video");
@@ -226,17 +229,30 @@ function ShotDetail({ bot, shot: s, project: p, episode: ep, index, send }) {
     send("apply", { order: ids });
   };
   const refs = p.assets.filter((a) => s.assetIds?.includes(a.id)).map((a) => a.name);
+  const jobs = (p.jobs || []).filter((j) => j.target === s.id && j.episodeId === ep.id && ["running", "interrupted", "failed"].includes(j.status));
   return html`<section class="pf-detail" aria-label=${s.title}>
     <div class="pf-detail-media">
       ${video ? html`<${Preview} bot=${bot} kind="video" file=${video.path} />` : activeMedia(s, "image") ? html`<${Preview} bot=${bot} file=${activeMedia(s, "image").path} />` : html`<div class="pf-preview pf-blank">${bot.t("noImage")}</div>`}
       ${audio && html`<${Preview} bot=${bot} kind="audio" file=${audio.path} />`}
+      <header class="pf-detail-head"><h2 class="t-title">${index + 1}. ${s.title || bot.t("shot")}</h2><span class="t-meta">${s.duration}s${s.locked ? ` · ${bot.t("locked")}` : ""}</span></header>
+      ${navigation}
     </div>
     <div class="pf-detail-text">
-      <header class="pf-detail-head"><h2 class="t-title">${index + 1}. ${s.title || bot.t("shot")}</h2><span class="t-meta">${s.duration}s${s.locked ? ` · ${bot.t("locked")}` : ""}</span></header>
-      ${s.narration && html`<p class="pf-quote">${s.narration}</p>`}
-      ${s.visualPrompt && html`<p class="pf-meta">${s.visualPrompt}</p>`}
-      ${refs.length > 0 && html`<p class="pf-meta">${bot.t("references")}：${refs.join("、")}</p>`}
+      <details class="pf-fold"><summary>${bot.t("shotDetails")}</summary><div class="pf-form">
+        ${s.narration && html`<p class="pf-quote">${s.narration}</p>`}
+        ${s.visualPrompt && html`<p class="pf-meta">${s.visualPrompt}</p>`}
+        ${refs.length > 0 && html`<p class="pf-meta">${bot.t("references")}：${refs.join("、")}</p>`}
+        <${Button} class="ghost" disabled=${bot.busy || s.locked} onClick=${() => setEditing(!editing)}>${bot.t(editing ? "close" : "edit")}<//>
+      </div></details>
+      ${LANES.some(([k]) => (s.media?.[k]?.length || 0) > 1) && html`<details class="pf-fold"><summary>${bot.t("takes")}</summary><div class="pf-form">
+        ${LANES.map(([k]) => html`<${TakePicker} key=${k} bot=${bot} obj=${s} kind=${k} send=${send} />`)}
+      </div></details>`}
       <ul class="pf-status">${LANES.map(([k, label]) => html`<li key=${k} class=${activeMedia(s, k) ? "has" : ""}><span class=${`badge ${activeMedia(s, k) ? "ok" : "off"}`}>${bot.t(label)}</span></li>`)}</ul>
+      ${jobs.length > 0 && html`<div class="pf-list" aria-label=${bot.t("jobs")}>${jobs.map((j) => html`<article key=${j.id}>
+        <span class=${`badge ${j.status === "failed" ? "err" : "warn"}`}>${bot.t(`media.${j.kind}`)} · ${bot.t(`status.${j.status}`)}</span>
+        ${j.error && html`<p class="pf-error">${j.error}</p>`}
+        ${j.status === "interrupted" && html`<${Button} class="sm" disabled=${bot.busy} onClick=${() => send("resume", { jobId: j.id }, false)}>${bot.t("resume")}<//>`}
+      </article>`)}</div>`}
       <div class="pf-actions">
         <${Button} disabled=${bot.busy || s.locked} onClick=${() => send("image", { target: s.id, regenerate: true })}>${bot.t(activeMedia(s, "image") ? "regen.image" : "generate.image")}<//>
         ${p.settings?.mode !== "image_text" && html`<${Button} disabled=${bot.busy || s.locked} onClick=${() => send("video", { target: s.id, regenerate: true })}>${bot.t(video ? "regen.video" : "generate.video")}<//>`}
@@ -264,21 +280,23 @@ function Storyboard({ bot, project: p, episode: ep, send }) {
   const next = nextStep(p, ep);
   const total = shots.reduce((n, s) => n + (Number(s.duration) || 0), 0);
   const all = ["storyboard", "images", "videos", "voices", "resume", "compose"].filter((a) => a !== next);
+  const navigation = shots.length > 0 && html`<div class="pf-shot-navigation">
+    <div class="pf-row"><span class="t-meta">${bot.t("shotsTotal", { count: shots.length, time: fmtTime(total) })}</span><span class="grow"></span>
+      <div class="kit-tabs" role="tablist" aria-label=${bot.t("view.label")}>${[["timeline", "view.timeline"], ["sheet", "view.sheet"]].map(([id, key]) => html`<button type="button" key=${id} role="tab" aria-selected=${mode === id} onClick=${() => setMode(id)}>${bot.t(key)}</button>`)}</div>
+    </div>
+    ${mode === "sheet" ? html`<${Sheet} bot=${bot} shots=${shots} selected=${shot?.id} onPick=${setSelected} />` : html`<${Timeline} bot=${bot} shots=${shots} selected=${shot?.id} onPick=${setSelected} />`}
+  </div>`;
   return html`<div class="pf-stack">
-    <div class="pf-row">
+    ${shots.length
+      ? html`<${ShotDetail} key=${shot.id} bot=${bot} shot=${shot} index=${index} project=${p} episode=${ep} send=${send} navigation=${navigation} />`
+      : html`<${Empty}>${bot.t(ep ? "noShots" : "noEpisode")}<//>`}
+    <div class="pf-row pf-next">
       ${next && html`<${Button} primary disabled=${bot.busy} onClick=${() => send(next)}>${bot.t(next)}<//>`}
       <${Menu} label=${bot.t("more")} disabled=${!ep} items=${[
         ...all.map((a) => ({ label: bot.t(a), disabled: bot.busy || !ep, run: () => send(a) })),
         { label: bot.t("addShot"), disabled: bot.busy || !ep, run: () => send("apply", { shots: [{ title: bot.t("shot"), duration: 8 }] }) },
       ]} />
-      <span class="grow"></span>
-      ${shots.length > 0 && html`<span class="t-meta">${bot.t("shotsTotal", { count: shots.length, time: fmtTime(total) })}</span>
-        <div class="kit-tabs" role="tablist" aria-label=${bot.t("view.label")}>${[["timeline", "view.timeline"], ["sheet", "view.sheet"]].map(([id, key]) => html`<button type="button" key=${id} role="tab" aria-selected=${mode === id} onClick=${() => setMode(id)}>${bot.t(key)}</button>`)}</div>`}
     </div>
-    ${shots.length
-      ? html`${mode === "sheet" ? html`<${Sheet} bot=${bot} shots=${shots} selected=${shot?.id} onPick=${setSelected} />` : html`<${Timeline} bot=${bot} shots=${shots} selected=${shot?.id} onPick=${setSelected} />`}
-        <${ShotDetail} key=${shot.id} bot=${bot} shot=${shot} index=${index} project=${p} episode=${ep} send=${send} />`
-      : html`<${Empty}>${bot.t(ep ? "noShots" : "noEpisode")}<//>`}
   </div>`;
 }
 
@@ -342,6 +360,16 @@ function Canvas({ bot, project: p, episode: ep, send }) {
   const [selected, setSelected] = useState("");
   const [linkFrom, setLinkFrom] = useState("");
   const drag = useRef(null);
+  const viewport = useRef(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState(null);
+  useEffect(() => {
+    const el = viewport.current;
+    const observer = new ResizeObserver(() => setSize({ width: el.clientWidth, height: el.clientHeight }));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const scale = zoom ?? fitCanvas(size.width, size.height);
   const add = (label, ref) => set((c) => ({ ...c, nodes: [...c.nodes, { id: newId(), label, x: 30 + (c.nodes.length % 5) * 220, y: 40 + Math.floor(c.nodes.length / 5) * 150, ...ref }] }));
   const pointerDown = (e, n) => {
     setSelected(n.id);
@@ -349,15 +377,16 @@ function Canvas({ bot, project: p, episode: ep, send }) {
       set((c) => ({ ...c, edges: [...c.edges.filter((x) => !(x.from === linkFrom && x.to === n.id)), { from: linkFrom, to: n.id }] }));
       setLinkFrom(""); return;
     }
-    drag.current = { id: n.id, x: e.clientX, y: e.clientY, ox: n.x, oy: n.y };
+    drag.current = { id: n.id, x: e.clientX, y: e.clientY, ox: n.x, oy: n.y, scale };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const pointerMove = (e) => {
     const d = drag.current;
     if (!d) return;
-    set((c) => ({ ...c, nodes: c.nodes.map((n) => n.id === d.id ? { ...n, x: Math.max(0, Math.min(1200, d.ox + e.clientX - d.x)), y: Math.max(0, Math.min(800, d.oy + e.clientY - d.y)) } : n) }));
+    const position = dragPosition({ x: d.ox, y: d.oy }, e.clientX - d.x, e.clientY - d.y, d.scale);
+    set((c) => ({ ...c, nodes: c.nodes.map((n) => n.id === d.id ? { ...n, ...position } : n) }));
   };
-  return html`<div class="pf-stack"><div class="pf-row">
+  return html`<div class="pf-stack"><h2 class="t-label">${bot.t("tab.canvas")}</h2><div class="pf-row">
     <${Button} primary disabled=${bot.busy} onClick=${() => send("runCanvas", { canvas })}>${bot.t("runCanvas")}<//>
     <${Button} disabled=${bot.busy} onClick=${() => send("apply", { canvas })}>${bot.t("saveCanvas")}<//>
     <${Menu} label=${bot.t("addNode")} items=${[
@@ -367,19 +396,26 @@ function Canvas({ bot, project: p, episode: ep, send }) {
     <span class="grow"></span>
     <${Button} class="ghost" disabled=${!selected} onClick=${() => setLinkFrom(selected)}>${bot.t(linkFrom ? "pickTarget" : "connect")}<//>
     <${Button} class="ghost" disabled=${!selected} onClick=${() => { set((c) => ({ nodes: c.nodes.filter((n) => n.id !== selected), edges: c.edges.filter((e) => e.from !== selected && e.to !== selected) })); setSelected(""); }}>${bot.t("removeNode")}<//>
-  </div><p class="kit-foot">${bot.t("canvasHelp")}</p><div class="pf-canvas-scroll"><div class="pf-canvas">
+  </div><div class="pf-row pf-canvas-tools">
+    <button type="button" class="btn ghost sm" aria-label=${bot.t("canvas.zoomOut")} onClick=${() => setZoom(limitZoom(scale - 0.1))}>−</button>
+    <span class="t-meta num">${Math.round(scale * 100)}%</span>
+    <button type="button" class="btn ghost sm" aria-label=${bot.t("canvas.zoomIn")} onClick=${() => setZoom(limitZoom(scale + 0.1))}>+</button>
+    <${Button} class="sm ghost" onClick=${() => { setZoom(null); viewport.current.scrollTo(0, 0); }}>${bot.t("canvas.fit")}<//>
+    <span class="grow"></span><${Button} class="sm ghost" onClick=${() => bot.setExpanded(!bot.expanded)}>${bot.t(bot.expanded ? "canvas.restore" : "canvas.expand")}<//>
+  </div><p class="kit-foot">${bot.t("canvasHelp")}</p><div class="pf-canvas-scroll" ref=${viewport}>
+    <div class="pf-canvas-stage" style=${{ width: `${CANVAS.width * scale}px`, height: `${CANVAS.height * scale}px` }}><div class="pf-canvas" style=${{ transform: `scale(${scale})` }}>
     <svg aria-hidden="true">${canvas.edges.map((e) => { const a = canvas.nodes.find((n) => n.id === e.from), b = canvas.nodes.find((n) => n.id === e.to); return a && b && html`<line x1=${a.x + 180} y1=${a.y + 40} x2=${b.x} y2=${b.y + 40} />`; })}</svg>
     ${canvas.nodes.map((n) => html`<button type="button" class="pf-node" aria-pressed=${selected === n.id} style=${{ left: `${n.x}px`, top: `${n.y}px` }} onPointerDown=${(e) => pointerDown(e, n)} onPointerMove=${pointerMove} onPointerUp=${() => { drag.current = null; }} onPointerCancel=${() => { drag.current = null; }} onKeyDown=${(e) => {
       const d = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] }[e.key];
       if (d) { e.preventDefault(); set((c) => ({ ...c, nodes: c.nodes.map((a) => a.id === n.id ? { ...a, x: Math.max(0, a.x + d[0]), y: Math.max(0, a.y + d[1]) } : a) })); }
     }}>${n.label}<small>${n.assetId ? bot.t("asset") : bot.t("shot")}</small></button>`)}
-  </div></div></div>`;
+  </div></div></div></div>`;
 }
 
 function Settings({ bot, project: p, send }) {
   const [form, set] = useState(p.settings);
   const edit = (k, v) => set((d) => ({ ...d, [k]: v }));
-  return html`<section class="pf-form"><div class="pf-grid">
+  return html`<section class="pf-form"><h2 class="t-label">${bot.t("settings")}</h2><div class="pf-grid">
     <${Select} label=${bot.t("mode")} value=${form.mode} options=${["video", "image_text"].map((k) => [k, bot.t(`mode.${k}`)])} onChange=${(v) => { edit("mode", v); if (v === "image_text" && form.audioMode === "native") edit("audioMode", "tts"); }} />
     <${Select} label=${bot.t("ratio")} value=${form.ratio} options=${["9:16", "16:9", "1:1", "4:3", "3:4", "21:9"].map((v) => [v, v])} onChange=${(v) => edit("ratio", v)} />
     <${Select} label=${bot.t("resolution")} value=${form.resolution} options=${["480p", "720p", "768p", "1080p"].map((v) => [v, v])} onChange=${(v) => edit("resolution", v)} />
@@ -414,15 +450,15 @@ function Exports({ bot, project: p, send }) {
         ${e.timelinePath && html`<${Button} class="sm ghost" onClick=${() => bot.openFile(e.timelinePath)}>${bot.t("downloadTimeline")}<//>`}</div>
     </article>`)}</div>
     ${!p.exports.length && html`<${Empty}>${bot.t("noExports")}<//>`}
-    <div class="pf-columns even">
-      <section class="pf-form"><h2 class="t-label">${bot.t("jobs")}</h2><div class="pf-list">
+    <div class="pf-stack">
+      <details class="pf-fold"><summary>${bot.t("jobs")} · ${p.jobs.length}</summary><div class="pf-list">
         ${p.jobs.slice().reverse().map((j) => html`<article key=${j.id}><span><strong>${bot.t(`media.${j.kind}`)}</strong> <span class=${`badge ${j.status === "done" ? "ok" : j.status === "failed" ? "err" : j.status === "running" ? "warn" : "off"}`}>${bot.t(`status.${j.status}`)}</span></span>
           <span class="pf-meta">${[j.model, j.updatedAt, j.estimateUsd != null ? `${bot.t("estimate")} $${j.estimateUsd}` : ""].filter(Boolean).join(" · ")}</span>${j.error && html`<span class="pf-error">${j.error}</span>`}
           ${["running", "interrupted"].includes(j.status) && html`<${Button} class="sm" disabled=${bot.busy} onClick=${() => send("resume", { jobId: j.id }, false)}>${bot.t("resume")}<//>`}</article>`)}
-        ${!p.jobs.length && html`<p class="pf-meta">${bot.t("empty")}</p>`}</div></section>
-      <section class="pf-form"><h2 class="t-label">${bot.t("history")}</h2><div class="pf-list">
+        ${!p.jobs.length && html`<p class="pf-meta">${bot.t("empty")}</p>`}</div></details>
+      <details class="pf-fold"><summary>${bot.t("history")} · ${p.history.length}</summary><div class="pf-list">
         ${p.history.slice().reverse().map((h) => html`<article key=${h.id}><span>${h.label}</span><span class="pf-meta">${h.at}</span><${Button} class="sm ghost" disabled=${bot.busy} onClick=${() => send("restore", { id: h.id }, false)}>${bot.t("restore")}<//></article>`)}
-        ${!p.history.length && html`<p class="pf-meta">${bot.t("empty")}</p>`}</div></section>
+        ${!p.history.length && html`<p class="pf-meta">${bot.t("empty")}</p>`}</div></details>
     </div>
   </div>`;
 }
@@ -454,7 +490,7 @@ function App() {
   const hasArchived = projects.some((x) => x.archived);
   const showNew = creating || !descriptor;
   const meta = p ? [bot.t(`kind.${p.kind}`), p.settings?.ratio, bot.t(`style.${p.settings?.style}`), bot.sample ? bot.t("sampleShort") : ""].filter((x) => x && !String(x).startsWith("style.")).join(" · ") : "";
-  return html`<div class="kit-ws">
+  return html`<${Workspace} label=${bot.t("project")} current=${showNew ? bot.t("newProject") : p?.title || descriptor.title}>
     <nav class="kit-ws-list" aria-label=${bot.t("project")}>
       <div class="kit-list-head"><h2 class="t-label">${bot.t("project")}</h2><${Button} class="sm" onClick=${() => setCreating(true)}>${bot.t("new")}<//></div>
       ${shown.map((x) => html`<button type="button" key=${x.id} class=${`kit-item${!showNew && x.id === descriptor?.id ? " on" : ""}`} aria-current=${!showNew && x.id === descriptor?.id ? "true" : undefined} onClick=${() => { setSelected(x.id); setEpisode(""); setCreating(false); }}>
@@ -477,13 +513,16 @@ function App() {
                 <option value="+">${bot.t("newEpisode")}</option>
               </select></label>`}
               ${bot.busy && html`<${Button} onClick=${() => bot.stop().catch((e) => setError(e.message))}>${bot.t("stop")}<//>`}
-              <${Button} class=${tab === "settings" ? "" : "ghost"} aria-pressed=${tab === "settings"} disabled=${!p} onClick=${() => setTab(tab === "settings" ? "storyboard" : "settings")}>${bot.t("settings")}<//>
+              <${Menu} label=${bot.t("more")} disabled=${!p} items=${[
+                { label: bot.t("tab.canvas"), run: () => setTab("canvas") },
+                { label: bot.t("settings"), run: () => setTab("settings") },
+              ]} />
             </div>
           </header>
           <div class="kit-ws-body">
             ${(error || projectDoc.error || epDoc.error) && html`<${Notice}>${error || projectDoc.error || epDoc.error}<//>`}
             ${p
-              ? html`<div class="kit-tabs" role="tablist">${TABS.map((id) => html`<button type="button" key=${id} role="tab" aria-selected=${tab === id} onClick=${() => setTab(id)}>${bot.t(`tab.${id}`)}</button>`)}</div>
+              ? html`<div class="kit-tabs pf-tabs" role="tablist">${TABS.map((id) => html`<button type="button" key=${id} role="tab" aria-selected=${tab === id} onClick=${() => setTab(id)}>${bot.t(`tab.${id}`)}</button>`)}</div>
                 <section role="tabpanel" class="pf-panelwrap">
                   ${tab === "script" && html`<${Script} key=${`${p.id}:${p.revision}:${ep?.id}`} bot=${bot} project=${p} episode=${ep} send=${send} />`}
                   ${tab === "storyboard" && html`<${Storyboard} key=${`${p.id}:${ep?.id}`} bot=${bot} project=${p} episode=${ep} send=${send} />`}
@@ -495,6 +534,6 @@ function App() {
               : !projectDoc.error && html`<${Empty}>${bot.t("loading")}<//>`}
           </div>`}
     </main>
-  </div>`;
+  <//>`;
 }
 mount(App);

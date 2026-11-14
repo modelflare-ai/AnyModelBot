@@ -21,6 +21,7 @@ import type { AccessControl } from "./access.js";
 import { takeTaskNotes } from "./task-notes.js";
 import { t } from "../i18n/index.js";
 import { localProxyFailureHint } from "../network-error.js";
+import type { CuBlocked } from "../tools/computer-use/permissions.js";
 
 const log = logger("runtime");
 
@@ -508,6 +509,8 @@ export class BotRuntime {
     if (!agent) return { handled: false };
     // 审批、提问的回复；后台任务的只认引用、编号开头，或它是机器人最后一条消息时的选项编号（见 ApprovalCenter.handleReply）
     const { quote, plain } = quoteOf(ev);
+    const ruleAction = tasks?.ruleReplyAction(convId, quote ? plain : text, quote || "");
+    if (ruleAction?.handled) return { handled: true, ack: ruleAction.text };
     const r = agent.approvals.handleReply(convId, text, `${ev.channel}:${ev.sender.id}`, { ...tasks?.replyContext(convId), ...(quote ? { quote, plain } : {}) });
     if (r.handled) return r;
     // 引用了后台任务推来的结果或失败那句（微信），或发在任务请求那条消息的回复链里（飞书）：直接交给那个任务，不经聊天代理
@@ -564,8 +567,9 @@ export class BotRuntime {
   }
 
   /** 卡片按钮回调：批准/拒绝/选择选项。 */
-  cardAction(botId: string, value: Record<string, string>, by: string): { toast: string; ok: boolean } {
+  cardAction(botId: string, value: Record<string, string>, by: string): { toast: string; ok: boolean; card?: Record<string, unknown> } {
     const agent = this.opts.agent;
+    if (value?.amb === "rule" && by.startsWith("feishu:") && agent?.tasks) return agent.tasks.ruleCardAction(botId, value.id, value.op, by.slice(7));
     const row = agent && value?.id ? this.opts.store.getApproval(String(value.id)) : undefined;
     // 卡片从渠道账号发回来：看这条请求所在的会话是不是走这个账号
     const owner = row && (this.opts.store.getConversation(row.conversationId)?.account || row.botId);
@@ -714,8 +718,16 @@ export class BotRuntime {
       if (!inflight.userStored) store.addMessage(convId, "user", text);
       inflight.userStored = true;
       const reply = said.reply(r.text, t("runtime.doneNoText"));
-      store.addMessage(convId, "assistant", reply.text, [...steps.values()], { interim: reply.interim, files: r.files });
+      const ruleChanges = agent.tasks?.pendingRuleActions(convId) || [];
+      const replyChannel = store.getConversation(convId)?.channel;
+      if (ruleChanges.length && replyChannel !== "web" && replyChannel !== "feishu") reply.text += `\n\n${t("rules.undoHint")}`;
+      const replyId = store.addMessage(convId, "assistant", reply.text, [...steps.values()], { interim: reply.interim, files: r.files });
+      agent.tasks?.finishRuleActions(convId, replyId);
       await out.apply({ type: "stream.finish", text: reply.text });
+      if (replyChannel === "feishu") for (const change of ruleChanges) {
+        const card = agent.tasks?.ruleActionCard(change.id);
+        if (card) await out.apply({ type: "interactive", kind: "rule", title: card.title, prompt: card.text, buttons: card.buttons, requestId: change.id });
+      }
       for (const f of r.files ?? []) {
         try {
           await out.apply({ type: "file", path: f, name: path.basename(f) });
@@ -737,11 +749,19 @@ export class BotRuntime {
         log.warn("agent host unavailable, falling back to plain chat");
         return false;
       }
-      const msg = turnFailedText(err, [...steps.values()]);
+      const permission = err instanceof TurnStopped && err.reason === "permission";
+      const conv = store.getConversation(convId);
+      const msg = permission ? conv?.channel === "web" ? t("cu.waiting") : t("cu.channelWait", { items: (err as TurnStopped).missing.map((k) => t(k === "screen" ? "runtime.permScreen" : "runtime.permAccessibility")).join(t("runtime.listSep")) }) : turnFailedText(err, [...steps.values()]);
       if (!inflight.userStored) store.addMessage(convId, "user", text);
       inflight.userStored = true;
       // 出错、中止之前说过的话和交付过的文件留在历史里（文件不再发到其它渠道）
-      store.addMessage(convId, "assistant", msg, [...steps.values()], { interim: said.interim, files: said.presented });
+      const messageId = store.addMessage(convId, "assistant", msg, [...steps.values()], { interim: said.interim, files: said.presented, permissionWait: permission });
+      agent.tasks?.finishRuleActions(convId, messageId);
+      if (permission) {
+        const desktop = store.ensureConversation(botId, "web", "console", "控制台");
+        const cardId = desktop.id === convId ? messageId : store.addMessage(desktop.id, "assistant", t("cu.waiting"), undefined, { permissionWait: true });
+        agent.cuPermissions?.attach(botId, { conversationId: convId, sessionId: store.getAgentSession(convId), messageId: cardId, lastUserId: store.listMessages(convId, 30).filter((m) => m.role === "user").at(-1)?.id || 0, background: false, requestText: text });
+      }
       await out.apply({ type: "stream.finish", text: msg });
       this.answered(convId, inflight);
       return true;
@@ -776,6 +796,29 @@ export class BotRuntime {
    * 代理自己醒来的一轮（后台命令结束，DSH 唤醒了空闲的代理）：像普通回合一样登记（/status、/stop、看门狗、插话都认它），
    * 经渠道主动发到会话里（网页对话进 live 登记；飞书回复最近一条消息；微信占一条回复配额），回复与步骤存进历史。
    */
+  /** 权限恢复只在原代理会话里继续，不重新提交原始请求、不占用输入草稿。 */
+  async resumePermission(botId: string, pending: CuBlocked): Promise<void> {
+    const { store, agent } = this.opts;
+    const convId = pending.conversationId || "";
+    const conv = store.getConversation(convId);
+    const bot = store.getBot(botId);
+    if (this.closing || !agent?.available || !conv || !bot || this.busySince(convId) !== undefined || !pending.sessionId || store.getAgentSession(convId) !== pending.sessionId) throw new Error("The original conversation is no longer available to continue.");
+    let handle: Record<string, string> | undefined;
+    try { handle = JSON.parse(store.getKV(REPLY_TO + convId) || "null") || undefined; } catch { /* 可在历史里继续 */ }
+    const reply = (this.repliers.get(`${conv.account || botId}:${conv.channel}`) ?? this.repliers.get(`*:${conv.channel}`))?.(conv, handle, `permission:${botId}:${pending.at}`);
+    if (!reply && conv.channel !== "web") throw Object.assign(new Error("The channel is reconnecting."), { retryable: true });
+    const inflight: Inflight = { botId, since: Date.now(), abort: new AbortController(), userStored: true };
+    const done = this.enter(convId, inflight);
+    try {
+      const model = conv.model || bot.defaultModel || this.opts.defaultModel();
+      const routed = model && this.opts.route ? this.opts.route(botId, model) : model;
+      const result = await this.handleAgent(agent, botId, convId,
+        `[系统权限恢复] 所需的系统权限已开启。继续本会话中因 ${pending.tool} 缺少权限而被拦下的请求，从尚未完成的步骤接着做。先检查之前的步骤、已交付结果和当前应用状态，不要重复已完成的操作；不要重新执行整个原始请求。\n[待继续的请求]\n${pending.requestText || "见本会话中被权限拦下的那一轮"}`,
+        routed, { channel: conv.channel, kind: conv.kind }, reply?.out || { apply: async () => undefined }, [], inflight);
+      if (result !== true) throw new Error("The agent is not ready to continue.");
+    } finally { done.leave(); reply?.done?.(); }
+  }
+
   async wake(botId: string, convId: string): Promise<void> {
     const { store } = this.opts;
     const agent = this.opts.agent;

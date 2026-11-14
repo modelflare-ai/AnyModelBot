@@ -33,10 +33,10 @@ export default {
   tip: { kept: "{name} fica em Meus. Amanhã ele ainda vai estar aqui." },
   remove: {
     title: "Remover {name}?",
-    body: "Ele sai da barra lateral. Você ainda pode encontrá-lo em Descobrir.",
+    body: "Ele sai da barra lateral, e as conversas, tarefas e regras dele são excluídas. Você pode adicioná-lo de novo em Descobrir.",
     confirm: "Remover",
-    keep: "Manter os dados para continuar de onde parou",
-    done: "{name} removido. Você pode encontrá-lo de novo em Descobrir",
+    keep: "Manter os arquivos e o espaço de trabalho para continuar ao adicioná-lo de novo",
+    done: "{name} removido. Você pode adicioná-lo de novo em Descobrir",
   },
   errors: {
     catalog_not_found: "Este bot não foi encontrado.",

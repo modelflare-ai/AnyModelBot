@@ -1,20 +1,20 @@
-/* 档位滑块：几档离散的值（模型选择器里的性价比、模型智能）。和开关一个样子：圆头轨道、圆钮在轨道里，
-   填充 = 主操作色（浅色墨、深色近白），从左头一直填到圆钮。每一档一个小点，填充上的点用前景色。
-   比开关粗一号：圆钮四周留 4px，拉到头时圆钮和轨道的圆头是同心圆（圆钮半径 = 轨道半径 − 留白）。
+/* 档位滑块：几档离散的值（模型选择器里的性价比、模型智能）。24px 圆头轨道、20px 墨色圆钮，
+   填充 = 品牌黄绿的轻微渐变，从左头一直填到圆钮。每一档一个小点，填充上的点用品牌前景色。
+   圆钮四周留 2px，拉到头时圆钮和轨道的圆头是同心圆（圆钮半径 = 轨道半径 − 留白）。
    不在任何一档上（.custom）：没有圆钮和填充，只剩轨道和点。
    结构：<div role="slider" class="stops" style="--stops-at: 0…1"> .stops-fill  .stops-dot(--stops-i)×n  .stops-knob
    位置都用 transform 移（容器查询单位 cqw = 轨道宽），只给 transform / opacity 做动画。 */
 .stops {
-  --stops-h: var(--ctl-md);                           /* 比开关粗一号：面板里的主角 */
-  --stops-pad: var(--space-1);
+  --stops-h: var(--ctl-xs);
+  --stops-pad: var(--space-0-5);
   --stops-knob-d: calc(var(--stops-h) - 2 * var(--stops-pad));
-  --stops-dot-d: 5px;
+  --stops-dot-d: 4px;
   --stops-track: var(--switch-off);
   --stops-track-hover: var(--switch-off-hover);
-  --stops-fill-bg: var(--primary);
-  --stops-knob-bg: var(--switch-knob-on);
+  --stops-fill-bg: linear-gradient(90deg, color-mix(in srgb, var(--brand) 88%, var(--on-brand)), var(--brand));
+  --stops-knob-bg: var(--on-brand);
   --stops-dot-bg: color-mix(in srgb, var(--fg) 28%, transparent);
-  --stops-dot-on: color-mix(in srgb, var(--on-primary) 55%, transparent);
+  --stops-dot-on: color-mix(in srgb, var(--on-brand) 40%, transparent);
   --stops-run: calc(100cqw - var(--stops-h));        /* 圆钮能走的距离 */
   position: relative; container-type: inline-size; height: var(--stops-h); border-radius: var(--r-ctl); overflow: hidden;
   background: var(--stops-track); cursor: pointer; touch-action: none; user-select: none;

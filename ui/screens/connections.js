@@ -485,8 +485,8 @@ function AddChannelSheet({ conn, bots, channel, onClose }) {
     return () => clearInterval(timer);
   }, [linked, !!account]);
   useEffect(() => {
-    if (linked && account) markDone("weixin");
-  }, [linked, !!account]);
+    if (account?.status?.state === "connected") markDone("weixin");
+  }, [account?.status?.state]);
   const close = () => {
     if (account) conn.flashRow(`channel-${channel}-${key}`);
     onClose();

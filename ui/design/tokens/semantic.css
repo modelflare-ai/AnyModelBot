@@ -18,7 +18,7 @@
   /* —— 环境：窗口底色是一层纯色的中性灰，不放光晕、不随机器人变色 —— */
   --bg: #f5f5f6;              /* 窗口底色、引导页 */
 
-  /* —— 材质：层次靠底色和一道细线。半透明只留给盖在滚动内容上的东西（顶栏、输入框、浮层），也几乎不透 —— */
+  /* —— 材质：页面保持实色，半透明只给浮件；下拉菜单用更通透的毛玻璃 —— */
   --surface: #ffffff;                        /* 主区：对话、设置 */
   --surface-solid: #ffffff;                  /* 主区上需要实色的地方 */
   --glass-side: transparent;                 /* 侧栏：直接是窗口底色，和窗口是同一个平面 */
@@ -26,6 +26,13 @@
   --glass-float: rgba(255, 255, 255, .94);   /* 输入框、回到底部 */
   --glass-panel: #ffffff;                    /* 信息面板：和主区同一层 */
   --glass-pop: rgba(255, 255, 255, .97);     /* 菜单、命令面板、提示 */
+  --glass-menu: rgba(255, 255, 255, .76);   /* 下拉浮层：模糊后的底色透出一点，不降低文字透明度 */
+  --glass-menu-sheen: rgba(255, 255, 255, .3);
+  --glass-menu-edge: rgba(255, 255, 255, .72);
+  --settings-canvas: linear-gradient(135deg, #e7ebef, var(--bg) 55%, #edf0f3);
+  --glass-settings: rgba(255, 255, 255, .68);
+  --glass-settings-sheen: rgba(255, 255, 255, .3);
+  --glass-settings-edge: rgba(255, 255, 255, .64);
   --glass-sheet: #ffffff;                    /* 对话框 */
   --glass-edge: rgba(0, 0, 0, .08);          /* 细线：面板和浮层的边 */
 
@@ -70,7 +77,7 @@
   --ctl-fg: #5e5e5e;          /* 静默控件上的图标与文字 */
   --placeholder: #949494;
 
-  /* —— 品牌：操作一律是中性的墨色 / 近白，黄绿只留给应用标志和几个很小的信号，不做底色（用法见 README「品牌色」） —— */
+  /* —— 品牌：常规操作用中性的墨色 / 近白；模型档位滑块用品牌渐变（用法见 README「品牌色」） —— */
   --primary: #1a1a1a;        /* 主按钮、打开的开关：浅色下是墨色 */
   --primary-hover: color-mix(in srgb, #1a1a1a 92%, var(--white));
   --primary-press: color-mix(in srgb, #1a1a1a 86%, var(--white));
@@ -79,8 +86,9 @@
   --send-fg: var(--lime-500);
   --accent: #1a1a1a;         /* 焦点描边、勾选、链接 */
   --signal: var(--blue-500); /* "有新东西 / 等你处理"的蓝点：侧栏待处理、上新、未读、回到底部。侧栏不用数字标签，只用这个点 */
-  --brand: var(--lime-500);  /* 品牌填充：只给应用标志 */
+  --brand: var(--lime-500);  /* 品牌填充：应用标志、模型档位滑块 */
   --on-brand: var(--olive-950);
+  --app-logo-bg: var(--white); /* 第三方应用标志的固定浅色衬底，深色主题也保留官方原色 */
   --brand-line: color-mix(in srgb, var(--olive-500) 35%, transparent);
   --accent-soft: rgba(0, 0, 0, .1);   /* 焦点光晕：中性 */
   --mark: rgba(0, 0, 0, .12);         /* 选中文字、定位闪烁：中性 */
@@ -93,6 +101,11 @@
   --switch-knob-on: var(--white);
 
   /* —— 状态 —— */
+  /* 数据系列：与操作/成功失败状态分开；同一指标在图表和数字卡中用同一种色。 */
+  --chart-1: #2563eb;
+  --chart-2: #0f766e;
+  --chart-3: #7c3aed;
+  --chart-4: #b45309;
   --green: var(--green-600);
   --green-soft: var(--green-50);
   --red: var(--red-600);
@@ -113,6 +126,21 @@
   --avatar-aura: 30%;         /* 工作中头像背后的辉光（角色辉光色的混合比例） */
   --avatar-shadow: rgba(0, 0, 0, .16);  /* 大头像脚下的影子 */
 
+  /* —— 用户头像：沿用 Modelflare 的 12 色色板和前景；名称决定渐变的起止色 —— */
+  --user-avatar-fg: #04080a;
+  --user-avatar-tone-1: hsl(6 92% 66%);
+  --user-avatar-tone-2: hsl(24 96% 64%);
+  --user-avatar-tone-3: hsl(43 96% 61%);
+  --user-avatar-tone-4: hsl(78 82% 62%);
+  --user-avatar-tone-5: hsl(137 74% 61%);
+  --user-avatar-tone-6: hsl(166 76% 60%);
+  --user-avatar-tone-7: hsl(188 82% 60%);
+  --user-avatar-tone-8: hsl(208 94% 66%);
+  --user-avatar-tone-9: hsl(230 92% 69%);
+  --user-avatar-tone-10: hsl(257 86% 69%);
+  --user-avatar-tone-11: hsl(286 82% 67%);
+  --user-avatar-tone-12: hsl(330 90% 67%);
+
 }
 /* 由其他语义 token 推导的值：每个主题作用域都要重新计算，否则子树会继承外层主题算好的结果 */
 :root, [data-theme] {
@@ -122,6 +150,7 @@
   --shadow-pane: none;                                                           /* 面板：靠底色和窗口分开，不画边 */
   --shadow-float: 0 0 0 var(--hairline) var(--glass-edge), var(--drop-float);   /* 常驻的浮件 */
   --shadow-pop: 0 0 0 var(--hairline) var(--glass-edge), var(--drop-pop);       /* 临时弹出 */
+  --shadow-menu: inset 0 0 0 var(--hairline) var(--glass-menu-edge), var(--shadow-pop); /* 下拉玻璃的内沿高光和外部柔影 */
   --shadow-modal: 0 0 0 var(--hairline) var(--glass-edge), var(--drop-modal);   /* 模态 */
 }
 /* 间距角色：按用途命名，取值都来自 primitives.css 的 --space-*，与主题无关（见 README「间距」「内边距」）。
@@ -244,6 +273,13 @@
   --glass-float: rgba(35, 35, 35, .94);
   --glass-panel: #191919;
   --glass-pop: rgba(40, 40, 40, .98);
+  --glass-menu: rgba(32, 32, 32, .86);
+  --glass-menu-sheen: rgba(255, 255, 255, .045);
+  --glass-menu-edge: rgba(255, 255, 255, .12);
+  --settings-canvas: linear-gradient(135deg, #14181e, var(--bg) 55%, #181b20);
+  --glass-settings: rgba(25, 25, 25, .78);
+  --glass-settings-sheen: rgba(255, 255, 255, .035);
+  --glass-settings-edge: rgba(255, 255, 255, .08);
   --glass-sheet: #222222;
   --glass-edge: rgba(255, 255, 255, .09);
 
@@ -278,6 +314,10 @@
   --fill-field-hover: rgba(255, 255, 255, .085);
 
   --fg: #ececec;
+  --chart-1: #7eb0ff;
+  --chart-2: #5ed9cc;
+  --chart-3: #c4a2ff;
+  --chart-4: #f5c46b;
   --fg-2: #b4b4b4;
   --muted: #959595;
   --faint: #5a5a5a;
@@ -320,6 +360,7 @@
 
   --avatar-aura: 52%;
   --avatar-shadow: rgba(0, 0, 0, .5);
+  --user-avatar-fg: #fcfcfe;
 }
 
 /* 系统开了"降低透明度"时（data-glass="off"，prefers-reduced-transparency）：
@@ -339,6 +380,16 @@
   --glass-float: #232323;
   --glass-pop: #282828;
 }
+:root[data-glass="off"], :root[data-glass="off"] [data-theme] {
+  --glass-menu: var(--glass-pop);
+  --glass-menu-sheen: transparent;
+  --glass-menu-edge: var(--glass-edge);
+  --shadow-menu: var(--shadow-pop);
+  --settings-canvas: var(--bg);
+  --glass-settings: var(--glass-panel);
+  --glass-settings-sheen: transparent;
+  --glass-settings-edge: transparent;
+}
 
 /* Locale-specific system fallbacks also apply when a custom font lacks these glyphs. */
 :root:lang(ja) {
@@ -350,4 +401,11 @@
   --font-system: system-ui, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
   --font-serif: "Batang", "AppleMyungjo", "Noto Serif KR", serif;
   --code-system: ui-monospace, "SF Mono", Consolas, "Noto Sans KR", monospace;
+}
+
+:root {
+  --dur-hold: 600ms;
+  --onboard-col-w: 400px;
+  --onboard-avatar: 120px;
+  --thread-h: 64px;
 }

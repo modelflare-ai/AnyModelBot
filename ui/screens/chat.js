@@ -12,12 +12,13 @@ import { PwshHint } from "../components/pwsh-hint.js";
 import { ActivityLine, currentStep, upsertStep } from "../components/activity.js";
 import { TaskChip } from "../components/tasks.js";
 import { DeliveredFiles } from "../components/files.js";
-import { GuideChecklist, MediaDemo } from "../components/guide.js";
+import { Welcome, GuideCompletion, MediaDemo, OfficialGuideNotice } from "../components/guide.js";
 import { CuPermissionCard } from "../components/cu-permission.js";
+import { RuleCard, RuleSource, useRuleActions } from "../components/rules.js";
 import { api, attachChat, streamChat } from "../lib/api.js";
 import { confirmSheet, failed, useStore } from "../lib/store.js";
 import { appDisplayName, openRepair } from "../lib/apps.js";
-import { completed, composerBusy, currentStep as guideStep, demo, fill, guide, isActive, isMediaFile, markDone, refreshGuide, refreshGuideSoon } from "../lib/guide.js";
+import { completed, composerBusy, consumeWelcome, guideBlocked, currentStep as guideStep, demo, fill, guide, isActive,  markDone, refreshGuide, refreshGuideSoon } from "../lib/guide.js";
 import { fmtSep, fmtClock, fmtDur } from "../lib/format.js";
 import { t, useLang } from "../lib/i18n.js";
 import { notify, plainSnippet } from "../lib/notify.js";
@@ -38,8 +39,8 @@ const isAuthError = (s) => /HTTP 401\b|\b401\b.*(key|密钥|unauthor)/i.test(s);
 function toItems(messages) {
   return messages.map((m) =>
     m.role === "assistant" && isError(m.content)
-      ? { kind: "error", id: "m" + m.id, mid: m.id, text: errText(m.content), at: m.createdAt, steps: m.steps, interim: m.interim, files: m.files }
-      : { kind: "msg", id: "m" + m.id, mid: m.id, role: m.role === "user" ? "user" : "assistant", text: m.content, at: m.createdAt, steps: m.steps, interim: m.interim, files: m.files },
+      ? { kind: "error", id: "m" + m.id, mid: m.id, text: errText(m.content), at: m.createdAt, steps: m.steps, interim: m.interim, files: m.files, ruleSource: m.ruleSource, permissionWait: m.permissionWait }
+      : { kind: "msg", id: "m" + m.id, mid: m.id, role: m.role === "user" ? "user" : "assistant", text: m.content, at: m.createdAt, steps: m.steps, interim: m.interim, files: m.files, ruleSource: m.ruleSource, permissionWait: m.permissionWait },
   );
 }
 
@@ -250,6 +251,7 @@ export function ErrorNotice({ text, onRetry, onFixKey, onSwitchModel, source = "
   const main = auth
     ? source ? t("chat.error.officialKeyInvalid", { name: source }) : t("chat.error.authInvalid")
     : kind === "balance" ? (source ? t("firstUse.errors.balanceOfficial", { name: source }) : t("firstUse.errors.balance"))
+    : e.toolsUnsupported ? t("welcome.toolsUnsupported")
     : kind === "unfinished" && !e.raw ? text
     : t(`firstUse.errors.${kind}`);
   const hint = kind === "balance" ? (source ? t("firstUse.errors.balanceOfficialHint", { name: source }) : t("firstUse.errors.balanceHint")) : kind === "model" ? t("firstUse.errors.modelHint") : "";
@@ -282,6 +284,7 @@ export function ErrorNotice({ text, onRetry, onFixKey, onSwitchModel, source = "
  */
 export function ChatScreen({ bot, models, modelsError, reloadModels, defaultModel, infoOpen, onToggleInfo, onWorking, onOpenSettings, onOpenBotSettings, onBotUpdated, pending = 0, serverBusy = false, account, onAccount, initialFocus, onBackToSearch, visible = true, cuBlocked = false, ctl, starters }) {
   const viewId = `${bot.id}:web:console`;
+  const ruleActions = useRuleActions(viewId);
   const savedView = useRef(chatView(viewId));
   const restoreView = useRef(true);
   const [items, setItems] = useState(null);
@@ -320,13 +323,24 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   const justDone = useStore(completed);
   const fillReq = useStore(fill);
   const demoReq = useStore(demo);
+  const [samples, setSamples] = useState([]);
   const born = useRef(Date.now());
-  // 生图的预置演示：只在本地对话流里放一遍（你的那句话 + 演示的回复），不发给机器人，刷新后就没了
+  // 示例只属于当前视图；重复点击定位可见示例，不产生用户消息或模型请求。
   useEffect(() => {
     if (!demoReq || demoReq.at < born.current) return;
-    stick.current = true;
-    setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: demoReq.text, at: Date.now(), enter: true }, { kind: "media-demo", id: uid(), enter: true }]);
+    const box = scroller.current?.getBoundingClientRect();
+    const sample = [...(scroller.current?.querySelectorAll("[data-guide-sample]") || [])].find((el) => {
+      const r = el.getBoundingClientRect(); return box && r.bottom > box.top && r.top < box.bottom;
+    });
+    if (sample) {
+      sample.scrollIntoView({ block: "nearest", behavior: "auto" });
+      sample.classList.remove("guide-sample-flash"); void sample.offsetWidth; sample.classList.add("guide-sample-flash");
+    } else { stick.current = true; setSamples((l) => [...l, uid()]); }
   }, [demoReq && demoReq.at]);
+  useEffect(() => {
+    guideBlocked.set(!!cuBlocked || pending > 0 || items?.at(-1)?.kind === "error");
+    return () => guideBlocked.set(false);
+  }, [cuBlocked, pending, items?.at(-1)?.kind]);
   useEffect(() => {
     if (justDone && justDone.at > born.current) setCue({ kind: "done", at: justDone.at });
   }, [justDone && justDone.at]);
@@ -336,10 +350,15 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   }, [!!text.trim()]);
   useEffect(() => () => composerBusy.set(false), []);
   useEffect(() => {
-    if (!fillReq || fillReq.at < born.current) return;
-    // send：直接发出去（连接应用成功后的示例句「发给当前机器人」）；输入框里已经有草稿时不抢着发，只接在后面
-    if (fillReq.send && !text.trim()) return void send(fillReq.text);
-    setText((v) => v.trim() ? `${v}\n${fillReq.text}` : fillReq.text);
+    if (!fillReq || (fillReq.target ? fillReq.target !== bot.id && fillReq.target !== viewId : fillReq.at < born.current)) return;
+    fill.set(null);
+    if (fillReq.send) {
+      if (items === null) queued.current = fillReq.text;
+      else void send(fillReq.text);
+      return;
+    }
+    if (text.trim()) return;
+    setText(fillReq.text);
     composer.current?.closeSlash();
     requestAnimationFrame(() => {
       ta.current?.focus();
@@ -384,7 +403,13 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       following.current?.ac.abort();
     };
   }, [load]);
+  useEffect(() => { if (cuBlocked && !following.current) load(); }, [cuBlocked]);
   useEffect(() => onWorking(bot.id, generating), [generating]);
+  useEffect(() => {
+    const result = (e) => { if (e.detail.includes(bot.id)) load(); };
+    window.addEventListener("amb-rule-results", result);
+    return () => window.removeEventListener("amb-rule-results", result);
+  }, [bot.id, load]);
   // 服务端开始处理这个机器人的消息，而本页没在跟（代理自己醒来的一轮、别的窗口发的）：读一次，接上进行中的那条
   useEffect(() => {
     if (serverBusy && !following.current && mounted.current) load();
@@ -489,7 +514,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
           },
           // 交付的文件（回合中 present 时就来）：挂在这条回复下面，图片直接显示
           file: (d) => {
-            markDone(isMediaFile(d.name) ? "media" : "hands");
+            markDone("hands");
             patchLive(liveId, (it) => ({ ...it, files: addFile(it.files, d) }));
           },
           stopping: () => mounted.current && setStopping(true),
@@ -560,10 +585,12 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       requestAnimationFrame(() => autoGrow(ta.current));
     }
     if (!msg.startsWith("/")) lastUser.current = msg;
+    consumeWelcome();
     sentOnce.current = true;
     stick.current = true;
     const liveId = uid();
     const isReset = /^\/reset\b/i.test(msg);
+    if (/^\/(new|reset)\b/i.test(msg)) setSamples([]);
     setItems((l) => [...(l || []), { kind: "msg", id: uid(), role: "user", text: msg, at: Date.now(), enter: true, turn: liveId }, { kind: "msg", id: liveId, role: "assistant", text: "", at: Date.now(), live: true, startedAt: Date.now(), turn: liveId }]);
     const finalText = await follow(liveId, liveId, (h, signal) => streamChat(bot.id, msg, h, signal));
     if (finalText === null) return;
@@ -571,8 +598,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
     if (finalText) notify(bot.name, isError(finalText) ? t("notify.replyError", { text: plainSnippet(errText(finalText)) }) : plainSnippet(finalText) || t("notify.replyDone"), `amb-reply-${bot.id}`);
     // 上手清单：普通消息有了回复就算打过招呼；/model 切换成功算换过模型；其余能从数据里看出来的（记忆、渠道）问一次后端
     if (finalText && !isError(finalText)) {
-      if (!msg.startsWith("/")) markDone("hello");
-      else if (/^\/model\s+\S/i.test(msg)) markDone("model");
+      if (!msg.startsWith("/")) { markDone("hello"); if (bot.id !== "default") markDone("second"); }
       const gs = guide.get();
       if (isActive(gs) && guideStep(gs)) {
         refreshGuide();
@@ -669,25 +695,28 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       const cls = `msg-row ${role}${cont ? " cont" : ""}${it.enter ? " enter" : ""}${it.live ? " live" : ""}`;
       if (it.kind === "msg") {
         // 回复：工作状态行（处理过程折叠在里面）、模型说的话（回合中间说的在前）、交付的文件
-        const shown = it.role === "user" ? it.text : shownText(it);
+        const shown = it.permissionWait ? "" : it.role === "user" ? it.text : shownText(it);
         out.push(html`<div class=${`${cls}${it.id === lastAi ? " last" : ""}`} data-message-id=${it.mid} key=${it.id}>
           ${it.role === "user"
             ? userMessage(it)
             : html`${(it.live || it.workedMs || it.steps) && html`<${WorkLine} live=${it.live} stopping=${it.live && stopping} text=${it.text} startedAt=${it.startedAt} workedMs=${it.workedMs}
                 steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}
-              ${shown && html`<div class="msg"><${Markdown} text=${shown} /></div>`}
+              ${it.permissionWait && html`<${CuPermissionCard} botId=${bot.id} messageId=${it.mid} />`}
+              ${it.ruleSource && html`<${RuleSource} source=${it.ruleSource} botId=${bot.id} />`}
+              ${shown && html`<div class="msg"><${Markdown} text=${shown} conv=${convId.current || `${bot.id}:web:console`} canOpen=${canOpen} /></div>`}
               ${files(it)}
               ${chips(it)}
+              ${ruleActions.filter((a) => a.messageId === it.mid).map((a) => html`<${RuleCard} key=${a.id} action=${a} />`)}
               ${!it.live && html`<${MsgActions} text=${shown} at=${it.at} />`}`}
         </div>`);
       } else if (it.kind === "prompt") {
         out.push(html`<div class=${cls} key=${it.id}><${PromptCard} requestId=${it.requestId} fallback=${it.prompt} /></div>`);
       } else if (it.kind === "media-demo") {
-        out.push(html`<div class=${cls} key=${it.id}><${MediaDemo} onLoad=${onMedia} /></div>`);
+        out.push(html`<div class=${cls} key=${it.id} data-guide-sample><${MediaDemo} onLoad=${onMedia} account=${account} /></div>`);
       } else if (it.kind === "error") {
         out.push(html`<div class=${cls} data-message-id=${it.mid} key=${it.id}>
           ${(it.activity?.length || it.steps) && html`<${WorkLine} workedMs=${it.workedMs} steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it.mid) : undefined} />`}
-          ${it.interim?.length > 0 && html`<div class="msg"><${Markdown} text=${it.interim.join("\n\n")} /></div>`}
+          ${it.interim?.length > 0 && html`<div class="msg"><${Markdown} text=${it.interim.join("\n\n")} conv=${convId.current || `${bot.id}:web:console`} canOpen=${canOpen} /></div>`}
           ${files(it)}
           <${ErrorNotice} text=${it.text} topupUrl=${account?.topupUrl} onRetry=${it.retry ? () => send(it.retry) : undefined} source=${officialSource(effective)} ranSteps=${!!(it.activity?.length || it.steps || it.files?.length)}
             onSwitchModel=${() => composer.current?.openModel()} onFixKey=${() => onOpenSettings("modelflare", officialSource(effective) ? "official-add" : "account")} />
@@ -698,7 +727,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       prev = it;
     }
     return out;
-  }, [items, history.context, generating, stopping, chipsAfter, lang, canOpen]);
+  }, [items, history.context, generating, stopping, chipsAfter, lang, canOpen, ruleActions]);
 
   // 经 ctl 交来的话（专业 Bot 界面上的操作、还没有实例时发的第一句）：历史还没读到时先记着，读到后再发——
   // 否则先发出去的这一轮会被随后到的历史整个换掉（回复很快出错时连提示都没了）
@@ -713,7 +742,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
   }, [items !== null]);
 
   const empty = !history.context && items && items.length === 0;
-  const showGuide = isActive(g) && !g.seen.includes("intro") && !g.trim && !!guideStep(g);
+  const showGuide = isActive(g) && g.welcome && bot.id === g.primaryBotId;
   // 头像跟着对话走：等你批准 > 还没出字（思考）/ 出字了（回复）> 你在输入（在听）
   const replying = generating && (items || []).some((x) => x.live && x.text);
   const face = pending > 0 ? "waiting" : generating ? (replying ? "replying" : "thinking") : text.trim() ? "listening" : "idle";
@@ -730,6 +759,7 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
       <${IconButton} icon="compose" iconSize="md" label=${t("chat.newConvCmd")} disabled=${generating} onClick=${() => send("/new")} />
       <${IconButton} icon="panel" iconSize="md" label=${t("chat.infoPanel")} on=${infoOpen} aria-pressed=${infoOpen} onClick=${onToggleInfo} />
     </header>
+    ${bot.origin === "catalog" && html`<${OfficialGuideNotice} installed busy=${generating || !!pending || !!cuBlocked} />`}
     <div class="chat-tools" hidden=${!(findOpen || history.context || history.loading || history.error)}>
       <${ConversationFind} scope=${{ conversation: viewId }} onMatch=${history.show} scroller=${scroller} open=${findOpen} onOpen=${() => setFindOpen(true)} onClose=${() => { setFindOpen(false); history.clearHighlight(); }} />
       <${HistoryBar} history=${history} onLatest=${toBottom} />
@@ -742,29 +772,24 @@ export function ChatScreen({ bot, models, modelsError, reloadModels, defaultMode
         ${empty && html`<div class=${`chat-empty${showGuide ? " with-guide" : ""}`}>
           <${BotAvatar} bot=${bot} size=${88} state=${face} cue=${cue} lively pokeable greet />
           ${showGuide
-            ? html`<h2>${t("chat.empty.guideTitle", { name: bot.name })}</h2>
-              <p>${t("chat.empty.guideBody")}</p>
-              <${GuideChecklist} bot=${bot} onSend=${(x) => send(x)} />`
+            ? html`<${Welcome} bot=${bot} />`
             : html`<h2>${t("chat.empty.title", { name: bot.name })}</h2>
-              <p>${t("chat.empty.body")}</p>
+              <p>${t("welcome.normalBody")}</p>
               <div class=${`chips${starters?.length ? " starters" : ""}`}>
                 ${starters?.length
                   ? starters.map((x) => html`<button type="button" class="chip" key=${x} onClick=${() => send(x)}>${x}</button>`)
-                  : html`<button type="button" class="chip" onClick=${() => send(t("chat.empty.sample"))}>${t("chat.empty.sample")}</button>
-                    <button type="button" class="chip" onClick=${() => send("/help")}>${t("chat.empty.helpChip")}</button>`}
+                  : html`<button type="button" class="chip" onClick=${() => send(t("chat.empty.sample"))}>${t("chat.empty.sample")}</button>`}
               </div>`}
           <${PwshHint} />
         </div>`}
         ${rows}
+        <${GuideCompletion} bot=${bot} account=${account} />
+        ${samples.map((id) => html`<div class="msg-row assistant" key=${id} data-guide-sample><${MediaDemo} account=${account} onLoad=${onMedia} /></div>`)}
         <${HistoryPageButton} history=${history} direction="after" />
       </div>
     </div>
     ${toBottomBtn.mounted && html`<button type="button" class=${`to-bottom${toBottomBtn.leaving ? " leaving" : ""}`} aria-label=${t("chat.toBottom")} onClick=${toBottom}><${Icon} name="down" size="md" />${unseen && html`<span class="new"></span>`}</button>`}
     <div class="composer-dock">
-      ${cuBlocked && html`<${CuPermissionCard} botId=${bot.id} onRetry=${() => {
-        const last = lastUser.current || (items || []).findLast((x) => x.kind === "msg" && x.role === "user")?.text;
-        if (last) send(last);
-      }} />`}
       <${Composer} bot=${bot} text=${text} setText=${setText} taRef=${ta} ctl=${composer} guide steer
         placeholder=${t("chat.composer.placeholder", { name: bot.name })} label=${t("chat.composer.label")}
         generating=${generating} stopping=${stopping} sent=${sentOnce.current} onSend=${send} onStop=${stop}

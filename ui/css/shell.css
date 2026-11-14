@@ -70,8 +70,8 @@
   min-height: 0; display: flex; flex-direction: column;
   background: var(--glass-side);
 }
-/* 顶部三个按钮：收起侧栏 | 搜索 · 新建（sidebar.js 的 SideActions），和主区顶栏在同一条中线上：主区离窗口上沿 --pane-gap，这里也先让出 --pane-gap。
-   收起钮靠左，图标左沿落在侧栏竖线上（--side-inset + --side-row-px）；macOS 紧挨红绿灯。
+/* 顶部三个按钮：收起侧栏 | 搜索 | 新建（sidebar.js 的 SideActions），连续靠右排列，和主区顶栏在同一条中线上。
+   主区离窗口上沿 --pane-gap，这里也先让出 --pane-gap；macOS 为红绿灯保留左侧空间。
    右边让到新建按钮的图标（32 的按钮里 16 的图标，四周各 --ib-inset）落在行文字的右边线上，和机器人行的时间右对齐 */
 .side-top {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--bar-gap);
@@ -88,15 +88,15 @@
 }
 .side-back:hover { background: var(--side-hover); color: var(--fg); }
 .side-back:active { background: var(--side-press); }
-/* 三个按钮的分量：收起是窗口开关，图标最浅（--muted）；搜索是普通的静默按钮（--ctl-fg）；
-   新建是唯一的主操作，常驻一层底、图标用正文色，菜单打开或在新建页时底色深一级 */
+/* 收起是窗口开关；搜索和新建共用常驻底色及悬停、按下状态。 */
 :is(.side-top, .side-rail) .icon-btn { --ib-size: var(--ctl-md); --ib-fg: var(--ctl-fg); }
-.side-toggle { --ib-fg: var(--muted); margin-inline-start: calc(var(--side-row-px) - var(--ib-inset)); }
-.side-new { --ib-fg: var(--fg); background: var(--pill); }
-.side-new:hover:not(:disabled) { background: var(--pill-hover); }
-.side-new:is(:active, .on, [aria-expanded="true"]):not(:disabled) { background: var(--pill-press); }
-/* 侧栏收起后，同样三个按钮浮在窗口左上角（主区顶栏那一条上），收起钮停在原来的位置：点同一个地方就能展开 */
-.app { --rail-l: var(--side-inset); --rail-w: calc(var(--side-row-px) - var(--ib-inset) + 3 * var(--ctl-md) + 2 * var(--bar-gap)); }
+:is(.side-top, .side-rail) .side-toggle { --ib-fg: var(--muted); }
+.side-rail .side-toggle { margin-inline-start: calc(var(--side-row-px) - var(--ib-inset)); }
+:is(.side-top, .side-rail) :is(.side-search-btn, .side-new) { --ib-fg: var(--fg); background: var(--pill); }
+:is(.side-search-btn, .side-new):hover:not(:disabled) { background: var(--pill-hover); }
+:is(.side-search-btn, .side-new):is(:active, .on, [aria-expanded="true"]):not(:disabled) { background: var(--pill-press); }
+/* 侧栏收起后，同样三个按钮浮在窗口左上角，仍然连续排列。 */
+.app { --rail-l: var(--side-inset); --rail-w: calc(var(--side-row-px) - var(--ib-inset) + 4 * var(--ctl-md) + 3 * var(--bar-gap)); }
 :root.mac-app .app { --rail-l: var(--titlebar-inset); }
 .side-rail {
   position: absolute; z-index: calc(var(--z-float) + 1); top: var(--pane-gap); left: var(--rail-l);
@@ -140,7 +140,7 @@
 .thread {
   --focus-offset: -2px;
   min-width: 0;
-  display: flex; align-items: center; gap: var(--space-3); width: 100%; height: 64px; padding: 0 var(--side-row-px);
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; height: var(--thread-h); padding: 0 var(--side-row-px);
   border-radius: var(--r-row); text-align: left; position: relative;
   transition: background var(--t-fast);
 }
@@ -190,21 +190,24 @@ button.thread:active { background: var(--side-press); }
 
 /* 账户行的下沿和主区的下沿对齐（都离窗口下沿 --pane-gap） */
 .side-foot { flex: none; display: flex; align-items: center; gap: var(--space-1); padding: var(--side-inset); }
-/* 账户行：整行可点，但悬停、按下、菜单打开时只有头像变深（不给整行铺一块底色，底部保持干净）；
-   打开时和按下一样深，比悬停深一级（同一种灰，不描边） */
+/* 账户行：悬停和展开只轻调头像亮度，保持与 Modelflare 一致的彩色渐变。 */
 .account {
   --focus-offset: -2px;
   display: flex; align-items: center; gap: var(--space-2-5); min-width: 0; flex: 1; height: var(--ctl-2xl); padding: 0 var(--side-row-px);
   border-radius: var(--r-row); text-align: left;
 }
-.account .me {
-  width: var(--ctl-md); height: var(--ctl-md); border-radius: 50%; flex: none; display: grid; place-items: center;
-  background: var(--pill);
-  font-weight: var(--fw-semibold); font-size: var(--fs-sm); color: var(--fg-2);
-  transition: background var(--t-fast), color var(--t-fast);
+.user-avatar {
+  --user-avatar-size: var(--ctl-md);
+  width: var(--user-avatar-size); height: var(--user-avatar-size); border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--user-avatar-from) 62%, transparent), color-mix(in srgb, var(--user-avatar-to) 46%, transparent));
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--user-avatar-from) 34%, transparent); /* 描边：与 Modelflare 用户头像一致的同色细边 */
+  font-weight: var(--fw-medium); font-size: var(--fs-sm); color: var(--user-avatar-fg);
+  transition: filter var(--t-fast);
 }
-.account:hover .me { background: var(--pill-hover); color: var(--fg); }
-.account:active .me, .account.on .me { background: var(--pill-press); color: var(--fg); }
+.account:hover .me { filter: brightness(1.04); }
+.account:active .me, .account.on .me { filter: brightness(.96); }
+.account-chevron { color: var(--muted); transition: transform var(--t-fast); }
+.account.on .account-chevron { transform: rotate(180deg); }
 .account .who { flex: 1; min-width: 0; font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--fg); line-height: var(--lh-snug); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 账户浮层：余额只在这里显示，点头像才弹出（常驻显示会让人觉得一直在花钱） */
 .account-pop { display: grid; gap: var(--space-3); padding: var(--space-3); }
@@ -423,6 +426,13 @@ a.text { display: inline-flex; align-items: center; text-decoration: none; }
   :root { --side-w: 240px; }
 }
 
+/* 展开工作台：保留对话与 iframe 的挂载和状态，内容占满窗口；退出后恢复原先列宽。 */
+.app.panel-expanded { grid-template-columns: minmax(0, 1fr); transition: none; }
+.app.panel-expanded > :is(.side, .side-rail, .main, .splitter, .panel-scrim) { display: none; }
+.app.panel-expanded > .panel { grid-area: 1 / 1; position: relative; inset: auto; width: auto; margin: var(--pane-gap); animation: none; }
+.work-expand { flex: none; white-space: nowrap; }
+:root.mac-app .app.panel-expanded .panel-head { padding-left: calc(var(--space-16) + var(--space-6)); }
+
 /* 代理的 PowerShell（components/pwsh-hint.js）：一条 .notice（淡底 + 图标 + 字，不描边）——正在安装（转圈 + 进度）、装好了、
    没装上、起不来已换掉、建议安装；文字之下可以多一行等宽的安装命令（就是一行字，不再套底）和一排操作。对话空状态与设置 → 常规共用 */
 .notice.pwsh-hint { align-items: flex-start; padding: var(--space-3) var(--space-3) var(--space-3) var(--group-pad); text-align: left; }
@@ -455,38 +465,79 @@ a.text { display: inline-flex; align-items: center; text-decoration: none; }
 .quota-ring-track { stroke: var(--line-strong); }
 .quota-ring-arc { stroke: var(--fg-2); stroke-linecap: round; transition: stroke-dasharray var(--dur-slow) var(--ease-out); }
 .quota-ring-mark { fill: var(--faint); }
-/* 额度卡片（照参考截图）：顶上一行灰字说明，细线分组；左边名称、右边数；最下面是充值 */
+/* 账户菜单和额度概览共用的图标槽：保持文字起点一致，图标本身不参与换行。 */
+.menu-icon { flex: none; display: grid; place-items: center; width: var(--ctl-sm); height: var(--ctl-sm); border-radius: var(--r-mark); background: var(--pill); color: var(--fg-2); transition: background var(--t-fast), color var(--t-fast); }
+/* 额度卡片：说明、淡底概览和充值入口通过留白分组，金额保持中性色。 */
 .quota-card { display: grid; padding: var(--pop-pad); }
-.quota-card hr { border: 0; height: 1px; margin: var(--space-1) var(--space-2-5); background: var(--line); }
-.quota-head { margin: 0; padding: var(--space-2) var(--item-px) var(--space-1); color: var(--muted); font-size: var(--fs-sm); }
-.quota-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--item-px); color: var(--fg); font-size: var(--fs-md); }
-.quota-row .num { white-space: nowrap; }
-.quota-note { display: flex; align-items: center; gap: var(--space-1); padding: 0 var(--item-px) var(--space-1); color: var(--muted); font-size: var(--fs-xs); }
-.quota-action { display: grid; gap: var(--space-0-5); padding: var(--space-2) var(--item-px); border-radius: calc(var(--pop-r) - var(--pop-pad)); color: var(--fg); font-size: var(--fs-md); text-decoration: none; }
-.quota-action:hover { background: var(--pill-hover); text-decoration: none; }
-.quota-action .hint { font-size: var(--fs-xs); color: var(--muted); }
+.quota-card hr { border: 0; height: var(--space-1-5); margin: 0; }
+.quota-head { display: flex; align-items: flex-start; gap: var(--space-2); margin: 0; padding: var(--space-2) var(--item-px); color: var(--muted); font-size: var(--fs-xs); line-height: var(--lh-normal); }
+.quota-head .ic { margin-top: var(--space-0-5); }
+.quota-summary { padding: var(--space-1) 0; border-radius: calc(var(--pop-r) - var(--pop-pad)); background: var(--well); }
+.quota-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--item-px); color: var(--fg); font-size: var(--fs-md); }
+.quota-label { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--fg-2); }
+.quota-summary .menu-icon { background: none; }
+.quota-row .num { min-width: 0; text-align: right; overflow-wrap: anywhere; font-weight: var(--fw-medium); }
+.quota-amount { font-size: var(--fs-2xl); letter-spacing: var(--tracking-tight); }
+.quota-amount.pending { font-size: var(--fs-xs); color: var(--muted); letter-spacing: normal; }
+.quota-meter { height: var(--space-1); margin: 0 var(--item-px) var(--space-2); border-radius: var(--r-ctl); overflow: hidden; background: var(--line); }
+.quota-meter > span { display: block; width: var(--quota-left); height: 100%; border-radius: inherit; background: var(--fg-2); }
+.quota-note { display: flex; align-items: flex-start; gap: var(--space-1-5); padding: 0 var(--item-px) var(--space-2); color: var(--muted); font-size: var(--fs-xs); line-height: var(--lh-snug); }
+.quota-note .dot { margin-top: var(--space-1-5); }
+.quota-action { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2-5) var(--item-px); border-radius: calc(var(--pop-r) - var(--pop-pad)); color: var(--fg); font-size: var(--fs-md); text-decoration: none; transition: background var(--t-fast); }
+.quota-action:hover { background: var(--sel); text-decoration: none; }
+.quota-action:active { background: var(--sel-press); }
+.quota-action .menu-icon { background: var(--primary); color: var(--on-primary); }
+.quota-action-text { display: grid; gap: var(--space-0-5); min-width: 0; font-weight: var(--fw-medium); }
+.quota-action .hint { font-size: var(--fs-xs); font-weight: var(--fw-regular); line-height: var(--lh-snug); color: var(--muted); }
 .account-login { display: grid; gap: 0; min-width: 0; padding: var(--space-2) var(--side-row-px); text-align: left; border-radius: var(--r-row); background: var(--side-hover); color: var(--fg); }
 .account-login:hover { background: var(--side-active); }
 .account-login-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
 .account-login .hint { font-size: var(--fs-xs); color: var(--muted); }
-.account-menu { display: grid; padding: var(--pop-pad); }
-.account-menu > a, .account-menu > button { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: var(--space-2) var(--item-px); text-align: left; border-radius: calc(var(--pop-r) - var(--pop-pad)); color: var(--fg); font-size: var(--fs-sm); text-decoration: none; }
-/* 头像弹出的账户菜单（.primary，和账户区同宽，见 sidebar.js）：单行项 36 高，和下面的余额条一样高，比一般菜单项松一点，
-   和 44 的账户行放在一起不局促；文字缩进让到 --side-row-px，和下面余额条的文字、头像落在同一条竖线上 */
-.account-menu.primary > a, .account-menu.primary > button {
-  gap: var(--space-0-5) var(--space-2); min-height: var(--ctl-xl);
-  padding: var(--space-2) calc(var(--side-row-px) - var(--pop-pad)); font-size: var(--fs-md);
-}
-/* 窄侧栏或长译文时"检查更新"那行在自己的格子里折行，蓝点留在文字前面，不被挤到单独一行 */
-.account-menu.primary > button > [role="status"] { flex: 1 1 0; min-width: 0; }
-.account-menu .hint { width: 100%; font-size: var(--fs-xs); color: var(--muted); }
-/* "设置"右边的快捷键：同一行靠右（.hint 会占满一整行，那是给"意见和反馈"的说明用的） */
-.account-menu kbd { margin-inline-start: auto; font-family: inherit; font-size: var(--fs-xs); color: var(--muted); }
-.account-menu > a:hover, .account-menu > button:hover:not(:disabled) { background: var(--pill-hover); }
+.account-menu-head { flex: none; display: flex; align-items: center; gap: var(--space-2-5); margin: var(--pop-pad) var(--pop-pad) 0; padding: var(--space-3) var(--item-px); border-radius: calc(var(--pop-r) - var(--pop-pad)); background: var(--well); }
+.account-menu-avatar { --user-avatar-size: var(--ctl-lg); font-size: var(--fs-lg); }
+.account-menu-identity { display: grid; gap: var(--space-0-5); min-width: 0; }
+.account-menu-identity .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-medium); }
+.account-menu-identity .hint { margin: 0; font-size: var(--fs-xs); color: var(--muted); }
+.account-menu { display: grid; padding: var(--pop-pad); overflow-y: auto; min-height: 0; }
+.account-menu > a, .account-menu > button { display: flex; align-items: center; gap: var(--space-2-5); min-height: var(--ctl-xl); padding: var(--space-1-5) var(--item-px); text-align: left; border-radius: calc(var(--pop-r) - var(--pop-pad)); color: var(--fg); font-size: var(--fs-sm); line-height: var(--lh-snug); text-decoration: none; transition: background var(--t-fast), color var(--t-fast); }
+/* 长译文只在文字列折行，图标和尾部的快捷键 / 提醒点保持对齐。 */
+.account-menu .menu-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.account-menu .menu-trail { color: var(--muted); }
+.account-menu kbd { flex: none; margin-inline-start: auto; padding: var(--space-0-5) var(--space-1-5); border-radius: var(--r-mark); background: var(--pill); font-family: inherit; font-size: var(--fs-2xs); color: var(--muted); }
+.account-menu > :is(a, button):is(:hover, :focus-visible):not(:disabled) { background: var(--sel); }
+.account-menu > :is(a, button):active:not(:disabled) { background: var(--sel-press); }
+.account-menu > :is(a, button):is(:hover, :focus-visible):not(:disabled) .menu-icon { background: var(--pill-hover); color: var(--fg); }
 .account-menu > button:disabled { opacity: var(--o-disabled); }
 .account-menu hr { border: 0; height: var(--space-1-5); margin: 0; }   /* 分组之间留一段空，不画线（和菜单的 li.sep 一样） */
 .account-menu .danger { color: var(--red); }
+.account-menu .danger .menu-icon { background: var(--red-wash); color: var(--red); }
+.account-menu > .danger:is(:hover, :focus-visible):not(:disabled) { background: var(--red-soft); }
+.account-menu > .danger:is(:hover, :focus-visible):not(:disabled) .menu-icon { background: var(--red-wash); color: var(--red); }
 .account-pop { display: grid; gap: var(--ctl-gap); padding: var(--card-pad); }
 /* 切换 Key 后的提示（第 19 项）：主内容顶部一行，只有关闭按钮 */
 .key-change-note { flex: none; padding: var(--pane-gap) var(--pane-px) 0; }
+}
+
+@layer app {
+.account-row { gap: 0; border-radius: var(--r-row); background: transparent; transition: background var(--t-fast); }
+.account-row:hover { background: var(--side-hover); }
+.account-row:active, .account-row.on { background: var(--side-active); }
+.account-row:has(:focus-visible) { box-shadow: var(--ring); }
+.account-row .account:focus-visible { box-shadow: none; }
+.account:hover .me, .account:active .me, .account.on .me { filter: none; }
+.account-ring { margin-right: var(--side-row-px); }
+.account-ring:hover { background: var(--side-press); }
+.user-avatar { overflow: hidden; }
+.user-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.account-name-skeleton { display: block; width: 60%; height: 1em; border-radius: var(--r-mark); background: var(--well); }
+.account-login { display: flex; align-items: center; gap: var(--space-2-5); min-height: var(--ctl-2xl); width: 100%; background: transparent; }
+.account-login:hover { background: var(--side-hover); }
+.account-login:active { background: var(--side-active); }
+.account-login-icon { display: grid; place-items: center; width: var(--ctl-md); height: var(--ctl-md); border-radius: 50%; background: var(--pill); flex: none; }
+.account-login-copy { display: grid; flex: 1; min-width: 0; text-align: left; }
+.account-login-copy > .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+.account-login.waiting, .account-login.waiting:hover, .account-login.waiting:active { background: transparent; }
+.account-login .login-links { justify-content: flex-start; gap: var(--space-1); font-size: var(--fs-2xs); }
+.account-login .login-links > * + *::before { content: "·"; margin-right: var(--space-1); color: var(--muted); }
+.account-login .login-links .text:hover { text-decoration: underline; color: var(--fg); }
 }

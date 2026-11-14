@@ -1,3 +1,4 @@
+import { useStore } from "../lib/store.js";
 // 专业 Bot（目录 Bot）的页面：主区是常规的对话流，Bot 的专属界面（沙箱 iframe）在右侧面板的「工作台」标签里（screens/work-panel.js）。
 // - 有实例：主区就是对话页（ChatScreen）。界面上的操作（[ui-action]）也经它发出，和打字一样出现在对话里、跟着回复；
 //   回合的开始和结束转告界面（turn）。
@@ -8,12 +9,14 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { html, IconButton, Notice, Spinner, autoGrow } from "../components/ui.js";
 import { BotAvatar } from "../components/avatar.js";
 import { Composer, convModelOf, setConvModel } from "../components/composer.js";
+import { OfficialGuideNotice } from "../components/guide.js";
 import { ChatScreen } from "./chat.js";
 import { Portal } from "./work-panel.js";
+import { appFileResource, openResource, websiteResource } from "../lib/resource-preview.js";
 import { api, watchApp } from "../lib/api.js";
 import { attachBridge, currentEnv, pickFiles, safeExternalUrl, watchEnv } from "../lib/bot-bridge.js";
 import { markCatalogSeen, tr } from "../lib/catalog.js";
-import { guide, markSeen } from "../lib/guide.js";
+import { guide, markSeen, requestHint, composerBusy } from "../lib/guide.js";
 import { confirmSheet, failed, toast } from "../lib/store.js";
 import { t, useLang } from "../lib/i18n.js";
 
@@ -32,7 +35,7 @@ function BotIntro({ entry, lang, busy, onSend }) {
   const about = tr(entry.about, lang) || [];
   const starters = tr(entry.starters, lang) || [];
   return html`<div class="botapp-intro">
-    <div class="botapp-intro-col">
+    <div class="botapp-intro-col"><${OfficialGuideNotice} busy=${busy} />
       <div class="botapp-intro-msg">
         <${BotAvatar} char=${entry.avatar} size=${36} greet />
         <div class="botapp-intro-text">
@@ -54,15 +57,18 @@ function BotIntro({ entry, lang, busy, onSend }) {
  * frameHost：右侧面板「工作台」标签的宿主节点（面板关着时为空）；panelOpen / onTogglePanel：顶栏的面板开关；
  * onEntry(entry)：读到目录条目后告诉外壳（面板的概览里列出 Bot 的说明）
  */
-export function BotAppScreen({ catalogId, bot, frameHost, panelOpen, onTogglePanel, onEntry, onInstalled, onBotUpdated, onOpenBotSettings, onOpenSettings, chatProps }) {
+export function BotAppScreen({ catalogId, bot, frameHost, panelOpen, expanded, onExpand, onTogglePanel, onEntry, onInstalled, onBotUpdated, onOpenBotSettings, onOpenSettings, chatProps }) {
   const lang = useLang();
   const [entry, setEntry] = useState(null);
+  const onboarding = useStore(guide);
+  useEffect(() => { if (onboarding.loaded) requestHint("official-hint"); }, [onboarding.loaded]);
   const [base, setBase] = useState("");
   const [loadErr, setLoadErr] = useState("");
   const [uiFailed, setUiFailed] = useState(false);
   const [messages, setMessages] = useState(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!bot) composerBusy.set(!!draft.trim() || busy); return () => { if (!bot) composerBusy.set(false); }; }, [bot?.id, !!draft.trim(), busy]);
   const [installErr, setInstallErr] = useState(""); // 第一次发消息时没能建好实例
   const [used, setUsed] = useState(!!bot);
   const [desktop, setDesktop] = useState(false);
@@ -75,7 +81,7 @@ export function BotAppScreen({ catalogId, bot, frameHost, panelOpen, onTogglePan
   const urlConfirming = useRef(false);
   // 桥接的回调要读到最新的状态
   const live = useRef(/** @type {any} */ ({}));
-  live.current = { bot, entry, messages, used, desktop };
+  live.current = { bot, entry, messages, used, desktop, expanded, onExpand };
 
   useEffect(() => {
     let alive = true;
@@ -141,7 +147,7 @@ export function BotAppScreen({ catalogId, bot, frameHost, panelOpen, onTogglePan
 
   const envOf = () => {
     const { bot: b, entry: e, messages: m, desktop: d } = live.current;
-    return { ...currentEnv(), sample: !b, desktop: !!d, messages: m || {}, bot: { id: b?.id || null, name: b?.name || tr(e?.name, lang) || "", avatar: e?.avatar || "" } };
+    return { ...currentEnv(), expanded: !!live.current.expanded, sample: !b, desktop: !!d, messages: m || {}, bot: { id: b?.id || null, name: b?.name || tr(e?.name, lang) || "", avatar: e?.avatar || "" } };
   };
 
   /** 第一次发消息才创建实例 */
@@ -226,6 +232,12 @@ export function BotAppScreen({ catalogId, bot, frameHost, panelOpen, onTogglePan
     let mediaSeq = 0;
     const br = attachBridge(el, {
       init: () => envOf(),
+      setExpanded: ({ expanded }) => {
+        if (typeof expanded !== "boolean") throw new Error("invalid_expanded");
+        if (expanded && navigator.userActivation && !navigator.userActivation.isActive) throw new Error("needs_user_gesture");
+        live.current.onExpand?.(expanded);
+        return true;
+      },
       readFile: ({ path }) => fileApi(path),
       readImage: ({ path }) => {
         const b = live.current.bot;
@@ -260,6 +272,7 @@ export function BotAppScreen({ catalogId, bot, frameHost, panelOpen, onTogglePan
         const b = live.current.bot;
         if (!b) throw new Error("no_instance");
         if (navigator.userActivation && !navigator.userActivation.isActive) throw new Error("needs_user_gesture");
+        if (!reveal && openResource(appFileResource(path, b.id, live.current.desktop))) return { ok: true };
         const id = encodeURIComponent(b.id);
         if (live.current.desktop) return api(`/bots/${id}/app/open`, { method: "POST", body: { path, reveal: !!reveal } });
         window.open(`/amb/api/bots/${id}/app/download?path=${encodeURIComponent(path)}`, "_blank", "noopener");
@@ -273,7 +286,7 @@ export function BotAppScreen({ catalogId, bot, frameHost, panelOpen, onTogglePan
         urlConfirming.current = true;
         try {
           const ok = await confirmSheet({ title: t("botapp.app.openUrlTitle"), body: safe, confirmLabel: t("botapp.app.openUrlConfirm") });
-          if (ok) window.open(safe, "_blank", "noopener,noreferrer");
+          if (ok && !openResource(websiteResource(safe))) window.open(safe, "_blank", "noopener,noreferrer");
           return !!ok;
         } finally {
           urlConfirming.current = false;
@@ -313,7 +326,7 @@ export function BotAppScreen({ catalogId, bot, frameHost, panelOpen, onTogglePan
   // 文案读到之后、知道是不是桌面版之后再告诉界面一次
   useEffect(() => {
     if (messages) bridge.current?.post("env", envOf());
-  }, [messages, desktop]);
+  }, [messages, desktop, expanded]);
 
   // app/ 下的文件变了（Bot 改的，包括微信里改的）：转告界面
   const botId = bot?.id;

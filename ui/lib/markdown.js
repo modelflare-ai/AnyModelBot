@@ -1,3 +1,5 @@
+import { localFilePath } from "./resource-preview.js";
+
 // 助手消息的 Markdown 子集 → 纯数据 AST（不产出 HTML 字符串）。
 // 渲染层用 h() 把 AST 变成节点，文本永远是文本节点，所以不需要另做 HTML 清洗；
 // 唯一会进入属性的是链接地址，只放行 http(s): 与 mailto:（safeHref）。
@@ -44,12 +46,12 @@ function splitRow(line) {
   return cells;
 }
 
-export function parseMarkdown(src) {
+export function parseMarkdown(src, fileLinks = false) {
   const lines = String(src ?? "").replace(/\r\n?/g, "\n").split("\n");
-  return parseLines(lines, 0);
+  return parseLines(lines, 0, fileLinks);
 }
 
-function parseLines(lines, depth) {
+function parseLines(lines, depth, fileLinks) {
   const out = [];
   let i = 0;
   while (i < lines.length) {
@@ -79,7 +81,7 @@ function parseLines(lines, depth) {
     }
     const hd = HEADING.exec(line);
     if (hd && /^ {0,3}#{1,6}(\s|$)/.test(line)) {
-      out.push({ t: "h", level: hd[1].length, c: parseInline(hd[2] || "") });
+      out.push({ t: "h", level: hd[1].length, c: parseInline(hd[2] || "", fileLinks) });
       i++;
       continue;
     }
@@ -95,10 +97,10 @@ function parseLines(lines, depth) {
       const rows = [];
       while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
         const cells = splitRow(lines[i]);
-        rows.push(head.map((_, k) => parseInline(cells[k] ?? "")));
+        rows.push(head.map((_, k) => parseInline(cells[k] ?? "", fileLinks)));
         i++;
       }
-      out.push({ t: "table", head: head.map((c) => parseInline(c)), align: head.map((_, k) => align[k] || ""), rows });
+      out.push({ t: "table", head: head.map((c) => parseInline(c, fileLinks)), align: head.map((_, k) => align[k] || ""), rows });
       continue;
     }
     if (QUOTE.test(line)) {
@@ -107,7 +109,7 @@ function parseLines(lines, depth) {
         inner.push(lines[i].replace(QUOTE, ""));
         i++;
       }
-      out.push({ t: "quote", c: depth < 6 ? parseLines(inner, depth + 1) : [{ t: "p", c: [inner.join("\n")] }] });
+      out.push({ t: "quote", c: depth < 6 ? parseLines(inner, depth + 1, fileLinks) : [{ t: "p", c: [inner.join("\n")] }] });
       continue;
     }
     const li = LIST.exec(line);
@@ -149,7 +151,7 @@ function parseLines(lines, depth) {
       out.push({
         t: ordered ? "ol" : "ul",
         start: ordered ? parseInt(li[2], 10) : undefined,
-        items: items.map((it) => ({ c: parseInline(it.first.join("\n")), sub: it.sub.length && depth < 6 ? parseLines(it.sub, depth + 1) : [] })),
+        items: items.map((it) => ({ c: parseInline(it.first.join("\n"), fileLinks), sub: it.sub.length && depth < 6 ? parseLines(it.sub, depth + 1, fileLinks) : [] })),
       });
       continue;
     }
@@ -159,7 +161,7 @@ function parseLines(lines, depth) {
       para.push(lines[i]);
       i++;
     }
-    out.push({ t: "p", c: parseInline(para.map((l) => l.replace(/^ {0,3}/, "")).join("\n")) });
+    out.push({ t: "p", c: parseInline(para.map((l) => l.replace(/^ {0,3}/, "")).join("\n"), fileLinks) });
   }
   return out;
 }
@@ -228,7 +230,7 @@ function matchLink(s, i) {
   return { text: s.slice(i + 1, j), url, end: k + 1 };
 }
 
-export function parseInline(src) {
+export function parseInline(src, fileLinks = false) {
   const s = String(src ?? "");
   const out = [];
   let text = "";
@@ -270,8 +272,9 @@ export function parseInline(src) {
       if (m) {
         flush();
         const href = safeHref(m.url);
-        if (href) out.push({ t: "a", href, c: parseInline(m.text) });
-        else out.push(...parseInline(m.text));
+        if (href) out.push({ t: "a", href, c: parseInline(m.text, fileLinks) });
+        else if (fileLinks && localFilePath(m.url)) out.push({ t: "file", path: localFilePath(m.url), c: parseInline(m.text, fileLinks) });
+        else out.push(...parseInline(m.text, fileLinks));
         i = m.end;
         continue;
       }
@@ -316,7 +319,7 @@ export function parseInline(src) {
         if (end > -1 && !(ch === "_" && /[\p{L}\p{N}]/u.test(s[end + mark.length] || ""))) {
           flush();
           const kind = ch === "~" ? "s" : two ? "b" : "i";
-          out.push({ t: kind, c: parseInline(s.slice(from, end)) });
+          out.push({ t: kind, c: parseInline(s.slice(from, end), fileLinks) });
           i = end + mark.length;
           continue;
         }

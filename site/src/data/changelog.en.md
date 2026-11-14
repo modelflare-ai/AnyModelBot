@@ -4,6 +4,23 @@
 
 This covers changes you'll notice in the app. For older versions, see the [GitHub releases](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.33 - 2026-11-14
+
+### New
+
+- **Scheduled rules in one place:** the new Scheduled page lists rules across all bots and highlights those needing attention. Chat cards, Tasks and Scheduled share on/off controls. Create rules before the first conversation, keep them off, and undo chat-created changes. An undone creation can be restored for ten minutes.
+- **Catch-up runs and group summaries:** calendar rules can catch up once within a grace period of up to twelve hours, with the original due time shown. Interval rules do not catch up. Monthly schedules, the next three runs, time zones and cost estimates are now visible. Group summaries use a chosen in-app group; a late summary keeps its original date.
+- **Ten bot templates:** choose a role for writing, work or learning, preview its persona, memory and rules, and compare suitable models before creating it. Template rules start off and ask for a destination and source group when needed.
+- **Resources in the right panel:** open files and websites from conversations, groups and bot workspaces without leaving the chat. Preview Markdown, text and code, PDFs, images and HTML, with download and external-opening options.
+- **Workspaces that fit the side panel:** official bots collapse project navigation at narrower widths. Expand a workspace and return to chat while keeping the current editing state.
+- **Continue after macOS permission setup:** one permission card replaces repeated errors. The app checks automatically and, when eligible, resumes unfinished steps in the original conversation while preserving drafts. A newer message or a wait over thirty minutes requires Continue.
+
+### Improvements and fixes
+
+- Improved Modelflare sign-in return handling, account names and avatars, and first-use guidance. Connected-app lists, search and error messages are clearer.
+- Improved Film Studio canvas layout and US Stock Research chart-data handling; PPT Master and Company Research also adopt the updated workspace.
+- Rule results identify their source and follow the reply-notification preference. An optional setting prevents sleep shortly before a rule is due while plugged in; it cannot wake an already sleeping or closed computer.
+
 ## 0.1.32 - 2026-11-11
 
 ### New

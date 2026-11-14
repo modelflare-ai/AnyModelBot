@@ -1,134 +1,71 @@
-// 新手引导的界面：对话空状态里的「上手清单」卡、侧栏左下角的清单入口、指着要点的地方的引导卡片、全部完成时的彩带。
-// 状态与文案在 lib/guide.js；样式在 css/guide.css。
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { html, Icon, IconButton, Menu, MenuButton } from "./ui.js";
-import { ActivityLine } from "./activity.js";
-import { BotAvatar } from "./avatar.js";
+import { html, Icon, IconButton, Menu, MenuButton, Notice } from "./ui.js";
 import { useStore } from "../lib/store.js";
 import { ms, reducedMotion } from "../design/motion.js";
-import {
-  GUIDE_CHANNELS, STEPS, channelLabel, composerBusy, guideChannel, arm, completed, currentStep, fillComposer, guide, hideGuide, isActive, markDone, markSeen, nextStep, refreshGuide, runMediaDemo, setFocus, setGuideChannel, stepHow, stepText, visibleSteps,
-} from "../lib/guide.js";
+import { templateOf } from "../lib/templates.js";
 import { t } from "../lib/i18n.js";
-import { MF_CONSOLE } from "../lib/links.js";
-
+import {
+  GUIDE_CHANNELS, STEPS, DEFAULT_NAMES, guide, completed, completionCard, composerBusy, guideBlocked, guideOverlay,
+  channelLabel, currentStep, nextStep, progress, stepFinished, stepText, isActive, guideChannel,
+  setGuideChannel, skipChannel, setFocus, markSeen, hideGuide, refreshGuide, fillComposer,
+  runMediaDemo, startTemplate, signInForDrawing, enteredWelcome,
+} from "../lib/guide.js";
 const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const px = (name, fallback) => {
-  const n = parseFloat(token(name));
-  return Number.isFinite(n) ? n : fallback;
-};
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-
-/** 进度格：做完的格子点亮时弹一下（key 带着状态，点亮的那一格重新挂载、重播动画） */
-function Progress({ steps, done }) {
-  return html`<span class="guide-bar" aria-hidden="true" style=${{ "--n": String(steps.length) }}>
-    ${steps.map((s, i) => {
-      const on = done.includes(s.id);
-      return html`<i key=${`${s.id}-${on}`} class=${on ? "on" : ""} style=${{ "--i": String(i) }}></i>`;
-    })}
-  </span>`;
+const px = (name, fallback) => parseFloat(token(name)) || fallback;
+const discover = () => { setFocus(null); location.hash = "/discover"; };
+const connect = (channel) => { setFocus(null); location.hash = `/settings/connections/add-channel-${channel}`; };
+function Progress({ g }) {
+  return html`<span class="guide-bar" aria-hidden="true" style=${{ "--n": "5" }}>${STEPS.map((s) => html`<i class=${stepFinished(s.id, g) ? "on" : ""}></i>`)}</span>`;
 }
-
-/** 对话空状态里的清单：当前这一步展开（说明、怎么做、试试这句），其余一行一项；可以收起到左下角 */
-export function GuideChecklist({ bot, onSend }) {
+function Templates() {
+  return html`<div class="guide-templates">${["writer", "polish", "minutes"].map((key) => html`<button type="button" class="guide-template" onClick=${() => startTemplate(key)}>
+    <b>${templateOf(key).name}</b><span>${templateOf(key).desc}</span></button>`)}</div>
+    <button type="button" class="text" onClick=${discover}>${t("welcome.orDiscover")}</button>`;
+}
+function StepAction({ step, g, bot }) {
+  if (step.id === "second") return html`<${Templates} />`;
+  if (step.id === "weixin") return html`<div class="guide-channel">
+    <${MenuButton} label=${stepText(step, "title")} value=${guideChannel(g)} onChange=${setGuideChannel}
+      options=${(guideChannel(g) === "weixin" || guideChannel(g) === "feishu" ? GUIDE_CHANNELS : ["telegram", "slack", "discord", "weixin", "feishu"]).map((c) => [c, channelLabel(c)])} />
+    <button type="button" class="btn primary sm" onClick=${() => connect(guideChannel(g))}>${t("firstUse.connectChannel", { channel: channelLabel(guideChannel(g)) })}</button>
+    ${!stepFinished("weixin", g) && html`<button type="button" class="text" onClick=${skipChannel}>${t("welcome.skip")}</button>`}</div>`;
+  const sample = stepText(step, "try");
+  return html`<div class="guide-try"><span class="t-label">${t("guide.tryThis")}</span><span class="txt">${sample}</span>
+    <button type="button" class="btn primary sm" onClick=${() => { fillComposer(sample, bot?.id); setFocus(step.id); }}>${t("guide.takeMe")}</button></div>`;
+}
+export function Welcome({ bot }) {
+  useEffect(enteredWelcome, []);
+  return html`<h2 title=${bot.name}>${t(DEFAULT_NAMES.includes(bot.name.trim()) ? "welcome.title" : "welcome.namedTitle", { name: bot.name })}</h2>
+    <p>${t("welcome.subtitle")}</p><div class="welcome-examples">${["hello", "memory", "rewrite"].map((key) => html`<button type="button" class="example-card" onClick=${() => fillComposer(t(`welcome.samples.${key}`), bot.id)}>${t(`welcome.samples.${key}`)}</button>`)}</div>
+    <${GuideChecklist} bot=${bot} /><button type="button" class="text welcome-discover" onClick=${discover}>${t("welcome.discover")}</button>`;
+}
+export function GuideChecklist({ bot }) {
   const g = useStore(guide);
   const [open, setOpen] = useState("");
-  if (!isActive(g) || g.seen.includes("intro") || g.trim) return null;
-  const steps = visibleSteps(g);
-  const cur = currentStep(g);
-  if (!cur) return null;
-  const shown = open && !g.done.includes(open) ? open : cur.id;
-  const n = steps.filter((s) => g.done.includes(s.id)).length;
-  const txt = (s, field) => stepText(s, field, bot.name);
+  if (!isActive(g) || g.seen.includes("intro")) return null;
+  const shown = open && !g.done.includes(open) ? open : currentStep(g)?.id;
   return html`<section class="guide-card" aria-label=${t("guide.title")}>
-    <div class="guide-card-head">
-      <span class="t-label">${t("guide.title")}</span><span class="guide-count num">${n} / ${steps.length}</span>
-      <span class="grow"></span>
-      <button type="button" class="text" onClick=${() => markSeen("intro")}>${t("guide.collapse")}</button>
-    </div>
-    <${Progress} steps=${steps} done=${g.done} />
-    <ol class="guide-steps">
-      ${steps.map((s, i) => {
-        const done = g.done.includes(s.id);
-        const style = { "--anim-delay": `calc(var(--stagger) * ${i} / 3)` };
-        if (done) {
-          return html`<li key=${s.id} class="guide-step done anim-fade-in" style=${style}>
-            <span class="n"><${Icon} name="check" size="xs" strong /></span><span class="title">${txt(s, "title")}</span>
-          </li>`;
-        }
-        if (s.id !== shown) {
-          return html`<li key=${s.id} class="anim-fade-in" style=${style}>
-            <button type="button" class="guide-step" onClick=${() => setOpen(s.id)}>
-              <span class="n num">${i + 1}</span><span class="title">${txt(s, "title")}</span><${Icon} name="chevRight" size="sm" />
-            </button>
-          </li>`;
-        }
-        const sample = txt(s, "try");
-        return html`<li key=${s.id} class="guide-step open anim-fade-in" style=${style}>
-          <span class="n num">${i + 1}</span>
-          <div class="body">
-            <div class="title">${txt(s, "title")}</div>
-            <p class="desc">${txt(s, "desc")}</p>
-            <ul class="how">${stepHow(s).map((h) => html`<li>${h}</li>`)}</ul>
-            ${s.id === "media" && html`<p class="t-meta">${txt(s, "demoNote")}</p>`}
-            ${s.id === "media"
-              ? html`<div class="guide-try">
-                  <span class="t-label">${t("guide.demoThis")}</span>
-                  <span class="txt">${sample}</span>
-                  <button type="button" class="btn primary sm" onClick=${() => (arm(s.id), runMediaDemo())}>${t("guide.watchDemo")}</button>
-                </div>`
-              : sample
-              ? html`<div class="guide-try">
-                  <span class="t-label">${t("guide.tryThis")}</span>
-                  <span class="txt">${sample}</span>
-                  <button type="button" class="btn primary sm" onClick=${() => (arm(s.id), onSend(sample))}>${t("guide.sendThis")}</button>
-                </div>`
-              : html`<div class="guide-try">
-                  <span class="txt tone-muted">${t("guide.followHint")}</span>
-                  <button type="button" class="btn primary sm" onClick=${() => setFocus(s.id)}>${t("guide.takeMe")}</button>
-                </div>`}
-          </div>
-        </li>`;
-      })}
-    </ol>
-  </section>`;
+    <div class="guide-card-head"><span class="t-label">${t("guide.title")}</span><span class="guide-count num">${progress(g)}/5</span><span class="grow"></span>
+      <button type="button" class="text" onClick=${() => markSeen("intro")}>${t("welcome.collapse")}</button></div>
+    <${Progress} g=${g} /><ol class="guide-steps">${STEPS.map((s, i) => {
+      const done = g.done.includes(s.id); const skipped = g.skipped.includes(s.id);
+      return html`<li class=${`guide-step${done ? " done" : shown === s.id ? " open" : ""}`}>
+        <span class="n">${done ? html`<${Icon} name="check" size="xs" />` : i + 1}</span><div class="body">
+          <button type="button" class="guide-step-title" disabled=${done} onClick=${() => setOpen(s.id)}>${stepText(s, "title", g.primaryBotName || bot.name)}</button>
+          ${skipped && html`<span class="badge">${t("welcome.skipped")}</span>`}
+          ${!done && shown === s.id && html`<p class="desc">${stepText(s, "desc")}</p><${StepAction} step=${s} g=${g} bot=${bot} />`}</div></li>`;
+    })}</ol></section>`;
 }
-
-/**
- * 侧栏左下角的清单入口：进度格 + n/6；点开是清单菜单，点一项就带你去做。
- * 全部完成后自动收起（completed 里程碑存在后端，按用户记），不用手动关。打开菜单时问一次后端，拿到最新的推导结果。
- */
 export function GuidePill({ onGo }) {
-  const g = useStore(guide);
-  const ref = useRef(null);
-  const [open, setOpen] = useState(false);
+  const g = useStore(guide); const ref = useRef(null); const [open, setOpen] = useState(false);
   if (!isActive(g)) return null;
-  const steps = visibleSteps(g);
-  const n = steps.filter((s) => g.done.includes(s.id)).length;
-  const finished = n === steps.length;
-  if (finished) return null;
-  const cur = currentStep(g);
-  return html`<button type="button" ref=${ref} class="guide-pill"
-      aria-haspopup="menu" aria-expanded=${open} title=${t("guide.title")} onClick=${() => { if (!open) refreshGuide(); setOpen((v) => !v); }}>
-      <${Progress} steps=${steps} done=${g.done} />
-      <span class="v">${finished ? t("guide.allDone") : t("guide.title")}</span>
-      <span class="num">${n}/${steps.length}</span>
-    </button>
-    ${open && html`<${Menu} anchor=${ref.current} prefer="up" width=${280} label=${t("guide.title")} onClose=${() => setOpen(false)}
-      items=${[
-        { group: t("guide.progress", { progress: `${n}/${steps.length}` }) },
-        ...steps.map((s) => ({
-          label: stepText(s, "title", t("guide.nameGeneric")),
-          note: g.done.includes(s.id) ? t("guide.completed") : cur && s.id === cur.id ? t("guide.upNext") : undefined,
-          cur: g.done.includes(s.id),
-          onSelect: () => onGo(s.id),
-        })),
-        { sep: true },
-        { label: t("guide.hide"), onSelect: hideGuide },
-      ]} />`}`;
+  return html`<button type="button" ref=${ref} class="guide-pill" aria-haspopup="menu" aria-expanded=${open} onClick=${() => { refreshGuide(); setOpen(!open); }}>
+    <${Progress} g=${g} /><span class="v">${t("guide.title")}</span><span class="num">${progress(g)}/5</span></button>
+    ${open && html`<${Menu} anchor=${ref.current} prefer="up" width=${280} onClose=${() => setOpen(false)} items=${[
+      ...STEPS.map((s) => ({ label: stepText(s, "title"), cur: g.done.includes(s.id), note: g.skipped.includes(s.id) ? t("welcome.skipped") : undefined, onSelect: () => onGo(s.id) })),
+      { sep: true }, { label: t("guide.hide"), onSelect: hideGuide },
+    ]} />`}`;
 }
-
-/** 全部完成：撒一把彩带（颜色是六个机器人的眼睛色和光色） */
 const CONFETTI = ["--bot-blue-eye", "--bot-yellow-glow", "--bot-green-glow", "--bot-red-eye", "--bot-purple-eye", "--bot-orange-eye"];
 function confetti() {
   if (reducedMotion()) return;
@@ -162,170 +99,86 @@ function confetti() {
   setTimeout(() => layer.remove(), dur * 1.8);
 }
 
-/**
- * 引导卡片：指着当前步骤要点的地方（data-guide="…"），那里亮起一圈；卡片放在它旁边，跟着它移动。
- * 指着的东西被菜单盖住（模型菜单打开）时先藏起来；做完后同一张卡片换成「做好了 → 下一步」。
- */
-export function CoachMark({ bot, view, infoOpen, busy, onConnections }) {
-  const g = useStore(guide);
-  const last = useStore(completed);
-  const typing = useStore(composerBusy);
-  const card = useRef(null);
-  const [pos, setPos] = useState(null);
-  // 第一次放好位置之后才开始"滑过去"，否则会从左上角飘过来
-  const [glide, setGlide] = useState(false);
+/** 一个出口处理主动引导和一次性提示；任务必需弹层总是优先。 */
+export function CoachMark({ bot, view, busy, blocked }) {
+  const g = useStore(guide); const typing = useStore(composerBusy); const taskBlocked = useStore(guideBlocked);
+  const last = useStore(completed); const born = useRef(Date.now());
+  const [overlay, setOverlay] = useState(false); const [pos, setPos] = useState(null); const card = useRef(null);
+  const chat = ["chat", "app"].includes(view) && !!bot;
+  const hint = g.hints.find((id) => id === "official-hint" ? ["preview", "app"].includes(view) : chat);
+  const id = g.focus && chat ? g.focus : hint;
+  const step = STEPS.find((s) => s.id === id); const done = step && g.done.includes(id);
+  const automatic = !step;
+  const active = isActive(g) && !!id && !overlay && !blocked && !taskBlocked && !busy && !(automatic && typing);
   useEffect(() => {
-    if (!pos) return setGlide(false);
-    const r = requestAnimationFrame(() => setGlide(true));
-    return () => cancelAnimationFrame(r);
-  }, [!!pos]);
-  const id = g.focus;
-  const step = id ? STEPS.find((s) => s.id === id) : null;
-  const done = !!step && g.done.includes(id);
-  // 自己弹出来的（做完一步后接着说"下一步"）不打断：输入框里有没发出的草稿、或者任务正在运行时先不出来，
-  // 等草稿发出或清空、任务结束再出来；用户自己点"带我去"打开的照常显示
-  const active = isActive(g) && !!step && view === "chat" && !!bot && !(g.focusAuto && (busy || typing));
-  const sel = !step ? "" : step.target === "weixin" ? '[data-guide="info"]' : `[data-guide="${step.target}"]`;
-
-  // 全部完成：撒彩带（只认挂载之后完成的，重新挂载时不重放）
-  const born = useRef(Date.now());
-  useEffect(() => {
-    if (last && last.all && last.at > born.current) confetti();
-  }, [last && last.at]);
-
-  // 渠道这一步：扫码发生在微信里，隔几秒问一次后端有没有连上
-  useEffect(() => {
-    if (!active || done || !["weixin", "memory"].includes(id)) return;
-    const timer = setInterval(refreshGuide, ms("--dur-pulse", 1400) * 2);
-    return () => clearInterval(timer);
-  }, [active, done, id]);
-
-  useLayoutEffect(() => {
-    if (!active) return setPos(null);
-    let el = null;
-    const place = () => {
-      const a = document.querySelector(sel);
-      if (a !== el) {
-        el?.classList.remove("guide-spot");
-        el = a;
-      }
-      // 模型菜单打开时它盖住了按钮：先藏起来，选完再出来
-      if (!a || !a.getClientRects().length || (step.target === "model" && a.getAttribute("aria-expanded") === "true")) return setPos(null);
-      a.classList.toggle("guide-spot", !done);
-      const r = a.getBoundingClientRect();
-      const w = card.current ? card.current.offsetWidth : 300;
-      const h = card.current ? card.current.offsetHeight : 240;
-      const gap = px("--space-3", 12);
-      const edge = px("--pane-gap", 8);
-      const vw = innerWidth;
-      const vh = innerHeight;
-      const side = r.left > vw * 0.6 && r.left - w - gap > edge ? "left" : r.top - h - gap > edge ? "up" : "down";
-      let left;
-      let top;
-      if (side === "left") {
-        left = r.left - w - gap;
-        top = clamp(r.top + r.height / 2 - h / 2, edge, vh - h - edge);
-      } else {
-        // 很宽的目标（输入框）：卡片靠右，箭头指向发送钮那一侧
-        left = clamp(r.width > w * 1.5 ? r.right - w : r.left + r.width / 2 - w / 2, edge, vw - w - edge);
-        top = side === "up" ? r.top - h - gap : r.bottom + gap;
-      }
-      const ax = clamp((r.width > w * 1.5 ? r.right - 48 : r.left + r.width / 2) - left, 20, w - 20);
-      const ay = clamp(r.top + r.height / 2 - top, 20, h - 20);
-      const open = a.getAttribute("aria-expanded") === "true";
-      setPos((p) => (p && p.left === left && p.top === top && p.side === side && p.ax === ax && p.ay === ay && p.open === open ? p : { left, top, side, ax, ay, open }));
-    };
-    place();
-    const timer = setInterval(place, ms("--dur-moderate", 240));
-    addEventListener("resize", place);
-    return () => {
-      clearInterval(timer);
-      removeEventListener("resize", place);
-      el?.classList.remove("guide-spot");
-    };
-  }, [active, sel, done]);
-
-  if (!active) return null;
-  const list = visibleSteps(g);
-  const idx = list.findIndex((s) => s.id === id) + 1;
-  const next = done ? nextStep(id, g) : null;
-  const txt = (s, field) => stepText(s, field, bot.name);
-  const sample = txt(step, "try");
-  // 渠道那一步：① 打开信息面板 → ② 点「微信」→ ③ 扫码（微信那一行展开了）
-  const sub = id === "weixin" ? (!infoOpen ? 1 : pos && pos.open ? 3 : 2) : 0;
-  // 生图那一步：引导里只放预置演示，不替用户调用真的模型花钱
-  const demoOnly = id === "media";
-  const style = pos
-    ? { left: `${pos.left}px`, top: `${pos.top}px`, "--ax": `${pos.ax}px`, "--ay": `${pos.ay}px` }
-    : { left: "0px", top: "0px", visibility: "hidden" };
-  return html`<div key=${id} ref=${card} class=${`guide-coach ${pos ? pos.side : "up"}${glide ? " glide" : ""}`} style=${style} role="dialog" aria-label=${t("guide.coachLabel")}
-      onKeyDown=${(e) => e.key === "Escape" && (e.stopPropagation(), setFocus(null))}>
-    <span class="guide-coach-arrow" aria-hidden="true"></span>
-    <div class="guide-coach-top">
-      <${BotAvatar} bot=${bot} size=${30} greet cue=${done ? { kind: "done", at: last ? last.at : 1 } : undefined} />
-      <span class="t-label">${t("guide.progress", { progress: html`<span class="num">${idx}/${list.length}</span>` })}</span>
-      ${done && html`<span class="guide-done"><${Icon} name="check" size="xs" strong />${t("common.done")}</span>`}
-      <span class="grow"></span>
-      <${IconButton} icon="close" size="xs" iconSize="xs" label=${t("guide.closeCoach")} onClick=${() => setFocus(null)} />
-    </div>
-    <div class="guide-coach-body anim-fade-in" key=${String(done)}>
-      <h3>${done ? t("guide.doneTitle") : txt(step, "title")}</h3>
-      <p class="desc">${done ? txt(step, demoOnly && !g.media ? "noModelText" : "doneText") : txt(step, "desc")}</p>
-      ${!done && html`<ol class=${`how${sub ? " steps" : ""}`}>${stepHow(step).map((h, i) => html`<li class=${sub && i + 1 === sub ? "cur" : sub && i + 1 < sub ? "past" : ""}>${h}</li>`)}</ol>`}
-      ${!done && txt(step, "note") && html`<p class="t-meta">${txt(step, "note")}</p>`}
-      ${!done && demoOnly && html`<p class="t-meta">${txt(step, "demoNote")}</p>`}
-      ${!done && id === "weixin" && html`<div class="guide-try">
-        <${MenuButton} label=${t("firstUse.channelTitle")} value=${guideChannel(g)} options=${GUIDE_CHANNELS.map((c) => [c, channelLabel(c)])} onChange=${setGuideChannel} />
-        <button type="button" class="btn" onClick=${() => onConnections?.(guideChannel(g))}>${t("firstUse.connectChannel", { channel: channelLabel(guideChannel(g)) })}</button>
-      </div>`}
-      ${!done && sample && html`<div class="guide-try">
-        <span class="txt">${sample}</span>
-        ${demoOnly
-          ? html`<button type="button" class="btn primary sm" onClick=${runMediaDemo}>${t("guide.watchDemo")}</button>`
-          : html`<button type="button" class="btn sm" onClick=${() => fillComposer(sample)}>${t("guide.fill")}</button>`}
-      </div>`}
-      ${done && demoOnly && !g.media && html`<a class="t-meta" href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">${t("guide.openConsole")}</a>`}
-    </div>
-    <div class="guide-coach-actions">
-      <button type="button" class="text" onClick=${() => setFocus(null)}>${done ? t("guide.stopHere") : t("guide.later")}</button>
-      ${done && (next
-        ? html`<button type="button" class="btn primary sm" onClick=${() => setFocus(next.id)}>${t("guide.next", { title: txt(next, "title") })}</button>`
-        : html`<button type="button" class="btn primary sm" onClick=${() => setFocus(null)}>${t("common.done")}</button>`)}
-    </div>
-  </div>`;
-}
-
-/**
- * 生图的预置演示：和真的默认流程一样，说一句就直接生成：工作状态行（正在生成）→ 图片交付在对话里（同一种缩略图）。
- * 不发给机器人、不调用模型、不扣费，图是客户端自带的示例（assets/guide-demo.svg），下面一行说明这一点。看完就算做完了这一步。
- * 自带的图不在会话的文件里，桌面版没法交给系统程序打开：点开是在原地放大。
- */
-export function MediaDemo({ onLoad }) {
-  const g = useStore(guide);
-  const [done, setDone] = useState(false);
-  const [big, setBig] = useState(false);
-  // 生成用时是模拟的，不是动画：文字微光扫一遍的时长（关闭动画时也不变）
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDone(true);
-      markDone("media");
-    }, ms("--dur-sheen", 2400));
-    return () => clearTimeout(timer);
+    const read = () => { const value = !!document.querySelector(".scrim, .pop, .palette"); setOverlay(value); guideOverlay.set(value); };
+    const observer = new MutationObserver(read); observer.observe(document.body, { childList: true, subtree: true }); read();
+    return () => observer.disconnect();
   }, []);
-  // 放大 / 缩小后，本来跟着底部的对话再贴一次底
+  useEffect(() => { if (last?.all && last.at > born.current) confetti(); }, [last?.at]);
   useEffect(() => {
-    if (done) onLoad?.();
-  }, [big]);
-  return html`<div class="guide-demo">
-    <${ActivityLine} label=${done ? t("guide.demo.label") : t("guide.demo.generating")} phase=${done ? "done" : "gen"} live=${!done} />
-    ${done && html`<div class="msg-files anim-fade-in">
-        <button type="button" class=${`msg-img${big ? " big" : ""}`} aria-expanded=${big} title=${big ? t("guide.demo.zoomOut") : t("guide.demo.zoomIn")} onClick=${() => setBig((v) => !v)}>
-          <img src="/amb/static/assets/guide-demo.svg" alt=${t("guide.demo.alt")} onLoad=${onLoad} />
-        </button>
-      </div>
-      <p class="guide-demo-note t-meta">
-        ${t("guide.demo.caption")}
-        ${!g.media && html` <a href=${MF_CONSOLE} target="_blank" rel="noopener noreferrer">${t("guide.demo.enable")}</a>`}
-      </p>`}
-  </div>`;
+    if (!active || !["weixin", "memory"].includes(id)) return;
+    const timer = setInterval(refreshGuide, 3000); return () => clearInterval(timer);
+  }, [active, id]);
+  useLayoutEffect(() => {
+    if (!active) { setPos(null); return; }
+    let spot;
+    const place = () => {
+      const target = document.querySelector(id === "model-hint" ? '[data-guide="model"]' : step?.id === "weixin" ? '[data-guide="info"]' : '[data-guide="composer"]');
+      if (spot !== target) spot?.classList.remove("guide-spot");
+      spot = target; if (id !== "official-hint") spot?.classList.toggle("guide-spot", !done);
+      const r = target?.getBoundingClientRect();
+      const w = card.current?.offsetWidth || 320; const h = card.current?.offsetHeight || 250;
+      setPos({ left: Math.max(16, Math.min(innerWidth - w - 16, r ? r.right - w : innerWidth / 2 - w / 2)),
+        top: Math.max(16, Math.min(innerHeight - h - 16, id === "official-hint" ? 72 : r ? r.top - h - 12 : 72)) });
+    };
+    place(); const timer = setInterval(place, 180); addEventListener("resize", place);
+    return () => { clearInterval(timer); removeEventListener("resize", place); spot?.classList.remove("guide-spot"); };
+  }, [active, id, done]);
+  if (!active || id === "official-hint") return null;
+  const close = () => step ? setFocus(null) : markSeen(id);
+  const next = step && nextStep(id, g);
+  const secondSend = id === "second" && g.secondBotId === bot?.id && !done;
+  const text = step ? secondSend ? t("welcome.secondSend", { name: bot.name }) : done ? id === "second" ? t("welcome.secondDone", { main: g.primaryBotName || t("guide.defaultBotName") }) : t("guide.doneTitle") : stepText(step, "desc")
+    : t(id === "model-hint" ? "welcome.modelHint" : id === "second-done" ? "welcome.secondDone" : "welcome.officialHint", { main: g.primaryBotName || t("guide.defaultBotName") });
+  return html`<div class="guide-coach up" ref=${card} role="dialog" aria-label=${t("guide.coachLabel")} style=${pos ? { left: `${pos.left}px`, top: `${pos.top}px`, "--ax": "calc(100% - 32px)" } : { visibility: "hidden" }}
+    onKeyDown=${(e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } }}>
+    <span class="guide-coach-arrow" aria-hidden="true"></span><div class="guide-coach-top"><span class="t-label">${step ? stepText(step, "title") : t("guide.title")}</span><span class="grow"></span><${IconButton} icon="close" label=${t("common.close")} onClick=${close} /></div>
+    <div class="guide-coach-body"><p>${text}</p>${step && !done && !secondSend && html`<${StepAction} step=${step} g=${g} bot=${bot} />`}</div>
+    <div class="guide-coach-actions"><button type="button" class="btn ghost sm" onClick=${close}>${t(automatic ? "welcome.gotIt" : "guide.later")}</button>
+      ${done && next && html`<button type="button" class="btn primary sm" onClick=${() => setFocus(next.id)}>${t("guide.next", { title: stepText(next, "title") })}</button>`}</div></div>`;
+}
+export function OfficialGuideNotice({ installed = false, busy = false }) {
+  const g = useStore(guide); const typing = useStore(composerBusy); const blocked = useStore(guideBlocked); const overlay = useStore(guideOverlay);
+  const first = g.hints.find((id) => id === "official-hint" || installed);
+  if (!isActive(g) || first !== "official-hint" || (installed && g.focus) || busy || typing || blocked || overlay) return null;
+  return html`<div class="official-guide-notice"><${Notice} action=${html`<${IconButton} icon="close" label=${t("common.close")} onClick=${() => markSeen("official-hint")} />`}>${t("welcome.officialHint")}<//></div>`;
+}
+export function GuideCompletion({ bot, account }) {
+  const state = useStore(completionCard); const g = useStore(guide); const claimed = useRef(false);
+  useEffect(() => {
+    if (state?.pending && !state.botId) { claimed.current = true; completionCard.set({ ...state, pending: false, botId: bot.id }); }
+  }, [state?.pending]);
+  useEffect(() => () => { if (claimed.current) completionCard.set(null); }, []);
+  if (!state || (!state.pending && state.botId !== bot.id)) return null;
+  const channel = g.connectedChannels.includes(guideChannel(g)) ? guideChannel(g) : g.connectedChannels[0];
+  const draw = () => account?.state === "signed_in" ? fillComposer(t("welcome.drawSample"), bot.id) : signInForDrawing();
+  const rows = [
+    ["apps", t("welcome.nextApps"), () => { location.hash = "/apps"; }],
+    ["reminder", channel ? t("welcome.nextReminderChannel", { channel: channelLabel(channel) }) : t("welcome.nextReminder"), () => fillComposer(t(channel ? "welcome.reminderChannel" : "welcome.reminderSample", { channel: channelLabel(channel) }), bot.id)],
+    ["draw", t(account?.state === "signed_in" ? "welcome.nextDraw" : "welcome.connectDraw"), draw],
+    ...(g.botCount >= 2 ? [["group", t("welcome.nextGroup"), () => window.dispatchEvent(new Event("amb-new-group"))]] : []),
+    ["discover", t("welcome.nextDiscover"), discover],
+  ];
+  return html`<section class="guide-card guide-completion"><div class="guide-card-head"><h3>${t("welcome.complete")}</h3><span class="grow"></span>
+    <${IconButton} icon="close" label=${t("common.close")} onClick=${() => completionCard.set(null)} /></div><p>${t("welcome.next")}</p>
+    <div class="list">${rows.map(([key, label, action]) => html`<div class="row guide-next-row"><button type="button" class="guide-next-main" onClick=${action}>${label}</button>
+      ${key === "draw" && html`<button type="button" class="text" onClick=${runMediaDemo}>${t("welcome.seeExample")}</button>`}<${Icon} name="chevRight" size="sm" /></div>`)}</div></section>`;
+}
+export function MediaDemo({ onLoad, account }) {
+  const [big, setBig] = useState(false); const signedIn = account?.state === "signed_in";
+  return html`<div class="guide-demo"><span class="badge">${t("welcome.sampleBadge")}</span>
+    <div class="msg-files"><button type="button" class=${`msg-img${big ? " big" : ""}`} aria-expanded=${big} onClick=${() => setBig(!big)}>
+      <img src="/amb/static/assets/guide-demo.svg" alt=${t("welcome.sampleAlt")} onLoad=${onLoad} /></button></div>
+    <p class="guide-demo-note t-meta">${t("welcome.wantOwn")} <button type="button" class="text" onClick=${() => signedIn ? fillComposer(t("welcome.drawSample")) : signInForDrawing()}>${t(signedIn ? "welcome.describeDraw" : "welcome.connectDraw")}</button></p></div>`;
 }

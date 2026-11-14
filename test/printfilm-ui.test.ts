@@ -68,16 +68,45 @@ describe.skipIf(!available)("PRINTFILM sandbox UI", () => {
     await page.goto(url + "/?lang=" + lang);
     const frame = page.frameLocator("iframe");
     await frame.getByRole("tab").first().waitFor();
-    for (let i = 0; i < 7; i++) {
-      await frame.getByRole("tab").nth(i).click();
+    const messages = JSON.parse(fs.readFileSync(path.join(bot, `ui/locales/${lang}.json`), "utf8"));
+    for (const tab of ["storyboard", "script", "assets", "exports", "canvas", "settings"]) {
+      if (tab === "canvas" || tab === "settings") {
+        await frame.locator(".kit-bar .pf-menu > summary").click();
+        await frame.locator(".kit-bar").getByRole("menuitem", { name: messages[tab === "settings" ? "settings" : "tab.canvas"], exact: true }).click();
+      } else await frame.locator(".pf-tabs").getByRole("tab", { name: messages[`tab.${tab}`], exact: true }).click();
       const overflow = await frame.locator("body").evaluate((body: HTMLElement) => {
         const w = body.ownerDocument.defaultView!.innerWidth;
         return body.ownerDocument.documentElement.scrollWidth <= w + 1 ? [] : [...body.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > w + 1 && !e.closest(".pf-canvas-scroll")).map((e) => e.tagName + "." + e.className).slice(0, 12);
       });
-      expect(overflow, `${lang} tab ${i}`).toEqual([]);
+      expect(overflow, `${lang} tab ${tab}`).toEqual([]);
       expect(await frame.getByRole("tabpanel").innerText()).not.toBe("");
     }
     expect(errors).toEqual([]);
+    expect(await page.evaluate("window.errors")).toEqual([]);
+    await page.close();
+  });
+
+  it.each([560, 760, 1024, 1280])("uses the actual %spx panel width for its picker, preview and canvas", async (width) => {
+    const page = await browser.newPage({ viewport: { width, height: 800 } });
+    await page.goto(url + "/?lang=en");
+    const frame = page.frameLocator("iframe");
+    await frame.locator(".pf-preview img").waitFor();
+    const picker = frame.locator(".kit-ws-choice");
+    expect(await picker.isVisible()).toBe(width < 1100);
+    if (width < 1100) {
+      await picker.click();
+      await frame.locator(".kit-item.on").click();
+      expect(await frame.locator(".kit-ws-picker").getAttribute("open")).toBeNull();
+    } else expect(await frame.locator(".kit-ws-list").isVisible()).toBe(true);
+    const preview = await frame.locator(".pf-preview").first().boundingBox();
+    const timeline = await frame.locator(".pf-timeline").boundingBox();
+    expect(preview!.y).toBeLessThan(timeline!.y);
+    await frame.locator(".kit-bar .pf-menu > summary").click();
+    await frame.locator(".kit-bar").getByRole("menuitem", { name: "Canvas", exact: true }).click();
+    await frame.getByRole("button", { name: "Fit to view", exact: true }).click();
+    await page.waitForFunction(() => true);
+    const sizes = await frame.locator(".pf-canvas-scroll").evaluate((el: HTMLElement) => ({ client: el.clientWidth, scroll: el.scrollWidth }));
+    expect(sizes.scroll).toBeLessThanOrEqual(sizes.client + 1);
     expect(await page.evaluate("window.errors")).toEqual([]);
     await page.close();
   });
@@ -103,7 +132,8 @@ describe.skipIf(!available)("PRINTFILM sandbox UI", () => {
     const page = await browser.newPage();
     await page.goto(url + "/?lang=en&live=1");
     const frame = page.frameLocator("iframe");
-    await frame.getByRole("tab", { name: "Production settings", exact: true }).click();
+    await frame.locator(".kit-bar .pf-menu > summary").click();
+    await frame.locator(".kit-bar").getByRole("menuitem", { name: "Production settings", exact: true }).click();
     await frame.getByLabel("Target episode count", { exact: true }).fill("12");
     await frame.getByRole("button", { name: "Save changes", exact: true }).click();
     await page.waitForFunction("window.actions.length === 1");

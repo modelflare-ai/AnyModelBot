@@ -117,3 +117,39 @@ button.guide-step > .ic { color: var(--muted); }
 }
 
 @layer app { .guide-coach-body { user-select: text; -webkit-user-select: text; } }
+
+@layer app {
+.chat-empty.with-guide { padding-top: var(--space-6); }
+.chat-empty.with-guide h2 { max-width: var(--empty-w); font-size: var(--fs-2xl); font-weight: var(--fw-semibold); line-height: var(--lh-tight); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.chat-empty.with-guide > p { max-width: var(--empty-w); margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--muted); line-height: var(--lh-normal); }
+.welcome-examples { display: grid; gap: var(--ctl-gap); width: min(var(--empty-w), 100%); margin-block: var(--space-4); }
+.example-card, .guide-template { background: var(--well); border-radius: var(--r-card); padding: var(--group-pad); color: var(--muted); text-align: left; line-height: var(--lh-normal); font-size: var(--fs-xs); transition: background var(--t-fast), color var(--t-fast); }
+.example-card:hover, .guide-template:hover { background: var(--pill); color: var(--fg); }
+.example-card:active, .guide-template:active { background: var(--side-press); color: var(--fg); }
+.guide-card { width: min(var(--empty-w), 100%); background: var(--card); }
+.guide-step-title { display: block; text-align: left; font: inherit; color: inherit; }
+.guide-step.done .guide-step-title { text-decoration: line-through; color: var(--muted); opacity: 1; }
+.guide-step.open { background: var(--well); }
+.guide-templates { display: grid; gap: var(--ctl-gap); margin-block: var(--space-2); }
+.guide-template { display: grid; gap: var(--space-1); border-radius: var(--r-card-lg); }
+.guide-template b { color: var(--fg); font-weight: var(--fw-medium); }
+.guide-channel { display: flex; flex-wrap: wrap; gap: var(--ctl-gap); align-items: center; }
+.welcome-discover { margin-top: var(--space-3); }
+.guide-coach { z-index: var(--z-popover); max-height: calc(100vh - 2 * var(--float-inset)); overflow-y: auto; }
+.guide-coach.glide { transition: none; }
+.guide-completion { margin-block: var(--space-4); }
+.guide-next-row { padding: 0; gap: var(--space-2); align-items: center; border-radius: var(--r-item); }
+.guide-next-row:hover { background: var(--side-hover); }
+.guide-next-row:active { background: var(--side-active); }
+.guide-next-main { flex: 1; padding: var(--space-3); text-align: left; color: var(--fg); font-size: var(--fs-xs); line-height: var(--lh-normal); }
+.guide-next-row > .text { flex: none; font-size: var(--fs-2xs); }
+.guide-next-row > .text:hover { text-decoration: underline; }
+.guide-demo > .badge { margin-bottom: var(--space-2); }
+.guide-sample-flash { animation: guide-sample-flash var(--dur-slow) var(--ease-out); }
+@keyframes guide-sample-flash { from { opacity: .4; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .guide-sample-flash { animation-duration: .01ms; } }
+}
+@layer app {
+.official-guide-notice { margin: var(--space-2) var(--space-4); flex: none; }
+.botapp-intro-col > .official-guide-notice { margin-inline: 0; }
+}

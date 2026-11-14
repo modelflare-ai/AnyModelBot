@@ -6,6 +6,18 @@ export default {
     "h3": "E tem mais.",
     "items": [
       {
+        "title": "Agende com uma frase",
+        "body": "Gerencie as regras de todos os bots em Agendado: desfazer, horários mensais e recuperação em até doze horas. O computador e o aplicativo devem estar ligados."
+      },
+      {
+        "title": "Comece com um modelo",
+        "body": "Dez modelos de bots para escrever, trabalhar e aprender. Confira persona, memória e regras antes de criar; as regras começam desativadas."
+      },
+      {
+        "title": "Prévia de arquivos e sites",
+        "body": "Abra Markdown, texto, PDF, imagens, HTML e sites no painel direito sem perder a conversa de vista. Também é possível baixar ou abrir externamente."
+      },
+      {
         "title": "Importe suas próprias habilidades",
         "body": "Importe um ZIP nas configurações do bot para adicionar fluxos de trabalho, como relatórios ou processamento de documentos. Você pode ativar, desativar ou substituir cada habilidade."
       },

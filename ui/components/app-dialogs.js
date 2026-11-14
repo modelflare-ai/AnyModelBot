@@ -6,6 +6,7 @@
 // 关掉连接弹窗就取消这一次连接：授权登录的流程作废，不会过一会儿冒出一个账号。令牌不会回到界面。
 import { useEffect, useRef, useState } from "preact/hooks";
 import { html, Button, CopyButton, Icon, IconButton, MenuButton, Notice, Seg, Sheet, Spinner, Switch } from "./ui.js";
+import { AppMark } from "./app-mark.js";
 import { api } from "../lib/api.js";
 import { ATTENTION, appDialog, appLabel, appsStore, builtinName, closeAppDialog, methodLabel, openConnect, openCustom, repairActions, setApps, stateText, stateTone, stepsOf } from "../lib/apps.js";
 import { confirmSheet, failed, saved, toast, useStore } from "../lib/store.js";
@@ -150,8 +151,9 @@ export function ConnectedStep({ title, label, sub, example, chatBot, onClose }) 
     }
   };
   const send = () => {
-    sendToChat(example);
     onClose();
+    if (chatBot?.route) location.hash = chatBot.route;
+    sendToChat(example, chatBot?.target || chatBot?.id);
   };
   return html`<div class="apps-done">
     <p class="apps-done-head"><span class="apps-done-mark"><${Icon} name="check" size="sm" strong /></span><b>${title || t("apps.connect.done")}</b>${label && html`<span class="tone-muted">${label}</span>`}</p>
@@ -300,7 +302,8 @@ function ConnectSheet({ dialog, catalog, apps, chatBot, onClose }) {
   const fieldHint = has(`apps.catalog.${entry.id}.placeholder`) ? t(`apps.catalog.${entry.id}.placeholder`) : t(`apps.connect.${fieldKey === "custom" ? "token" : fieldKey}Placeholder`);
   const waitingNotion = m.kind === "notion-oauth" && notion && !notion.failed;
 
-  return html`<${Sheet} title=${done ? t("apps.connect.title", { name }) : title} sticky onClose=${onClose}>
+  const heading = done ? t("apps.connect.title", { name }) : title;
+  return html`<${Sheet} label=${heading} title=${html`<span class="apps-title"><${AppMark} app=${entry.id} name=${name} size="sm" /><span>${heading}</span></span>`} sticky onClose=${onClose}>
     ${done && html`<${ConnectedStep} label=${done.label} example=${example} chatBot=${chatBot} onClose=${onClose} />`}
     ${!done && html`<form class="apps-form" onSubmit=${submit}>
       ${methods.length > 1 && html`<${Seg} label=${t("apps.connect.method")} value=${String(mi)} onChange=${(v) => { setMi(Number(v)); setValue(""); setError(""); }}
@@ -312,7 +315,7 @@ function ConnectSheet({ dialog, catalog, apps, chatBot, onClose }) {
       ${(m.getUrl || entry.termsUrl || entry.docs) && html`<p class="apps-links">
         ${m.getUrl && outLink(m.getUrl, has(`apps.catalog.${entry.id}.getLabel`) ? t(`apps.catalog.${entry.id}.getLabel`) : t("apps.connect.get"))}
         ${entry.termsUrl && outLink(entry.termsUrl, t("apps.connect.terms"))}
-        ${outLink(entry.docs, t("apps.connect.docs"))}
+        ${entry.docs && outLink(entry.docs, html`<${Icon} name="file" size="sm" />${name} · ${t("apps.connect.docs")}`)}
       </p>`}
       ${m.kind === "oauth" && (oauth.flow ? html`<${OAuthWait} oauth=${oauth} onRetry=${() => setAttempt((n) => n + 1)} />` : busy ? html`<p class="apps-wait-head"><${Spinner} /> ${t("apps.connect.preparing")}</p>` : null)}
       ${m.kind === "notion-oauth" && html`<div class="apps-wait">
@@ -466,7 +469,7 @@ function ManageSheet({ dialog, catalog, apps, bots, onClose, onOpenSettings }) {
     }
     setBusy(false);
   };
-  return html`<${Sheet} title=${name} wide onClose=${onClose}>
+  return html`<${Sheet} label=${name} title=${html`<span class="apps-title"><${AppMark} app=${view.custom ? undefined : view.app} name=${name} size="sm" /><span>${name}</span></span>`} wide onClose=${onClose}>
     <div class="apps-manage">
       ${view.custom && html`<div class="apps-block-head"><b>${t(view.enabled ? "apps.manage.on" : "apps.manage.off")}</b>
         <span class="apps-inline">${busy && html`<${Spinner} />`}<${Switch} value=${!!view.enabled} disabled=${busy} label=${t("apps.manage.enable")} onChange=${toggle} />

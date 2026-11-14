@@ -8,14 +8,14 @@ import { fetchChangelog, readLocalChangelog } from "../../changelog.js";
 import { logger, logFilePath, readLogTail } from "../../log.js";
 import { diagnosticsReport, safeStatus, testAgent, testModel } from "../../diagnostics.js";
 import { saveConfigFile } from "../../config.js";
-import { GUIDE_STEPS, deriveGuide, isGuideChannel, isGuideStep, mergeGuide, normalizeGuide, type GuideState } from "../../guide.js";
+import { GUIDE_STEPS, guideComplete, deriveGuide, isGuideChannel, isGuideStep, mergeGuide, normalizeGuide, type GuideState } from "../../guide.js";
 import { lang, t } from "../../i18n/index.js";
 import { HttpError, readJson, send, type Route, type WebContext } from "../http.js";
 
 const log = logger("web");
 
 export function systemRoutes(ctx: WebContext): Route {
-  const { app, usesCatalog, live } = ctx;
+  const { app, live } = ctx;
   const cfg = app.config;
   /** /guide 在账户信息还没读到时补读账户的时间（离线时限流） */
   let guideRefreshAt = 0;
@@ -89,6 +89,11 @@ export function systemRoutes(ctx: WebContext): Route {
       return send(res, 200, { ok: true });
     }
     // 界面主题变了（或刚加载完）：窗口按钮的符号颜色跟着换。只有 Windows 桌面版有这个钩子，其他环境静默忽略
+    if (p === "/desktop/preferences" && m === "POST") {
+      const b = await readJson(req);
+      if (app.desktop && typeof b.notify === "boolean") app.store.setKV("desktop.notify", String(b.notify));
+      return send(res, 200, { ok: true });
+    }
     if (p === "/desktop/title-bar" && m === "POST") {
       const b = await readJson(req);
       app.desktop?.setTitleBarTheme?.(b.dark === true);
@@ -111,6 +116,7 @@ export function systemRoutes(ctx: WebContext): Route {
     }
     // —— 新手引导（上手清单）：进度写进 config.json；读的时候把能从数据里看出来做过的步骤并进去 ——
     if (p === "/guide") {
+      const body = m === "PUT" ? await readJson(req) : null;
       // 进度按当前用户存：登录了 Modelflare 按账户（ownerKey，本机由发行方 + 用户名算出的哈希），没登录按本机（local）。
       // 推导用的事实（会话、记忆、渠道）是这台电脑上的数据，换账户登录看到的也是同一份，所以照样用来推导。
       // 账户信息还没读到时补读一次；离线时一分钟最多试一次，不让每次轮询都等网络
@@ -126,8 +132,16 @@ export function systemRoutes(ctx: WebContext): Route {
       // 这个用户还没有自己的进度时，从这台电脑上的进度（config.json 的 ui.guide：升级前的进度，或者没登录时做的）开始，
       // 先用自己的 Key、后来登录账户的人不会看到做完或关掉的清单又冒出来；之后各存各的
       let current = saved ? normalizeGuide(JSON.parse(saved)) : normalizeGuide(cfg.ui.guide);
-      const visible = usesCatalog ? ["weixin", "memory", "media"] : [...GUIDE_STEPS];
-      const allDone = (g: GuideState) => visible.every((id) => g.done.includes(id as (typeof GUIDE_STEPS)[number]));
+      // 第一次登录继承本机状态；后续登录合并本机已完成项，绝不撤销已有里程碑。
+      const local = normalizeGuide(cfg.ui.guide);
+      const inherited = owner !== "local" && !app.store.getKV(`guide.inherited.${owner}`);
+      if (inherited) {
+        current = normalizeGuide({ ...current, done: [...current.done, ...local.done],
+          skipped: [...current.skipped, ...local.skipped], seen: [...current.seen, ...local.seen], hidden: current.hidden || local.hidden });
+        if (writable) app.store.setKV(`guide.inherited.${owner}`, "1");
+      }
+      const allDone = guideComplete;
+      const migration = !saved || JSON.parse(saved).version !== 2;
       const save = (g: GuideState) => {
         // 全部完成是里程碑：记一次，之后断开渠道、删掉记忆都不会让清单重新出现
         if (allDone(g) && !g.seen.includes("completed")) g = { ...g, seen: [...g.seen, "completed"] };
@@ -141,15 +155,18 @@ export function systemRoutes(ctx: WebContext): Route {
         }
       };
       if (m === "PUT") {
-        const b = await readJson(req);
+        const b = body;
         const add: unknown[] = b.done === undefined ? [] : Array.isArray(b.done) ? b.done : [b.done];
         if (!add.every(isGuideStep)) throw new HttpError(400, t("web.unknownGuideStep"));
         if (b.channel !== undefined && !isGuideChannel(b.channel)) throw new HttpError(400, t("web.unknownGuideStep"));
         // 换了账户以后，上一个账户的界面迟到的请求不能推进这个账户的清单
         if (b.owner && b.owner !== owner) throw new HttpError(409, "account changed");
+        if (b.skip !== undefined && b.skip !== "weixin") throw new HttpError(400, t("web.unknownGuideStep"));
+        if (b.entered) app.store.setKV("guide.welcomeConsumed", "1");
         const g = b.reset ? normalizeGuide({}) : current;
         save(normalizeGuide({
-          done: [...g.done, ...add],
+          ...g, done: [...g.done, ...add],
+          skipped: b.skip === "weixin" ? ["weixin"] : g.skipped,
           hidden: b.hidden !== undefined ? !!b.hidden : g.hidden,
           // 重新开始时连"全部完成"的里程碑一起清掉；能从数据看出来做过的步骤下面照样并进来
           seen: [...g.seen, ...(typeof b.seen === "string" ? [b.seen] : [])],
@@ -161,20 +178,23 @@ export function systemRoutes(ctx: WebContext): Route {
       const channelConnected = !current.done.includes("weixin") && app.store.listChannelAccounts().some((a) => (app.channelStatus(a.key) as Record<string, { state?: string } | undefined>)[a.channel]?.state === "connected");
       const memoryDone = current.done.includes("memory");
       // 打过招呼 = 有一条真正的回复（出错提示以 ⚠️ 开头，不算）。已经打过勾就不再翻消息；找到第一条就停
-      const convs = app.store.listConversations();
-      const replied = !current.done.includes("hello") && convs.some((c) => c.messageCount >= 2 && app.store.listMessages(c.id, 20).some((x) => x.role === "assistant" && !!x.content.trim() && !x.content.startsWith("⚠️")));
+      const facts = ["hello", "second", "hands"].every((id) => current.done.includes(id as typeof GUIDE_STEPS[number])) ? [] : app.store.guideConversations();
       const derived = deriveGuide({
-        conversations: convs.map((c) => ({ messageCount: c.messageCount, model: c.model, successfulReply: replied })),
+        conversations: facts,
         bots,
         // 至少有一个渠道真的连上了（只填了配置不算）
         channelBound: () => channelConnected,
         // 机器人自己的记忆或团队记忆里真的有条目（主文件 + 各主题）
         memoryCount: (id) => memoryDone ? 0 : [{ kind: "bot" as const, id }, { kind: "team" as const, id: "" }].reduce((n, scope) =>
-          n + app.agent.memory.entries(scope).length + app.agent.memory.topics(scope).reduce((count, topic) => count + app.agent.memory.entries(scope, topic).length, 0), 0),
+          n + app.agent.memory.entries(scope).filter((e) => !/^source:\s*template:/.test(e.meta)).length + app.agent.memory.topics(scope).reduce((count, topic) => count + app.agent.memory.entries(scope, topic).filter((e) => !/^source:\s*template:/.test(e.meta)).length, 0), 0),
       });
       const merged = mergeGuide(current, derived);
-      if (!saved || JSON.stringify(merged) !== JSON.stringify(current) || (!current.seen.includes("completed") && allDone(current))) save(merged);
-      return send(res, 200, { steps: GUIDE_STEPS, owner, ...current });
+      if (migration || inherited || !saved || JSON.stringify(merged) !== JSON.stringify(current) || (!current.seen.includes("completed") && allDone(current))) save(merged);
+      return send(res, 200, { steps: GUIDE_STEPS, owner, ...current, migration,
+        welcomeAvailable: !app.store.getKV("guide.welcomeConsumed") && !current.done.includes("hello") && !facts.some((c) => c.successfulReply),
+        primaryBotId: "default", primaryBotName: bots.find((b) => b.id === "default")?.name || "",
+        botCount: bots.length,
+        connectedChannels: app.store.listChannelAccounts().filter((a) => (app.channelStatus(a.key) as Record<string, { state?: string } | undefined>)[a.channel]?.state === "connected").map((a) => a.channel) });
     }
     // —— 故障排查（设置 → 故障排查）：所有输出都已脱敏 ——
     if (seg[0] === "diagnostics") {

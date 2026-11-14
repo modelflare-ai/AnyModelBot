@@ -64,3 +64,9 @@ export function sanitizeSidebarLayout(raw: unknown): SidebarLayout | null {
   sections.forEach((s, i) => i !== inbox && delete s.inbox);
   return { version: 1, sections };
 }
+
+/** A removed catalog entry must not be resurrected by a stale client layout. */
+export function withoutRemovedCatalog(layout: SidebarLayout | null, removed: (id: string) => boolean): SidebarLayout | null {
+  if (!layout) return null;
+  return { ...layout, sections: layout.sections.map((s) => ({ ...s, items: s.items.filter((key) => !key.startsWith("c:") || !removed(key.slice(2))) })) };
+}

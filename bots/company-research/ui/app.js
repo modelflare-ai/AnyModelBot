@@ -1,7 +1,7 @@
 // 桌面工作区：左边是尽调任务（顶上"新建"），右边是选中的任务——工具栏（公司、状态、操作）+ 三页：报告、来源、流程。
 // 界面只显示 app/state.json，开始、取消、导出、删除都交给 Bot（send）。选哪个任务、看哪一页只影响这个界面，不用发消息；
 // 正在跑、还没有报告时默认看流程，有报告后看报告；Bot 指定了 view（report / sources）时跟着 Bot。
-import { html, mount, useBot, useEffect, useRef, useState, Button, Empty, Field, Link, Meter, Notice } from "/amb/botapp/kit/kit.js";
+import { Workspace, html, mount, useBot, useEffect, useRef, useState, Button, Empty, Field, Link, Meter, Notice } from "/amb/botapp/kit/kit.js";
 import { Report, parseBlocks } from "./report.js";
 
 const RESEARCH = [["financial_analyst", "financial"], ["news_scanner", "news"], ["industry_analyst", "industry"], ["company_analyst", "company"]];
@@ -286,12 +286,12 @@ function App() {
   const job = jobs.find((j) => j.id === picked) ?? jobs.find((j) => j.id === state.selectedJobId) ?? jobs[0];
   const entries = job ? (state.timeline || []).filter((e) => e.jobId === job.id).slice(-30).reverse() : [];
   const showNew = creating || !job;
-  return html`<div class="kit-ws">
+  return html`<${Workspace} label=${bot.t("jobs.title")} current=${showNew ? bot.t("jobs.new") : job.company}>
     <${JobList} bot=${bot} jobs=${jobs} jobId=${job?.id} creating=${showNew} onPick=${(id) => { setPicked(id); setCreating(false); }} onNew=${() => setCreating(true)} />
     ${showNew
       ? html`<${NewView} bot=${bot} onDone=${job ? () => setCreating(false) : null} />`
       : html`<${JobView} key=${job.id} bot=${bot} state=${state} job=${job} entries=${entries} />`}
-  </div>`;
+  <//>`;
 }
 
 mount(App);

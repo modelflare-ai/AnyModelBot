@@ -2,12 +2,13 @@
 // 回来后自动连接）。Docker / 远程部署时浏览器登录的回调回不到这台机器，登录后要把地址栏里的链接贴回来。
 // 不是向导路由。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { html, Icon, Menu, Notice, Spinner, CopyButton } from "../components/ui.js";
+import { html, Icon, Menu, Notice, Spinner, CopyButton, Popover, tokenPx } from "../components/ui.js";
 import { BotAvatar, MAIN_CHAR } from "../components/avatar.js";
 import { FamilyHead, PickModel, familyName, groupModels, useFamilies } from "../components/model-picker.js";
 import { OfficialStart } from "../components/official-keys.js";
 import { api } from "../lib/api.js";
-import { failed } from "../lib/store.js";
+import { accountLogin, startAccountLogin, cancelAccountLogin, resumeAccountLogin } from "../lib/account-login.js";
+import { useStore, failed } from "../lib/store.js";
 import { LANGS, LANG_NAMES, changeLang, getLangPref, t, useLang } from "../lib/i18n.js";
 import { MF_CONSOLE, MF_DOCS } from "../lib/links.js";
 
@@ -19,100 +20,38 @@ export { MF_CONSOLE, MF_DOCS };
  * manual：Docker / 远程部署，回调回不到这台机器：等待时让用户把登录后地址栏里的链接贴回来。
  * explain / gift：按钮下面写上"新用户注册送 $1 Bot 额度"（首次启动的登录页、填 API Key 页里的"改用账号登录"）。
  */
-export function AccountLogin({ onSignedIn, onFace, manual = false, label = t("firstUse.login"), secondary = false, explain = false, gift = false, autoStart = false }) {
-  const [waiting, setWaiting] = useState(false);
-  const [url, setUrl] = useState("");
-  const [err, setErr] = useState("");
-  const [link, setLink] = useState("");
-  const [sending, setSending] = useState(false);
-  useEffect(() => onFace?.(waiting ? "thinking" : "idle"), [waiting]);
-  useEffect(() => {
-    if (!waiting) return;
-    let stop = false;
-    const poll = setInterval(async () => {
-      const s = await api("/account").catch(() => null);
-      if (!s || stop) return;
-      if (s.state === "signed_in") {
-        stop = true;
-        setWaiting(false);
-        setSending(false);
-        onSignedIn(s);
-      } else if (s.state !== "signing_in") {
-        stop = true;
-        setWaiting(false);
-        setSending(false);
-        if (s.error) {
-          setErr(s.error);
-          onFace?.("error");
-        }
-      }
-    }, 1000);
-    return () => clearInterval(poll);
-  }, [waiting]);
-  const start = async () => {
-    setErr("");
-    setLink("");
-    try {
-      const r = await api("/account/login", { method: "POST", body: {} });
-      setUrl(r.loginUrl);
-      setWaiting(true);
-      if (!r.opened) window.open(r.loginUrl, "_blank", "noopener");
-    } catch (e) {
-      setErr(e.message);
-      onFace?.("error");
-    }
+export function AccountLogin({ onSignedIn, onFace, manual = false, label = t("welcome.loginButton"), secondary = false, gift = false, inline = false }) {
+  const state = useStore(accountLogin);
+  const [link, setLink] = useState(""); const [sending, setSending] = useState(false);
+  const [paste, setPaste] = useState(false); const [err, setErr] = useState(""); const anchor = useRef(null);
+  const seen = useRef(state.success);
+  useEffect(() => onFace?.(state.waiting ? "thinking" : state.error ? "error" : "idle"), [state.waiting, state.error]);
+  useEffect(() => { if (state.success > seen.current) { seen.current = state.success; onSignedIn?.(state.account); setPaste(false); } }, [state.success]);
+  const submitLink = async (e) => {
+    e.preventDefault(); if (!link.trim() || sending) return;
+    setSending(true); setErr("");
+    try { await api("/account/login/complete", { method: "POST", body: { link: link.trim() } }); }
+    catch (e) { setErr(e.message); }
+    finally { setSending(false); }
   };
-  useEffect(() => { if (autoStart) void start(); }, []);
-  const cancel = () => {
-    setWaiting(false);
-    setSending(false);
-    api("/account/login/cancel", { method: "POST", body: {} }).catch(() => {});
-  };
-  // 收起登录（关掉浮层、离开这一页）就是取消：这次登录作废，之后不会突然切换账户；浏览器里已经同意、
-  // 正在完成登录时取消，服务端会撤销刚签发的授权和 Key。当前的 Key 和配置都不受影响
-  const waitingNow = useRef(false);
-  waitingNow.current = waiting;
-  useEffect(() => () => {
-    if (waitingNow.current) api("/account/login/cancel", { method: "POST", body: {} }).catch(() => {});
-  }, []);
-  // 贴回来的链接通过了就交给上面的轮询（换令牌、接网关要一会儿）；不对就留在这里重新贴
-  const submitLink = async () => {
-    const v = link.trim();
-    if (!v || sending) return;
-    setErr("");
-    setSending(true);
-    try {
-      await api("/account/login/complete", { method: "POST", body: { link: v } });
-    } catch (e) {
-      setSending(false);
-      setErr(e.message);
-      onFace?.("error");
-    }
-  };
-  if (waiting) {
-    return html`<div class="login-cta" role="status">
-      ${manual
-        ? html`<form class="login-manual" onSubmit=${(e) => { e.preventDefault(); submitLink(); }}>
-            <p class="hint">${t("onboarding.login.manualHint")}</p>
-            <input class="field mono" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:…/callback?code=…" aria-label=${t("onboarding.login.manualLabel")}
-              value=${link} readonly=${sending} aria-invalid=${!!err} onInput=${(e) => { setLink(e.target.value); setErr(""); }} />
-            ${err && html`<div class="err-text" role="alert">${err}</div>`}
-            <button type="submit" class="btn primary lg block" disabled=${!link.trim() || sending}>${sending ? html`<${Spinner} /> ${t("onboarding.login.manualSending")}` : t("onboarding.login.manualSubmit")}</button>
-          </form>`
-        : html`<div class="login-wait"><${Spinner} /> ${t("onboarding.login.waiting")}</div>`}
-      <div class="login-links">
-        <a class="text" href=${url} target="_blank" rel="noopener noreferrer">${t("onboarding.login.reopen")}</a>
-        <${CopyButton} text=${url} label=${t("onboarding.login.copyLink")} />
-        <button type="button" class="text" onClick=${cancel}>${t("common.cancel")}</button>
-      </div>
-    </div>`;
-  }
+  const manualForm = html`<form class="login-manual" onSubmit=${submitLink}><p class="hint">${t("onboarding.login.manualHint")}</p>
+    <input class="field mono" value=${link} readonly=${sending} aria-label=${t("onboarding.login.manualLabel")} placeholder="http://127.0.0.1:…/callback?code=…" onInput=${(e) => { setLink(e.target.value); setErr(""); }} />
+    ${err && html`<div class="err-text" role="alert">${err}</div>`}<button class="btn primary" type="submit" disabled=${sending || !link.trim()}>${t("onboarding.login.manualSubmit")}</button></form>`;
+  const links = html`<div class="login-links">
+    <a class="text" href=${state.url || undefined} aria-disabled=${!state.url} target="_blank" rel="noopener noreferrer">${t(inline ? "welcome.reopen" : "onboarding.login.reopen")}</a>
+    <${CopyButton} text=${state.url} label=${t("onboarding.login.copyLink")} />
+    <button type="button" class="text" onClick=${cancelAccountLogin}>${t("common.cancel")}</button>
+    ${inline && manual && html`<button type="button" class="text" onClick=${() => setPaste(!paste)}>${t("welcome.pasteLink")}</button>`}</div>`;
+  if (inline) return state.waiting
+    ? html`<div class="account-login waiting" ref=${anchor} role="status"><span class="account-login-icon"><${Spinner} /></span><div class="account-login-copy"><span class="account-login-title">${t("welcome.signingIn")}</span>${links}</div></div>
+      ${paste && html`<${Popover} anchor=${anchor.current} width=${300} prefer="up" onClose=${() => setPaste(false)}>${manualForm}<//>`}`
+    : html`<button type="button" class="account-login" onClick=${startAccountLogin}><span class="account-login-icon"><${Icon} name="login" /></span>
+      <span class="account-login-copy"><span class="account-login-title">${t("firstUse.signIn")}</span><span class="hint" title=${t("welcome.signInSub")}>${t("welcome.signInSub")}</span></span><${Icon} name="ext" size="sm" /></button>`;
   return html`<div class="login-cta">
-    <button type="button" class=${`btn${secondary ? "" : " primary"} lg block`} onClick=${start}>${label}</button>
-    ${explain && html`<p class="hint">${t("firstUse.accountHint")}</p><p class="hint">${t("firstUse.signupHint")}</p>`}
-    ${(explain || gift) && html`<p class="login-gift"><${Icon} name="spark" size="sm" />${t("firstUse.signupGift")}</p>`}
-    ${err && html`<div class="err-text" role="alert">${err}</div>`}
-  </div>`;
+    ${state.waiting ? html`<div class="login-wait" role="status"><${Spinner} />${t("onboarding.login.waiting")}</div>${links}${manual && manualForm}`
+      : html`<button type="button" class=${`btn ${secondary ? "outline" : "primary"} lg block`} onClick=${startAccountLogin}>${label}</button>`}
+    ${gift && html`<p class="login-gift"><${Icon} name="spark" size="sm" />${t("firstUse.signupGift")}</p>`}
+    ${state.error && html`<div class="err-text" role="alert">${state.error}</div>`}</div>`;
 }
 
 function ModelStep({ models, initial, onDone, auto }) {
@@ -150,7 +89,7 @@ function ModelStep({ models, initial, onDone, auto }) {
       setBusy(false);
     }
   };
-  // 目录里有 Bot 时不让新用户先选模型：直接用默认的，进发现页
+  // 目录里有 Bot 时不让新用户先选模型：直接用默认的，进入助手对话
   useEffect(() => {
     if (auto && cur && models.includes(cur)) void start();
   }, []);
@@ -210,7 +149,7 @@ function LangSwitch() {
   </div>`;
 }
 
-export function Onboarding({ gateway, defaultModel, onDone, skipModelStep, existingConnection }) {
+export function Onboarding({ gateway, defaultModel, onDone, skipModelStep, existingConnection, connection }) {
   const [models, setModels] = useState(null);
   const [suggested, setSuggested] = useState(defaultModel || "");
   // Docker / 远程部署：浏览器登录的回调到不了本程序，登录后要把链接贴回来
@@ -220,11 +159,17 @@ export function Onboarding({ gateway, defaultModel, onDone, skipModelStep, exist
   useEffect(() => {
     api("/account")
       .then((a) => {
+        resumeAccountLogin(a);
         if (a.error) setWhy(a.error);
         if (a.manualLogin) setManual(true);
       })
       .catch(() => {});
   }, []);
+  const [providers, setProviders] = useState([]);
+  const loginState = useStore(accountLogin);
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => { api("/official").then((d) => setProviders(d.providers || [])).catch(() => {}); api("/status").then((d) => setDesktop(!!d.desktop)).catch(() => {}); }, []);
   const [face, setFace] = useState("idle");
   const [cue, setCue] = useState(null);
   // 用自己的官方 API Key，不登录 Modelflare
@@ -242,23 +187,28 @@ export function Onboarding({ gateway, defaultModel, onDone, skipModelStep, exist
       })
       .catch((e) => setModelsErr(e.message || t("common.error")));
   };
-  return html`<main class="onboard" data-screen="onboarding">
-    <div class="onboard-col">
-      <${LangSwitch} />
-      <div class="onboard-hero">
-        <${BotAvatar} char=${MAIN_CHAR} size=${models === null ? 168 : 88} state=${face} cue=${cue} lively pokeable greet />
-        <h1>${t("onboarding.slogan")}</h1>
-      </div>
-      ${gateway && gateway.mode === "managed" && gateway.state === "failed" && html`<${Notice} tone="red">${t("onboarding.gatewayFailed", { error: gateway.lastError || t("onboarding.unknownReason") })}<//>`}
+  const connectedProviders = providers.filter((p) => p.connected);
+  const configs = [...connectedProviders.map((p) => t("welcome.setupLine", { service: p.name, last4: p.keyTail, n: p.models })),
+    ...(connection?.connected && connection?.keyTail ? [t("welcome.setupAccount", { last4: connection.keyTail })] : [])];
+  const wait = loginState.waiting;
+  return html`<main class="onboard" data-screen="onboarding"><${LangSwitch} />
+    <div class=${`onboard-col${existingConnection && !ownKey ? " returning" : ""}`}>
+      ${ownKey && models === null && html`<button type="button" class="text onboard-back" disabled=${keyBusy} onClick=${() => { setOwnKey(false); setFace("idle"); }}>${t("welcome.back")}</button>`}
+      <div class="onboard-hero"><${BotAvatar} char=${MAIN_CHAR} size=${models === null ? tokenPx("--onboard-avatar", 120) : 88} state=${face} cue=${cue} lively pokeable greet />
+        <h1>${t(ownKey ? "official.useOwn" : "onboarding.slogan")}</h1>
+        ${models === null && html`<p>${t(ownKey ? "welcome.keySubtitle" : existingConnection ? "welcome.returnSubtitle" : "welcome.loginSubtitle")}</p>`}</div>
+      ${gateway?.mode === "managed" && gateway.state === "failed" && html`<${Notice} tone="red">${t("onboarding.gatewayFailed", { error: gateway.lastError || t("onboarding.unknownReason") })}<//>`}
       ${why && models === null && !modelsErr && html`<${Notice} tone="amber">${why}<//>`}
       ${modelsErr && models === null && html`<${Notice} tone="red" action=${html`<button type="button" class="btn" onClick=${loadModels}>${t("common.retry")}</button>`}>${t("firstUse.modelsLoadFailed", { error: modelsErr })}<//>`}
-      ${modelsErr && models === null ? null : models !== null
-        ? html`<${ModelStep} models=${models} initial=${suggested} onDone=${onDone} auto=${skipModelStep} />`
-        : ownKey
-          ? html`<${OfficialStart} onConnected=${loadModels} accountLogin=${html`<${AccountLogin} secondary gift label=${t("firstUse.useAccount")} manual=${manual} onFace=${onFace} onSignedIn=${loadModels} />`} />`
-          : html`<${AccountLogin} explain manual=${manual} onFace=${onFace} onSignedIn=${loadModels} />
-              <div class="login-links"><button type="button" class="text" onClick=${() => setOwnKey(true)}>${t("official.useOwn")}</button></div>`}
-      ${existingConnection && models === null && html`<button type="button" class="text" onClick=${async () => { await api("/account/continue", { method: "POST", body: {} }); onDone(); }}>${t("firstUse.connectionContinue")}</button>`}
-    </div>
-  </main>`;
+      ${models !== null ? html`<${ModelStep} models=${models} initial=${suggested} onDone=${onDone} auto=${skipModelStep || existingConnection} />`
+        : ownKey ? html`<${OfficialStart} desktop=${desktop} onBusy=${setKeyBusy} onFace=${onFace} onConnected=${async () => { if (existingConnection) onDone(); else await loadModels(); }} />`
+        : html`${existingConnection && html`<div class=${`onboard-setup${wait ? " waiting" : ""}`}><span class="hint">${t("welcome.currentSetup")}</span>
+            <div class="onboard-configs">${configs.slice(0, 3).map((line) => html`<div>${line}</div>`)}${configs.length > 3 && html`<div class="hint">${t("welcome.moreServices", { n: configs.length - 3 })}</div>`}</div>
+            <button type="button" class="btn primary lg block" disabled=${wait} onClick=${async () => { try { await api("/account/continue", { method: "POST", body: {} }); onDone(); } catch (e) { setWhy(e.message); } }}>${t("welcome.continue")}</button></div>
+            <div class=${`onboard-divider${wait ? " waiting" : ""}`}><span>${t("welcome.orAnother")}</span></div>`}
+          <${AccountLogin} secondary=${!!existingConnection} gift manual=${manual} onFace=${onFace} onSignedIn=${loadModels} />
+          ${!existingConnection && html`<div class=${`onboard-divider${wait ? " waiting" : ""}`}><span>${t("welcome.or")}</span></div>`}
+          <div class=${`onboard-alternative${wait ? " waiting" : ""}`}><button type="button" class="btn outline lg block" disabled=${wait} onClick=${() => setOwnKey(true)}>${t(existingConnection ? "welcome.addKey" : "official.useOwn")}</button>
+            <p class="hint">${t(existingConnection ? "welcome.addKeyHint" : "welcome.ownKeyHint")}</p></div>`}
+    </div></main>`;
 }

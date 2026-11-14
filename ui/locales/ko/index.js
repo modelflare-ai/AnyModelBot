@@ -1,3 +1,6 @@
+import templates from "./templates.json" with { type: "json" };
+import scheduled from "./scheduled.js";
+import welcome from "./welcome.js";
 import firstUse from "./firstUse.js";
 import updates from "./updates.js";
 import search from "./search.js";
@@ -31,4 +34,4 @@ import group from "./group.js";
 import botapp from "./botapp.js";
 import apps from "./apps.js";
 
-export default { apps, firstUse, updates, search, official, botapp, group, common, app, time, settings, account, pwsh, chat, info, markdown, notify, troubleshoot, onboarding, newBot, botSettings, sidebar, avatar, models, ui, guide, activity, perms, access, tasks, needs, rules };
+export default { templates, scheduled, welcome, apps, firstUse, updates, search, official, botapp, group, common, app, time, settings, account, pwsh, chat, info, markdown, notify, troubleshoot, onboarding, newBot, botSettings, sidebar, avatar, models, ui, guide, activity, perms, access, tasks, needs, rules };

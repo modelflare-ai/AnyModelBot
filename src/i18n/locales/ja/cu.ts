@@ -1,5 +1,8 @@
 import type { TranslatedCatalog } from "../../index.js";
 export default {
+  waiting: "権限の有効化を待っています",
+  channelWait: "パソコン操作には、このパソコンで {items} 権限を有効にする必要があります。デスクトップアプリの案内に従って有効にすると続行します。",
+
   "codexUnavailable": "Codex Computer Use ブリッジ：macOS 14.4 以降と Codex Computer Use のインストールが必要です",
   "codexOff": "{base}（{why}）",
   "codexNotMac": "このシステムは macOS ではありません",

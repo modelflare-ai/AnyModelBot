@@ -38,15 +38,19 @@ export const sectionOf = (layout, key) => layout.sections.find((s) => s.items.in
  * 某一类还没读到时传 null，那一类先不动。没有要放的时候原样返回同一个对象（调用方靠这个判断要不要保存）。
  */
 export function place(layout, { bots, groups, catalog }) {
+  const removed = new Set((catalog || []).filter((e) => e.userRemoved && !e.instanceId).map(keyOfEntry));
+  if (layout.sections.some((s) => s.items.some((key) => removed.has(key)))) {
+    layout = copy(layout); for (const s of layout.sections) s.items = s.items.filter((key) => !removed.has(key));
+  }
   const placed = new Set(layout.sections.flatMap((s) => s.items));
   const take = (key) => (placed.has(key) ? false : (placed.add(key), true));
   const toDefault = [
-    ...(bots || []).map(keyOfBot).filter(take),
+    ...(bots || []).map(keyOfBot).filter((key) => !removed.has(key)).filter(take),
     ...(groups || []).map(keyOfGroup).filter(take),
   ];
   const inbox = layout.sections.find((s) => s.inbox);
   // 用过的目录 Bot 由它的机器人那一行负责（同一个键）；目录按上架时间从新到旧排好了，保持这个顺序放在最上面
-  const toInbox = inbox ? (catalog || []).filter((e) => !e.instanceId).map(keyOfEntry).filter(take) : [];
+  const toInbox = inbox ? (catalog || []).filter((e) => !e.instanceId && !e.userRemoved).map(keyOfEntry).filter(take) : [];
   if (!toDefault.length && !toInbox.length) return layout;
   const next = copy(layout);
   const def = next.sections.find((s) => s.default) || next.sections[0];

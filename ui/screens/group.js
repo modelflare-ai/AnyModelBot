@@ -4,11 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { html, Icon, IconButton, Notice, Popover, Sheet, Skeleton, Spinner, autoGrow } from "../components/ui.js";
 import { BotAvatar } from "../components/avatar.js";
 import { Markdown, Linkified } from "../components/markdown.js";
+import { RuleCard, RuleSource, useRuleActions } from "../components/rules.js";
 import { upsertStep } from "../components/activity.js";
 import { DeliveredFiles } from "../components/files.js";
 import { api, attachGroup } from "../lib/api.js";
 import { failed, saved, useStore } from "../lib/store.js";
 import { fmtSep } from "../lib/format.js";
+import { fill, refreshGuide, refreshGuideSoon } from "../lib/guide.js";
 import { prefs } from "../lib/prefs.js";
 import { t, useLang } from "../lib/i18n.js";
 import { notify, plainSnippet } from "../lib/notify.js";
@@ -25,7 +27,7 @@ const EVERYONE = "*";
 
 function toItems(messages) {
   return messages.map((m) => {
-    const base = { id: "m" + m.id, mid: m.id, botId: m.botId, conv: m.conversationId, at: m.createdAt, steps: m.steps, interim: m.interim, files: m.files };
+    const base = { id: "m" + m.id, mid: m.id, botId: m.botId, conv: m.conversationId, at: m.createdAt, steps: m.steps, interim: m.interim, files: m.files, ruleSource: m.ruleSource };
     if (m.role === "system") return { ...base, kind: "note", text: m.content };
     if (m.role === "assistant" && isError(m.content)) return { ...base, kind: "error", text: errText(m.content) };
     return { ...base, kind: "msg", role: m.role === "user" ? "user" : "assistant", text: m.content };
@@ -94,10 +96,12 @@ export function GroupSheet({ group, bots, onClose, onSaved }) {
 }
 
 export function GroupScreen({ group, bots, onEdit, onOpenSettings, onChanged, initialFocus, onBackToSearch, visible = true }) {
+  const ruleActions = useRuleActions("", group.id);
   const viewId = `group:${group.id}`;
   const savedView = useRef(chatView(viewId));
   const restoreView = useRef(true);
   const [items, setItems] = useState(null);
+  const fillReq = useStore(fill);
   const [live, setLive] = useState(null);
   const [pending, setPending] = useState([]);
   const [canOpen, setCanOpen] = useState(false);
@@ -252,11 +256,11 @@ export function GroupScreen({ group, bots, onEdit, onOpenSettings, onChanged, in
     });
   };
 
-  const send = async () => {
-    const msg = text.trim();
+  const send = async (raw) => {
+    const msg = (typeof raw === "string" ? raw : text).trim();
     if (!msg) return;
     history.clear(); setFindOpen(false);
-    setText("");
+    if (typeof raw !== "string") setText("");
     setMention(null);
     requestAnimationFrame(() => autoGrow(ta.current));
     stick.current = true;
@@ -264,10 +268,17 @@ export function GroupScreen({ group, bots, onEdit, onOpenSettings, onChanged, in
       await api(`/groups/${enc}/messages`, { method: "POST", body: { text: msg } });
       await load();
     } catch (e) {
-      setText(msg);
+      if (typeof raw !== "string") setText(msg);
       failed(e);
     }
   };
+  useEffect(() => {
+    if (!fillReq || fillReq.target !== viewId || items === null) return;
+    fill.set(null);
+    if (fillReq.send) void send(fillReq.text);
+    else if (!text.trim()) setText(fillReq.text);
+  }, [fillReq?.at, items !== null]);
+  useEffect(() => { if (!running && items) { refreshGuide(); refreshGuideSoon(); } }, [running]);
   const stop = async () => {
     setStopping(true);
     try {
@@ -344,8 +355,10 @@ export function GroupScreen({ group, bots, onEdit, onOpenSettings, onChanged, in
           ${author}
           ${(it.live || it.steps) && html`<${WorkLine} live=${it.live} stopping=${it.live && stopping} text=${it.text} startedAt=${it.startedAt} steps=${it.activity} count=${it.steps} load=${it.mid ? loadActivity(it) : undefined} />`}
           ${(it.prompts || []).map((p) => html`<${PromptCard} key=${p.requestId} requestId=${p.requestId} fallback=${p.prompt} />`)}
-          ${shown && html`<div class="msg"><${Markdown} text=${shown} /></div>`}
+          ${it.ruleSource && html`<${RuleSource} source=${it.ruleSource} botId=${it.botId} />`}
+          ${shown && html`<div class="msg"><${Markdown} text=${shown} conv=${it.conv} canOpen=${canOpen} /></div>`}
           ${files(it)}
+          ${ruleActions.filter((a) => a.messageId === it.mid).map((a) => html`<${RuleCard} key=${a.id} action=${a} />`)}
           ${!it.live && html`<${MsgActions} text=${shown} at=${it.at} />`}
         </div>`);
       }
@@ -355,7 +368,7 @@ export function GroupScreen({ group, bots, onEdit, onOpenSettings, onChanged, in
     const shownIds = new Set((live?.prompts || []).map((p) => p.requestId));
     for (const p of pending) if (!shownIds.has(p.id)) out.push(html`<div class="msg-row assistant" key=${"p" + p.id}><${PromptCard} requestId=${p.id} fallback="" /></div>`);
     return out;
-  }, [items, history.context, live, pending, stopping, canOpen, bots, lang]);
+  }, [items, history.context, live, pending, stopping, canOpen, bots, lang, ruleActions]);
 
   // 示例按真实成员生成（第 17 项）：名字里像"写作助手"的用起草的例子，否则用第一位成员的通用例子。
   // 只用在群里不重名的成员：填进去的 @名字 要能被服务端的点名解析（core/groups.ts mentionsIn）认成这个人

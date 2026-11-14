@@ -102,6 +102,23 @@ export default {
   },
   "tasks": "작업",
   "tabsLabel": "패널 탭",
-  "tab": { "app": "작업 공간", "overview": "개요", "tasks": "작업", "memory": "기억" },
-  "noTasks": "아직 작업이나 규칙이 없습니다"
+  "tab": { resources: "미리 보기", "app": "작업 공간", "overview": "개요", "tasks": "작업", "memory": "기억" },
+  "noTasks": "아직 작업이나 규칙이 없습니다",
+  preview: {
+    "openPanel": "오른쪽 패널에서 미리 보기",
+    "empty": "메시지의 파일이나 웹사이트 링크를 클릭하거나 웹사이트 주소를 입력하세요.",
+    "address": "웹사이트 주소",
+    "invalidUrl": "유효한 외부 HTTP 또는 HTTPS 주소를 입력하세요.",
+    "opened": "열린 항목",
+    "closeFile": "현재 미리 보기 닫기",
+    "download": "다운로드",
+    "openSystem": "시스템 앱으로 열기",
+    "websiteHint": "일부 사이트는 삽입을 차단하거나 로그인이 필요합니다. 표시되지 않으면 “외부에서 열기 ↗”를 눌러 브라우저에서 확인하세요.",
+    "loadFailed": "미리 보기를 불러오지 못했습니다. 새로 고치거나 외부에서 여세요.",
+    "slow": "불러오는 데 시간이 걸립니다. 새로 고치거나 외부에서 열 수 있습니다.",
+    "unsupported": "이 형식은 아직 미리 볼 수 없습니다. 다운로드하거나 시스템 앱으로 여세요.",
+    "tooLarge": "파일이 너무 커서 미리 볼 수 없습니다. 다운로드하거나 시스템 앱으로 여세요."
+},
+  expandWorkspace: "작업 공간 확장",
+  restoreWorkspace: "대화로 돌아가기",
 };

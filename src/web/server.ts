@@ -28,6 +28,7 @@ import { AppUserError } from "../tools/apps/service.js";
 import { tasksRoutes } from "./routes/tasks.js";
 import { chatRoutes } from "./routes/chat.js";
 import { botsRoutes } from "./routes/bots.js";
+import { FilePreviews } from "./file-previews.js";
 
 const log = logger("web");
 const require = createRequire(import.meta.url);
@@ -77,6 +78,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
   const host = opts.host ?? cfg.ui.host;
   const uiDir = path.join(findAppRoot(), "ui");
   const vendor = vendorFiles();
+  const filePreviews = new FilePreviews();
   // 非回环地址（如 Docker 0.0.0.0）必须带访问令牌；未配置则生成并写入数据目录（不打印到日志）
   let token = cfg.ui.token;
   // 用上目录 Bot 之后，命令行方式在非 Linux 的回环模式下也要令牌：技能脚本是外部代码，而进程来源检查只在 Linux 生效（agent/peer-guard.ts）。
@@ -194,6 +196,8 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       res.writeHead(421).end("bad host");
       return false;
     }
+    // This path validates its own expiring, directory-scoped capability in serve().
+    if (FilePreviews.isAssetRequest(req, url)) return true;
     if (!token) return true;
     // 目录 Bot 的界面跑在不透明来源的沙箱里，带不上 Cookie；这条路径下只有静态文件，没有用户数据（botkit/static.ts）
     if (url.pathname.startsWith("/amb/botapp/") && (req.method === "GET" || req.method === "HEAD")) return true;
@@ -229,7 +233,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
     publicGroup,
     groupMembers,
   };
-  const routes: Route[] = [systemRoutes(ctx), modelsRoutes(ctx), accountRoutes(ctx), settingsRoutes(ctx), computerRoutes(ctx), channelsRoutes(ctx), connectionsRoutes(ctx), appsRoutes(ctx), tasksRoutes(ctx), chatRoutes(ctx), botsRoutes(ctx)];
+  const routes: Route[] = [systemRoutes(ctx), modelsRoutes(ctx), accountRoutes(ctx), settingsRoutes(ctx), computerRoutes(ctx), channelsRoutes(ctx), connectionsRoutes(ctx), appsRoutes(ctx), tasksRoutes(ctx), chatRoutes(ctx, filePreviews), botsRoutes(ctx, filePreviews)];
 
   async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     const p = url.pathname.slice("/amb/api".length);
@@ -308,6 +312,7 @@ export async function startWebServer(app: App, opts: { port?: number; host?: str
       return;
     }
     if (!authorized(req, url, res)) return;
+    if (filePreviews.serve(req, res, url)) return;
     if (url.pathname.startsWith("/amb/api/")) {
       api(req, res, url).catch((e) => {
         const status = e instanceof HttpError ? e.status : 500;

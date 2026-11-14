@@ -32,3 +32,8 @@ export function markCatalogSeen(id) {
 
 /** 文案按语言取：缺了退回 en，再退回 zh-CN */
 export const tr = (v, lang) => (v ? v[lang] ?? v.en ?? v["zh-CN"] : undefined);
+
+// 刚移除的目录项立即隐藏，等待后端目录刷新确认；不把短暂的旧目录渲染成未安装入口。
+export const locallyRemoved = createStore([]);
+export const markCatalogRemoved = (id) => locallyRemoved.set((ids) => [...new Set([...ids, id])]);
+export const clearCatalogRemoved = (id) => locallyRemoved.set((ids) => ids.filter((x) => x !== id));

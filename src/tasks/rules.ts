@@ -53,16 +53,24 @@ export interface RuleState {
 
 export function ruleState(rule: RuleRow, live = false, l: Lang = currentLang()): RuleState {
   const s = (key: RuleState["key"], label: MessageKey, dot: RuleState["dot"]): RuleState => ({ key, label: tl(l, label), dot });
-  if (rule.pausedReason) return s("paused", "rules.statePaused", rule.pausedReason === "budget" ? "warn" : "err");
   if (rule.mode === "off") return s("off", "rules.stateOff", "");
+  if (rule.pausedReason) return s("paused", "rules.statePaused", "err");
   if (!live && !rule.nextRunAt && rule.trigger.kind === "schedule") return s("done", "rules.stateDone", "");
   if (rule.kind === "remind") return s("remind", "rules.stateRemind", "ok");
-  if (runMode(rule) === "observe") return s("observe", "rules.stateObserve", "");
+  if (runMode(rule) === "observe") return s("observe", "rules.stateObserve", "warn");
   return s("act", "rules.stateAct", "ok");
 }
 
 /** 规则在界面上的样子 */
 export interface RuleView {
+  destination?: string;
+  sourceGroupId?: string;
+  sourceGroupName?: string;
+  requiresGroup?: boolean;
+  missedPolicy?: "catchup" | "skip";
+  needsAttention?: boolean;
+  estimatedMonthUsd?: number;
+  monthlyRuns?: number;
   id: string;
   botId: string;
   conversationId: string;
@@ -78,7 +86,7 @@ export interface RuleView {
   state: RuleState;
   nextRunAt: number;
   /** 最近一次：时间、结果、一行 */
-  last?: { at: number; outcome: string; line: string };
+  last?: { at: number; outcome: string; line: string; error?: string };
   failures: number;
   /** 暂停的原因：failures / budget；空 = 没暂停 */
   pausedReason: string;
@@ -100,6 +108,8 @@ export function whenOf(rule: Pick<RuleRow, "trigger">, withZone = false, l: Lang
 
 /** 跳过、失败的原因：存进 runs.error 的代码（显示时按语言翻，见 errorText） */
 export const RUN_ERROR = {
+  groupMissing: "group_missing",
+  groupEmpty: "group_empty",
   appOff: "app_off",
   busy: "busy",
   overlap: "overlap",
@@ -119,6 +129,8 @@ export const RUN_ERROR = {
 
 /** 原因 → 词条：规则自己的，和任务共用的那几种（tasks.*，和任务失败时的说法一样） */
 const WHY: Record<string, MessageKey> = {
+  group_missing: "rules.groupMissing",
+  group_empty: "rules.groupEmpty",
   app_off: "rules.whyAppOff",
   busy: "rules.whyBusy",
   overlap: "rules.whyOverlap",

@@ -49,6 +49,15 @@ export const RELEASE = {
   days: 30,
   /** 各版本的一句话亮点（可选），没有就显示"AnyModelBot {version} 已发布" */
   highlights: {
+    "0.1.33": {
+      zh: "定时规则、机器人模板和右侧预览",
+      en: "Scheduled rules, bot templates and resource previews",
+      ja: "スケジュール、テンプレート、プレビュー",
+      ko: "예약 규칙, 봇 템플릿, 리소스 미리보기",
+      ru: "Расписание, шаблоны и просмотр ресурсов",
+      es: "Reglas programadas, plantillas y vistas previas",
+      pt: "Regras agendadas, modelos e prévias",
+    },
     "0.1.32": {
       zh: "新增西班牙语和葡萄牙语（巴西）界面",
       en: "Now in Spanish and Portuguese (Brazil)",

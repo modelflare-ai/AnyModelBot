@@ -214,5 +214,11 @@
   "sheet.time": "Время",
   "sheet.words": "Текст / реплики",
   "sheet.visual": "Описание кадра",
-  "sheet.media": "Материалы"
+  "sheet.media": "Материалы",
+  "shotDetails": "Описание и настройки кадра",
+  "canvas.zoomOut": "Уменьшить масштаб",
+  "canvas.zoomIn": "Увеличить масштаб",
+  "canvas.fit": "Вписать в область",
+  "canvas.expand": "Развернуть рабочую область",
+  "canvas.restore": "Вернуться в чат"
 }

@@ -56,6 +56,7 @@ export function publicBot(b: NonNullable<ReturnType<App["store"]["getBot"]>>) {
   return {
     id: b.id,
     name: b.name,
+    templateId: b.templateId || undefined, templateVersion: b.templateVersion || undefined,
     systemPrompt: b.systemPrompt,
     defaultModel: b.defaultModel,
     settings: b.settings,

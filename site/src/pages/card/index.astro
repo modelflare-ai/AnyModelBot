@@ -1,0 +1,6 @@
+---
+// 中文首页给推特、Telegram 抓取器的版本：页面和 / 一样，分享图换成中文大图（1200×630）。
+// 这个地址不对外：nginx 按 User-Agent 在 / 上直接给出这份文件（deploy/nginx.conf 的 $card_dir）。
+import Home from "../../views/Home.astro";
+---
+<Home lang="zh" largeCard />

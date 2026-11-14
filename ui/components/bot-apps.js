@@ -4,6 +4,7 @@
 // 应用页的「谁能用」是同一份设置的另一头：应用那边没把这个机器人算进去的，这里勾不了。
 import { useEffect, useState } from "preact/hooks";
 import { html, Button, Icon, Spinner, Switch } from "./ui.js";
+import { AppMark } from "./app-mark.js";
 import { ATTENTION, appLabel, appsStore, loadApps, openConnect, openCustom, repairActions, stateText, stateTone } from "../lib/apps.js";
 import { useStore } from "../lib/store.js";
 import { t, useLang } from "../lib/i18n.js";
@@ -80,6 +81,7 @@ export function BotApps({ bot, apps, onPut, onOpenApps, onOpenSettings }) {
         const expanded = open === v.key;
         const actions = ATTENTION.includes(v.state) ? repairActions(v.state, { custom: v.custom, method: v.accounts[0]?.method }) : [];
         return html`<div key=${v.key} class=${`row apps-bot-row${on ? "" : " off"}`}>
+          <${AppMark} app=${v.custom ? undefined : v.app} name=${name} size="sm" />
           <div class="who">
             <label class="sheet-check apps-bot-name">${apps.mode === "selected" && html`<input type="checkbox" checked=${on} disabled=${!can} onChange=${(e) => pick(v.key, e.target.checked)} />`}<span class="name">${name}</span></label>
             <div class="sub"><span class=${`apps-state ${stateTone(v.state)}`}>${stateText(v.state, tools)}</span>${!can ? ` · ${t("apps.bot.notShared")}` : ""}</div>

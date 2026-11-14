@@ -17,10 +17,15 @@ import { homeJsonLd } from "../lib/seo";
 import { ORIGIN } from "../lib/site";
 import "../styles/home.css";
 import "../styles/sections.css";
-interface Props { lang: Lang }
-const { lang } = Astro.props;
+interface Props {
+  lang: Lang;
+  /** 给推特、Telegram 抓取器的版本（pages/card/）：不换微信方图，用本语言的默认大图 */
+  largeCard?: boolean;
+}
+const { lang, largeCard = false } = Astro.props;
 // 微信分享卡片：短文案和方图只给中文首页。<title> 和 description 带搜索关键词，不动
-const share = lang === "zh" ? { ogTitle: "AnyModelBot｜你的 AI 机器人团队，跑在自己的电脑上", ogDescription: "不同的事交给不同的机器人。登录 Modelflare，就能用 GPT、Claude 等模型。", ogImage: { url: `${ORIGIN}/og/wechat-home.png`, width: 600, height: 600 }, twitterCard: "summary" as const } : {};
+const wechatImage = largeCard ? {} : { ogImage: { url: `${ORIGIN}/og/wechat-home.png`, width: 600, height: 600 }, twitterCard: "summary" as const };
+const share = lang === "zh" ? { ogTitle: "AnyModelBot｜你的 AI 机器人团队，跑在自己的电脑上", ogDescription: "不同的事交给不同的机器人。登录 Modelflare，就能用 GPT、Claude 等模型。", ...wechatImage } : {};
 ---
 <Base lang={lang} path="/" jsonLd={homeJsonLd(lang)} {...share}>
   <Hero lang={lang} />

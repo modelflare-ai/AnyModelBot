@@ -3,6 +3,7 @@ import { render, createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, ICONS, Button, IconButton, Seg, Switch, Stops, MenuButton, Menu, Badge, Notice, Skeleton, Spinner, CopyButton, Toasts, DialogHost, Splitter } from "../components/ui.js";
 import { BotAvatar, AvatarPicker, AppMark, BOT_CHARS, CHAR_KEYS, MAIN_CHAR } from "../components/avatar.js";
+import { UserAvatar } from "../components/user-avatar.js";
 import { NeedItem, NeedsRow } from "../screens/needs-you.js";
 import { RuleRow, RuleDetail } from "../components/rules.js";
 import { PausedLine, TaskChip, TaskGroup, TaskRow } from "../components/tasks.js";
@@ -334,8 +335,8 @@ const STATE_ROWS = [
     ["默认", () => html`<label class="side-search" style="width: 200px; margin: 0"><${Icon} name="search" size="sm" /><input placeholder="搜索" tabindex="-1" /></label>`],
     ["悬停", () => html`<label class="side-search is-hover" style="width: 200px; margin: 0"><${Icon} name="search" size="sm" /><input placeholder="搜索" tabindex="-1" /></label>`],
     ["聚焦", () => html`<label class="side-search is-focus" style="width: 200px; margin: 0"><${Icon} name="search" size="sm" /><input value="日报" tabindex="-1" /></label>`],
-    ["账户 · 悬停", () => html`<button type="button" class="account is-hover" style="width: 200px"><span class="me">R</span><span class="who">root</span></button>`],
-    ["账户 · 打开", () => html`<button type="button" class="account on" style="width: 200px"><span class="me">R</span><span class="who">root</span></button>`]] },
+    ["账户 · 悬停", () => html`<button type="button" class="account is-hover" style="width: 200px"><${UserAvatar} name="root" class="me" /><span class="who">root</span></button>`],
+    ["账户 · 打开", () => html`<button type="button" class="account on" style="width: 200px"><${UserAvatar} name="root" class="me" /><span class="who">root</span></button>`]] },
   { name: "侧栏提示", note: ".side-note · 一行淡灰 + 小点；悬停、按下深一级，不铺红、不铺品牌色", ctx: "side", cells: basic((c) => html`<a class=${`side-note ${c}`} href="#states" style="width: 220px; margin: 0"><span class="side-note-main"><span class="dot warn"></span><span class="v">余额不多了</span><span class="go">充值 ↗</span></span></a>`) },
   { name: "选角色", note: ".avatar-opt · 选中比悬停深一级、名字变实，不描边", cells: [
     ...basic((c) => html`<button type="button" class=${`avatar-opt ${c}`}><${BotAvatar} char="green" size=${36} /><span class="avatar-name">${BOT_CHARS.green.name}</span></button>`),
@@ -412,8 +413,8 @@ function WinApp({ screen = "chat", open: initial = false }) {
     <aside class="side">
       ${settings
         ? html`<div class="side-top start"><button type="button" class="side-back"><${Icon} name="arrowLeft" size="md" />返回应用</button></div>`
-        : html`<div class="side-top"><${IconButton} icon="sidebar" iconSize="md" class="side-toggle" label="收起侧栏" /><span class="side-brand"><img src="/amb/static/assets/favicon-64.png" alt="" /><span>AnyModelBot</span></span><span class="grow"></span>
-            <${IconButton} icon="search" iconSize="md" label="搜索聊天记录" /><${IconButton} icon="plus" iconSize="md" class="side-new" label="新建机器人" /></div>`}
+        : html`<div class="side-top"><span class="side-brand"><img src="/amb/static/assets/favicon-64.png" alt="" /><span>AnyModelBot</span></span><span class="grow"></span>
+            <${IconButton} icon="sidebar" iconSize="md" class="side-toggle" label="收起侧栏" /><${IconButton} icon="search" iconSize="md" class="side-search-btn" label="搜索聊天记录" /><${IconButton} icon="plus" iconSize="md" class="side-new" label="新建机器人" /></div>`}
       ${settings && html`<label class="side-search"><${Icon} name="search" size="sm" /><input type="search" placeholder="查找设置" /></label>`}
       <nav class="side-list">
         ${settings

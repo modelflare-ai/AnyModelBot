@@ -3,7 +3,7 @@
  * 浏览器里怎么给（只有图片、PDF、纯文本直接显示，其余下载，都带 nosniff / CSP sandbox），桌面版打开 / 在文件夹中显示，
  * 以及历史里存下的说的话和文件（重启后照样在、照样能打开）。
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -162,6 +162,10 @@ describe("接口与历史", () => {
     fs.writeFileSync(path.join(ws, "out", "cover.png"), Buffer.from("89504e470d0a1a0a0000", "hex"));
     fs.writeFileSync(path.join(ws, "out", "page.html"), "<script>alert(1)</script>");
     fs.writeFileSync(path.join(ws, "out", "run.bat"), "echo hi");
+    fs.writeFileSync(path.join(ws, "out", "report.md"), "# Report\n\nHello **world**");
+    fs.writeFileSync(path.join(ws, "out", "style.css"), "body { color: red; }");
+    fs.writeFileSync(path.join(ws, "out", "app.js"), "document.title = 'preview';");
+    fs.writeFileSync(path.join(ws, "out", "report.docx"), "not a supported preview");
     app.store.ensureConversation("default", "web", "console", "控制台");
     app.store.addMessage(conv, "user", "做张图");
     app.store.addMessage(conv, "assistant", "做好了。", [{ id: "m1.1", kind: "model", title: "m", status: "ok", at: 1 }], {
@@ -218,6 +222,48 @@ describe("接口与历史", () => {
     await r.arrayBuffer();
   });
 
+  it("previews documents without changing the original download policy", async () => {
+    const preview = (p: string) => fetch(`${base}/conversations/${enc(conv)}/file/preview?path=${enc(p)}`);
+    const md = await preview("out/report.md");
+    expect(md.status).toBe(200);
+    expect(await md.json()).toMatchObject({ kind: "markdown", text: "# Report\n\nHello **world**" });
+    expect(await (await preview("out/cover.png")).json()).toMatchObject({ kind: "image" });
+    expect(await (await preview("out/report.docx")).json()).toMatchObject({ kind: "unsupported" });
+    fs.writeFileSync(path.join(ws, "out", "large.txt"), "x".repeat(2 * 1024 * 1024 + 1));
+    expect(await (await preview("out/large.txt")).json()).toMatchObject({ kind: "unsupported", reason: "tooLarge" });
+    fs.writeFileSync(path.join(ws, "out", "binary.txt"), "hi\0binary");
+    expect(await (await preview("out/binary.txt")).json()).toMatchObject({ kind: "unsupported" });
+    for (const p of ["out/gone.pdf", "../../ui-token"]) expect((await preview(p)).status).toBe(404);
+    const download = await fetch(`${base}/conversations/${enc(conv)}/file?path=out%2Freport.md&download=1`);
+    expect(download.headers.get("content-disposition")).toMatch(/^attachment;/);
+    await download.arrayBuffer();
+  });
+
+  it("loads HTML assets in a sandbox using a directory-scoped capability", async () => {
+    const r = await fetch(`${base}/conversations/${enc(conv)}/file/preview?path=out%2Fpage.html`);
+    const descriptor = await r.json() as any;
+    expect(descriptor.kind).toBe("html");
+    const origin = new URL(base).origin;
+    const entry = new URL(descriptor.url, origin);
+    const html = await fetch(entry);
+    expect(html.headers.get("content-type")).toContain("text/html");
+    const csp = html.headers.get("content-security-policy")!;
+    expect(csp).toContain("sandbox allow-scripts;");
+    expect(csp).not.toContain("allow-same-origin");
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(html.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(await html.text()).toContain("<script>alert(1)</script>");
+    for (const asset of ["style.css", "app.js", "cover.png"]) {
+      const res = await fetch(new URL(asset, entry));
+      expect(res.status).toBe(200);
+      expect(res.headers.get("access-control-allow-origin")).toBe("*");
+      await res.arrayBuffer();
+    }
+    for (const asset of ["run.bat", "report.docx", "%2e%2e%2fui-token", "%2fetc%2fpasswd", "%ZZ"]) expect((await fetch(new URL(asset, entry))).status).toBe(404);
+    expect((await fetch(new URL("/amb/file-preview/invalid/page.html", origin))).status).toBe(404);
+    if (tryLink(() => fs.symlinkSync(path.join(dataDir, "ui-token"), path.join(ws, "out", "secret.json")))) expect((await fetch(new URL("secret.json", entry))).status).toBe(404);
+  });
+
   it("桌面版：打开用系统程序（打开就会运行的只在文件夹中显示）；在文件夹中显示；越界的不碰；网页里没有这两个操作", async () => {
     const web = await post("open", path.join(ws, "out", "cover.png"));
     expect(web.status).toBe(400);
@@ -263,6 +309,42 @@ describe("接口与历史", () => {
   });
 });
 
+describe("preview authorization", () => {
+  it("requires console authentication to issue a grant; assets use only the scoped, expiring grant", async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "amb-preview-auth-")));
+    const dataDir = path.join(dir, "data");
+    const app = new App(loadConfig({ dataDir, env: {
+      AMB_UI_PORT: "0", AMB_UI_TOKEN: "preview-test-token", AMB_AGENT: "off",
+      AMB_MAGPIE_BASE_URL: "http://127.0.0.1:9/v1", AMB_MAGPIE_API_KEY: "k", AMB_WEIXIN_API_BASE: "http://127.0.0.1:9",
+    } }), { printQrToTerminal: false });
+    try {
+      await app.start();
+      const origin = app.web!.url;
+      const ws = path.join(dataDir, "workspaces", "default");
+      fs.mkdirSync(ws, { recursive: true });
+      const file = path.join(dir, "delivered.html");
+      const sibling = path.join(dir, "other.json");
+      fs.writeFileSync(file, "<h1>Delivered outside workspace</h1>");
+      fs.writeFileSync(sibling, '{"private":true}');
+      const conv = app.store.ensureConversation("default", "web", "console", "Test");
+      app.store.addMessage(conv.id, "assistant", "done", undefined, { files: [file, sibling] });
+      const api = new URL(`/amb/api/conversations/${encodeURIComponent(conv.id)}/file/preview?path=${encodeURIComponent(file)}`, origin);
+      expect((await fetch(api)).status).toBe(401);
+      const descriptor = await (await fetch(api, { headers: { "x-amb-token": "preview-test-token" } })).json() as any;
+      const entry = new URL(descriptor.url, origin);
+      const asset = await fetch(entry); // The sandbox has no console cookie or token header.
+      expect(asset.status).toBe(200);
+      expect(await asset.text()).toContain("Delivered outside workspace");
+      expect((await fetch(new URL("other.json", entry))).status).toBe(404);
+      expect((await fetch(new URL("/amb/api/status", origin))).status).toBe(401);
+      expect((await fetch(new URL(entry.pathname.replace(/file-preview\/[^/]+\//, "file-preview/wrong/"), origin))).status).toBe(404);
+      const now = Date.now();
+      const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60 * 60 * 1000 + 1);
+      try { expect((await fetch(entry)).status).toBe(404); } finally { clock.mockRestore(); }
+    } finally { await app.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
 describe("界面：交付的文件", () => {
   /** 组件返回的 vnode 树里找节点（htm 生成的是 preact 的 vnode：type + props.children） */
   function find(node: any, pred: (n: any) => boolean, out: any[] = []): any[] {
@@ -286,17 +368,28 @@ describe("界面：交付的文件", () => {
   const pdf = { path: "/d/workspaces/b1/报告.pdf", name: "报告.pdf", size: 1258291 };
   const url = `/amb/api/conversations/${encodeURIComponent(conv)}/file?path=${encodeURIComponent(pdf.path)}`;
 
-  it("网页：整张卡片是链接，在新标签页打开；名字下面是大小；没有「在文件夹中显示」", async () => {
+  it("网页：卡片优先在右侧预览，保留原始链接；名字下面是大小", async () => {
     const { FileCard, fileUrl } = await load();
     expect(fileUrl(conv, pdf.path)).toBe(url);
     const v = FileCard({ file: pdf, conv, canOpen: false });
     expect(v.type).toBe("a");
-    expect(v.props).toMatchObject({ class: "file-card", href: url, target: "_blank", rel: "noopener", title: "打开 报告.pdf" });
+    expect(v.props).toMatchObject({ class: "file-card", href: url, target: "_blank", rel: "noopener", title: "在右侧预览" });
     expect(find(v, (n) => n.props?.class === "fsub num")[0].props.children).toBe("1.2 MB");
     expect(find(v, (n) => n.props?.icon === "folder")).toHaveLength(0);
+    const previous = window.dispatchEvent;
+    const events: any[] = [];
+    window.dispatchEvent = (event) => { events.push(event); event.preventDefault(); return false; };
+    let prevented = false;
+    try {
+      v.props.onClick({ button: 0, preventDefault() { prevented = true; } });
+      expect(prevented).toBe(true);
+      expect(events[0].detail).toMatchObject({ type: "file", conv, path: pdf.path });
+      v.props.onClick({ button: 0, ctrlKey: true });
+      expect(events).toHaveLength(1);
+    } finally { window.dispatchEvent = previous; }
   });
 
-  it("桌面版：点卡片用系统程序打开，右边是「在文件夹中显示」；找不到的文件不能点", async () => {
+  it("桌面版：点卡片预览，保留「在文件夹中显示」；找不到的文件不能点", async () => {
     const { FileCard } = await load();
     const v = FileCard({ file: pdf, conv, canOpen: true });
     expect(v.type).toBe("div");

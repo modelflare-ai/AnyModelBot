@@ -26,6 +26,8 @@ const P = {
   gear: "M8 10.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5ZM13 8c0-.4-.04-.79-.12-1.16l1.37-1.07-1.3-2.25-1.62.65a5 5 0 0 0-2-1.16L9.1 1.3H6.5L6.25 3a5 5 0 0 0-2 1.16l-1.62-.65-1.3 2.25 1.37 1.07a5 5 0 0 0 0 2.32L1.33 10.3l1.3 2.25 1.62-.65a5 5 0 0 0 2 1.16l.25 1.64h2.6l.25-1.64a5 5 0 0 0 2-1.16l1.62.65 1.3-2.25-1.37-1.07c.08-.37.12-.76.12-1.16Z",
   copy: "M5.5 5.5V3.25c0-.41.34-.75.75-.75h6.5c.41 0 .75.34.75.75v6.5c0 .41-.34.75-.75.75H10.5M3.25 5.5h6.5c.41 0 .75.34.75.75v6.5c0 .41-.34.75-.75.75h-6.5a.75.75 0 0 1-.75-.75v-6.5c0-.41.34-.75.75-.75Z",
   ext: "M6.5 3.5H3.75a.75.75 0 0 0-.75.75v8c0 .41.34.75.75.75h8c.41 0 .75-.34.75-.75V9.5M9 3h4v4M13 3 7.5 8.5",
+  warning: { s: "M8 2 14 13H2L8 2ZM8 6v3", f: dot(8, 11, .6) },
+  login: "M9 2h4v12H9M2 8h8M7 5l3 3-3 3",
   eye: "M1.75 8S4 3.75 8 3.75 14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8ZM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z",
   eyeOff: "M2.5 2.5l11 11M6.6 6.6a2 2 0 0 0 2.8 2.8M4.3 4.9C2.7 6 1.75 8 1.75 8S4 12.25 8 12.25c1.2 0 2.27-.38 3.17-.93M7 3.82c.32-.05.65-.07 1-.07 4 0 6.25 4.25 6.25 4.25s-.52.98-1.48 2.05",
   paste: "M5.5 2.75h5v1.5h-5zM10.5 3.5h1.75c.41 0 .75.34.75.75v9c0 .41-.34.75-.75.75h-8.5a.75.75 0 0 1-.75-.75v-9c0-.41.34-.75.75-.75H5.5",
@@ -47,6 +49,8 @@ const P = {
   lock: "M4.25 7.25h7.5c.41 0 .75.34.75.75v5c0 .41-.34.75-.75.75h-7.5a.75.75 0 0 1-.75-.75V8c0-.41.34-.75.75-.75ZM5.5 7.25V5a2.5 2.5 0 0 1 5 0v2.25",
   unlock: "M4.25 7.25h7.5c.41 0 .75.34.75.75v5c0 .41-.34.75-.75.75h-7.5a.75.75 0 0 1-.75-.75V8c0-.41.34-.75.75-.75ZM5.5 7.25V5a2.5 2.5 0 0 1 4.9-.7",
   link: "M6.75 9.25a2.65 2.65 0 0 0 3.75 0l2.25-2.25a2.65 2.65 0 0 0-3.75-3.75l-1 1M9.25 6.75a2.65 2.65 0 0 0-3.75 0L3.25 9a2.65 2.65 0 0 0 3.75 3.75l1-1",
+  wallet: { s: "M13.5 5H3.25a1 1 0 0 1 0-2H11v2M2.25 4v8.25c0 .55.45 1 1 1H13.5V5M13.5 7.25h-3a1.5 1.5 0 0 0 0 3h3", f: dot(10.5, 8.75, .6) },
+  logout: "M6.25 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h2.75M6 8h7.5M10.5 5l3 3-3 3",
   globe: "M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM2.25 8h11.5M8 2c1.55 1.65 2.35 3.65 2.35 6S9.55 12.35 8 14M8 2C6.45 3.65 5.65 5.65 5.65 8s.8 4.35 2.35 6",
   database: "M8 5.25c2.9 0 5.25-.78 5.25-1.75S10.9 1.75 8 1.75 2.75 2.53 2.75 3.5 5.1 5.25 8 5.25ZM2.75 3.5v9c0 .97 2.35 1.75 5.25 1.75s5.25-.78 5.25-1.75v-9M2.75 8c0 .97 2.35 1.75 5.25 1.75S13.25 8.97 13.25 8",
   info: { s: "M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM8 7.25v3.75", f: dot(8, 5, 0.8) },
@@ -439,10 +443,11 @@ export function Popover({ anchor, trigger, onClose, class: cls = "", width = 280
 }
 
 /**
- * 菜单：items = [{ label, note, onSelect, danger, disabled, cur }] | { sep: true } | { group: "…" }
+ * 菜单：items = [{ label, icon, note, onSelect, danger, disabled, cur }] | { sep: true } | { group: "…" }
  * 键盘：↑↓ 选择，Enter 执行，Esc 关闭。
  */
 export function Menu({ anchor, items, onClose, width = 240, prefer, align, label }) {
+  const hasIcons = items.some((it) => it.icon);
   const pickable = items.map((it, i) => (it.sep || it.group || it.disabled ? -1 : i)).filter((i) => i >= 0);
   const [sel, setSel] = useState(pickable[0] ?? -1);
   const listRef = useRef(null);
@@ -464,7 +469,7 @@ export function Menu({ anchor, items, onClose, width = 240, prefer, align, label
     }
   };
   useEffect(() => listRef.current?.focus(), []);
-  return html`<${Popover} anchor=${anchor} onClose=${onClose} width=${width} prefer=${prefer} align=${align} label=${label}>
+  return html`<${Popover} class="menu-pop" anchor=${anchor} onClose=${onClose} width=${width} prefer=${prefer} align=${align} label=${label}>
     <ul role="menu" tabindex="-1" ref=${listRef} onKeyDown=${onKey} style="outline:none">
       ${items.map((it, i) =>
         it.sep
@@ -474,8 +479,9 @@ export function Menu({ anchor, items, onClose, width = 240, prefer, align, label
             : html`<li role="menuitem" aria-disabled=${!!it.disabled}
                 class=${[sel === i ? "sel" : "", it.danger ? "danger" : "", it.disabled ? "disabled" : "", it.cur ? "cur" : "", it.note ? "rich" : ""].join(" ")}
                 onPointerMove=${() => !it.disabled && setSel(i)} onClick=${() => !it.disabled && run(it)}>
-                ${it.icon && html`<span class="lead"><${Icon} name=${it.icon} size="sm" /></span>`}
+                ${hasIcons && html`<span class=${cx("lead", !it.icon && "empty-icon")} aria-hidden="true">${it.icon && html`<${Icon} name=${it.icon} size="sm" />`}</span>`}
                 ${it.note ? html`<span class="txt"><span class="v">${it.label}</span><span class="n">${it.note}</span></span>` : html`<span class="v">${it.label}</span>`}
+                ${it.kbd && html`<kbd class="menu-shortcut">${it.kbd}</kbd>`}
                 <span class="check"><${Icon} name="check" size="sm" /></span>
               </li>`,
       )}
@@ -591,8 +597,8 @@ export function DialogHost() {
     ${d.body && html`<p class="body">${d.body}</p>`}
     ${d.check && html`<label class="sheet-check"><input type="checkbox" checked=${d.check.value} onChange=${(e) => (d.check.value = e.target.checked)} /><span>${d.check.label}</span></label>`}
     <div class="actions">
-      <${Button} data-autofocus onClick=${() => done(false)}>${d.cancelLabel || t("common.cancel")}<//>
-      <${Button} variant=${d.danger ? "danger" : "primary"} onClick=${() => done(true)}>${d.confirmLabel || t("common.confirm")}<//>
+      <${Button} variant=${d.cancelVariant} data-autofocus onClick=${() => done(false)}>${d.cancelLabel || t("common.cancel")}<//>
+      <${Button} variant=${d.confirmVariant || (d.danger ? "danger" : "primary")} onClick=${() => done(true)}>${d.confirmLabel || t("common.confirm")}<//>
     </div>
   <//>`;
 }

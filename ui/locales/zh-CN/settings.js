@@ -287,7 +287,7 @@ export default {
       signedIn: "已登录",
       enterprise: "{name} 的费用由企业钱包支付",
       signedOut: "登录后可以查看用量、通知和邀请链接，也能给机器人单独设预算",
-      keys: "登录 注册 账户 退出 account login",
+      keys: "登录 注册 账户 account login",
       logout: "退出登录",
       login: "登录",
     },

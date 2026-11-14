@@ -6,7 +6,8 @@ import path from "node:path";
 import { LIMITS } from "../botkit/format.js";
 import type { BotCatalog, CatalogEntry } from "../botkit/catalog.js";
 import { CatalogError, instanceId, uiBase, type BotInstaller } from "../botkit/installer.js";
-import { runnable, sendFile } from "./files.js";
+import { botWorkspace, runnable, sendFile } from "./files.js";
+import type { FilePreviews } from "./file-previews.js";
 import { SseReply } from "./sse-reply.js";
 
 /** 给界面的目录条目：开发目录的本机路径不外传 */
@@ -28,6 +29,8 @@ export interface ApiDeps {
   loopback: boolean;
   /** 桌面版才有：用系统程序打开、在文件夹中显示 */
   desktop?: { openPath?: (p: string) => unknown; showItemInFolder?: (p: string) => unknown };
+  previews?: FilePreviews;
+  dataDir?: string;
 }
 
 function fail(res: http.ServerResponse, d: ApiDeps, e: unknown): void {
@@ -53,7 +56,7 @@ export async function botAppApi(req: http.IncomingMessage, res: http.ServerRespo
   try {
     if (seg[0] === "catalog") {
       if (seg.length === 1 && m === "GET") {
-        d.send(res, 200, { bots: d.catalog.list().map((e) => publicEntry(e, !!d.getBot(instanceId(e.id)))), syncedAt: d.catalog.syncedAt, enabled: d.catalog.enabled });
+        d.send(res, 200, { bots: d.catalog.list().map((e) => ({ ...publicEntry(e, !!d.getBot(instanceId(e.id))), userRemoved: d.installer.isRemoved(e.id) })), syncedAt: d.catalog.syncedAt, enabled: d.catalog.enabled });
         return true;
       }
       if (seg[1] === "sync" && m === "POST") {
@@ -149,7 +152,14 @@ export async function botAppApi(req: http.IncomingMessage, res: http.ServerRespo
       if (sub === "download" && m === "GET") {
         const file = d.installer.appFile(bot, url.searchParams.get("path"));
         if (!file) throw new CatalogError("file_not_found", 404);
-        sendFile(req, res, file);
+        sendFile(req, res, file, undefined, url.searchParams.get("download") === "1");
+        return true;
+      }
+      if (sub === "preview" && m === "GET" && d.previews && d.dataDir) {
+        const file = d.installer.appFile(bot, url.searchParams.get("path"));
+        const workspace = botWorkspace(d.dataDir, botId);
+        if (!file || !workspace) throw new CatalogError("file_not_found", 404);
+        d.send(res, 200, await d.previews.describe(file, { workspace, dataDir: d.dataDir, delivered: [] }));
         return true;
       }
       // 打开就会运行的文件不直接打开，只在文件夹中显示（同 /conversations/:id/file/open）

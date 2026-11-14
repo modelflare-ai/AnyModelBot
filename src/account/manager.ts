@@ -13,6 +13,8 @@ import { discover, OAuthError, revokeToken, startLogin, type LoginAttempt, type 
 import { AccountRevokedError, AccountSession, ApiError, ROUTING_STRATEGIES, type AppKey, type ConnectedAccount, type RoutingStrategy, type UsageRow } from "./client.js";
 import type { AccountRecord, AccountVault } from "./vault.js";
 
+import { accountProfile } from "./profile.js";
+
 const log = logger("account");
 
 export interface AccountHooks {
@@ -64,6 +66,10 @@ export interface AccountStatus {
   state: AccountState;
   /** 账户名称（登录后） */
   name: string;
+  avatar?: string;
+  email?: string;
+  profileReady?: boolean;
+  profileUrl?: string;
   /** 余额来源：account = 登录账户；key = 只用 API Key；none = 未连接 */
   source: "account" | "none";
   balanceUsd: number | null;
@@ -127,8 +133,8 @@ export class AccountManager {
   private finishedLogin: LoginAttempt | undefined;
   /** 正在完成登录时读到的余额（还没写进快照）：首用模型按它算体验额度 */
   private loginBalanceUsd: number | null = null;
-  private snapshot: Pick<AccountStatus, "name" | "source" | "balanceUsd" | "bot" | "usedUsd" | "billedToEnterprise" | "updatedAt" | "error"> = {
-    name: "",
+  private snapshot: Pick<AccountStatus, "name" | "avatar" | "email" | "profileReady" | "source" | "balanceUsd" | "bot" | "usedUsd" | "billedToEnterprise" | "updatedAt" | "error"> = {
+    name: "", avatar: "", email: "", profileReady: false,
     source: "none",
     balanceUsd: null,
     bot: null,
@@ -172,6 +178,7 @@ export class AccountManager {
       if (rec && rec.issuer === this.o.issuer) {
         this.session = this.newSession(rec);
         this.state = "signed_in";
+        if (rec.profile) Object.assign(this.snapshot, rec.profile, { profileReady: true });
       }
     } catch (e) {
       this.state = "unavailable";
@@ -198,6 +205,7 @@ export class AccountManager {
       lowBalance: bal !== null && alerts.lowBalanceUsd > 0 && bal < alerts.lowBalanceUsd,
       keyQuality: { strategy: this.routingStrategy(), supported: this.routing().support === "yes" },
       topupUrl: this.topupUrl(),
+      profileUrl: webUrl("/profile", "amb_profile"),
     };
   }
 
@@ -254,7 +262,7 @@ export class AccountManager {
         if (this.login !== attempt) return;
         this.login = undefined;
         this.state = this.session ? "signed_in" : "signed_out";
-        if (!(e instanceof OAuthError && e.code === "cancelled")) this.snapshot.error = e.message;
+        if (!(e instanceof OAuthError && ["cancelled", "access_denied"].includes(e.code))) this.snapshot.error = t("account.login_incomplete", { reason: e.message });
       },
     );
     return attempt.url;
@@ -365,7 +373,7 @@ export class AccountManager {
     this.saveRouting({ applied: undefined });
     await this.o.hooks.disconnect();
     for (const botId of this.botKeyIds().keys()) this.o.store.deleteKV(BOT_KEY(botId));
-    this.snapshot = { name: "", source: "none", balanceUsd: null, bot: null, usedUsd: null, billedToEnterprise: false, updatedAt: 0, error: "" };
+    this.snapshot = { name: "", avatar: "", email: "", profileReady: false, source: "none", balanceUsd: null, bot: null, usedUsd: null, billedToEnterprise: false, updatedAt: 0, error: "" };
   }
 
   /** 授权在别处被撤销：断开并回到登录页 */
@@ -392,9 +400,11 @@ export class AccountManager {
     if (this.session && a.username && !this.session.record.ownerKey) {
       this.session.updateRecord({ ownerKey: crypto.createHash("sha256").update(`${this.o.issuer}\n${a.username}`).digest("hex") });
     }
+    const profile = accountProfile({ ...a });
+    if (this.session && JSON.stringify(this.session.record.profile) !== JSON.stringify(profile)) this.session.updateRecord({ profile });
     this.quotaPerUnit = a.quota_per_unit;
     this.snapshot = {
-      name: a.display_name || (/^mf_[a-z0-9]+$/i.test(a.username) ? "" : a.username),
+      ...profile, profileReady: true,
       source: "account",
       balanceUsd: a.balance_usd,
       bot: botQuota(a.bot),
@@ -414,7 +424,10 @@ export class AccountManager {
   private async doRefresh(): Promise<AccountStatus> {
     try {
       if (this.session) {
-        this.applyAccount(await this.call((s) => s.account()));
+        const session = this.session;
+        const account = await this.call((s) => s.account());
+        if (this.session !== session) return this.status();
+        this.applyAccount(account);
         // 启动后、之后每 5 分钟、切回窗口时都顺带核对一次 Key；不拖慢余额的返回
         void this.repairKeys(60_000);
       } else {
@@ -424,6 +437,7 @@ export class AccountManager {
     } catch (e) {
       if (!(e instanceof AccountRevokedError)) {
         this.snapshot.error = (e as Error).message;
+        this.snapshot.profileReady = true;
         // 读不到时 bot 额度也不留旧数：界面和以前一样显示"暂不可用"
         this.snapshot.balanceUsd = null;
         this.snapshot.bot = null;

@@ -57,5 +57,8 @@
   "q.and": "和",
   "kpi.title": "关键数字",
   "kpi.pp": "{v} 个百分点",
-  "kpi.vs": "较 {cat}"
+  "kpi.vs": "较 {cat}",
+  "chart.data": "原始数据（{count} 行）",
+  "chart.units": "数值单位见原始数据",
+  "chart.interact": "趋势图，可用左右方向键选择期间"
 }

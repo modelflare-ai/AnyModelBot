@@ -3,18 +3,10 @@
 // 页面和发现页同一种结构：占满主区、内容列居中、顶上一条通栏的拖动区。连接、管理、自定义连接器都是弹窗（components/app-dialogs.js）。
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { html, Button, Icon, Seg, Skeleton, Spinner } from "../components/ui.js";
+import { AppMark } from "../components/app-mark.js";
 import { ATTENTION, appsStore, builtinMethod, builtinName, loadApps, matchesApp, methodLabel, openConnect, openCustom, openManage, orderCatalog, stateText, stateTone } from "../lib/apps.js";
 import { useStore } from "../lib/store.js";
 import { has, t, useLang } from "../lib/i18n.js";
-
-/** 应用的标记：名字的第一个字，底色按名字定一个（没有用各家的商标图） */
-export function AppMark({ name, size }) {
-  const text = String(name || "?").trim();
-  const ch = [...text][0]?.toUpperCase() ?? "?";
-  let h = 0;
-  for (const c of text) h = (h * 31 + c.codePointAt(0)) % 6;
-  return html`<span class=${`apps-mark tone-${h}${size === "sm" ? " sm" : ""}`} aria-hidden="true">${ch}</span>`;
-}
 
 /** 卡片上的状态：已连接（多个账号时带数量）、或者要处理的状态带一个提醒点 */
 function CardState({ view }) {
@@ -31,7 +23,7 @@ function BuiltinCard({ entry, view, lang }) {
   const open = () => (linked ? openManage(entry.id) : openConnect(entry.id));
   return html`<div class="apps-card" role="group" aria-label=${name}>
     <button type="button" class="apps-card-main" onClick=${open}>
-      <span class="apps-card-head"><${AppMark} name=${entry.name.en} /><span class="apps-card-name">${name}</span></span>
+      <span class="apps-card-head"><${AppMark} app=${entry.id} name=${name} /><span class="apps-card-name">${name}</span></span>
       <span class="apps-card-desc">${has(`apps.catalog.${entry.id}.desc`) ? t(`apps.catalog.${entry.id}.desc`) : ""}</span>
       <span class="apps-card-meta">${methodLabel(builtinMethod(entry))}${has(`apps.catalog.${entry.id}.requires`) ? html` · <span>${t(`apps.catalog.${entry.id}.requires`)}</span>` : ""}</span>
     </button>

@@ -1,5 +1,8 @@
 import type { TranslatedCatalog } from "../../index.js";
 export default {
+  waiting: "Ожидание разрешения",
+  channelWait: "Для управления компьютером нужно разрешение {items}. Включите его по инструкции в приложении, и я продолжу.",
+
   codexUnavailable:
     "Мост Codex Computer Use: требуется macOS 14.4+ с установленным Codex Computer Use",
   codexOff: "{base} ({why})",

@@ -1,7 +1,7 @@
 {
   "id": "company-research",
   "version": "1.0.3",
-  "minAppVersion": "0.1.20",
+  "minAppVersion": "0.1.33",
   "name": {
     "zh-CN": "尽调助手",
     "en": "Company Research",
@@ -64,39 +64,39 @@
   ],
   "starters": {
     "zh-CN": [
+      "用一页纸介绍 Stripe 做什么、服务谁。只查官网的 1–2 个页面，不做完整尽调。",
       "对 Stripe 做完整尽调并生成报告",
-      "打开上一份报告的来源与策展列表",
-      "把当前报告导出为 PDF"
+      "打开上一份报告的来源与策展列表"
     ],
     "en": [
+      "Introduce what Stripe does and who it serves in one page. Use only 1–2 pages from its official site, without full diligence.",
       "Run full diligence on Stripe and generate a report",
-      "Open sources and curation from the latest report",
-      "Export the current report to PDF"
+      "Open sources and curation from the latest report"
     ],
     "ja": [
+      "Stripe の事業と顧客を1ページで紹介して。公式サイトの1〜2ページだけを調べ、完全な調査はしないで。",
       "Stripe を徹底的に調査してレポートを作成して",
-      "最新のレポートの出典と選別結果を開いて",
-      "現在のレポートを PDF に書き出して"
+      "最新のレポートの出典と選別結果を開いて"
     ],
     "ko": [
+      "Stripe의 사업과 고객을 한 페이지로 소개해 주세요. 공식 사이트 1~2페이지만 확인하고 전체 실사는 하지 마세요.",
       "Stripe를 전체 실사하고 보고서를 만들어 줘",
-      "최근 보고서의 출처와 선별 목록을 열어 줘",
-      "현재 보고서를 PDF로 내보내 줘"
+      "최근 보고서의 출처와 선별 목록을 열어 줘"
     ],
     "ru": [
+      "На одной странице расскажи, чем занимается Stripe и кто её клиенты. Используй 1–2 страницы официального сайта, без полного исследования.",
       "Проведи полное исследование Stripe и подготовь отчёт",
-      "Открой источники и результаты отбора из последнего отчёта",
-      "Экспортируй текущий отчёт в PDF"
+      "Открой источники и результаты отбора из последнего отчёта"
     ],
     "es": [
+      "Presenta qué hace Stripe y a quién sirve en una página. Consulta solo 1–2 páginas oficiales, sin análisis completo.",
       "Haz un análisis completo de Stripe y genera un informe",
-      "Abre las fuentes y la selección del informe más reciente",
-      "Exporta el informe actual a PDF"
+      "Abre las fuentes y la selección del informe más reciente"
     ],
     "pt": [
+      "Apresente o que a Stripe faz e quem atende em uma página. Consulte apenas 1–2 páginas oficiais, sem pesquisa completa.",
       "Faça uma due diligence completa da Stripe e gere um relatório",
-      "Abra as fontes e a curadoria do relatório mais recente",
-      "Exporte o relatório atual para PDF"
+      "Abra as fontes e a curadoria do relatório mais recente"
     ]
   },
   "skills": []

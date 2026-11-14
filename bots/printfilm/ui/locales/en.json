@@ -214,5 +214,11 @@
   "sheet.time": "Time",
   "sheet.words": "Narration / lines",
   "sheet.visual": "Visual",
-  "sheet.media": "Media"
+  "sheet.media": "Media",
+  "shotDetails": "Shot description & settings",
+  "canvas.zoomOut": "Zoom out",
+  "canvas.zoomIn": "Zoom in",
+  "canvas.fit": "Fit to view",
+  "canvas.expand": "Expand workspace",
+  "canvas.restore": "Back to chat"
 }

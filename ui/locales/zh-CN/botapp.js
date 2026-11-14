@@ -33,10 +33,10 @@ export default {
   tip: { kept: "{name} 留在「我的」了，明天还在" },
   remove: {
     title: "移除 {name}？",
-    body: "它会从侧边栏消失，之后还能在发现页找到。",
+    body: "它会从侧边栏移除，聊天记录、任务和规则会被删除。之后可以在发现页重新添加。",
     confirm: "移除",
-    keep: "保留它的数据，以后再用能接着上次的内容",
-    done: "已移除 {name}，之后还能在发现页找到",
+    keep: "保留它的文件和工作台内容，重新添加后接着用",
+    done: "已移除 {name}，可以在发现页重新添加",
   },
   errors: {
     catalog_not_found: "找不到这个 Bot。",

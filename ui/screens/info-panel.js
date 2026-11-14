@@ -10,6 +10,7 @@ import { markDone } from "../lib/guide.js";
 import { fmtAgo, fmtClock, fmtDur, fmtTime } from "../lib/format.js";
 import { PausedLine, TaskGroup } from "../components/tasks.js";
 import { DeliveredFiles } from "../components/files.js";
+import { Markdown, Linkified } from "../components/markdown.js";
 import { tr } from "../lib/catalog.js";
 import { t, useLang } from "../lib/i18n.js";
 
@@ -100,7 +101,7 @@ function ConversationSheet({ conv, onClose }) {
       ${d && !d.messages.length && !turn && html`<span class="hint">${t("info.noMessages")}</span>`}
       ${d && d.messages.map((m) => html`<div class=${`transcript-msg${m.role === "user" ? " user" : ""}`}>
         ${m.steps && html`<${ActivityLine} label=${t("info.turn.activity")} count=${m.steps} load=${() => api(`/conversations/${enc}/messages/${m.id}/activity`).then((x) => x.steps)} />`}
-        <div class="bubble selectable">${[...(m.interim || []), m.content].join("\n\n")}</div>
+        <div class="bubble selectable">${m.role === "user" ? html`<${Linkified} text=${m.content} />` : html`<${Markdown} text=${[...(m.interim || []), m.content].join("\n\n")} conv=${conv.id} canOpen=${d.canOpen} />`}</div>
         <${DeliveredFiles} files=${m.files} conv=${conv.id} canOpen=${d.canOpen} />
         <div class="hint">${fmtTime(m.createdAt)}</div>
       </div>`)}
@@ -139,10 +140,10 @@ function BotOverview({ bot, onOpenChat, onOpenConnections }) {
   const [convs] = usePoll(() => api(`/conversations?bot=${encodeURIComponent(bot.id)}`), 8000, [bot.id]);
   const [viewing, setViewing] = useState(null);
   const pending = (appr && appr.approvals) || [];
-  // 上手清单：加了任何一个聊天渠道账号，就算接好了渠道
+  // 上手清单：只有实际连接成功才完成，保存配置本身不算。
   const mine = (channels?.accounts || []).filter((a) => a.defaultBot === bot.id);
   useEffect(() => {
-    if (channels?.accounts?.length) markDone("weixin");
+    if (channels?.accounts?.some((a) => a.status?.state === "connected")) markDone("weixin");
   }, [channels]);
   return html`${detail?.bot?.settings?.paused && html`<${PausedLine} onResume=${async () => (await api(`/bots/${bot.id}/settings`, { method: "PUT", body: { paused: false } }), reloadDetail())} />`}
       <div class="list-head">${t("info.channels")}</div>

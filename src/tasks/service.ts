@@ -64,7 +64,7 @@ import {
 } from "./cost.js";
 import { DEFAULT_MAX_BACKGROUND, pickRuns, priorityOf } from "./slots.js";
 import { taskStage, type Stage, type StageGroup } from "./stage.js";
-import { MAX_GRACE_MS, graceOf, localTime, nextRun, latestRun, parseSchedule, type Schedule } from "./schedule.js";
+import { MAX_GRACE_MS, graceOf, localTime, nextRun, latestRun, parseSchedule, previewSchedule, type Schedule } from "./schedule.js";
 import { Scheduler } from "./scheduler.js";
 import { matchesFilter, type RuleEvent } from "./rule-events.js";
 import {
@@ -91,6 +91,7 @@ import {
 import { t as tr } from "../i18n/index.js";
 import { KEEP_MS, SWEEP_MS, WARN_MS, hasFiles, taskFolder } from "./retention.js";
 import { dirBytes } from "../agent/session-dirs.js";
+import { actions as storedActions, canUndo, saveAction, type RuleAction } from "./rule-actions.js";
 import { ruleMarkdown, taskMarkdown, type ExportedTaskRun } from "./export.js";
 
 /** 引用一条消息时，平台会把原文一起给我们的渠道：靠引用就认得出是哪个任务的结果 */
@@ -150,6 +151,10 @@ export interface TaskNotification {
 }
 
 export interface TaskServiceOptions {
+  canManageAllRules?: (conversation: Conversation) => boolean;
+  canKeepAwake?: () => boolean;
+  catchupDelayMs?: number;
+  onRuleResult?: (botId: string, messageId: number, text: string) => void;
   store: Store;
   host: TaskHost;
   /** 微信、飞书的结果按主动消息的规则经出站队列发（没有就只写进会话历史）；任务的提问也经它推 */
@@ -319,6 +324,8 @@ export class TaskService {
 
   /** 宿主的定时器：规则到点开 run（scheduler.ts） */
   readonly scheduler: Scheduler;
+  private backAt = 0;
+  private catchupReadyAt = 0;
 
   constructor(private o: TaskServiceOptions) {
     // 进行中的任务：给微信留 1 条配额（聊天回复不会把它挤掉），续期提醒里也算"之后还要发的"
@@ -352,6 +359,8 @@ export class TaskService {
   start(): void {
     this.started = true;
     this.closing = false;
+    this.backAt = this.now();
+    this.catchupReadyAt = this.backAt + (this.o.catchupDelayMs ?? 60_000);
     this.unlisten ??= this.o.approvals?.listen((e) => this.onApproval(e));
     this.recover(undefined, tr("tasks.recoverAppRestart"));
     for (const r of this.store.listRuns({ states: ["ended"] })) {
@@ -618,6 +627,15 @@ export class TaskService {
     const bot = this.store.getBot(botId);
     if (!bot) return false;
     if (bot.settings.paused === paused) return true;
+    if (!paused) {
+      const now = this.now();
+      for (const rule of this.store.dueRules(now)) {
+        if (rule.botId !== botId || rule.trigger.kind !== "schedule") continue;
+        const last = latestRun(rule.trigger.schedule, now, rule.nextRunAt) ?? rule.nextRunAt;
+        this.store.updateRule(rule.id, { nextRunAt: nextRun(rule.trigger.schedule, now) ?? 0 });
+        this.skipRun(rule, last, RUN_ERROR.paused);
+      }
+    }
     this.store.updateBot(botId, { settings: { ...bot.settings, paused } });
     log.info(paused ? "background work paused" : "background work resumed", { bot: botId, by });
     if (!paused) {
@@ -1052,7 +1070,8 @@ export class TaskService {
 
   /** 定时器下次醒来：最早该跑的规则；有规则因为本月预算暂停着，还有下个月 1 号（到时自动恢复） */
   private nextWake(): number {
-    const due = this.store.nextRuleDue();
+    const times = this.store.listRules({ includeUndone: true }).flatMap((r) => r.undoneUntil ? [r.undoneUntil] : r.mode !== "off" && !r.pausedReason && r.nextRunAt ? [r.nextRunAt < this.backAt ? Math.max(r.nextRunAt, this.catchupReadyAt) : r.nextRunAt] : []);
+    const due = times.length ? Math.min(...times) : 0;
     if (!this.store.listRules().some((r) => r.pausedReason === "budget")) return due;
     const month = this.monthStart(this.now(), true);
     return due ? Math.min(due, month) : month;
@@ -1308,7 +1327,7 @@ export class TaskService {
       }
       case "list": {
         const list = this.list({ conversationId: conv.id, limit: 10 });
-        const rules = this.listRules({ conversationId: conv.id });
+        const rules = this.manageableRules(conv).map((r) => this.ruleView(r));
         const paused = this.paused(botId) ? ["Background work is paused: no task or rule runs, pushed messages wait."] : [];
         if (!list.length && !rules.length) return { text: [...paused, "This conversation has no background tasks or rules."].join("\n") };
         return {
@@ -2029,6 +2048,33 @@ export class TaskService {
 
   // ---------- 规则（3d） ----------
 
+  /** 唤醒后让网络和渠道先恢复；只推迟离线期间的补跑。 */
+  wakeRules(): void {
+    this.backAt = this.now();
+    this.catchupReadyAt = this.backAt + (this.o.catchupDelayMs ?? 60_000);
+    this.scheduler.wake();
+  }
+
+  ruleDestinations(botId: string) {
+    const bot = this.store.getBot(botId);
+    if (!bot) return [];
+    const desktop = `${botId}:web:console`;
+    const groups = this.store.listGroups().filter((g) => g.members.includes(botId));
+    return [
+      { id: desktop, channel: "web", kind: "dm", title: tr("rules.desktopDestination", { bot: bot.name }), default: true },
+      ...groups.map((g) => ({ id: `${botId}:web:group:${g.id}`, channel: "web", kind: "group", title: tr("rules.groupDestination", { group: g.name }), groupId: g.id })),
+      ...this.store.listConversations(botId).filter((c) => c.channel !== "web").map((c) => ({ id: c.id, channel: c.channel, kind: c.kind, title: `${c.channel === "weixin" ? tr("tasks.chWeixin") : c.channel === "feishu" ? tr("tasks.chFeishu") : MESSENGER_LABEL[c.channel as keyof typeof MESSENGER_LABEL] || c.channel} · ${c.title || c.peerId}` })),
+    ];
+  }
+
+  private destination(botId: string, id: string): Conversation | undefined {
+    if (id === `${botId}:web:console`) return this.store.ensureConversation(botId, "web", "console", "控制台");
+    const group = this.store.listGroups().find((g) => id === `${botId}:web:group:${g.id}` && g.members.includes(botId));
+    if (group) return this.store.ensureConversation(botId, "web", `group:${group.id}`, group.name, "group");
+    const c = this.store.getConversation(id);
+    return c?.botId === botId && !(c.channel === "web" && c.peerId.startsWith("group:")) ? c : undefined;
+  }
+
   private get timeZone(): string {
     return this.o.timeZone ?? systemTimeZone();
   }
@@ -2063,6 +2109,7 @@ export class TaskService {
   }
 
   private graceFor(rule: RuleRow, at: number): number {
+    if (rule.trigger.kind === "schedule" && rule.trigger.schedule.kind === "every") return rule.trigger.schedule.minutes * 30_000;
     return rule.trigger.kind === "schedule" ? graceOf(rule.trigger.schedule, at) : MAX_GRACE_MS;
   }
 
@@ -2078,7 +2125,11 @@ export class TaskService {
     instruction: string;
     kind?: RuleKind;
     /** 检查的模式：默认执行；observe = 用户要先观察 */
-    mode?: "observe" | "act";
+    mode?: RuleMode;
+    allowEmptyDestination?: boolean;
+    missedPolicy?: "catchup" | "skip";
+    sourceGroupId?: string;
+    requiresGroup?: boolean;
     message?: string;
     schedule?: Schedule;
     trigger?: RuleTrigger;
@@ -2086,8 +2137,12 @@ export class TaskService {
     runBudgetUsd?: number;
     monthBudgetUsd?: number;
   }): { rule?: RuleRow; error?: string } {
-    const conv = this.store.getConversation(o.conversationId);
-    if (!conv || conv.botId !== o.botId || !this.store.getBot(o.botId)) return { error: "conversation not found" };
+    if (!this.store.getBot(o.botId)) return { error: "bot not found" };
+    const empty = o.mode === "off" && o.allowEmptyDestination && !o.conversationId;
+    const conv = empty ? undefined : this.destination(o.botId, o.conversationId || `${o.botId}:web:console`);
+    if (!empty && !conv) return { error: tr("rules.noConversation") };
+    if (o.sourceGroupId && !this.store.getGroup(o.sourceGroupId)?.members.includes(o.botId)) return { error: tr("rules.groupMissing") };
+    if (o.requiresGroup && !o.sourceGroupId && o.mode !== "off") return { error: tr("rules.noSourceGroup") };
     const kind: RuleKind = o.kind === "remind" ? "remind" : "check";
     const title = clip(oneLine(o.title), 40);
     const message = clip(oneLine(o.message ?? ""), MESSAGE_MAX);
@@ -2109,11 +2164,12 @@ export class TaskService {
     }
     const now = this.now();
     const id = `rl_${hex(6)}`;
-    const mode: RuleMode = kind === "check" && o.mode === "observe" ? "observe" : "act";
+    const mode: RuleMode = o.mode === "off" ? "off" : kind === "check" && o.mode === "observe" ? "observe" : "act";
     const rule = this.store.insertRule({
       id,
       botId: o.botId,
-      conversationId: conv.id,
+      conversationId: conv?.id ?? "",
+      missedPolicy: o.missedPolicy ?? "catchup", sourceGroupId: o.sourceGroupId ?? "", requiresGroup: !!o.requiresGroup,
       title,
       instruction,
       message: kind === "remind" ? message : "",
@@ -2127,7 +2183,7 @@ export class TaskService {
       createdAt: now,
       updatedAt: now,
     });
-    log.info("rule created", { bot: o.botId, rule: id, kind, mode, trigger: trigger.kind, conversationId: conv.id });
+    log.info("rule created", { bot: o.botId, rule: id, kind, mode, trigger: trigger.kind, conversationId: conv?.id });
     this.ruleChanged(id);
     return { rule };
   }
@@ -2138,12 +2194,17 @@ export class TaskService {
    */
   updateRule(
     id: string,
-    patch: { title?: string; instruction?: string; message?: string; schedule?: Schedule; mode?: RuleMode; conversationId?: string; runBudgetUsd?: number; monthBudgetUsd?: number },
+    patch: { title?: string; instruction?: string; message?: string; schedule?: Schedule; mode?: RuleMode; conversationId?: string; runBudgetUsd?: number; monthBudgetUsd?: number; missedPolicy?: "catchup" | "skip"; sourceGroupId?: string },
   ): { rule?: RuleRow; error?: string } {
     const rule = this.store.getRule(id);
-    if (!rule) return { error: "rule not found" };
+    if (!rule || rule.undoneUntil) return { error: "rule not found" };
     const now = this.now();
-    const next: Partial<RuleRow> = { updatedAt: now };
+    const next: Partial<RuleRow> = { updatedAt: now, revision: (rule.revision ?? 1) + 1 };
+    if (patch.missedPolicy !== undefined) next.missedPolicy = patch.missedPolicy;
+    if (patch.sourceGroupId !== undefined) {
+      if (patch.sourceGroupId && !this.store.getGroup(patch.sourceGroupId)?.members.includes(rule.botId)) return { error: tr("rules.groupMissing") };
+      next.sourceGroupId = patch.sourceGroupId;
+    }
     // 预算（3e）：每次、每月；本月预算调高了、因此暂停着的，下次定时器醒来时接着跑
     for (const k of ["runBudgetUsd", "monthBudgetUsd"] as const) {
       if (patch[k] === undefined) continue;
@@ -2168,7 +2229,7 @@ export class TaskService {
       if (m !== rule.message) (next.message = m), (reworded = true);
     }
     if (patch.conversationId !== undefined && patch.conversationId !== rule.conversationId) {
-      const c = this.store.getConversation(patch.conversationId);
+      const c = this.destination(rule.botId, patch.conversationId);
       if (!c || c.botId !== rule.botId) return { error: tr("rules.noConversation") };
       next.conversationId = c.id;
     }
@@ -2185,14 +2246,36 @@ export class TaskService {
     if (reworded) next.version = rule.version + 1;
     // 重新开（关着、暂停了 → 开着）：连续失败清零
     const reopened = patch.mode !== undefined && mode !== "off" && (rule.mode === "off" || !!rule.pausedReason || patch.mode !== rule.mode);
+    if (mode !== "off") {
+      if (!(next.conversationId ?? rule.conversationId)) return { error: tr("rules.noDestination") };
+      if (!this.destination(rule.botId, next.conversationId ?? rule.conversationId)) return { error: tr("rules.noConversation") };
+      if (rule.requiresGroup && !(next.sourceGroupId ?? rule.sourceGroupId)) return { error: tr("rules.noSourceGroup") };
+      if (rule.requiresGroup && !this.store.getGroup(next.sourceGroupId ?? rule.sourceGroupId ?? "")?.members.includes(rule.botId)) return { error: tr("rules.groupMissing") };
+      if (reopened && rule.pausedReason === "budget" && this.monthSpent(rule) >= (next.monthBudgetUsd ?? rule.monthBudgetUsd)) return { error: tr("rules.monthUsed", { spent: usdText(this.monthSpent(rule)) }) };
+    }
     if (reopened) (next.failures = 0), (next.pausedReason = "");
+    if (mode === "off") next.pausedReason = "";
     if (next.trigger || next.mode !== undefined || reopened) next.nextRunAt = this.nextFor({ trigger, mode, pausedReason: reopened ? "" : rule.pausedReason }, now);
     this.store.updateRule(id, next);
+    if (reopened) this.store.setKV(`rule.attentionClearedRun:${id}`, this.store.ruleRuns(id, { limit: 5 }).find((r) => r.state === "ended")?.id || "");
+    if (mode === "off") this.stopRuleRuns(id);
     // 自己选了观察（从执行、关着切回来）：这一版算是决定过了，「需要你」里不再问要不要改为执行（改了原话的新一版照样会问）
     if (mode === "observe" && rule.mode !== "observe" && !reworded) this.store.setKV(SUGGEST_SEEN + id, String(rule.version));
     log.info("rule updated", { rule: id, fields: Object.keys(next).filter((k) => k !== "updatedAt") });
     this.ruleChanged(id);
+    if (reopened && rule.pausedReason === "failures") this.runRuleNow(id);
     return { rule: this.store.getRule(id) };
+  }
+
+  private stopRuleRuns(id: string): void {
+    for (const run of this.store.listRuns({ ruleId: id, states: ["queued", "running", "settling"] })) {
+      const live = this.live.get(run.id);
+      if (live) this.forget(live);
+      this.store.updateRun(run.id, { state: "ended", outcome: "stopped", endedAt: this.now(), ...(live ? { costUsd: live.costUsd, tokensIn: live.tokensIn, tokensOut: live.tokensOut } : {}) });
+      if (live) void this.o.host.stop(live.botId, live.sessionId).catch(() => undefined);
+    }
+    for (const a of this.o.approvals?.pendingAll().filter((x) => x.ruleId === id) ?? []) this.o.approvals!.cancel(a.id, "rule off");
+    for (const run of this.store.ruleRuns(id, { limit: 500 })) if (run.delivery) this.o.delivery?.withdraw(run.delivery, tr("tasks.withdrawHandled"));
   }
 
   /** 暂停的规则重新开（「需要你」里的重试）：清掉连续失败，接着按时间表跑，并马上跑一次（本月预算用完暂停的要先加预算） */
@@ -2229,6 +2312,7 @@ export class TaskService {
     const l = [...this.live.values()].find((x) => x.ruleId === id);
     if (l) this.forget(l);
     this.store.deleteRule(id);
+    for (const a of storedActions(this.store).filter((x) => x.ruleId === id)) saveAction(this.store, { ...a, before: undefined, restoreUntil: 0 });
     this.store.deleteKV(SUGGEST_SEEN + id);
     if (l) await this.o.host.stop(l.botId, l.sessionId).catch(() => undefined);
     log.info("rule deleted", { rule: id });
@@ -2248,29 +2332,34 @@ export class TaskService {
    */
   fireDue(now = this.now()): void {
     if (!this.started || this.closing) return;
+    for (const rule of this.store.listRules({ includeUndone: true, limit: 500 })) if (rule.undoneUntil && rule.undoneUntil <= now) void this.deleteRule(rule.id);
     this.resumeMonth(now);
-    for (const rule of this.store.dueRules(now)) {
+    const dueRules = this.store.dueRules(now).map((rule) => ({ rule, last: rule.trigger.kind === "schedule" ? latestRun(rule.trigger.schedule, now, rule.nextRunAt) ?? rule.nextRunAt : rule.nextRunAt })).sort((a, b) => a.last - b.last);
+    for (const { rule, last } of dueRules) {
       if (this.dropped.has(rule.botId) || rule.trigger.kind !== "schedule") continue;
       const s = rule.trigger.schedule;
       const due = rule.nextRunAt;
-      const last = latestRun(s, now, due) ?? due;
+      if (due < this.backAt && now < this.catchupReadyAt) continue;
       this.store.updateRule(rule.id, { nextRunAt: nextRun(s, now) ?? 0 });
-      if (now - last > graceOf(s, last)) {
-        this.skipRun(rule, due, RUN_ERROR.appOff);
-        continue;
-      }
-      if (last > due) this.skipRun(rule, due, RUN_ERROR.appOff);
       // 后台工作暂停了：这次记为跳过，恢复后不补
       if (this.paused(rule.botId)) {
         this.skipRun(rule, last, RUN_ERROR.paused);
         continue;
       }
+      // 正常定时器允许少量事件循环延迟；离线 / 唤醒与明显迟到才算补跑。
+      const late = due < this.backAt || now - last > 5 * 60_000;
+      const eligibilityAt = due < this.backAt ? Math.max(last, this.backAt) : now;
+      if (late && (s.kind === "every" || rule.missedPolicy === "skip" || eligibilityAt - last > graceOf(s, last))) {
+        this.skipMissed(rule, due, last);
+        continue;
+      }
+      if (last > due) this.skipMissed(rule, due, latestRun(s, last - 1, due) ?? due);
       // 机器人的预算留给聊天：检查跳过（固定提醒不花钱，照发）
       if (rule.kind === "check" && this.reserve(rule.botId)) {
         this.skipRun(rule, last, RUN_ERROR.reserve);
         continue;
       }
-      this.fireRule(rule, "schedule", last);
+      this.fireRule(rule, late ? "catchup" : "schedule", last);
     }
     this.pump();
   }
@@ -2309,7 +2398,7 @@ export class TaskService {
    */
   private fireRule(rule: RuleRow, cause: RunCause, at: number, event?: { source: string; event: RuleEvent }): RunRow | undefined {
     if (this.ruleBusy(rule.id)) {
-      if (cause === "schedule" || cause === "event") this.skipRun(rule, at, RUN_ERROR.overlap);
+      if (cause === "schedule" || cause === "catchup" || cause === "event") this.skipRun(rule, at, RUN_ERROR.overlap);
       return undefined;
     }
     if (rule.kind === "remind") return this.remind(rule, cause, at);
@@ -2320,10 +2409,57 @@ export class TaskService {
     }
     const mode = runMode(rule);
     const id = `r_${hex(6)}`;
+    const group = this.groupBrief(rule, cause === "catchup" ? at : this.now());
+    if (group.error || group.empty) {
+      this.store.insertEndedRun({ id, botId: rule.botId, ruleId: rule.id, ruleVersion: rule.version, mode, cause, outcome: group.error ? "failed" : "done", error: group.error || RUN_ERROR.groupEmpty, queuedAt: at, endedAt: this.now() });
+      if (group.error) this.afterRuleRun(rule, id, mode, "failed", undefined, group.error);
+      else { this.store.updateRule(rule.id, { failures: 0 }); if (this.store.getKV(`rule.missedPrompt:${rule.id}`)) this.dismissMissed(rule.id); }
+      this.changed(rule.id);
+      return this.store.getRun(id);
+    }
     const run = this.store.insertRun({ id, botId: rule.botId, taskId: "", ruleId: rule.id, ruleVersion: rule.version, mode, sessionId: `rule-${rule.id}-${id.slice(2)}`, cause, queuedAt: at });
-    this.store.insertInput({ id: `i_${hex(6)}`, taskId: "", ruleId: rule.id, runId: id, kind: "schedule", text: this.ruleBriefFor(rule, mode, event), fromPerson: cause === "manual", createdAt: this.now() });
+    const zone = rule.trigger.kind === "schedule" ? rule.trigger.schedule.tz : this.timeZone;
+    const late = cause === "catchup" ? `[补跑]\n原定 ${stamp(at, zone)}，现在 ${stamp(this.now(), zone)}。日报按原定日期和截止时刻整理；普通检查按用户原话判断当前情况。\n\n` : "";
+    this.store.insertInput({ id: `i_${hex(6)}`, taskId: "", ruleId: rule.id, runId: id, kind: "schedule", text: late + this.ruleBriefFor(rule, mode, event) + (group.text || ""), fromPerson: cause === "manual", createdAt: this.now() });
     this.changed(rule.id);
     return run;
+  }
+
+  private groupBrief(rule: RuleRow, until: number): { text?: string; empty?: boolean; error?: string } {
+    if (!rule.requiresGroup && !rule.sourceGroupId) return {};
+    const group = rule.sourceGroupId ? this.store.getGroup(rule.sourceGroupId) : undefined;
+    if (!group?.members.includes(rule.botId)) return { error: RUN_ERROR.groupMissing };
+    const zone = rule.trigger.kind === "schedule" ? rule.trigger.schedule.tz : this.timeZone;
+    const day = localParts(until, zone);
+    const from = localTime(day.y, day.mo, day.d, 0, zone);
+    const { messages, total } = this.store.groupMessagesBetween(group.id, from, until);
+    if (!total) return { empty: true };
+    const lines: string[] = [];
+    let chars = 0;
+    for (const message of [...messages].reverse()) {
+      const prefix = `${stamp(message.createdAt, zone)} ${message.botId ? this.store.getBot(message.botId)?.name || message.botId : "用户"}: `;
+      const line = prefix + message.content;
+      if (chars + line.length + 1 > 20_000) {
+        if (!lines.length) lines.unshift(prefix + message.content.slice(-(20_000 - prefix.length - 30)) + "（消息前部已截断）");
+        break;
+      }
+      lines.unshift(line); chars += line.length + 1;
+    }
+    const omitted = total - lines.length;
+    return { text: `\n\n[群聊记录：${group.name}，${stamp(from, zone)} 至 ${stamp(until, zone)}]\n${omitted ? `前面还有 ${omitted} 条未附上。\n` : ""}${lines.join("\n")}` };
+  }
+
+  private skipMissed(rule: RuleRow, from: number, to: number): void {
+    let count = 1;
+    if (rule.trigger.kind === "schedule") {
+      const s = rule.trigger.schedule;
+      if (s.kind === "every") count = 1 + Math.floor((to - from) / (s.minutes * 60_000));
+      else for (let at = nextRun(s, from); at !== undefined && at <= to; at = nextRun(s, at)) count++;
+    }
+    const id = `r_${hex(6)}`;
+    this.store.insertEndedRun({ id, botId: rule.botId, ruleId: rule.id, ruleVersion: rule.version, mode: runMode(rule), cause: "schedule", outcome: "skipped", error: RUN_ERROR.appOff, queuedAt: to, endedAt: this.now() });
+    this.store.setKV(`rule.missed:${id}`, JSON.stringify({ count, from, to }));
+    this.changed(rule.id);
   }
 
   /** 第一条输入：规则、用户原话、最近 3 次的结果（连续性靠它，每次是新会话）、事件、记忆快照、这次是观察还是执行 */
@@ -2364,6 +2500,7 @@ export class TaskService {
     const id = `r_${hex(6)}`;
     this.store.insertEndedRun({ id, botId: rule.botId, ruleId: rule.id, ruleVersion: rule.version, mode: "act", cause, outcome: "done", error: "", queuedAt: at, endedAt: now });
     this.store.updateRun(id, { startedAt: now, report: { state: "done", summary: "", message: rule.message, at: now } });
+    if (this.store.getKV(`rule.missedPrompt:${rule.id}`)) this.dismissMissed(rule.id);
     this.deliverRule(rule, id, "reminder", rule.message);
     log.info("reminder sent", { rule: rule.id, run: id });
     this.changed(rule.id);
@@ -2381,11 +2518,11 @@ export class TaskService {
   private skipStale(run: RunRow): boolean {
     const rule = this.store.getRule(run.ruleId);
     const now = this.now();
-    if (!rule) {
+    if (!rule || rule.mode === "off" || rule.undoneUntil) {
       this.store.updateRun(run.id, { state: "ended", outcome: "stopped", endedAt: now });
       return true;
     }
-    if (now - run.queuedAt <= this.graceFor(rule, run.queuedAt)) return false;
+    if (run.cause === "catchup" || now - run.queuedAt <= Math.max(60_000, this.graceFor(rule, run.queuedAt))) return false;
     this.store.updateRun(run.id, { state: "ended", outcome: "skipped", error: RUN_ERROR.busy, endedAt: now });
     log.info("rule run skipped: no free slot within its grace period", { rule: rule.id, run: run.id });
     this.changed(rule.id);
@@ -2495,6 +2632,7 @@ export class TaskService {
   private afterRuleRun(rule: RuleRow, runId: string, mode: "observe" | "act", outcome: RunOutcome, report: TaskReport | undefined, error: string): void {
     if (outcome === "done") {
       this.store.updateRule(rule.id, { failures: 0 });
+      if (this.store.getKV(`rule.missedPrompt:${rule.id}`)) this.dismissMissed(rule.id);
       if (report?.message) void this.ruleResult(rule, runId, mode, report);
     } else if (outcome === "failed" || (outcome === "budget" && error === RUN_ERROR.runBudget)) {
       const failures = rule.failures + 1;
@@ -2574,7 +2712,7 @@ export class TaskService {
       if (message !== report.message) this.store.updateRun(runId, { report: { ...report, message } });
     }
     const fresh = this.store.getRule(rule.id);
-    if (mode === "act" && fresh) this.deliverRule(fresh, runId, "rule", message);
+    if (mode === "act" && fresh && fresh.mode !== "off" && !fresh.undoneUntil) this.deliverRule(fresh, runId, "rule", message);
     this.changed(rule.id);
   }
 
@@ -2593,7 +2731,11 @@ export class TaskService {
   private pushRule(rule: RuleRow, id: string, purpose: "rule" | "reminder" | "failure", text: string): boolean {
     const conv = this.store.getConversation(rule.conversationId);
     if (!conv) return false;
-    if (this.store.getOutbox(id)) return true;
+    if (this.store.getKV(`rule.delivered:${id}`)) return true;
+    const runId = id.split(":").at(-1)!;
+    const run = this.store.getRun(runId);
+    const zone = rule.trigger.kind === "schedule" ? rule.trigger.schedule.tz : this.timeZone;
+    const channelText = run?.cause === "catchup" ? `${tr("rules.lateLabel", { time: stamp(run.queuedAt, zone) })}\n${text}` : text;
     if (isPushChannel(conv.channel) && this.o.delivery) {
       this.o.delivery.push({
         id,
@@ -2602,13 +2744,18 @@ export class TaskService {
         peerId: conv.peerId,
         purpose,
         subject: rule.title,
-        text,
+        text: channelText,
         kind: conv.channel === "feishu" ? "notice" : "text",
         anytime: rule.anytime,
         ref: `rule:${rule.id}`,
       });
     }
-    this.store.addMessage(conv.id, "assistant", text);
+    const messageId = this.store.transaction(() => {
+      const messageId = this.store.addMessage(conv.id, "assistant", conv.channel === "web" ? text : channelText, undefined, { ruleSource: { ruleId: rule.id, title: rule.title, dueAt: run?.queuedAt ?? this.now(), late: run?.cause === "catchup", timeZone: zone } });
+      this.store.setKV(`rule.delivered:${id}`, String(messageId));
+      return messageId;
+    });
+    if (conv.channel === "web" && conv.kind !== "group") this.o.onRuleResult?.(rule.botId, messageId, text);
     this.note(conv.id, purpose === "failure" ? `[规则「${rule.title}」暂停了，已告诉用户] ${text}` : `[规则「${rule.title}」发给了用户] ${text}`);
     log.info("rule message handed over", { rule: rule.id, id, purpose, channel: conv.channel });
     return true;
@@ -2618,6 +2765,7 @@ export class TaskService {
   private redeliverRules(): void {
     const since = this.now() - 2 * 86400_000;
     for (const rule of this.store.listRules()) {
+      if (rule.mode === "off") continue;
       for (const r of this.store.ruleRuns(rule.id, { limit: 5 })) {
         if (r.state !== "ended" || r.delivery || r.endedAt < since || r.outcome !== "done" || r.mode !== "act" || !r.report?.message) continue;
         this.deliverRule(rule, r.id, rule.kind === "remind" ? "reminder" : "rule", r.report.message);
@@ -2683,6 +2831,111 @@ export class TaskService {
 
   // ---------- 规则：聊天代理的工具 ----------
 
+  private manageableRules(conv: Conversation): RuleRow[] {
+    return this.store.listRules(conv.channel === "web" || this.o.canManageAllRules?.(conv) ? { botId: conv.botId } : { botId: conv.botId, conversationId: conv.id });
+  }
+
+  private recordRuleAction(conv: Conversation, rule: RuleRow, before?: RuleRow): void {
+    const sequence = Number(this.store.getKV("rule.actionSequence") || 0) + 1;
+    this.store.setKV("rule.actionSequence", String(sequence));
+    saveAction(this.store, { id: `ra_${hex(8)}`, sequence, ruleId: rule.id, conversationId: conv.id, title: rule.title, kind: before ? "update" : "create", before: before ?? rule, revision: rule.revision ?? 1, createdAt: this.now(), expiresAt: this.now() + 86400_000, messageId: 0, state: "active", restoreUntil: 0 });
+  }
+
+  ruleActions(conversationId: string) {
+    return storedActions(this.store, conversationId).map((a) => {
+      const rule = this.store.getRule(a.ruleId);
+      return { id: a.id, ruleId: a.ruleId, title: a.title, kind: a.kind, messageId: a.messageId, createdAt: a.createdAt, restoreUntil: a.restoreUntil,
+        state: !rule || (a.state === "undone" && a.restoreUntil <= this.now()) ? "deleted" : a.state,
+        canUndo: canUndo(this.store, a, this.now()), canRestore: !!rule && a.state === "undone" && a.restoreUntil > this.now(),
+        rule: rule && !rule.undoneUntil ? this.ruleView(rule) : undefined };
+    });
+  }
+
+  pendingRuleActions(conversationId: string): RuleAction[] {
+    return storedActions(this.store, conversationId).filter((a) => !a.messageId && a.state === "active");
+  }
+
+  ruleActionCard(id: string) {
+    const a = storedActions(this.store).find((x) => x.id === id);
+    if (!a) return undefined;
+    const view = this.ruleActions(a.conversationId).find((x) => x.id === id)!;
+    const title = tr(a.state === "undone" ? "rules.undoneCard" : a.kind === "update" ? "rules.updatedCard" : "rules.createdCard", { name: view.rule?.title || a.title });
+    const text = a.state === "undone" ? tr("rules.undoneReply", { name: a.title }) : view.rule ? `${view.rule.when} (${view.rule.trigger.kind === "schedule" ? view.rule.trigger.schedule.tz : this.timeZone})\n${view.rule.destination || ""}` : tr("rules.notFound");
+    const op = view.canUndo ? "undo" : view.canRestore ? "restore" : "";
+    return { title, text, buttons: op ? [{ label: tr(op === "undo" ? "rules.undoButton" : "rules.restoreButton"), value: { amb: "rule", id, op } }] : [] };
+  }
+
+  ruleCardAction(account: string, id: string, op: string, operator: string): { toast: string; ok: boolean; card?: Record<string, unknown> } {
+    const a = storedActions(this.store).find((x) => x.id === id);
+    const c = a ? this.store.getConversation(a.conversationId) : undefined;
+    const person = c ? this.store.getAccess(account, "feishu", c.peerId) : undefined;
+    if (!a || !c || c.channel !== "feishu" || (c.account || c.botId) !== account || !person || person.senderId !== operator || !["owner", "allowed"].includes(person.status) || !["undo", "restore"].includes(op)) return { toast: tr("rules.notFound"), ok: false };
+    const r = op === "undo" ? this.undoRuleAction(id) : this.restoreRuleAction(id);
+    const card = this.ruleActionCard(id);
+    return { ok: !r.error, toast: r.error || tr(op === "undo" ? a.kind === "update" ? "rules.updateUndone" : "rules.undoneReply" : "rules.restoredReply", { name: a.title }), ...(card ? { card: actionCardSpec(card.title, card.text, card.buttons) } : {}) };
+  }
+
+  finishRuleActions(conversationId: string, messageId: number): void {
+    for (const action of this.pendingRuleActions(conversationId)) saveAction(this.store, { ...action, messageId });
+  }
+
+  undoRuleAction(id: string): { error?: string } {
+    const a = storedActions(this.store).find((x) => x.id === id);
+    if (!a || !canUndo(this.store, a, this.now())) return { error: tr("rules.undoExpired") };
+    const current = this.store.getRule(a.ruleId)!;
+    const revision = (current.revision ?? 1) + 1;
+    if (a.kind === "create") {
+      this.stopRuleRuns(a.ruleId);
+      const restoreUntil = this.now() + 600_000;
+      this.store.updateRule(a.ruleId, { mode: "off", nextRunAt: 0, undoneUntil: restoreUntil, revision, updatedAt: this.now() });
+      saveAction(this.store, { ...a, before: current, revision, state: "undone", restoreUntil });
+      this.note(a.conversationId, tr("rules.undoNote", { name: a.title }));
+    } else {
+      const b = a.before;
+      if (!b) return { error: tr("rules.undoExpired") };
+      const restored = this.updateRule(a.ruleId, { title: b.title, instruction: b.instruction, message: b.message, ...(b.trigger.kind === "schedule" ? { schedule: b.trigger.schedule } : {}), mode: b.mode, conversationId: b.conversationId, runBudgetUsd: b.runBudgetUsd, monthBudgetUsd: b.monthBudgetUsd, missedPolicy: b.missedPolicy, sourceGroupId: b.sourceGroupId });
+      if (restored.error) return { error: restored.error };
+      saveAction(this.store, { ...a, state: "reverted" });
+      this.note(a.conversationId, `用户已撤销对「${a.title}」的修改，保留恢复后的设置，不要自行再改回去。`);
+    }
+    this.ruleChanged(a.ruleId);
+    return {};
+  }
+
+  restoreRuleAction(id: string): { error?: string } {
+    const a = storedActions(this.store).find((x) => x.id === id);
+    const rule = a ? this.store.getRule(a.ruleId) : undefined;
+    if (!a || !rule || a.state !== "undone" || a.restoreUntil <= this.now() || rule.revision !== a.revision) return { error: tr("rules.undoExpired") };
+    if (this.store.listRules({ botId: rule.botId }).length >= MAX_RULES) return { error: `This bot already has ${MAX_RULES} rules.` };
+    const b = a.before;
+    if (!b) return { error: tr("rules.undoExpired") };
+    if (b.mode !== "off" && !this.destination(rule.botId, b.conversationId)) return { error: tr("rules.noDestination") };
+    if (b.mode !== "off" && b.requiresGroup && !this.store.getGroup(b.sourceGroupId || "")?.members.includes(rule.botId)) return { error: tr("rules.groupMissing") };
+    this.store.updateRule(rule.id, { mode: b.mode, undoneUntil: 0, revision: a.revision + 1, nextRunAt: this.nextFor(b, this.now()), updatedAt: this.now() });
+    saveAction(this.store, { ...a, revision: a.revision + 1, state: "active", restoreUntil: 0 });
+    this.ruleChanged(rule.id);
+    return {};
+  }
+
+  /** 只认最近的确认或引用的确认；其他「撤销」留给普通对话询问。 */
+  ruleReplyAction(conversationId: string, text: string, quoted = ""): { handled: boolean; text?: string } {
+    const op = /^(撤销|undo)$/i.test(text.trim()) ? "undo" : /^(恢复|restore)$/i.test(text.trim()) ? "restore" : "";
+    if (!op) return { handled: false };
+    const latest = this.store.listMessages(conversationId, 30).filter((m) => m.role === "assistant").at(-1);
+    const matching = storedActions(this.store, conversationId).filter((a) => {
+      const ref = this.store.getMessage(a.messageId)?.content;
+      return (op === "undo" ? a.state === "active" : a.state === "undone") && (quoted ? !!ref && quoted.includes(ref) : latest?.id === (a.acknowledgementId || a.messageId));
+    });
+    if (matching.length !== 1) return { handled: false };
+    const a = matching[0];
+    const result = op === "undo" ? this.undoRuleAction(a.id) : this.restoreRuleAction(a.id);
+    const reply = result.error || tr(op === "undo" ? a.kind === "update" ? "rules.updateUndone" : "rules.undoneReply" : "rules.restoredReply", { name: a.title });
+    const messageId = this.store.addMessage(conversationId, "assistant", reply);
+    const fresh = storedActions(this.store, conversationId).find((x) => x.id === a.id)!;
+    saveAction(this.store, { ...fresh, acknowledgementId: messageId });
+    return { handled: true, text: reply };
+  }
+
   /** rule_create：用户原话、一行时间表、检查还是提醒；检查默认执行，用户说先观察时 mode 是 observe */
   private ruleCreateTool(conv: Conversation, a: Record<string, unknown>): { text?: string; error?: string } {
     const s = parseSchedule(String(a.schedule ?? ""), this.timeZone, this.now());
@@ -2691,6 +2944,7 @@ export class TaskService {
     const mode = a.mode === "observe" ? "observe" : "act";
     const r = this.createRule({ botId: conv.botId, conversationId: conv.id, title: String(a.title ?? ""), instruction: String(a.instruction ?? ""), kind, mode, message: String(a.message ?? ""), schedule: s.schedule });
     if (!r.rule) return { error: r.error };
+    this.recordRuleAction(conv, r.rule);
     // 建议给用户的那几句按应用的语言（模型照着说，聊天的语言不同时它会自己换）；其余是给模型的指示
     const when = whenOf(r.rule);
     const title = r.rule.title;
@@ -2703,8 +2957,11 @@ export class TaskService {
   /** rule_update：改模式（执行 / 观察 / 关）、原话、时间表，或删掉 */
   private async ruleUpdateTool(conv: Conversation, a: Record<string, unknown>): Promise<{ text?: string; error?: string }> {
     const ref = String(a.rule ?? "").trim();
-    const list = this.store.listRules({ conversationId: conv.id });
-    const rule = list.find((r) => r.id === ref) ?? (ref ? list.find((r) => r.title.includes(ref) || ref.includes(r.title)) : undefined);
+    const list = this.manageableRules(conv);
+    const exact = list.find((r) => r.id === ref);
+    const matches = exact ? [exact] : ref ? list.filter((r) => r.title.includes(ref) || ref.includes(r.title)) : [];
+    if (matches.length > 1) return { error: `Several rules match. Ask the user which one before changing anything: ${matches.map((r) => `${r.id} ${r.title} (${whenOf(r)})`).join("; ")}` };
+    const rule = matches[0];
     if (!rule) return { error: `No rule matches "${ref}". Call task_list to see them.` };
     if (a.delete === true) {
       await this.deleteRule(rule.id);
@@ -2725,6 +2982,7 @@ export class TaskService {
     const r = this.updateRule(rule.id, patch);
     if (!r.rule) return { error: r.error };
     const v = this.ruleView(r.rule);
+    this.recordRuleAction(conv, r.rule, rule);
     return { text: `Updated rule 「${v.title}」: ${v.when}, ${v.state.label}. Tell the user in one short sentence.` };
   }
 
@@ -2738,7 +2996,16 @@ export class TaskService {
   ruleView(rule: RuleRow): RuleView {
     const live = this.store.listRuns({ ruleId: rule.id, states: ["queued", "running", "settling"], limit: 1 })[0];
     const last = this.store.ruleRuns(rule.id, { limit: 5 }).find((r) => r.state === "ended");
+    const monthlyRuns = rule.trigger.kind === "schedule" ? previewSchedule(rule.trigger.schedule, this.now()).monthlyRuns : 0;
+    const recent = this.store.ruleRuns(rule.id, { limit: 20 }).filter((r) => r.startedAt && r.state === "ended" && r.outcome === "done").slice(0, 5);
+    const cleared = this.store.getKV(`rule.attentionClearedRun:${rule.id}`);
+    const needsAttention = rule.mode !== "off" && (!!rule.pausedReason || !!last && last.id !== cleared && (last.outcome === "failed" || last.outcome === "budget" || last.error === RUN_ERROR.appOff));
     return {
+      destination: this.ruleDestinations(rule.botId).find((d) => d.id === rule.conversationId)?.title || this.store.getConversation(rule.conversationId)?.title || "",
+      missedPolicy: rule.missedPolicy ?? "catchup", requiresGroup: !!rule.requiresGroup, sourceGroupId: rule.sourceGroupId || "",
+      sourceGroupName: rule.sourceGroupId && this.store.getGroup(rule.sourceGroupId)?.members.includes(rule.botId) ? this.store.getGroup(rule.sourceGroupId)!.name : "",
+      needsAttention, monthlyRuns,
+      ...(rule.kind === "check" && recent.length >= 3 ? { estimatedMonthUsd: recent.reduce((sum, r) => sum + r.costUsd, 0) / recent.length * monthlyRuns } : {}),
       id: rule.id,
       botId: rule.botId,
       conversationId: rule.conversationId,
@@ -2752,7 +3019,7 @@ export class TaskService {
       mode: rule.mode,
       state: ruleState(rule, !!live),
       nextRunAt: rule.nextRunAt,
-      ...(last ? { last: { at: last.queuedAt, outcome: last.outcome, line: runLine(last, rule.kind, this.carrier(last)) } } : {}),
+      ...(last ? { last: { at: last.queuedAt, outcome: last.outcome, error: last.error, line: this.ruleRunLine(last, rule) } } : {}),
       failures: rule.failures,
       pausedReason: rule.pausedReason,
       monthUsd: rule.kind === "check" ? this.monthSpent(rule) : 0,
@@ -2772,7 +3039,18 @@ export class TaskService {
 
   getRuleView(id: string): RuleView | undefined {
     const r = this.store.getRule(id);
-    return r ? this.ruleView(r) : undefined;
+    return r && !r.undoneUntil ? this.ruleView(r) : undefined;
+  }
+
+  private ruleRunLine(run: RunRow, rule: RuleRow): string {
+    if (run.error === RUN_ERROR.groupEmpty) return tr("rules.groupEmpty");
+    const raw = this.store.getKV(`rule.missed:${run.id}`);
+    if (raw) {
+      const missed = JSON.parse(raw);
+      const tz = rule.trigger.kind === "schedule" ? rule.trigger.schedule.tz : this.timeZone;
+      if (missed.count > 1) return tr("rules.missedMany", { count: missed.count, range: `${stamp(missed.from, tz)} – ${stamp(missed.to, tz)}` });
+    }
+    return runLine(run, rule.kind, this.carrier(run));
   }
 
   /** 运行记录（新→旧，一次一行）：时间、模式、结果、一行话；展开看报告、步骤、版本和权限 */
@@ -2786,7 +3064,7 @@ export class TaskService {
       cause: r.cause,
       state: r.state,
       outcome: r.outcome,
-      line: runLine(r, rule.kind, this.carrier(r)),
+      line: this.ruleRunLine(r, rule),
       summary: r.report?.summary ?? "",
       message: r.report?.message ?? "",
       would: wouldText(r.would || r.report?.would || ""),
@@ -2807,10 +3085,13 @@ export class TaskService {
   ruleAttention(): AttentionItem[] {
     const out: AttentionItem[] = [];
     for (const rule of this.store.listRules()) {
+      if (rule.mode === "off") continue;
+      const missed = this.missedAttention(rule);
+      if (missed) out.push(missed);
       const suggest = this.suggestItem(rule);
       if (suggest) out.push(suggest);
       const paused = !!rule.pausedReason;
-      if (!paused && (rule.mode === "off" || rule.failures < RULE_FAILS_TO_SHOW)) continue;
+      if (!paused && rule.failures < RULE_FAILS_TO_SHOW) continue;
       const conv = this.store.getConversation(rule.conversationId);
       if (rule.pausedReason === "budget") {
         out.push({
@@ -2851,6 +3132,34 @@ export class TaskService {
       });
     }
     return out;
+  }
+
+  private missedAttention(rule: RuleRow): AttentionItem | undefined {
+    let count = 0;
+    for (const run of this.store.ruleRuns(rule.id, { limit: 10 })) {
+      if (run.error !== RUN_ERROR.appOff) break;
+      const raw = this.store.getKV(`rule.missed:${run.id}`);
+      count += raw ? JSON.parse(raw).count : 1;
+    }
+    if (count < 3) return undefined;
+    const key = `rule.missedPrompt:${rule.id}`;
+    const raw = this.store.getKV(key);
+    let state = raw ? JSON.parse(raw) as { at: number; dismissed: boolean } : undefined;
+    if (!state || this.now() - state.at >= 30 * 86400_000) {
+      state = { at: this.now(), dismissed: false };
+      this.store.setKV(key, JSON.stringify(state));
+    }
+    if (state.dismissed) return undefined;
+    return { id: `missed:${rule.id}`, kind: "rule", botId: rule.botId, botName: this.store.getBot(rule.botId)?.name || rule.botId,
+      subject: rule.title, head: tr("rules.missedPrompt", { name: rule.title }), status: "", line: "", since: state.at, severity: "warn",
+      actions: ["change-time", ...(this.o.canKeepAwake?.() ? ["keep-awake" as const] : []), "dismiss"], ruleId: rule.id, conversationId: rule.conversationId };
+  }
+
+  dismissMissed(id: string): void {
+    const key = `rule.missedPrompt:${id}`;
+    const raw = this.store.getKV(key);
+    this.store.setKV(key, JSON.stringify({ at: raw ? JSON.parse(raw).at : this.now(), dismissed: true }));
+    this.changed(id);
   }
 
   /**

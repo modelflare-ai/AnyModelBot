@@ -23,6 +23,8 @@ export interface Bot {
   settings: BotSettings;
   /** user = 用户自己建的；catalog = 从目录来的（botkit/installer.ts） */
   origin: "user" | "catalog";
+  templateId?: string;
+  templateVersion?: number;
   /** 目录 Bot 的来源、版本和权限；用户自建的是 null */
   app: BotAppRef | null;
   createdAt: number;
@@ -84,12 +86,16 @@ export interface Message {
   interim?: string[];
   /** 这条回复交付的文件（真实路径） */
   files?: string[];
+  ruleSource?: { ruleId: string; title: string; dueAt: number; late: boolean; timeZone: string };
+  permissionWait?: boolean;
 }
 
 /** 一条助手消息除了正文之外的东西：回合中间说的话、交付的文件 */
 export interface MessageExtra {
   interim?: string[];
   files?: string[];
+  ruleSource?: Message["ruleSource"];
+  permissionWait?: boolean;
 }
 
 export interface WeixinAccount {
@@ -312,7 +318,7 @@ export interface TaskRow {
 }
 export type RunState = "queued" | "running" | "settling" | "ended";
 export type RunOutcome = "" | "done" | "needs_you" | "failed" | "budget" | "stopped" | "interrupted" | "skipped";
-export type RunCause = "launch" | "answer" | "followup" | "retry" | "continue" | "recover" | "schedule" | "manual" | "event";
+export type RunCause = "launch" | "answer" | "followup" | "retry" | "continue" | "recover" | "schedule" | "catchup" | "manual" | "event";
 /** 一段工作（一次启动、回答、追加、重试、恢复）：占着名额直到结束 */
 export interface RunRow {
   id: string;
@@ -369,7 +375,7 @@ export type RuleTrigger = { kind: "schedule"; schedule: Schedule } | { kind: "ev
 export interface RuleRow {
   id: string;
   botId: string;
-  /** 结果发到哪个会话（建规则的那个） */
+  /** 结果发到哪个会话（建规则的那个）；关闭的模板规则允许为空 */
   conversationId: string;
   title: string;
   /** 用户的原话 */
@@ -396,6 +402,13 @@ export interface RuleRow {
   anytime: boolean;
   createdAt: number;
   updatedAt: number;
+  missedPolicy?: "catchup" | "skip";
+  sourceGroupId?: string;
+  requiresGroup?: boolean;
+  /** 用户操作修订号；运行状态更新不改变它。 */
+  revision?: number;
+  /** 软撤销的恢复截止时间；非零时永不调度、列表不展示。 */
+  undoneUntil?: number;
 }
 
 type Row = Record<string, unknown>;
@@ -461,6 +474,7 @@ const RUN_COLS: Record<string, string> = {
 };
 const INPUT_COLS: Record<string, string> = { runId: "run_id", messageId: "message_id", deliveredAt: "delivered_at", takenAt: "taken_at" };
 const RULE_COLS: Record<string, string> = {
+  missedPolicy: "missed_policy", sourceGroupId: "source_group_id", requiresGroup: "requires_group", revision: "revision", undoneUntil: "undone_until",
   conversationId: "conversation_id",
   title: "title",
   instruction: "instruction",
@@ -595,6 +609,8 @@ const COLUMNS: Array<[string, string, string]> = [
   // 目录 Bot（botkit/）
   ["bots", "origin", "TEXT NOT NULL DEFAULT 'user'"],
   ["bots", "app", "TEXT NOT NULL DEFAULT ''"],
+  ["bots", "template_id", "TEXT NOT NULL DEFAULT ''"],
+  ["bots", "template_version", "INTEGER NOT NULL DEFAULT 0"],
   ["conversations", "kind", "TEXT NOT NULL DEFAULT 'dm'"],
   // 全局渠道账号（core/routes.ts）
   ["conversations", "account", "TEXT NOT NULL DEFAULT ''"],
@@ -623,6 +639,13 @@ const COLUMNS: Array<[string, string, string]> = [
   // 规则的预算（3e）：每次运行、每月
   ["rules", "run_budget_usd", "REAL NOT NULL DEFAULT 0.1"],
   ["rules", "month_budget_usd", "REAL NOT NULL DEFAULT 3"],
+  ["rules", "missed_policy", "TEXT NOT NULL DEFAULT 'catchup'"],
+  ["rules", "source_group_id", "TEXT NOT NULL DEFAULT ''"],
+  ["rules", "requires_group", "INTEGER NOT NULL DEFAULT 0"],
+  ["rules", "revision", "INTEGER NOT NULL DEFAULT 1"],
+  ["rules", "undone_until", "INTEGER NOT NULL DEFAULT 0"],
+  ["messages", "rule_source", "TEXT NOT NULL DEFAULT ''"],
+  ["messages", "permission_wait", "INTEGER NOT NULL DEFAULT 0"],
   // 保留与清理（3f）：任务文件夹定在什么时候清理
   ["tasks", "cleanup_at", "INTEGER NOT NULL DEFAULT 0"],
 ];
@@ -716,6 +739,11 @@ export class Store {
     return rows.map((r) => [String(r.key), String(r.value)]);
   }
 
+  transaction<T>(fn: () => T): T {
+    this.db.exec("BEGIN IMMEDIATE");
+    try { const result = fn(); this.db.exec("COMMIT"); return result; }
+    catch (e) { this.db.exec("ROLLBACK"); throw e; }
+  }
   // ---------- bots ----------
   private toBot(r: Row): Bot {
     return {
@@ -729,6 +757,7 @@ export class Store {
       settings: parseSettings(r.settings),
       origin: r.origin === "catalog" ? "catalog" : "user",
       app: parseAppRef(r.app),
+      templateId: String(r.template_id || ""), templateVersion: Number(r.template_version || 0),
       createdAt: Number(r.created_at),
       updatedAt: Number(r.updated_at),
     };
@@ -749,6 +778,7 @@ export class Store {
          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(id, input.name, input.systemPrompt ?? "", input.defaultModel ?? "", input.feishuAppId ?? "", input.feishuAppSecret ?? "", input.weixinEnabled ? 1 : 0, JSON.stringify(normalizeSettings(input.settings)), input.origin ?? "user", input.app ? JSON.stringify(input.app) : "", now, now);
+    if (input.templateId) this.db.prepare("UPDATE bots SET template_id=?, template_version=? WHERE id=?").run(input.templateId, input.templateVersion || 1, id);
     return this.getBot(id)!;
   }
   updateBot(id: string, patch: Partial<Omit<Bot, "id" | "createdAt" | "updatedAt">>): Bot | undefined {
@@ -922,19 +952,31 @@ export class Store {
     const replies = convs.length ? ` OR (conversation_id IN (${convs.map(() => "?").join(", ")}) AND role = 'assistant')` : "";
     const rows = this.db
       .prepare(
-        `SELECT * FROM (SELECT id, conversation_id, role, content, created_at, interim, files, CASE WHEN json_valid(activity) THEN json_array_length(activity) ELSE 0 END AS steps FROM messages WHERE id > ? AND (conversation_id = ?${replies}) ORDER BY id DESC LIMIT ?) ORDER BY id`,
+        `SELECT * FROM (SELECT id, conversation_id, role, content, created_at, interim, files, rule_source, permission_wait, CASE WHEN json_valid(activity) THEN json_array_length(activity) ELSE 0 END AS steps FROM messages WHERE id > ? AND (conversation_id = ?${replies}) ORDER BY id DESC LIMIT ?) ORDER BY id`,
       )
       .all(afterId, groupPeer(groupId), ...convs.map((c) => c.id), limit) as Row[];
     return rows.map((r) => ({ ...this.toMessage(r), botId: botOf.get(String(r.conversation_id)) ?? "" }));
   }
 
   // ---------- messages ----------
+  /** 日报只读取所选时间窗，取最新部分；总数用于说明截断。 */
+  groupMessagesBetween(groupId: string, from: number, to: number): { messages: Array<Message & { botId: string }>; total: number } {
+    const convs = this.groupConversations(groupId);
+    const botOf = new Map(convs.map((c) => [c.id, c.botId]));
+    const replies = convs.length ? ` OR (conversation_id IN (${convs.map(() => "?").join(",")}) AND role = 'assistant')` : "";
+    const where = `created_at >= ? AND created_at <= ? AND role != 'system' AND (conversation_id = ?${replies})`;
+    const args = [from, to, groupPeer(groupId), ...convs.map((c) => c.id)];
+    const total = Number((this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE ${where}`).get(...args) as Row).n);
+    const rows = this.db.prepare(`SELECT * FROM (SELECT * FROM messages WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT 300) ORDER BY created_at, id`).all(...args) as Row[];
+    return { total, messages: rows.map((r) => ({ ...this.toMessage(r), botId: botOf.get(String(r.conversation_id)) ?? "" })) };
+  }
+
   addMessage(conversationId: string, role: Message["role"], content: string, activity?: unknown[], extra: MessageExtra = {}): number {
     const now = Date.now();
     const json = (a: unknown[] | undefined) => (a?.length ? JSON.stringify(a) : "");
     const res = this.db
-      .prepare("INSERT INTO messages(conversation_id, role, content, created_at, activity, interim, files) VALUES(?, ?, ?, ?, ?, ?, ?)")
-      .run(conversationId, role, content, now, json(activity), json(extra.interim), json(extra.files));
+      .prepare("INSERT INTO messages(conversation_id, role, content, created_at, activity, interim, files, rule_source, permission_wait) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(conversationId, role, content, now, json(activity), json(extra.interim), json(extra.files), extra.ruleSource ? JSON.stringify(extra.ruleSource) : "", extra.permissionWait ? 1 : 0);
     this.db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now, conversationId);
     return Number(res.lastInsertRowid);
   }
@@ -951,7 +993,7 @@ export class Store {
   listMessages(conversationId: string, limit = 500): Message[] {
     const rows = this.db
       .prepare(
-        "SELECT * FROM (SELECT id, conversation_id, role, content, created_at, interim, files, CASE WHEN json_valid(activity) THEN json_array_length(activity) ELSE 0 END AS steps FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+        "SELECT * FROM (SELECT id, conversation_id, role, content, created_at, interim, files, rule_source, permission_wait, CASE WHEN json_valid(activity) THEN json_array_length(activity) ELSE 0 END AS steps FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
       )
       .all(conversationId, limit) as Row[];
     return rows.map((r) => this.toMessage(r));
@@ -968,7 +1010,21 @@ export class Store {
       ...(Number(r.steps) ? { steps: Number(r.steps) } : {}),
       ...(interim.length ? { interim } : {}),
       ...(files.length ? { files } : {}),
+      ...(r.rule_source ? { ruleSource: parseJson<Message["ruleSource"]>(r.rule_source) } : {}),
+      ...(Number(r.permission_wait) ? { permissionWait: true } : {}),
     };
+  }
+  /** 全部历史中的新手事实；不依赖界面曾加载过哪一页，也不把错误或命令回复算成对话。 */
+  guideConversations(): Array<{ botId: string; successfulReply: boolean; deliveredFile: boolean }> {
+    const rows = this.db.prepare(`SELECT c.bot_id,
+      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.role = 'assistant'
+        AND trim(m.content) != '' AND ltrim(m.content) NOT LIKE '⚠️%'
+        AND EXISTS (SELECT 1 FROM messages u WHERE u.conversation_id = c.id AND u.role = 'user'
+          AND u.id < m.id AND ltrim(u.content) NOT LIKE '/%')) AS replied,
+      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.role = 'assistant'
+        AND json_valid(m.files) AND json_array_length(m.files) > 0) AS delivered
+      FROM conversations c`).all() as Row[];
+    return rows.map((r) => ({ botId: String(r.bot_id), successfulReply: !!r.replied, deliveredFile: !!r.delivered }));
   }
   /** 这个会话里交付过的文件（真实路径，旧→新，去重） */
   deliveredFiles(conversationId: string): string[] {
@@ -1624,6 +1680,9 @@ export class Store {
   private toRule(r: Row): RuleRow {
     const trigger = parseJson<RuleTrigger>(r.trigger_spec) ?? { kind: "event", source: "" };
     return {
+      missedPolicy: r.missed_policy === "skip" ? "skip" : "catchup",
+      sourceGroupId: String(r.source_group_id ?? ""), requiresGroup: Number(r.requires_group) === 1,
+      revision: Number(r.revision ?? 1), undoneUntil: Number(r.undone_until ?? 0),
       id: String(r.id),
       botId: String(r.bot_id),
       conversationId: String(r.conversation_id),
@@ -1654,6 +1713,7 @@ export class Store {
          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(r.id, r.botId, r.conversationId, r.title, r.instruction, r.message, r.kind, JSON.stringify(r.trigger), r.mode, r.folder, r.version ?? 1, r.nextRunAt, r.anytime ? 1 : 0, r.createdAt, r.updatedAt, r.runBudgetUsd ?? 0.1, r.monthBudgetUsd ?? 3);
+    this.updateRule(r.id, { missedPolicy: r.missedPolicy ?? "catchup", sourceGroupId: r.sourceGroupId ?? "", requiresGroup: !!r.requiresGroup, revision: r.revision ?? 1, undoneUntil: r.undoneUntil ?? 0 });
     return this.getRule(r.id)!;
   }
   /** 规则从 since 起（按该跑的时间）花了多少：本月的花费 */
@@ -1668,8 +1728,9 @@ export class Store {
   updateRule(id: string, patch: Partial<Omit<RuleRow, "id" | "botId" | "folder" | "createdAt">>): void {
     updateRow(this.db, "rules", RULE_COLS, id, patch);
   }
-  listRules(opts: { botId?: string; conversationId?: string; limit?: number } = {}): RuleRow[] {
+  listRules(opts: { botId?: string; conversationId?: string; limit?: number; includeUndone?: boolean } = {}): RuleRow[] {
     const where: string[] = [];
+    if (!opts.includeUndone) where.push("undone_until = 0");
     const args: Array<string | number> = [];
     if (opts.botId) (where.push("bot_id = ?"), args.push(opts.botId));
     if (opts.conversationId) (where.push("conversation_id = ?"), args.push(opts.conversationId));
@@ -1678,11 +1739,11 @@ export class Store {
   }
   /** 到点了的规则（开着、没暂停、按时间表）：next_run_at 在 now 及之前 */
   dueRules(now: number): RuleRow[] {
-    return (this.db.prepare("SELECT * FROM rules WHERE mode != 'off' AND paused_reason = '' AND next_run_at > 0 AND next_run_at <= ? ORDER BY next_run_at").all(now) as Row[]).map((r) => this.toRule(r));
+    return (this.db.prepare("SELECT * FROM rules WHERE undone_until = 0 AND mode != 'off' AND paused_reason = '' AND next_run_at > 0 AND next_run_at <= ? ORDER BY next_run_at").all(now) as Row[]).map((r) => this.toRule(r));
   }
   /** 最早的下次运行时间（定时器只设这一个）；没有就是 0 */
   nextRuleDue(): number {
-    const r = this.db.prepare("SELECT MIN(next_run_at) AS t FROM rules WHERE mode != 'off' AND paused_reason = '' AND next_run_at > 0").get() as Row | undefined;
+    const r = this.db.prepare("SELECT MIN(next_run_at) AS t FROM rules WHERE undone_until = 0 AND mode != 'off' AND paused_reason = '' AND next_run_at > 0").get() as Row | undefined;
     return Number(r?.t ?? 0) || 0;
   }
   /** 删掉规则和它的运行记录 */

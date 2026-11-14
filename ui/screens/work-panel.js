@@ -11,9 +11,10 @@ import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { html, Icon } from "../components/ui.js";
 import { MemoryTab, OverviewTab, TasksTab } from "./info-panel.js";
 import { t } from "../lib/i18n.js";
+import { ResourcePreview } from "./resource-preview.js";
 
 /** 面板有哪些标签：工作台只给有专属界面的目录 Bot（app），任务、记忆要有实例（bot） */
-export const panelTabs = ({ app, bot }) => [...(app ? ["app"] : []), "overview", ...(bot ? ["tasks", "memory"] : [])];
+export const panelTabs = ({ app, bot, resourcesOnly = false }) => resourcesOnly ? ["resources"] : [...(app ? ["app"] : []), "overview", "resources", ...(bot ? ["tasks", "memory"] : [])];
 
 /**
  * 把 children 渲染进另一处的 DOM 节点（into）：没有 preact/compat 的 createPortal，用一个独立的 render 根代替。
@@ -62,7 +63,7 @@ function useTabsWrap(tabs) {
  * tabs：panelTabs() 的结果；tab：当前标签（不在 tabs 里时用第一个）；onTab(id) 切换。
  * entry：目录 Bot 的条目（概览里的说明）；onHost(el)：工作台那块宿主挂上 / 卸下时调用（ref 回调）。
  */
-export function WorkPanel({ bot, entry, tabs, tab, onTab, leaving, onClose, onOpenBotSettings, onOpenChat, onOpenConnections, onHost }) {
+export function WorkPanel({ bot, entry, tabs, tab, onTab, leaving, onClose, expanded, onExpand, onOpenBotSettings, onOpenChat, onOpenConnections, onHost, resources, onSelectResource, onRemoveResource }) {
   const cur = tabs.includes(tab) ? tab : tabs[0];
   const wrap = useTabsWrap(tabs);
   // 标签条的键盘：← → 换到相邻的标签（选中即切换），Home / End 到两头
@@ -84,10 +85,12 @@ export function WorkPanel({ bot, entry, tabs, tab, onTab, leaving, onClose, onOp
           onClick=${() => onTab(id)}>${t(`info.tab.${id}`)}</button>`)}
       </div>
       <span class="grow"></span>
+      ${tabs.includes("app") && html`<button type="button" class="text work-expand" aria-pressed=${!!expanded} onClick=${() => onExpand(!expanded)}>${t(expanded ? "info.restoreWorkspace" : "info.expandWorkspace")}</button>`}
       ${bot && html`<button type="button" class="icon-btn" title=${t("info.botSettings")} aria-label=${t("info.botSettings")} onClick=${onOpenBotSettings}><${Icon} name="gear" size="md" /></button>`}
       <button type="button" class="icon-btn panel-close" title=${t("info.closeTitle")} aria-label=${t("info.closeAria")} onClick=${onClose}><${Icon} name="close" size="md" /></button>
     </div>
     ${tabs.includes("app") && html`<div class="work-host" ...${pane("app")} hidden=${cur !== "app"} ref=${onHost}></div>`}
+    ${cur === "resources" && html`<div class="preview-pane" ...${pane("resources")}><${ResourcePreview} state=${resources} onSelect=${onSelectResource} onRemove=${onRemoveResource} /></div>`}
     ${cur === "overview" && html`<div class="panel-body" ...${pane("overview")}><${OverviewTab} bot=${bot} entry=${entry} onOpenChat=${onOpenChat} onOpenConnections=${onOpenConnections} /></div>`}
     ${cur === "tasks" && bot && html`<div class="panel-body" ...${pane("tasks")}><${TasksTab} bot=${bot} onOpenChat=${onOpenChat} /></div>`}
     ${cur === "memory" && bot && html`<div class="panel-body" ...${pane("memory")}><${MemoryTab} bot=${bot} /></div>`}

@@ -33,10 +33,10 @@ export default {
   tip: { kept: "{name} se queda en Míos. Mañana seguirá aquí." },
   remove: {
     title: "¿Quitar {name}?",
-    body: "Desaparece de la barra lateral. Aún puedes encontrarlo en Descubrir.",
+    body: "Se quitará de la barra lateral y se eliminarán sus chats, tareas y reglas. Puedes volver a añadirlo desde Descubrir.",
     confirm: "Quitar",
-    keep: "Conservar sus datos para continuar donde lo dejaste",
-    done: "Se quitó {name}. Puedes volver a encontrarlo en Descubrir",
+    keep: "Conservar sus archivos y su espacio de trabajo para continuar al volver a añadirlo",
+    done: "Se quitó {name}. Puedes volver a añadirlo desde Descubrir",
   },
   errors: {
     catalog_not_found: "No se encontró este bot.",

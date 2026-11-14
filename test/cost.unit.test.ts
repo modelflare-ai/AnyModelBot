@@ -388,7 +388,7 @@ describe("预算（假宿主、假时钟）", () => {
     expect(svc.ruleLog(rule.id)[0].line).toBe("停下：本月预算用完");
     expect(store.getRule(rule.id)).toMatchObject({ pausedReason: "budget", nextRunAt: 0, failures: 0 });
     const v = svc.getRuleView(rule.id)!;
-    expect(v).toMatchObject({ state: { key: "paused", dot: "warn" }, pausedReason: "budget", monthBudgetUsd: 3 });
+    expect(v).toMatchObject({ state: { key: "paused", dot: "err" }, pausedReason: "budget", monthBudgetUsd: 3 });
     expect(v.monthUsd).toBeCloseTo(3.1, 10);
     // 执行中的规则：推一句（一个月一次）；「需要你」里一行，可以再给 $3
     const pushed = store.listOutbox({ limit: 50 }).filter((r) => r.id.startsWith(`rule:${rule.id}:budget:`));

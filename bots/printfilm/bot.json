@@ -1,7 +1,7 @@
 {
   "id": "printfilm",
   "version": "1.0.2",
-  "minAppVersion": "0.1.23",
+  "minAppVersion": "0.1.33",
   "name": {
     "zh-CN": "影视创作室",
     "en": "Film Studio",
@@ -64,39 +64,39 @@
   ],
   "starters": {
     "zh-CN": [
+      "写一个 150 字以内的短剧梗概：一位快递员每天收到来自明天的包裹。只写文字，不生成图片或视频。",
       "把我的创意做成完整短视频，先给我看文案和分镜",
-      "创建一部三集短剧，先规划故事、角色与分集",
-      "打开自由画布，创建一个角色和场景资产"
+      "创建一部三集短剧，先规划故事、角色与分集"
     ],
     "en": [
+      "Write a short film synopsis under 100 words: a courier receives packages from tomorrow every day. Text only, no images or video.",
       "Turn my idea into a complete short video; show me the script and storyboard first",
-      "Create a three-episode drama; plan the story, cast and episodes first",
-      "Open a free canvas and create a character and scene asset"
+      "Create a three-episode drama; plan the story, cast and episodes first"
     ],
     "ja": [
+      "毎日未来から荷物が届く配達員の短編あらすじを200字以内で書いて。文章のみ、画像や動画は作らないで。",
       "アイデアを短編動画に。まず脚本と絵コンテを見せて",
-      "全3話のドラマを作成。まず物語・登場人物・各話を構成して",
-      "自由キャンバスで人物と背景素材を作成して"
+      "全3話のドラマを作成。まず物語・登場人物・各話を構成して"
     ],
     "ko": [
+      "매일 내일에서 온 소포를 받는 배달원의 단편 줄거리를 짧게 써 주세요. 글만 쓰고 이미지나 영상은 만들지 마세요.",
       "아이디어를 완전한 숏폼 영상으로 만들고 먼저 대본과 스토리보드를 보여 줘",
-      "3부작 드라마의 이야기, 등장인물, 에피소드를 먼저 기획해 줘",
-      "자유 캔버스를 열고 등장인물과 장면 자산을 만들어 줘"
+      "3부작 드라마의 이야기, 등장인물, 에피소드를 먼저 기획해 줘"
     ],
     "ru": [
+      "Напиши синопсис до 100 слов: курьер каждый день получает посылки из завтрашнего дня. Только текст, без изображений и видео.",
       "Сделай из моей идеи короткий фильм; сначала покажи сценарий и раскадровку",
-      "Создай драму из трёх эпизодов; начни с истории, персонажей и плана",
-      "Открой свободный холст и создай персонажа и сцену"
+      "Создай драму из трёх эпизодов; начни с истории, персонажей и плана"
     ],
     "es": [
+      "Escribe una sinopsis de menos de 100 palabras: un repartidor recibe paquetes del mañana. Solo texto, sin imágenes ni vídeo.",
       "Convierte mi idea en un video corto completo; muéstrame primero el guion y el guion gráfico",
-      "Crea una serie de tres episodios; planifica primero la historia, el reparto y los episodios",
-      "Abre un lienzo libre y crea un recurso de personaje y otro de escenario"
+      "Crea una serie de tres episodios; planifica primero la historia, el reparto y los episodios"
     ],
     "pt": [
+      "Escreva uma sinopse com menos de 100 palavras: um entregador recebe pacotes do amanhã. Só texto, sem imagens nem vídeo.",
       "Transforme minha ideia em um vídeo curto completo; mostre o roteiro e o storyboard antes",
-      "Crie uma série de três episódios; planeje a história, o elenco e os episódios antes",
-      "Abra um canvas livre e crie um personagem e um cenário"
+      "Crie uma série de três episódios; planeje a história, o elenco e os episódios antes"
     ]
   },
   "skills": [

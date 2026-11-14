@@ -29,7 +29,7 @@ export type AttentionKind = "question" | "approval" | "failed" | "rule" | "deliv
  * open（打开对话；budget 是打开机器人设置的预算）、continue（加预算接着做：任务 $1，规则每月 $3）、
  * act（规则改为执行；suggest 的 dismiss 是继续观察）
  */
-export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open" | "continue" | "act" | "connect";
+export type AttentionAction = "answer" | "approve" | "deny" | "retry" | "stop" | "dismiss" | "relogin" | "open" | "continue" | "act" | "connect" | "change-time" | "keep-awake";
 
 export interface AttentionItem {
   /** 稳定 id：approval:<id>、task:<id>、rule:<id>、suggest:<规则>、delivery:<会话>:held|failed、login:<bot>:<渠道>、reserve:<bot>（预算留给聊天） */

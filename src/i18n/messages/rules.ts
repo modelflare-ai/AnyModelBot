@@ -4,6 +4,30 @@
 import type { Catalog } from "../types.js";
 
 export const zh = {
+  lateLabel: "补发（原定 {time}）",
+  updatedCard: "规则已修改 · {name}",
+  undoButton: "撤销",
+  restoreButton: "恢复",
+  createdCard: "已建好规则 · {name}",
+  undoneCard: "已撤销 · {name}",
+
+  monthlyDay: "每月 {day} 日 {time}",
+  monthlyLast: "每月最后一天 {time}",
+  groupMissing: "找不到要整理的群",
+  groupEmpty: "保持安静：今天群里没有新消息",
+  desktopDestination: "「{bot}」的对话（桌面）",
+  groupDestination: "群聊 · {group}",
+  undoExpired: "这次操作已无法撤销或恢复，请查看规则当前设置。",
+  undoNote: "用户撤销了「{name}」，不要再建回来。",
+  undoneReply: "已撤销「{name}」，不会再运行。10 分钟内回复「恢复」可以找回。",
+  updateUndone: "已撤销对「{name}」的修改。",
+  restoredReply: "已恢复「{name}」。",
+  undoHint: "回复「撤销」可以取消；在桌面端可以查看和修改。",
+  noDestination: "请先选择发到哪里。",
+  noSourceGroup: "请先选择整理哪个群。",
+  missedMany: "错过 {count} 次（{range}）",
+  missedPrompt: "「{name}」最近 3 次都因为电脑没开错过了。要换个时间，或在快到点时防止电脑睡眠吗？",
+
   // 时间表的话（tasks/schedule.ts describe）
   daily: "每天 {time}",
   weekdays: "每个工作日 {time}",
@@ -107,6 +131,30 @@ export const zh = {
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
+  lateLabel: "Sent late (due {time})",
+  updatedCard: "Rule updated \u00b7 {name}",
+  undoButton: "Undo",
+  restoreButton: "Restore",
+  createdCard: "Rule created · {name}",
+  undoneCard: "Undone · {name}",
+
+  monthlyDay: "Monthly on day {day} at {time}",
+  monthlyLast: "Last day of each month at {time}",
+  groupMissing: "Couldn't find the group to summarize",
+  groupEmpty: "Stayed quiet: no new messages in the group today",
+  desktopDestination: "Chat with {bot} (desktop)",
+  groupDestination: "Group · {group}",
+  undoExpired: "This change can no longer be undone or restored. Review the current rule.",
+  undoNote: "The user undid \"{name}\". Do not create it again.",
+  undoneReply: "Undid \"{name}\". It will not run. Reply \"restore\" within 10 minutes to get it back.",
+  updateUndone: "Undid the changes to \"{name}\".",
+  restoredReply: "Restored \"{name}\".",
+  undoHint: "Reply \"undo\" to cancel. You can review and change it in the desktop app.",
+  noDestination: "Choose a destination first.",
+  noSourceGroup: "Choose a group to summarize first.",
+  missedMany: "Missed {count} times ({range})",
+  missedPrompt: "\"{name}\" was missed 3 times in a row because the computer was off. Change the time, or keep the computer awake before it is due?",
+
   daily: "Daily {time}",
   weekdays: "Weekdays {time}",
   weekends: "Weekends {time}",

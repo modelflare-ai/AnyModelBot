@@ -85,9 +85,10 @@ export function NeedItem({ item, multiBot, onAct, onOpenChat, onRelogin, onOpenB
         ? html`<${Button} variant="primary" loading=${busy === "continue"} disabled=${!!busy} onClick=${() => act("continue")}>${t("needs.continue")}<//>`
         : html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`)}
       ${item.kind === "failed" && html`<button type="button" class="text danger" disabled=${!!busy} onClick=${() => act("stop")}>${t("needs.stop")}</button>`}
-      ${item.kind === "rule" && (can("continue")
+      ${item.kind === "rule" && !can("change-time") && (can("continue")
         ? html`<${Button} variant="primary" loading=${busy === "continue"} disabled=${!!busy} onClick=${() => act("continue")}>${t("needs.continue")}<//>`
         : html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`)}
+      ${can("change-time") && html`<${Button} disabled=${!!busy} onClick=${async () => { try { const data = await api(`/rules/${encodeURIComponent(item.ruleId)}`); if (await act("change-time")) window.dispatchEvent(new CustomEvent("amb-edit-rule", { detail: data.rule })); } catch (e) { failed(e); } }}>${t("scheduled.changeTime")}<//>${can("keep-awake") && html`<${Button} disabled=${!!busy} onClick=${async () => { try { await api("/settings", { method: "PUT", body: { keepAwakeForRules: true } }); await act("keep-awake"); } catch (e) { failed(e); } }}>${t("scheduled.keepAwake")}<//>`}<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("scheduled.noThanks")}</button>`}
       ${item.kind === "budget" && html`<${Button} onClick=${() => onOpenBotSettings?.(item.botId, "budget")}>${t("needs.raiseBudget")}<//>`}
       ${item.kind === "delivery" && item.actions.includes("retry") && html`<${Button} loading=${busy === "retry"} disabled=${!!busy} onClick=${() => act("retry")}>${t("common.retry")}<//>`}
       ${item.kind === "delivery" && item.actions.includes("dismiss") && html`<button type="button" class="text" disabled=${!!busy} onClick=${() => act("dismiss")}>${t("needs.dismiss")}</button>`}

@@ -122,13 +122,13 @@ describe("时间表：下一次、上一次、宽限期", () => {
     expect(nextRun(s, s.at)).toBeUndefined();
     expect(latestRun(s, at("2026-11-03T16:00"))).toBe(s.at);
   });
-  it("宽限期：间隔的一半和 2 小时取小的", () => {
+  it("宽限期：最多 12 小时，间隔类不补跑", () => {
     const ref = at("2026-11-02T10:00");
-    expect(graceOf(daily("08:00"), ref)).toBe(2 * H);
-    expect(graceOf({ kind: "every", minutes: 15, from: ref, tz: TZ }, ref)).toBe(7.5 * MIN);
-    expect(graceOf({ kind: "every", minutes: 60, from: ref, tz: TZ }, ref)).toBe(30 * MIN);
+    expect(graceOf(daily("08:00"), ref)).toBe(12 * H);
+    expect(graceOf({ kind: "every", minutes: 15, from: ref, tz: TZ }, ref)).toBe(0);
+    expect(graceOf({ kind: "every", minutes: 60, from: ref, tz: TZ }, ref)).toBe(0);
     expect(graceOf({ kind: "cron", cron: "*/10 * * * *", tz: TZ }, ref)).toBe(5 * MIN);
-    expect(graceOf({ kind: "once", at: ref, tz: TZ }, ref)).toBe(2 * H);
+    expect(graceOf({ kind: "once", at: ref, tz: TZ }, ref)).toBe(12 * H);
   });
 });
 
@@ -143,26 +143,26 @@ describe("界面：规则的一行（健康时只有状态和下次）", () => {
     const now = new Date(2026, 10, 2, 7, 30).getTime();
     const t = (d: number, h: number, m = 0) => new Date(2026, 10, 2 + d, h, m).getTime();
     const r = (o: any) => ({ failures: 0, nextRunAt: t(1, 8), state: { key: "observe", label: "观察中" }, ...o });
-    expect(ruleSub(r({}), now)).toBe("观察中，明天 08:00 再运行");
+    expect(ruleSub(r({}), now)).toBe("先观察中：不发消息，只记录");
     expect(ruleSub(r({ state: { key: "act", label: "执行中" }, nextRunAt: t(0, 15) }), now)).toBe("执行中，今天 15:00 再运行");
-    expect(ruleSub(r({ state: { key: "remind", label: "提醒" }, nextRunAt: t(1, 12) }), now)).toBe("明天 12:00 提醒你");
+    expect(ruleSub(r({ state: { key: "remind", label: "提醒" }, nextRunAt: t(1, 12) }), now)).toBe("执行中，明天 12:00 再运行");
     expect(ruleSub(r({ live: { state: "running" } }), now)).toBe("正在运行");
     expect(ruleSub(r({ live: { state: "queued" } }), now)).toBe("排队中");
-    expect(ruleSub(r({ state: { key: "paused", label: "已暂停" }, failures: 3, nextRunAt: 0 }), now)).toBe("连续失败 3 次，已暂停");
-    expect(ruleSub(r({ state: { key: "paused", label: "已暂停" }, pausedReason: "budget", nextRunAt: 0 }), now)).toBe("本月预算用完，已暂停");
-    expect(ruleSub(r({ nextRunAt: 0 }), now)).toBe("观察中");
-    expect(ruleSub(r({ state: { key: "off", label: "已关闭" } }), now)).toBe("已关闭");
+    expect(ruleSub(r({ state: { key: "paused", label: "已暂停" }, failures: 3, nextRunAt: 0 }), now)).toBe("已暂停：连续失败 3 次");
+    expect(ruleSub(r({ state: { key: "paused", label: "已暂停" }, pausedReason: "budget", nextRunAt: 0 }), now)).toBe("已暂停：本月预算用完");
+    expect(ruleSub(r({ nextRunAt: 0 }), now)).toBe("先观察中：不发消息，只记录");
+    expect(ruleSub(r({ state: { key: "off", label: "已关闭" } }), now)).toBe("已关闭 · 还没选发到哪里");
     expect(ruleSub(r({ state: { key: "done", label: "已结束" }, nextRunAt: 0 }), now)).toBe("已结束");
     expect([fmtRunAt(t(0, 8), now), fmtRunAt(t(-1, 8), now), fmtRunAt(t(-6, 8), now)]).toEqual(["今天 08:00", "昨天 08:00", "10/27 08:00"]);
     // 2026-11-02 是周一
     expect([fmtNext(t(3, 9), now), fmtNext(t(10, 9), now)]).toEqual(["周四 09:00", "11/12 09:00"]);
     // 英文：状态文字是服务端按界面语言给的，这里只换了界面自己的那部分
     ui.setLangPref("en");
-    expect(ruleSub(r({ state: { key: "observe", label: "Observing" } }), now)).toBe("Observing, next run tomorrow 08:00");
+    expect(ruleSub(r({ state: { key: "observe", label: "Observing" } }), now)).toBe("Trying it out: records results, sends nothing");
     expect(ruleSub(r({ state: { key: "act", label: "Acting" }, nextRunAt: t(0, 15) }), now)).toBe("Acting, next run today 15:00");
-    expect(ruleSub(r({ state: { key: "remind", label: "Reminder" }, nextRunAt: t(1, 12) }), now)).toBe("Reminds you tomorrow 12:00");
-    expect(ruleSub(r({ state: { key: "paused", label: "Paused" }, failures: 3, nextRunAt: 0 }), now)).toBe("Failed 3 times in a row, so it's paused");
-    expect(ruleSub(r({ state: { key: "paused", label: "Paused" }, pausedReason: "budget", nextRunAt: 0 }), now)).toBe("Used up this month's budget, so it's paused");
+    expect(ruleSub(r({ state: { key: "remind", label: "Reminder" }, nextRunAt: t(1, 12) }), now)).toBe("Acting, next run tomorrow 12:00");
+    expect(ruleSub(r({ state: { key: "paused", label: "Paused" }, failures: 3, nextRunAt: 0 }), now)).toBe("Paused: failed 3 times in a row");
+    expect(ruleSub(r({ state: { key: "paused", label: "Paused" }, pausedReason: "budget", nextRunAt: 0 }), now)).toBe("Paused: this month’s budget is used up");
     expect([fmtRunAt(t(-1, 8), now), fmtNext(t(3, 9), now)]).toEqual(["Yesterday 08:00", "Thu 09:00"]);
     ui.setLangPref("zh-CN");
   });
@@ -300,6 +300,7 @@ describe("规则（假宿主、假时钟）", () => {
       defaultModel: () => "main-model",
       retryDelaysMs: [5, 5, 5],
       maxBackground: o.maxBackground ?? 4,
+      catchupDelayMs: 0,
       now: () => now,
       timeZone: TZ,
       ruleRunCapMs: o.cap,
@@ -384,7 +385,7 @@ describe("规则（假宿主、假时钟）", () => {
     expect(watch.rule).toMatchObject({ kind: "check", mode: "observe" });
     expect(watch.text).toContain("in observe mode");
     expect(watch.text).toContain("「已建好规则：每天 09:00 看 X 价格，先观察几天，只记录不打扰你。」");
-    expect(svc.getRuleView(watch.rule.id)).toMatchObject({ state: { key: "observe", label: "观察中", dot: "" } });
+    expect(svc.getRuleView(watch.rule.id)).toMatchObject({ state: { key: "observe", label: "观察中", dot: "warn" } });
     // 提醒没有观察：照样执行
     const remind = await create("daily 10:00", { ...OBSERVE, kind: "remind", message: "喝水。" });
     expect(remind.rule).toMatchObject({ kind: "remind", mode: "act" });
@@ -633,39 +634,20 @@ describe("规则（假宿主、假时钟）", () => {
     expect(svc.ruleAttention()).toHaveLength(1);
   });
 
-  it("错过的：宽限期（2 小时）内启动补跑一次（算那个时间的），更早的记一条「跳过：电脑没开」，从不补一串", async () => {
+  it("每天在 12 小时内只补最近一次；更早的合并记错过；每隔类不补", async () => {
     const { rule } = await create();
-    svc.stop();
-    // 应用 08:00 没开，09:30 开：补跑一次
-    now = at("2026-11-02T09:30");
-    svc = make();
-    svc.start();
-    await flush();
-    expect(runsOf(rule.id).map((r) => [r.cause, r.queuedAt, r.state])).toEqual([["schedule", at("2026-11-02T08:00"), "running"]]);
+    svc.stop(); now = at("2026-11-02T19:30"); svc = make(); svc.start(); await flush();
+    expect(runsOf(rule.id).map((r) => [r.cause, r.queuedAt, r.state])).toEqual([["catchup", at("2026-11-02T08:00"), "running"]]);
+    expect(host.prompts.at(-1)!.text).toContain("[补跑]");
     await turn(report("done"));
-    expect(store.getRule(rule.id)!.nextRunAt).toBe(at("2026-11-03T08:00"));
-    // 关了两天，11:00 开：错过的都太久了，只记一条跳过，不跑
-    svc.stop();
-    now = at("2026-11-05T11:00");
-    svc = make();
-    svc.start();
-    await flush();
-    expect(runsOf(rule.id).slice(1).map((r) => [r.outcome, r.error, r.queuedAt])).toEqual([["skipped", "app_off", at("2026-11-03T08:00")]]);
-    expect(svc.ruleLog(rule.id)[0].line).toBe("跳过：电脑没开");
+    svc.stop(); now = at("2026-11-05T21:00"); svc = make(); svc.start(); await flush();
+    expect(runsOf(rule.id).slice(1).map((r) => [r.outcome, r.error, r.queuedAt])).toEqual([["skipped", "app_off", at("2026-11-05T08:00")]]);
+    expect(svc.ruleLog(rule.id)[0].line).toMatch(/^错过 3 次/);
     expect(store.getRule(rule.id)!.nextRunAt).toBe(at("2026-11-06T08:00"));
-    // 每 15 分钟的：关了一小时，最近的那格在 7.5 分钟内 → 跳过一条、跑一次
     const every = (await create("every 15m")).rule;
-    expect(every.nextRunAt).toBe(at("2026-11-05T11:01"));
-    svc.stop();
-    now = at("2026-11-05T12:20");
-    svc = make();
-    svc.start();
-    await flush();
-    expect(runsOf(every.id).map((r) => [r.outcome || r.state, r.queuedAt])).toEqual([
-      ["skipped", at("2026-11-05T11:01")],
-      ["running", at("2026-11-05T12:16")],
-    ]);
-    expect(store.getRule(every.id)!.nextRunAt).toBe(at("2026-11-05T12:31"));
+    svc.stop(); now = at("2026-11-05T22:20"); svc = make(); svc.start(); await flush();
+    expect(runsOf(every.id).map((r) => [r.outcome, r.queuedAt])).toEqual([["skipped", at("2026-11-05T22:16")]]);
+    expect(store.getRule(every.id)!.nextRunAt).toBe(at("2026-11-05T22:31"));
   });
 
   it("名额一直被占着：等过了宽限期就跳过（「一直在忙」）；上一次还没跑完，这次跳过", async () => {
@@ -675,7 +657,7 @@ describe("规则（假宿主、假时钟）", () => {
     const { rule } = await create();
     await go(at("2026-11-02T08:00"));
     expect(runsOf(rule.id).map((r) => r.state)).toEqual(["queued"]);
-    now = at("2026-11-02T10:01");
+    now = at("2026-11-02T20:01");
     svc.pump();
     expect(runsOf(rule.id).map((r) => [r.outcome, r.error])).toEqual([["skipped", "busy"]]);
     expect(svc.ruleLog(rule.id)[0].line).toBe("跳过：一直在忙");
@@ -780,7 +762,7 @@ describe("规则（假宿主、假时钟）", () => {
     // 超过宽限期才重启：跳过
     await go(at("2026-11-03T08:00"));
     svc.stop();
-    now = at("2026-11-03T10:30");
+    now = at("2026-11-03T20:30");
     svc = make();
     svc.start();
     await flush();
@@ -1009,7 +991,7 @@ describe("规则（假宿主、假时钟）", () => {
     await flush();
     const count = (id: string, outcome: string) => runsOf(id).filter((r) => r.outcome === outcome).length;
     expect([count(daily.id, "done"), count(daily.id, "skipped")]).toEqual([2, 0]);
-    // 每 30 分钟：48 小时减去关着的 3 小时；重新打开时补跑一次、跳过一条
+    // 每 30 分钟：48 小时减去关着的 3 小时；重新打开时合并记录错过，等待下一个间隔点
     expect(count(half.id, "skipped")).toBe(1);
     expect(count(half.id, "done")).toBeGreaterThanOrEqual(84);
     expect(count(half.id, "done")).toBeLessThanOrEqual(90);

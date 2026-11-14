@@ -4,7 +4,7 @@
  * （02:30 → 03:30），重复的那一小时取第一次。every 按绝对时间，从起点一格一格往后排。
  *
  * - nextRun：after 之后（不含）第一次到点；latestRun：t 及之前最后一次到点（错过的补跑只补最近的一次）。
- * - graceOf：错过多久之内还补跑一次（间隔的一半和 2 小时取小的）；更早的记为跳过，从不补一串。
+ * - graceOf：错过多久之内还补跑一次（间隔的一半和 12 小时取小的）；更早的记为跳过，从不补一串。
  * - parseSchedule：聊天代理给的一行（"daily 08:00"、"weekly mon,thu 09:00"、"every 30m"、"once 2026-11-02 15:00"、"cron 0 8 * * 1-5"）。
  * - describe：给用户看的话（跟着语言，src/i18n 的 rules.*）：每天 08:00、每个工作日 08:00、每周一、周四 09:00、每 30 分钟、11月2日 15:00；
  *   英文 Daily 08:00、Weekdays 08:00、Every Mon, Thu 09:00、Every 30 min、Nov 2 15:00。
@@ -18,7 +18,7 @@ export type { Schedule };
 /** every 最短间隔 */
 export const MIN_EVERY_MIN = 15;
 /** 错过之后最多多久内还补跑 */
-export const MAX_GRACE_MS = 2 * 3600_000;
+export const MAX_GRACE_MS = 12 * 3600_000;
 
 const MIN = 60_000;
 const DAY_MS = 86_400_000;
@@ -114,7 +114,12 @@ function cronDay(c: Cron, day: { mo: number; d: number; weekday: number }): bool
 // ---------- 下一次、上一次 ----------
 
 /** 这一天里到点的分钟（本地），从小到大；这一天不跑就是空的 */
-function minutesOn(s: Schedule, day: { mo: number; d: number; weekday: number }, cron?: Cron): number[] {
+function minutesOn(s: Schedule, day: { y: number; mo: number; d: number; weekday: number }, cron?: Cron): number[] {
+  if (s.kind === "monthly") {
+    const last = new Date(Date.UTC(day.y, day.mo, 0)).getUTCDate();
+    const minute = minuteOf(s.time);
+    return day.d === (s.day === "last" ? last : Math.min(s.day, last)) && minute !== undefined ? [minute] : [];
+  }
   if (s.kind === "daily" || s.kind === "weekly") {
     const m = minuteOf(s.time);
     if (m === undefined) return [];
@@ -180,15 +185,35 @@ export function intervalOf(s: Schedule, ref: number): number {
   if (s.kind === "every") return s.minutes * MIN;
   if (s.kind === "cron") {
     const a = nextRun(s, ref);
+    if (a !== undefined && latestRun(s, ref) === ref) return a - ref;
     const b = a === undefined ? undefined : nextRun(s, a);
     return a !== undefined && b !== undefined ? b - a : DAY_MS;
   }
   return DAY_MS;
 }
 
-/** 错过多久之内还补跑一次：间隔的一半和 2 小时取小的 */
+/** 错过多久之内还补跑一次：间隔的一半和 12 小时取小的 */
 export function graceOf(s: Schedule, ref: number): number {
+  if (s.kind === "every") return 0;
   return Math.min(MAX_GRACE_MS, intervalOf(s, ref) / 2);
+}
+
+/** 表单预览和调度使用同一个日历；月频率按接下来 30 天估算。 */
+export function previewSchedule(s: Schedule, now: number): { times: number[]; monthlyRuns: number } {
+  const times: number[] = [];
+  let at = nextRun(s, now);
+  for (let i = 0; i < 3 && at !== undefined; i++) {
+    times.push(at);
+    at = nextRun(s, at);
+  }
+  if (s.kind === "every") return { times, monthlyRuns: Math.round(30 * 1440 / s.minutes) };
+  let monthlyRuns = 0;
+  if (s.kind === "once") monthlyRuns = s.at > now && s.at <= now + 30 * DAY_MS ? 1 : 0;
+  else {
+    const cron = s.kind === "cron" ? parseCron(s.cron) : undefined;
+    for (let i = 0; i < 30; i++) monthlyRuns += minutesOn(s, dayAt(now, i, s.tz), cron).length;
+  }
+  return { times, monthlyRuns };
 }
 
 // ---------- 校验、解析、给人看的话 ----------
@@ -221,6 +246,13 @@ export function normalizeSchedule(raw: unknown, tz: string, now: number, l: Lang
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const zone = typeof r.tz === "string" && validZone(r.tz) ? r.tz : tz;
   switch (r.kind) {
+    case "monthly": {
+      const time = hhmm(String(r.time ?? ""));
+      const day = r.day === "last" ? "last" : Number(r.day);
+      if (!time) return { error: tl(l, "rules.timeFormat") };
+      if (day !== "last" && (!Number.isInteger(day) || day < 1 || day > 31)) return { error: tl(l, "rules.needTime") };
+      return { schedule: { kind: "monthly", time, day, tz: zone } };
+    }
     case "once": {
       const at = Number(r.at);
       if (!Number.isFinite(at) || at <= 0) return { error: tl(l, "rules.needTime") };
@@ -271,6 +303,10 @@ export function parseSchedule(text: string, tz: string, now: number): { schedule
   const [head, ...rest] = t.split(" ");
   const tail = rest.join(" ");
   const kind = head.toLowerCase();
+  if (kind === "monthly") {
+    const m = /^(last|\d{1,2}) (\d{1,2}[:：]\d{2})$/.exec(tail);
+    return m ? normalizeSchedule({ kind: "monthly", day: m[1], time: m[2] }, tz, now, "en") : { error: "Use monthly 1–31 HH:MM or monthly last HH:MM" };
+  }
   const bad = { error: `Unrecognized schedule "${t}". Use one of: once YYYY-MM-DD HH:MM | daily HH:MM | weekdays HH:MM | weekly mon,thu HH:MM | every 30m | cron M H DOM MON DOW` };
   if (kind === "daily" || kind === "weekdays" || kind === "weekends") {
     const time = hhmm(tail);
@@ -331,7 +367,8 @@ export function describe(s: Schedule, withZone = false, l: Lang = currentLang())
     const m = Math.floor(p.minute);
     const date = new Intl.DateTimeFormat(l, { month: l === "en" ? "short" : "long", day: "numeric", timeZone: s.tz }).format(s.at);
     text = tl(l, "rules.once", { date, time: `${pad(Math.floor(m / 60))}:${pad(m % 60)}` });
-  } else if (s.kind === "daily" || s.kind === "weekly") text = daysText(s.days, s.time, l);
+  } else if (s.kind === "monthly") text = tl(l, s.day === "last" ? "rules.monthlyLast" : "rules.monthlyDay", { day: s.day, time: s.time });
+  else if (s.kind === "daily" || s.kind === "weekly") text = daysText(s.days, s.time, l);
   else if (s.kind === "every") text = s.minutes % 60 === 0 ? tl(l, "rules.everyHour", { count: s.minutes / 60 }) : tl(l, "rules.everyMin", { count: s.minutes });
   else text = tl(l, "rules.cron", { cron: s.cron });
   return withZone ? tl(l, "rules.withZone", { text, tz: s.tz }) : text;

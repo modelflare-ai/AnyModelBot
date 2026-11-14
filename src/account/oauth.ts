@@ -15,6 +15,7 @@ export interface OidcEndpoints {
   authorization: string;
   token: string;
   revocation: string;
+  userinfo?: string;
 }
 
 export interface TokenSet {
@@ -71,12 +72,17 @@ export async function discover(issuer: string, fetchImpl: typeof fetch = fetch):
     if (!v || new URL(v).origin !== origin) throw new OAuthError("discovery", t("account.discovery_bad_endpoint", { key }));
     return v;
   };
+  let userinfo: string | undefined;
+  if (doc.userinfo_endpoint) {
+    try { userinfo = endpoint("userinfo_endpoint"); } catch { /* Optional profile endpoint is ignored if invalid. */ }
+  }
   if (doc.issuer !== issuer) throw new OAuthError("discovery", t("account.discovery_issuer_mismatch"));
   return {
     issuer,
     authorization: endpoint("authorization_endpoint"),
     token: endpoint("token_endpoint"),
     revocation: endpoint("revocation_endpoint"),
+    ...(userinfo ? { userinfo } : {}),
   };
 }
 

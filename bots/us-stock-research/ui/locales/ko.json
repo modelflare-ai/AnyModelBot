@@ -57,5 +57,8 @@
   "q.and": " 및 ",
   "kpi.title": "핵심 수치",
   "kpi.pp": "{v}%p",
-  "kpi.vs": "{cat} 대비"
+  "kpi.vs": "{cat} 대비",
+  "chart.data": "원본 데이터 ({count}행)",
+  "chart.units": "수치 단위는 원본 데이터를 참고하세요",
+  "chart.interact": "추세 차트. 좌우 방향키로 기간을 선택하세요."
 }

@@ -3,6 +3,9 @@
 .us-process { display: grid; gap: var(--space-6); min-width: 0; max-width: 46rem; }
 .us-sec { display: grid; gap: var(--space-2); min-width: 0; }
 .us-sec > h2 { margin: 0; }
+.us-summary { padding-block: var(--space-2); }
+.us-data > summary { cursor: pointer; color: var(--fg-2); font-size: var(--fs-sm); padding-block: var(--space-2); }
+.us-data[open] > summary { margin-bottom: var(--space-2); }
 
 .plan, .calls { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 .step { display: grid; grid-template-columns: var(--space-4) minmax(0, 1fr); gap: var(--space-2); line-height: var(--lh-snug); }
@@ -37,30 +40,32 @@
 .md-table th { color: var(--fg-2); font-weight: var(--fw-medium); border-bottom: 1px solid var(--line-2); }   /* 描边：表头下沿 */
 .md-table .num, .md-table .right { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* 图表：两张并排的小图（窄了上下排），各自一块 --well。柱和线是两级中性墨色，读数在上面 */
-.ch-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--space-3); }
+/* 图表：面板中纵排，内容区够宽再并排；数字、图例和曲线使用同一组数据系列色。 */
+.ch-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+@container workspace-content (min-width: 780px) { .ch-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .ch { display: grid; gap: var(--space-2); margin: 0; padding: var(--space-3) var(--space-4) var(--space-2); background: var(--well); border-radius: var(--r-well); min-width: 0; }
 .ch-legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-4); min-width: 0; font-size: var(--fs-sm); }
 .ch-key { display: inline-flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; }
 .ch-name { color: var(--fg-2); }
 .ch-value { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--fg); }
 .ch-cat { margin-inline-start: auto; font-size: var(--fs-xs); color: var(--muted); }
-.ch-swatch { align-self: center; width: var(--space-2); height: var(--space-2); border-radius: var(--r-xs); background: var(--ch-0); }
-.ch-swatch.s1 { background: var(--ch-1); }
+.ch-swatch { display: inline-block; flex: none; align-self: center; width: var(--space-2); height: var(--space-2); border-radius: var(--r-mark); background: var(--series-color); }
+.s0 { --series-color: var(--chart-1); }
+.s1 { --series-color: var(--chart-2); }
+.s2 { --series-color: var(--chart-3); }
+.s3 { --series-color: var(--chart-4); }
+.ch-note { font-size: var(--fs-xs); color: var(--muted); line-height: var(--lh-snug); overflow-wrap: anywhere; }
 .ch-plot { min-width: 0; }
 .ch-svg { display: block; overflow: visible; }
-.ch-row, .ch { --ch-0: var(--fg); --ch-1: var(--muted); }
-.ch-bar.s0 { fill: var(--ch-0); }
-.ch-bar.s1 { fill: var(--ch-1); }
+.ch-bar { fill: var(--series-color); }
 .ch-col { transition: opacity var(--t-fast); }
 .ch-svg:hover .ch-col:not(.on) { opacity: .45; }
 .ch-base { stroke: var(--line); stroke-width: 1; }
-.ch-line { fill: none; stroke: var(--ch-0); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.ch-line.s1 { stroke: var(--ch-1); }
-.ch-dot { fill: var(--ch-0); stroke: var(--surface-solid); stroke-width: 2; }
-.ch-dot.s1 { fill: var(--ch-1); }
+.ch-grid { stroke: var(--line-2); stroke-width: 1; }
+.ch-line { fill: none; stroke: var(--series-color); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ch-dot { fill: var(--series-color); stroke: var(--surface-solid); stroke-width: 2; }
 .ch-cross { stroke: var(--line); stroke-width: 1; }
-.ch-axis { fill: var(--muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.ch-axis { fill: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 .ch-axis.on { fill: var(--fg); }
 .ch-hit { fill: transparent; }
 

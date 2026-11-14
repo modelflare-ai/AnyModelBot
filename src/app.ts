@@ -73,6 +73,7 @@ const log = logger("app");
 
 /** 桌面外壳（Electron 主进程）提供的能力；CLI / Docker 下为空 */
 export interface DesktopHooks {
+  ruleNotification?(botId: string, title: string, text: string): void;
   updates?: DesktopUpdates;
   autostart(): { supported: boolean; on: boolean };
   setAutostart(on: boolean): void;
@@ -255,8 +256,10 @@ export class App {
     });
     const freshData = !fs.existsSync(path.join(config.dataDir, "anymodel.db"));
     this.store = new Store(path.join(config.dataDir, "anymodel.db"));
+    this.cuPermissions.bindStore(this.store);
     // "更新了什么"：全新安装第一次启动不弹，直接记成当前版本；升级上来的（库已经在）还没有记录时弹一次这一版
     if (freshData && !this.store.getKV(WHATS_NEW_SEEN) && appVersion()) this.store.setKV(WHATS_NEW_SEEN, appVersion());
+    if (!freshData) this.store.setKV("bots.initialized", "1");
     this.userSkills = new UserSkills(config.dataDir, this.store);
     this.outbox = new Outbox(this.store);
     this.delivery = new Delivery({ store: this.store, outbox: this.outbox, timeZone: opts.timeZone, ...opts.deliveryLimits });
@@ -345,6 +348,9 @@ export class App {
     });
     this.attention = new Attention({ store: this.store });
     this.tasks = new TaskService({
+      canManageAllRules: (conv) => conv.kind === "dm" && this.access.owner(conv.account || conv.botId, conv.channel)?.peerId === conv.peerId,
+      canKeepAwake: () => !!this.desktop,
+      onRuleResult: (botId, _id, text) => this.desktop?.ruleNotification?.(botId, this.store.getBot(botId)?.name || botId, text),
       store: this.store,
       host: this.agent.taskHost(),
       delivery: this.delivery,
@@ -656,6 +662,7 @@ export class App {
     if (bot?.settings.budget.enabled && this.account.signedIn) {
       await this.account.setBotBudget(botId, bot.name, { ...bot.settings.budget, enabled: false }).catch((e) => log.warn("remove bot key failed", { message: (e as Error).message }));
     }
+    if (bot?.app) this.botInstaller.markRemoved(bot.app.catalogId);
     this.store.deleteBot(botId);
     // 目录 Bot 移除时不留目录，用户选了保留数据时只留工作区。用户自建的机器人行为不变
     if (bot?.origin === "catalog") this.botInstaller.cleanup(botId, !!opts.keepData);
@@ -727,6 +734,7 @@ export class App {
       }
     }
     this.agent.start();
+    this.cuPermissions.start((botId, pending) => this.runtime.resumePermission(botId, pending));
     this.apps.start();
     this.ensureAccount();
     await this.retirePastedKey();
@@ -814,6 +822,7 @@ export class App {
   }
 
   async stop(): Promise<void> {
+    this.cuPermissions.stop();
     this.catalog.stop();
     if (this.catalogSweep) clearInterval(this.catalogSweep);
     // 先告诉运行时：之后因为退出而失败的回合不回复、不改用纯对话，留给下次启动提醒
@@ -1086,7 +1095,8 @@ export class App {
   }
 
   private seedDefaultBot(): void {
-    if (this.store.listBots().length) return;
+    if (this.store.listBots().length || this.store.getKV("bots.initialized")) return;
+    this.store.setKV("bots.initialized", "1");
     const bot = this.store.createBot({
       id: "default",
       name: t("app.default_bot_name"),

@@ -7,6 +7,7 @@
  * 0.1.30 及以前的桌面版用系统钥匙串加密（enc: "safe-storage"）：桌面版读到这种旧文件时解密一次、
  * 改写成明文，以后不再碰钥匙串；解不开（拒绝了钥匙串授权、密钥已删）就当作没登录，重新登录时覆盖。
  */
+import type { AccountProfile } from "./profile.js";
 import fs from "node:fs";
 import path from "node:path";
 import { t } from "../i18n/index.js";
@@ -28,6 +29,7 @@ export interface AccountRecord {
   signedInAt: number;
   /** Stable local progress namespace; never used as a display name. */
   ownerKey?: string;
+  profile?: AccountProfile;
   /** ID Token 的 sub：打开充值页时让网页核对是不是同一个账户（不是密钥，见 oauth.ts 的 TokenSet.subject） */
   subject?: string;
 }

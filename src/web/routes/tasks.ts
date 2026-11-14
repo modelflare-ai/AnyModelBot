@@ -1,7 +1,7 @@
 /** 需要你、后台任务、规则、审批。 */
 import fs from "node:fs";
 import type { RuleMode } from "../../store/db.js";
-import { normalizeSchedule, type Schedule } from "../../tasks/schedule.js";
+import { normalizeSchedule, parseSchedule, previewSchedule, type Schedule } from "../../tasks/schedule.js";
 import type { StageGroup } from "../../tasks/stage.js";
 import { normalizeLang, t, withLang, t as tr } from "../../i18n/index.js";
 import { HttpError, readJson, send, sendMarkdown, publicApproval, type Route, type WebContext } from "../http.js";
@@ -19,7 +19,8 @@ export function tasksRoutes(ctx: WebContext): Route {
       if (!(item.actions as string[]).includes(action)) throw new HttpError(400, tr("web.unsupportedAction"));
       const b = await readJson(req);
       let ok = false;
-      if (action === "approve" || action === "deny") ok = app.agent.approvals.decide(item.approvalId!, action === "approve", "web");
+      if (item.id.startsWith("missed:") && ["dismiss", "change-time", "keep-awake"].includes(action)) { app.tasks.dismissMissed(item.ruleId!); ok = true; }
+      else if (action === "approve" || action === "deny") ok = app.agent.approvals.decide(item.approvalId!, action === "approve", "web");
       else if (action === "answer") {
         ok = Array.isArray(b.answers)
           ? app.agent.approvals.answer(item.approvalId!, { answers: b.answers.map((a: any) => ({ id: String(a.id), selected: (a.selected ?? []).map(String), ...(a.custom ? { custom: String(a.custom) } : {}) })) }, "web")
@@ -113,25 +114,52 @@ export function tasksRoutes(ctx: WebContext): Route {
     }
     // —— 规则（3d）：列表、新建、改（原话、时间表、模式、发到哪）、删、立即运行、运行记录与一次运行的步骤 ——
     if (seg[0] === "rules") {
+      if (seg[1] === "destinations" && m === "GET") {
+        const bot = url.searchParams.get("bot") || "";
+        return send(res, 200, { destinations: app.tasks.ruleDestinations(bot), groups: app.store.listGroups().filter((g) => g.members.includes(bot)).map((g) => ({ id: g.id, name: g.name })), timeZone: app.delivery.timeZone });
+      }
+      if (seg[1] === "preview" && m === "POST") {
+        const b = await readJson(req);
+        const now = Date.now();
+        const r = b.schedule?.kind === "once" && typeof b.schedule.local === "string"
+          ? parseSchedule(`once ${b.schedule.local.replace("T", " ")}`, b.schedule.tz || app.delivery.timeZone, now)
+          : normalizeSchedule(b.schedule, app.delivery.timeZone, now);
+        if (!r.schedule) throw new HttpError(400, r.error || t("rules.badSchedule"));
+        return send(res, 200, { schedule: r.schedule, ...previewSchedule(r.schedule, now) });
+      }
+      if (seg[1] === "actions") {
+        if (seg.length === 2 && m === "GET" && url.searchParams.get("group")) {
+          const group = url.searchParams.get("group")!;
+          return send(res, 200, { actions: app.store.groupConversations(group).flatMap((c) => app.tasks.ruleActions(c.id)) });
+        }
+        if (seg.length === 2 && m === "GET") return send(res, 200, { actions: app.tasks.ruleActions(url.searchParams.get("conversation") || "") });
+        if (seg.length === 4 && m === "POST" && ["undo", "restore"].includes(seg[3])) {
+          const result = seg[3] === "undo" ? app.tasks.undoRuleAction(seg[2]) : app.tasks.restoreRuleAction(seg[2]);
+          if (result.error) throw new HttpError(409, result.error);
+          return send(res, 200, { ok: true });
+        }
+        throw new HttpError(404, "not found");
+      }
       const scheduleOf = (raw: unknown, tz: string): Schedule => {
         const r = normalizeSchedule(raw, tz, Date.now());
         if (!r.schedule) throw new HttpError(400, r.error ?? t("rules.badSchedule"));
         return r.schedule;
       };
       if (seg.length === 1 && m === "GET") {
-        return send(res, 200, { rules: app.tasks.listRules({ botId: url.searchParams.get("bot") || undefined, conversationId: url.searchParams.get("conversation") || undefined }) });
+        return send(res, 200, { rules: app.tasks.listRules({ botId: url.searchParams.get("bot") || undefined, conversationId: url.searchParams.get("conversation") || undefined }), timeZone: app.delivery.timeZone });
       }
       if (seg.length === 1 && m === "POST") {
         const b = await readJson(req);
         // 检查默认执行；mode observe = 用户在编辑器里选了先观察
-        if (b.mode !== undefined && !["observe", "act"].includes(b.mode)) throw new HttpError(400, t("rules.badMode"));
+        if (b.mode !== undefined && !["off", "observe", "act"].includes(b.mode)) throw new HttpError(400, t("rules.badMode"));
         const r = app.tasks.createRule({
           botId: String(b.botId ?? ""),
           conversationId: String(b.conversationId ?? ""),
           title: String(b.title ?? ""),
           instruction: String(b.instruction ?? ""),
           kind: b.kind === "remind" ? "remind" : "check",
-          ...(b.mode === "observe" ? { mode: "observe" as const } : {}),
+          mode: b.mode || "act",
+          missedPolicy: b.missedPolicy === "skip" ? "skip" : "catchup",
           message: String(b.message ?? ""),
           schedule: scheduleOf(b.schedule, app.delivery.timeZone),
           ...(b.runBudgetUsd !== undefined ? { runBudgetUsd: Number(b.runBudgetUsd) } : {}),
@@ -141,11 +169,16 @@ export function tasksRoutes(ctx: WebContext): Route {
         return send(res, 200, { rule: app.tasks.getRuleView(r.rule.id) });
       }
       const rule = seg[1] ? app.store.getRule(decodeURIComponent(seg[1])) : undefined;
-      if (!rule) throw new HttpError(404, t("rules.notFound"));
+      if (!rule || rule.undoneUntil) throw new HttpError(404, t("rules.notFound"));
       if (seg.length === 2 && m === "GET") return send(res, 200, { rule: app.tasks.getRuleView(rule.id) });
       if (seg.length === 2 && m === "PUT") {
         const b = await readJson(req);
         const patch: Parameters<typeof app.tasks.updateRule>[1] = {};
+        if (b.missedPolicy !== undefined) {
+          if (!["catchup", "skip"].includes(b.missedPolicy)) throw new HttpError(400, t("rules.badSchedule"));
+          patch.missedPolicy = b.missedPolicy;
+        }
+        if (b.sourceGroupId !== undefined) patch.sourceGroupId = String(b.sourceGroupId);
         if (b.title !== undefined) patch.title = String(b.title);
         if (b.instruction !== undefined) patch.instruction = String(b.instruction);
         if (b.message !== undefined) patch.message = String(b.message);

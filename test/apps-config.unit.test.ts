@@ -171,3 +171,19 @@ describe("校验和小工具", () => {
     expect(nameFromCommand("uvx", ["mcp-server-time"])).toBe("mcp-server-time");
   });
 });
+
+describe("JSON 与表单切换不被必填项拦截", () => {
+  it("空白和缺失 URL 的合法 JSON 带回已识别字段，提交仍校验", () => {
+    const previous = emptyDraft();
+    const partial = jsonToDraft('{"mcpServers":{"notes":{"url":"","headers":{"X-Key":"abc"},"query":{"region":"cn"},"auth":{"method":"headers"}}}}', previous, { partial: true });
+    expect(partial.draft).toMatchObject({ name: "notes", url: "", headers: [["X-Key", "abc"]], query: [["region", "cn"]], auth: "headers" });
+    expect(draftProblem(partial.draft)).toBe("url");
+    expect(jsonToDraft('{}', previous, { partial: true }).draft).toMatchObject({ name: "", url: "" });
+  });
+  it("格式错误不改动原表单；掩码切换仍保留原密钥", () => {
+    const previous = { ...emptyDraft(), name: "notes", url: "https://example.com", auth: "headers", headers: [["X-Key", "secret-value"]] };
+    expect(jsonToDraft('{"mcpServers":', previous, { partial: true })).toEqual({ error: "json" });
+    expect(previous.headers).toEqual([["X-Key", "secret-value"]]);
+    expect(jsonToDraft(draftToJson(previous), previous, { partial: true }).draft.headers).toEqual(previous.headers);
+  });
+});

@@ -15,8 +15,12 @@ import { CHAR_KEYS } from "../lib/bots";
 import { MF, ORIGIN, PARTNERS_EMAIL, pricing } from "../lib/site";
 import { vendorLogo } from "../lib/vendors";
 import "../styles/pages.css";
-interface Props { lang: Lang }
-const { lang } = Astro.props;
+interface Props {
+  lang: Lang;
+  /** 给推特、Telegram 抓取器的版本（pages/card/）：不换微信方图，用本语言的默认大图 */
+  largeCard?: boolean;
+}
+const { lang, largeCard = false } = Astro.props;
 const t = dict(lang);
 const p = t.partners;
 const a = p.apply;
@@ -28,7 +32,7 @@ const count = (vd: string) => pricing.rows.filter((r) => r.vendor === vd).length
 const vendors = pricing.vendors.filter((vd) => vendorLogo(vd)).map((vd, i) => ({ vd, n: count(vd), i })).sort((x, y) => y.n - x.n || x.i - y.i).map((x) => x.vd).slice(0, 9);
 const [dataItem, keyItem, botsItem] = p.why.items;
 // 微信分享卡片用方图，只有中文页用；其他语言继续用各自语言的默认分享图
-const share = lang === "zh" ? { ogImage: { url: `${ORIGIN}/og/wechat-share.png`, width: 600, height: 600 }, twitterCard: "summary" as const } : {};
+const share = lang === "zh" && !largeCard ? { ogImage: { url: `${ORIGIN}/og/wechat-share.png`, width: 600, height: 600 }, twitterCard: "summary" as const } : {};
 ---
 <Base lang={lang} path="/partners" title={p.pageTitle} description={p.pageDescription} {...share}>
   <VendorSprite vendors={vendors} color />

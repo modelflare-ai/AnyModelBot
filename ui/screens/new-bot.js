@@ -2,50 +2,35 @@
 // 模型一组和机器人设置页的「模型」组是同一种结构（分组小标题 + 圆角卡片 + 一行默认模型，同一个下拉和面板），
 // 只放默认模型这一行：后台小任务模型和预算有合理的默认值，创建后到机器人设置里改。
 // 默认头像是天天。头像只管长相，选模板不会换头像：机器人做什么由人设决定。
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { html, Icon, IconButton, Button, Notice, autoGrow } from "../components/ui.js";
 import { shortModel, sameModel } from "../components/model-picker.js";
 import { ModelButton } from "./bot-settings.js";
 import { BotAvatar, AvatarPicker, MAIN_CHAR } from "../components/avatar.js";
 import { api } from "../lib/api.js";
 import { createStore, failed } from "../lib/store.js";
+import { templateOf, templateRequestId } from "../lib/templates.js";
+import { blankBotDraft, openTemplates } from "../lib/template-flow.js";
+import { templateDraft, templateCreated } from "../lib/guide.js";
 import { t } from "../lib/i18n.js";
-
-/** 模板。名称、简介和人设在词典 newBot.tpl.<key> 里，读的时候按当前语言翻译（选模板时按当时的语言填进表单） */
-const template = (key, icon) => ({
-  key,
-  icon,
-  get name() {
-    return t(`newBot.tpl.${key}.name`);
-  },
-  get desc() {
-    return t(`newBot.tpl.${key}.desc`);
-  },
-  get prompt() {
-    return t(`newBot.tpl.${key}.prompt`);
-  },
-});
-export const TEMPLATES = [
-  template("digest", "file"),
-  template("support", "chat"),
-  template("translate", "globe"),
-  template("minutes", "clock"),
-  template("writer", "compose"),
-  template("coder", "code"),
-];
 
 /** 正在填的新机器人：侧栏那一行占位跟着显示头像和名字，建好后原地换成真的那一行 */
 export const newBotDraft = createStore(null);
 
 export function NewBotScreen({ first, onCreated, onCancel, models, modelsError, reloadModels, defaultModel, account, onAccount }) {
-  const [name, setName] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [tpl, setTpl] = useState("");
-  const [avatar, setAvatar] = useState(MAIN_CHAR);
+  const [previous] = useState(() => blankBotDraft.get());
+  const [onboarding] = useState(() => templateDraft.get() || previous?.onboarding);
+  const initial = onboarding ? templateOf(onboarding.key) : null;
+  const [name, setName] = useState(previous?.name ?? initial?.name ?? "");
+  const [prompt, setPrompt] = useState(previous?.prompt ?? initial?.persona ?? "");
+  useEffect(() => () => templateDraft.set(null), []);
+  const [avatar, setAvatar] = useState(previous?.avatar ?? initial?.avatar ?? MAIN_CHAR);
   const [hi, setHi] = useState(null);
   const [busy, setBusy] = useState(false);
   // 模型设置（第 16 项）：默认跟随全局默认模型；全局默认没设、或者已经下架时不悄悄换成列表里的第一个，请用户自己选
-  const [model, setModel] = useState("");
+  const [model, setModel] = useState(previous?.model || "");
+  const [requestId] = useState(() => previous?.requestId || templateRequestId());
+  useLayoutEffect(() => blankBotDraft.set({ name, prompt, avatar, model, onboarding, requestId }), [name, prompt, avatar, model]);
   const listed = (m) => !!m && !!models?.some((x) => sameModel(x, m));
   const inherited = listed(defaultModel) ? defaultModel : "";
   const effectiveModel = model || inherited;
@@ -65,12 +50,6 @@ export function NewBotScreen({ first, onCreated, onCancel, models, modelsError, 
     newBotDraft.set(null);
   }, []);
 
-  const pick = (tp) => {
-    setTpl(tp.key);
-    setName(tp.name);
-    setPrompt(tp.prompt);
-    requestAnimationFrame(() => (nameRef.current?.focus(), nameRef.current?.select()));
-  };
   const choose = (k) => {
     setAvatar(k);
     setHi({ kind: "hello", at: Date.now() });
@@ -81,7 +60,9 @@ export function NewBotScreen({ first, onCreated, onCancel, models, modelsError, 
     if (!n || busy || !modelAvailable) return;
     setBusy(true);
     try {
-      const r = await api("/bots", { method: "POST", body: { name: n, systemPrompt: prompt.trim(), avatar, defaultModel: model } });
+      const r = await api(onboarding ? "/bots/from-template" : "/bots", { method: "POST", body: { name: n, systemPrompt: prompt.trim(), avatar, defaultModel: model, ...(onboarding ? { templateId: initial.id, requestId, onboarding: true } : {}) } });
+      blankBotDraft.set(null);
+      if (onboarding) templateCreated(r.bot, initial.id, r.sample);
       await onCreated(r.bot);
     } catch (err) {
       failed(err);
@@ -109,7 +90,7 @@ export function NewBotScreen({ first, onCreated, onCancel, models, modelsError, 
         <label class="set-field">
           <span class="k">${t("newBot.persona")}<span class="hint">${t("newBot.personaHint")}</span></span>
           <textarea class="field" ref=${promptRef} rows="3" placeholder=${t("newBot.personaPlaceholder")} value=${prompt}
-            onInput=${(e) => { setPrompt(e.target.value); setTpl(""); }} />
+            onInput=${(e) => { setPrompt(e.target.value); }} />
         </label>
         <div class="new-model">
           <div class="list-head">${t("botSettings.model.head")}</div>
@@ -127,16 +108,7 @@ export function NewBotScreen({ first, onCreated, onCancel, models, modelsError, 
         <p class="hint new-note">${t("firstUse.moreCapabilities")}</p>
         <${Button} type="submit" variant="primary" size="lg" block loading=${busy} disabled=${!name.trim() || !modelAvailable}>${t("newBot.create")}<//>
       </form>
-      <div class="new-sugg">
-        <div class="list-head">${t("newBot.fromTemplate")}</div>
-        <div class="tpl-grid">
-          ${TEMPLATES.map((tp) => html`<button type="button" key=${tp.key} class=${`tpl${tpl === tp.key ? " on" : ""}`} aria-pressed=${tpl === tp.key} onClick=${() => pick(tp)}>
-            <span class="tpl-ic"><${Icon} name=${tp.icon} size="lg" /></span>
-            <span class="tpl-name">${tp.name}</span>
-            <span class="tpl-desc">${tp.desc}</span>
-          </button>`)}
-        </div>
-      </div>
+      <button type="button" class="template-entry" onClick=${() => openTemplates("new")}><span><b>${t("templates.newEntry")}</b><small>${t("templates.entryHint")}</small></span><span>${t("templates.browse")}</span></button>
     </div>
   </section>`;
 }

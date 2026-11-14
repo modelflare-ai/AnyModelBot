@@ -11,6 +11,15 @@ import { fetchFailureReason } from "../providers/modelflare.js";
 export class AccountRevokedError extends Error {}
 
 export interface ConnectedAccount {
+  nickname?: string;
+  name?: string;
+  preferred_username?: string;
+  email?: string;
+  phone_number?: string;
+  phone?: string;
+  avatar_url?: string;
+  avatar?: string;
+  picture?: string;
   display_name: string;
   username: string;
   group: string;
@@ -153,8 +162,24 @@ export class AccountSession {
     }
   }
 
-  account(): Promise<ConnectedAccount> {
-    return this.request("GET", "/account");
+  async account(): Promise<ConnectedAccount> {
+    const account = await this.request<ConnectedAccount>("GET", "/account");
+    // Only use the existing profile grant and an issuer-validated discovery endpoint.
+    try {
+      const endpoint = (await this.o.endpoints()).userinfo;
+      if (endpoint && this.o.record.scope.split(/\s+/).includes("profile")) {
+        const response = await this.fetch(endpoint, { headers: { Authorization: `Bearer ${await this.accessToken()}`, Accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(5000) });
+        if (response.ok) {
+          const profile = await response.json() as Record<string, unknown>;
+          if (!this.o.record.subject || !profile.sub || profile.sub === this.o.record.subject) {
+            for (const key of ["nickname", "name", "preferred_username", "email", "phone_number", "picture"] as const) {
+              if (!account[key] && typeof profile[key] === "string") account[key] = profile[key];
+            }
+          }
+        }
+      }
+    } catch { /* Optional profile data must not break account access. */ }
+    return account;
   }
   usage(start: number, end: number): Promise<UsageRow[] | null> {
     return this.request("GET", `/usage?start_timestamp=${start}&end_timestamp=${end}`);

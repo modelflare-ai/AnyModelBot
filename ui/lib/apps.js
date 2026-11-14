@@ -71,7 +71,8 @@ const GLOBAL_FIRST = ["github", "notion", "linear", "atlassian", "canva"];
 export function orderCatalog(catalog, lang) {
   const list = [...catalog];
   if (zh(lang)) {
-    const top = [...list.filter((c) => c.region === "cn"), ...list.filter((c) => c.id === "notion")];
+    const ids = ["feishu", "tencent-docs", "dingtalk", "amap", "yuque", "notion"];
+    const top = ids.map((id) => list.find((c) => c.id === id)).filter(Boolean);
     return [...top, ...list.filter((c) => !top.includes(c))];
   }
   const top = GLOBAL_FIRST.map((id) => list.find((c) => c.id === id)).filter(Boolean);

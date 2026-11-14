@@ -5,15 +5,16 @@
 
 /* —— 菜单按钮：行右侧的下拉。左边距和同高的 .btn.sm 一样；箭头图标自带留白，右边少一档 —— */
 .pick {
-  display: inline-flex; align-items: center; gap: var(--space-1); height: var(--ctl-md); max-width: 260px;
+  display: inline-flex; align-items: center; gap: var(--space-2); height: var(--ctl-md); max-width: 260px;
   padding: 0 calc(var(--ctl-px-md) - var(--ctl-trail)) 0 var(--ctl-px-md); border-radius: var(--r-ctl); background: var(--pill); color: var(--fg);
-  font-size: var(--fs-sm); transition: background var(--t-fast);
+  font-size: var(--fs-sm); transition: background var(--t-fast), color var(--t-fast);
 }
 .pick:hover:not(:disabled), .pick[aria-expanded="true"] { background: var(--pill-hover); }
 .pick:active:not(:disabled) { background: var(--pill-press); }
 .pick:disabled { opacity: var(--o-disabled); }
 .pick .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick .ic { --ic-size: var(--ic-xs); color: var(--muted); transition: transform var(--t-fast); }
+.pick[aria-expanded="true"] { color: var(--accent); }
 .pick[aria-expanded="true"] .ic { transform: rotate(180deg); }
 
 /* —— 弹出层：只淡入，不位移、不缩放。挂在 <body> 下（ui.js 的 Popover），定位不受祖先的 backdrop-filter / transform 影响 —— */
@@ -22,9 +23,17 @@
   --pop-pad: var(--list-pad);
   position: fixed; z-index: var(--z-popover); width: 288px; max-height: 380px; -webkit-app-region: no-drag;
   display: flex; flex-direction: column;
-  background: var(--glass-pop); backdrop-filter: var(--glass-filter-lg);
+  background: var(--glass-pop); -webkit-backdrop-filter: var(--glass-filter-lg); backdrop-filter: var(--glass-filter-lg);
   border-radius: var(--pop-r); box-shadow: var(--shadow-pop); overflow: hidden;
   animation: fade-in var(--dur-fast) var(--ease-out);
+}
+/* 有背景模糊时才启用透明玻璃，避免不支持的环境直接透出后面的文字。
+   不用整体 opacity：文字、图标和焦点环保持原本的对比度。 */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .pop {
+    background: linear-gradient(150deg, var(--glass-menu-sheen), transparent 60%), var(--glass-menu);
+    box-shadow: var(--shadow-menu);
+  }
 }
 .pop.model-picker { width: 340px; max-height: 420px; }
 .pop.model-picker li:not(.group):not(.sep) { min-height: var(--ctl-xl); }
@@ -55,8 +64,8 @@
 .tier-foot a:hover { color: var(--fg-2); }
 
 /* —— 彩蛋：两个滑块都拉满（.tiers.maxed）——
-   弹窗外圈一层荧光绿的光，内沿一圈缓慢转动的渐变描边；两条轨道的填充换成流动的绿色渐变（浅色下也是荧光绿，
-   不再是墨色）；四周飘几粒光点。减少 / 关闭动画时只留静止的光和描边。 */
+   弹窗外圈一层荧光绿的光，内沿一圈缓慢转动的渐变描边；两条轨道的填充从静态品牌渐变换成流动的绿色渐变，
+   圆钮变白，四周飘几粒光点。减少 / 关闭动画时只留静止的光和描边。 */
 @property --tiers-spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 .pop.model-picker { transition: box-shadow var(--t-moderate); }
 .pop.model-picker:has(> .tiers.maxed) {
@@ -153,6 +162,22 @@
 :is(.pop, .palette) li .lead { flex: none; align-self: flex-start; margin-top: 3px; color: var(--ctl-fg); display: inline-flex; }   /* 微调：14px 图标和第一行文字（约 20px 行高）居中 */
 :is(.pop, .palette) li .txt { flex: 1; min-width: 0; display: grid; gap: var(--space-0-5); }
 :is(.pop, .palette) li .txt .n { font-size: var(--fs-xs); line-height: var(--lh-snug); }
+/* 常用下拉菜单：图标、文字和勾选各占一列；单行和带说明的项使用同一条内容线。 */
+.pop.menu-pop li:not(.group):not(.sep) { min-height: var(--ctl-xl); padding: var(--space-1-5) var(--item-px); white-space: normal; }
+.pop.menu-pop li .v { flex: 1; white-space: normal; overflow-wrap: anywhere; line-height: var(--lh-snug); }
+.pop.menu-pop li .lead {
+  display: grid; place-items: center; align-self: center; width: var(--ctl-xs); height: var(--ctl-xs); margin-top: 0;
+  border-radius: var(--r-mark); background: var(--pill); color: var(--fg-2);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.pop.menu-pop li .empty-icon { visibility: hidden; }
+.pop.menu-pop li.cur { background: var(--well); }
+.pop.menu-pop li.sel { background: var(--sel); }
+.pop.menu-pop li.sel:active { background: var(--sel-press); }
+.pop.menu-pop li.sel .lead { color: var(--fg); background: var(--pill-hover); }
+.pop.menu-pop li.danger .lead { color: var(--red); background: var(--red-wash); }
+.pop.menu-pop li.danger.sel { background: var(--red-soft); }
+.pop.menu-pop li .check { flex: none; }
 :is(.pop, .palette) .empty { padding: var(--group-pad); color: var(--muted); font-size: var(--fs-sm); text-align: center; }
 :is(.pop, .palette) .foot { flex: none; padding: 0 var(--pop-pad) var(--pop-pad); display: flex; }
 :is(.pop, .palette) .foot button {

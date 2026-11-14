@@ -4,6 +4,23 @@
 
 Aqui estão as mudanças que você vai notar no app. Para versões mais antigas, veja as [versões no GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.33 - 2026-11-14
+
+### Novidades
+
+- **Regras reunidas em Agendado:** a nova página lista as regras de todos os bots e destaca as que precisam de atenção. Cartões da conversa, Tarefas e Agendado compartilham os mesmos controles. Crie regras antes da primeira conversa e mantenha-as desativadas. Alterações feitas pela conversa podem ser desfeitas; uma criação desfeita pode ser restaurada por dez minutos.
+- **Recuperação de execuções e resumos de grupos:** regras de calendário recuperam uma única execução recente dentro do prazo de até doze horas, mostrando o horário original. Regras por intervalo não são recuperadas. Há agendamento mensal, três próximas execuções, fusos e estimativas de custo. Resumos de um grupo do aplicativo preservam a data original mesmo quando atrasados.
+- **Dez modelos de bots:** escolha um papel para escrever, trabalhar ou estudar, confira a persona, a memória e as regras e compare modelos adequados. As regras começam desativadas e pedem destino e grupo de origem quando necessário.
+- **Prévia de recursos no painel direito:** abra arquivos e sites de conversas, grupos e espaços de trabalho sem sair do chat. Compatível com Markdown, texto e código, PDF, imagens e HTML, com download e abertura externa.
+- **Espaços de trabalho adaptados ao painel:** a navegação de projetos dos bots oficiais se recolhe em larguras menores. Expanda o espaço e volte à conversa mantendo o estado da edição.
+- **Continuar após conceder permissões no macOS:** um cartão substitui os erros repetidos. O aplicativo verifica as permissões automaticamente e, quando possível, retoma as etapas pendentes na conversa original, preservando rascunhos. Se houver outra mensagem ou uma espera superior a trinta minutos, é preciso clicar em Continuar.
+
+### Melhorias e correções
+
+- Melhorias no retorno do login do Modelflare, nos nomes e avatares das contas e na orientação inicial. Listas de aplicativos conectados, pesquisa e mensagens de erro estão mais claras.
+- Melhorias no layout do canvas do Film Studio e nos dados dos gráficos do US Stock Research. PPT Master e Company Research também adotam o novo espaço de trabalho.
+- Os resultados identificam a regra de origem e respeitam a preferência de notificações. Uma opção impede a suspensão antes da execução quando conectado à energia; não desperta um computador já suspenso ou fechado.
+
 ## 0.1.32 - 2026-11-11
 
 ### Novidades

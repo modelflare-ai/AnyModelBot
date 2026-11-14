@@ -12,6 +12,7 @@
  * 其他平台、命令行、Docker 没有这些钩子：一律放行（各平台另有自己的说明，见 cua-driver.ts）。
  */
 import { CUA_INPUT_TOOLS } from "./cua-driver.js";
+import type { Store } from "../../store/db.js";
 
 export type CuPermissionKind = "accessibility" | "screen";
 export type CuPermissionState = "granted" | "denied" | "not-determined" | "restricted" | "unknown";
@@ -49,6 +50,15 @@ export interface CuBlocked {
   missing: CuPermissionKind[];
   at: number;
   tool: string;
+  conversationId?: string;
+  sessionId?: string;
+  messageId?: number;
+  lastUserId?: number;
+  background?: boolean;
+  collapsed?: boolean;
+  state?: "waiting" | "ready" | "continuing" | "done";
+  completedAt?: number;
+  requestText?: string;
 }
 
 export interface CuPermissionView {
@@ -62,8 +72,65 @@ export interface CuPermissionView {
 export class CuPermissions {
   private blocked = new Map<string, CuBlocked>();
   private screenRequested = false;
+  private requested = new Set<CuPermissionKind>();
+  private store?: Store;
+  private timer?: NodeJS.Timeout;
+  private resume?: (botId: string, pending: CuBlocked) => Promise<void>;
 
   constructor(private hooks: () => CuPermissionHooks | undefined) {}
+
+  bindStore(store: Store): void {
+    this.store = store;
+    try {
+      const saved = JSON.parse(store.getKV("cu.pending") || "{}");
+      for (const [id, value] of Object.entries(saved)) {
+        const p = value as CuBlocked;
+        // 恢复过程中退出后不自动重放：需要用户显式继续。
+        this.blocked.set(id, { ...p, ...(p.state === "continuing" ? { state: "ready" as const } : {}) });
+      }
+      this.requested = new Set(JSON.parse(store.getKV("cu.requested") || "[]"));
+    } catch { this.blocked.clear(); }
+  }
+  private save(): void { this.store?.setKV("cu.pending", JSON.stringify(Object.fromEntries(this.blocked))); }
+  attach(botId: string, pending: Partial<CuBlocked>): void {
+    const b = this.blocked.get(botId);
+    if (b && pending.background && this.store && !pending.messageId) {
+      const conv = this.store.ensureConversation(botId, "web", "console", "控制台");
+      pending.messageId = this.store.addMessage(conv.id, "assistant", "", undefined, { permissionWait: true });
+    }
+    if (b) { this.blocked.set(botId, { ...b, ...pending, state: "waiting" }); this.save(); }
+  }
+  start(resume: (botId: string, pending: CuBlocked) => Promise<void>): void {
+    this.resume = resume;
+    clearInterval(this.timer);
+    this.timer = setInterval(() => { void this.check(); }, 3000);
+    this.timer.unref?.();
+  }
+  stop(): void { clearInterval(this.timer); this.timer = undefined; }
+  async check(botId?: string, force = false): Promise<void> {
+    if (!this.supported) return;
+    const status = this.status();
+    for (const [id, pending] of this.blocked) {
+      if (botId && botId !== id) continue;
+      if (pending.state === "done") {
+        if (Date.now() - (pending.completedAt || 0) >= 5000) { this.blocked.delete(id); this.save(); }
+        continue;
+      }
+      if (pending.state === "continuing" || pending.missing.some((k) => status[k] !== "granted")) continue;
+      if (pending.background) { pending.state = "done"; pending.completedAt = Date.now(); this.save(); continue; }
+      if (!pending.conversationId || !pending.messageId || !this.resume) continue;
+      const lastUser = this.store?.listMessages(pending.conversationId, 30).filter((m) => m.role === "user").at(-1)?.id || 0;
+      if (!force && (pending.state === "ready" || Date.now() - pending.at > 30 * 60_000 || lastUser !== pending.lastUserId)) {
+        pending.state = "ready"; this.save(); continue;
+      }
+      pending.state = "continuing"; this.save();
+      try {
+        await this.resume(id, { ...pending });
+        if (this.blocked.get(id) === pending) { pending.state = "done"; pending.completedAt = Date.now(); }
+      } catch (error) { if (this.blocked.get(id) === pending) pending.state = (error as { retryable?: boolean })?.retryable ? "waiting" : "ready"; }
+      this.save();
+    }
+  }
 
   get supported(): boolean {
     return !!this.hooks();
@@ -92,23 +159,34 @@ export class CuPermissions {
     const missing = this.missing(tool);
     if (!missing.length) {
       // 授权后重新发起的任务能用了：收起这个机器人的授权卡片
-      if (!FREE_TOOLS.has(tool)) this.blocked.delete(botId);
+      if (!FREE_TOOLS.has(tool) && !this.blocked.get(botId)?.conversationId) { this.blocked.delete(botId); this.save(); }
       return { ok: true };
     }
-    this.blocked.set(botId, { missing, at: Date.now(), tool });
+    this.blocked.set(botId, { missing, at: Date.now(), tool, state: "waiting" });
+    this.save();
     return { ok: false, missing };
   }
 
   isBlocked(botId: string): boolean {
-    return this.blocked.has(botId);
+    const p = this.blocked.get(botId);
+    return !!p && p.state !== "done" && p.state !== "continuing";
   }
 
   /** 用户点了"稍后"或者已经重新发起任务：收起这个机器人的授权卡片 */
   dismiss(botId: string): void {
-    this.blocked.delete(botId);
+    const p = this.blocked.get(botId);
+    if (p) p.collapsed = true;
+    this.save();
+  }
+  expand(botId: string): void {
+    const pending = this.blocked.get(botId);
+    if (pending) { pending.collapsed = false; this.save(); }
   }
 
   async request(kind: CuPermissionKind): Promise<void> {
+    if (this.requested.has(kind)) return this.openSettings(kind);
+    this.requested.add(kind);
+    this.store?.setKV("cu.requested", JSON.stringify([...this.requested]));
     if (kind === "screen") this.screenRequested = true;
     await this.hooks()?.request(kind);
   }

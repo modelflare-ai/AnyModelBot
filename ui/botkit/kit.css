@@ -31,20 +31,20 @@
     .kit-grid { grid-template-columns: minmax(0, 1fr); }
   }
 
-  /* —— 桌面工作区 ——
-     专属界面像桌面应用的一个窗口，不是一张从上往下滚的网页：左边是列表（项目、研究、任务），右边是选中的那一份。
-     两栏各自滚动、填满界面的高度；右栏顶部一条工具栏（标题 + 一行说明 | 状态和操作），往下滚时盖在内容上。
-     Bot 的名字已经在容器的顶栏里，界面里不再写一遍大标题；免责声明这类每次都一样的话放在列表或内容的末尾（.kit-foot），不占顶部。
-     结构：
-       <div class="kit-ws">
-         <nav class="kit-ws-list"><div class="kit-list-head"><h2 class="t-label">…</h2>按钮</div><button class="kit-item">…</button>…</nav>
-         <main class="kit-ws-main"><header class="kit-bar">…</header><div class="kit-ws-body">…</div></main>
-       </div>
-     窗口窄（< 640px，比如 390 的手机宽度）时变成一栏：列表在上面、最多占三分之一高度。 */
+  /* Workspace 将第一个子项（nav.kit-ws-list）放进项目选择器，其余子项是内容。
+     默认按右侧面板设计：列表按需打开，主要空间留给当前作品；1100px 起恢复常驻列表。
+     内容区声明容器，Bot 内的多栏按内容实际宽度判断。旧版直接 nav 的结构仍可使用。 */
   body:has(.kit-ws) { overflow: hidden; }
-  .kit-ws { --kit-list-w: 232px; --kit-body-px: var(--space-6); height: 100vh; display: grid; grid-template-columns: var(--kit-list-w) minmax(0, 1fr); }
+  .kit-ws { --kit-list-w: 232px; --kit-body-px: var(--space-5); height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .kit-ws-picker { position: relative; min-width: 0; z-index: var(--z-popover); padding: var(--space-2) var(--kit-body-px); }
+  .kit-ws-choice { display: flex; align-items: center; gap: var(--space-2); min-height: var(--ctl-lg); list-style: none; cursor: pointer; }
+  .kit-ws-choice::-webkit-details-marker { display: none; }
+  .kit-ws-choice strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-semibold); }
+  .kit-ws-options { position: absolute; inset-inline: var(--space-3); top: 100%; max-height: min(60vh, 28rem); overflow: auto; background: var(--glass-pop); box-shadow: var(--shadow-pop); border-radius: var(--r-card); }
   .kit-ws-list { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--space-0-5); padding: var(--space-3) var(--space-2) var(--space-5) var(--space-3); }
-  .kit-ws-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+  /* Older third-party UIs can still use a direct nav until they adopt Workspace. */
+  .kit-ws > .kit-ws-list { max-height: min(25vh, 12rem); }
+  .kit-ws-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; container: workspace-content / inline-size; }
   .kit-list-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--ctl-md); padding: 0 0 var(--space-1) var(--space-2-5); }
   .kit-list-head h2 { margin: 0; }
   /* 列表行：和 App 侧栏、设置导航同一种行，悬停一层淡灰、选中深一级，平的 */
@@ -59,7 +59,7 @@
   .kit-bar-text { flex: 1; min-width: 0; display: grid; gap: var(--space-0-5); }
   .kit-bar-text h1 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-semibold); line-height: var(--lh-tight); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .kit-bar-text p { margin: 0; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .kit-bar-actions { flex: none; display: flex; align-items: center; gap: var(--ctl-gap); }
+  .kit-bar-actions { flex: none; max-width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--ctl-gap); }
   .kit-ws-body { flex: 1; display: grid; gap: var(--space-5); align-content: start; padding: var(--space-3) var(--kit-body-px) var(--space-8); min-width: 0; }
   /* 分页：和 App 的标签页、分段一个样子——胶囊轨道里一颗静止的胶囊（项 28 高），不画下划线 */
   .kit-tabs { display: inline-flex; flex-wrap: wrap; gap: var(--space-0-5); justify-self: start; max-width: 100%; padding: var(--space-0-5); border-radius: var(--r-ctl); background: var(--seg-track); }
@@ -69,13 +69,21 @@
   /* 每次都一样的说明（免责声明、数据范围）：末尾一行小字 */
   .kit-foot { margin: 0; font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--muted); }
   .kit-ws-list > .kit-foot { padding: var(--space-3) var(--space-2-5) 0; }
-  @media (max-width: 860px) {
-    .kit-ws { --kit-list-w: 196px; --kit-body-px: var(--space-4); }
+  @media (min-width: 1100px) {
+    .kit-ws { --kit-body-px: var(--space-6); grid-template-columns: var(--kit-list-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+    .kit-ws-picker { min-height: 0; padding: 0; overflow-y: auto; z-index: auto; }
+    .kit-ws-choice { display: none; }
+    .kit-ws-picker > .kit-ws-options { display: block; position: static; max-height: none; background: transparent; box-shadow: none; border-radius: 0; }
+    .kit-ws > .kit-ws-list { max-height: none; }
   }
-  @media (max-width: 640px) {
-    .kit-ws { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-    .kit-ws-list { max-height: 33vh; padding: var(--space-2) var(--space-3); }
-    .kit-bar, .kit-bar-actions { flex-wrap: wrap; }
+  @media (max-width: 1099px) {
+    .kit-ws:has(> .kit-ws-picker) .kit-bar-text h1 { display: none; }
+  }
+  @container workspace-content (max-width: 540px) {
+    .kit-bar { flex-wrap: wrap; }
     .kit-bar-text { flex-basis: 100%; }
+  }
+  @media (max-width: 480px) {
+    .kit-ws { --kit-body-px: var(--space-4); }
   }
 }

@@ -80,7 +80,8 @@ export type OutboundOp =
    */
   | {
       type: "interactive";
-      kind: "ask_user" | "approval" | "secret_request";
+      kind: "ask_user" | "approval" | "secret_request" | "rule";
+      title?: string;
       prompt: string;
       options?: string[];
       requestId?: string;

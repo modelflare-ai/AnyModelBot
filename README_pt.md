@@ -56,6 +56,8 @@ Conversas, memória, arquivos e chaves de API ficam no seu dispositivo. Os model
 
 Pronto para usar logo após a instalação: tarefas em segundo plano, regras agendadas e os itens que aguardam o seu OK já vêm integrados.
 
+**0.1.33:** página Agendado, desfazer e restaurar regras, recuperação em até doze horas, dez modelos de bots e prévias de arquivos e sites no painel direito. Espaços de trabalho e avisos de permissões do macOS também foram aprimorados. [Histórico de alterações](./CHANGELOG_pt.md#0133---2026-11-14)
+
 📥 [Baixar](#-baixar-e-executar) · 🌠 [Capturas de tela](#-capturas-de-tela) · 🌟 [Recursos](#-principais-recursos) · 🆚 [Comparação](#-anymodelbot-vs-grok-bot-openai-dots-e-claude-duet) · 🔐 [Privacidade](#-como-funciona-e-privacidade)
 
 ⭐ Gostou do AnyModelBot? Dê uma estrela no repositório para acompanhar as novas versões.

@@ -9,6 +9,41 @@ import htm from "./vendor/htm.mjs";
 export const html = htm.bind(h);
 export { useEffect, useMemo, useRef, useState };
 
+/** Compact project picker in a side panel; persistent navigation in a wide workspace.
+ * Keep both the navigation and editor mounted while changing layout. */
+export function Workspace({ label, current, children }) {
+  const picker = useRef(null);
+  const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1100px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1100px)");
+    const change = () => setWide(media.matches);
+    media.addEventListener("change", change);
+    const outside = (event) => {
+      if (!media.matches && picker.current?.open && !picker.current.contains(event.target)) picker.current.open = false;
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => { document.removeEventListener("pointerdown", outside); media.removeEventListener("change", change); };
+  }, []);
+  const [navigation, ...content] = Array.isArray(children) ? children : [children];
+  return html`<div class="kit-ws">
+    <details class="kit-ws-picker" ref=${picker} open=${wide || undefined} onKeyDown=${(event) => {
+      if (!wide && event.key === "Escape" && picker.current.open) {
+        event.preventDefault(); event.stopPropagation(); picker.current.open = false;
+        picker.current.querySelector("summary")?.focus();
+      }
+    }} onClick=${(event) => {
+      if (!wide && event.target.closest(".kit-item, .kit-list-head button")) {
+        picker.current.open = false;
+        picker.current.querySelector("summary")?.focus();
+      }
+    }}>
+      <summary class="kit-ws-choice" title=${current}><span class="t-meta">${label}</span><strong>${current || label}</strong><span aria-hidden="true">▾</span></summary>
+      <div class="kit-ws-options">${navigation}</div>
+    </details>
+    ${content}
+  </div>`;
+}
+
 let seq = 0;
 const waiting = new Map();
 const listeners = new Set();
@@ -54,7 +89,7 @@ const fillParams = (s, params) => (params ? String(s).replace(/\{(\w+)\}/g, (m, 
  * ready、sample（还是示例数据）、state（app/state.json 的内容，不合约定的部分已剪掉）、issues、busy（Bot 正在回复）、lang、bot、t(key, params)、
  * desktop（桌面版，能用系统程序打开文件）、send(text, action)、stop()、pickFile({ accept, multiple })、readFile(path)、
  * readImage(path)（读 app/ 下的图片，返回 { url }，放进 <img>）、openFile(path, { reveal })（要在用户点击时调用：
- * 桌面版用系统程序打开或在文件夹中显示，网页里下载）、openUrl(url)（用户确认后打开外部网页）。state 有变化时界面自动重新渲染。
+ * 在右侧预览，reveal 在文件夹中显示，面板中另有下载/系统打开）、openUrl(url)（用户确认后在右侧预览网页）。state 有变化时界面自动重新渲染。
  */
 export function useBot() {
   const [s, set] = useState({ ready: false, sample: false, desktop: false, state: null, issues: [], busy: false, lang: "en", bot: null, messages: {} });
@@ -74,14 +109,14 @@ export function useBot() {
       applyEnv(env);
       if (!alive) return;
       lang = env.lang;
-      set((x) => ({ ...x, ready: true, sample: !!env.sample, desktop: !!env.desktop, lang: env.lang, bot: env.bot, messages: env.messages || {} }));
+      set((x) => ({ ...x, ready: true, sample: !!env.sample, desktop: !!env.desktop, expanded: !!env.expanded, lang: env.lang, bot: env.bot, messages: env.messages || {} }));
       reload.current();
       call("subscribe").catch(() => {});
     });
     const off = on((event, data) => {
       if (event === "env") {
         applyEnv(data);
-        set((x) => ({ ...x, lang: data.lang ?? x.lang, sample: data.sample ?? x.sample, desktop: data.desktop ?? x.desktop, messages: data.messages ?? x.messages, bot: data.bot ?? x.bot }));
+        set((x) => ({ ...x, lang: data.lang ?? x.lang, expanded: data.expanded ?? x.expanded, sample: data.sample ?? x.sample, desktop: data.desktop ?? x.desktop, messages: data.messages ?? x.messages, bot: data.bot ?? x.bot }));
         // 示例数据分语言：切语言后换成对应的那一份
         if (data.sample && data.lang && data.lang !== lang) reload.current();
         lang = data.lang ?? lang;
@@ -96,6 +131,16 @@ export function useBot() {
       off();
     };
   }, []);
+  useEffect(() => {
+    if (!s.expanded) return;
+    const collapse = (event) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || event.target.closest("input, textarea, select, [contenteditable=true]")) return;
+      event.preventDefault();
+      call("setExpanded", { expanded: false }).catch(() => {});
+    };
+    document.addEventListener("keydown", collapse);
+    return () => document.removeEventListener("keydown", collapse);
+  }, [s.expanded]);
   return useMemo(
     () => ({
       ...s,
@@ -125,6 +170,7 @@ export function useBot() {
       },
       openFile: (path, opts = {}) => call("openFile", { path, reveal: !!opts.reveal }),
       openUrl: (url) => call("openUrl", { url }),
+      setExpanded: (expanded) => call("setExpanded", { expanded: !!expanded }),
     }),
     [s],
   );

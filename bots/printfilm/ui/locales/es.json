@@ -214,5 +214,11 @@
   "sheet.time": "Tiempo",
   "sheet.words": "Narración / diálogos",
   "sheet.visual": "Descripción visual",
-  "sheet.media": "Multimedia"
+  "sheet.media": "Multimedia",
+  "shotDetails": "Descripción y ajustes de toma",
+  "canvas.zoomOut": "Alejar",
+  "canvas.zoomIn": "Acercar",
+  "canvas.fit": "Ajustar a la vista",
+  "canvas.expand": "Ampliar espacio",
+  "canvas.restore": "Volver al chat"
 }

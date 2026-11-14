@@ -4,6 +4,23 @@
 
 Aquí se recogen los cambios que notarás en la app. Para versiones anteriores, consulta las [versiones publicadas en GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.33 - 2026-11-14
+
+### Novedades
+
+- **Todas las reglas en Programado:** la nueva página reúne las reglas de todos los bots y destaca las que requieren atención. Las tarjetas de chat, Tareas y Programado comparten interruptores. Puedes crear reglas antes de la primera conversación y dejarlas desactivadas. Los cambios del chat se pueden deshacer; una creación deshecha se puede restaurar durante diez minutos.
+- **Recuperación de ejecuciones y resúmenes de grupos:** las reglas de calendario recuperan una sola ejecución reciente dentro de un plazo de hasta doce horas e indican la hora prevista. Las reglas por intervalo no se recuperan. Se añaden programación mensual, tres próximas ejecuciones, zonas horarias y estimaciones de gasto. Los resúmenes de un grupo de la aplicación conservan su fecha original aunque lleguen tarde.
+- **Diez plantillas de bots:** elige un papel para escribir, trabajar o estudiar, revisa la personalidad, la memoria y las reglas, y compara modelos adecuados. Las reglas de las plantillas comienzan desactivadas y solicitan destino y grupo de origen cuando hace falta.
+- **Vista previa de recursos a la derecha:** abre archivos y sitios desde conversaciones, grupos y espacios de trabajo sin salir del chat. Admite Markdown, texto y código, PDF, imágenes y HTML, con opciones de descarga y apertura externa.
+- **Espacios de trabajo adaptados al panel:** la navegación de proyectos de los bots oficiales se recoge cuando hay poco ancho. Puedes ampliar el espacio y volver al chat conservando la edición.
+- **Continuar tras conceder permisos en macOS:** una tarjeta sustituye los errores repetidos. La aplicación comprueba los permisos automáticamente y, cuando corresponde, retoma los pasos pendientes en la conversación original conservando los borradores. Si envías otro mensaje o pasan más de treinta minutos, debes pulsar Continuar.
+
+### Mejoras y correcciones
+
+- Mejoras en el regreso del inicio de sesión de Modelflare, nombres y avatares de cuenta y guía inicial. Las listas de aplicaciones conectadas, la búsqueda y los errores son más claros.
+- Mejoras en el lienzo de Film Studio y el procesamiento de gráficos de US Stock Research. PPT Master y Company Research también adoptan el nuevo espacio de trabajo.
+- Los resultados indican su regla de origen y respetan la preferencia de notificaciones. Puedes evitar la suspensión antes de una ejecución cuando el ordenador está enchufado; no despierta un equipo ya suspendido o cerrado.
+
 ## 0.1.32 - 2026-11-11
 
 ### Novedades

@@ -57,5 +57,8 @@
   "q.and": " y ",
   "kpi.title": "Cifras clave",
   "kpi.pp": "{v} p. p.",
-  "kpi.vs": "vs. {cat}"
+  "kpi.vs": "vs. {cat}",
+  "chart.data": "Datos originales ({count} filas)",
+  "chart.units": "Consulta las unidades en los datos originales",
+  "chart.interact": "Gráfico de tendencias. Usa las flechas izquierda y derecha para elegir un periodo."
 }

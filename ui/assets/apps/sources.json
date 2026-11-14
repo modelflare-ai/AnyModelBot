@@ -1,0 +1,66 @@
+{
+  "notice": "第三方品牌标志归各自权利人所有，仅用于标识所连接的应用。图片来自各产品官方站点，保留原始图形和颜色。",
+  "assets": [
+    {
+      "id": "feishu",
+      "file": "feishu.svg",
+      "source": "https://lf-package-cn.feishucdn.com/obj/feishu-static/lark/open/website/favicon-logo.svg",
+      "page": "https://open.feishu.cn/"
+    },
+    {
+      "id": "tencent-docs",
+      "file": "tencent-docs.svg",
+      "source": "https://docs.gtimg.com/docs-design-resources/pc/svg/Logo-efe5613b73.svg",
+      "page": "https://docs.qq.com/desktop/"
+    },
+    {
+      "id": "dingtalk",
+      "file": "dingtalk.png",
+      "source": "https://gw.alicdn.com/imgextra/i3/O1CN014ZbI6ZTEhdC0ttN2_!!6000000003783-2-tps-444-444.png",
+      "page": "https://www.dingtalk.com/"
+    },
+    {
+      "id": "amap",
+      "file": "amap.png",
+      "source": "https://www.amap.com/",
+      "page": "https://www.amap.com/",
+      "note": "首页搜索框内嵌的 PNG 品牌图标，原始字节。"
+    },
+    {
+      "id": "yuque",
+      "file": "yuque.svg",
+      "source": "https://mdn.alipayobjects.com/huamei_0prmtq/afts/img/A*sRUdR543RjcAAAAAAAAAAAAADvuFAQ/original",
+      "page": "https://www.yuque.com/"
+    },
+    {
+      "id": "notion",
+      "file": "notion.png",
+      "source": "https://www.notion.com/front-static/logo-ios.png",
+      "page": "https://www.notion.com/"
+    },
+    {
+      "id": "github",
+      "file": "github.png",
+      "source": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+      "page": "https://github.com/logos"
+    },
+    {
+      "id": "linear",
+      "file": "linear.png",
+      "source": "https://linear.app/static/apple-touch-icon.png?v=2",
+      "page": "https://linear.app/"
+    },
+    {
+      "id": "atlassian",
+      "file": "atlassian.png",
+      "source": "https://wac-cdn.atlassian.com/assets/img/favicons/atlassian/favicon.png",
+      "page": "https://www.atlassian.com/"
+    },
+    {
+      "id": "canva",
+      "file": "canva.webp",
+      "source": "https://www.canva.dev/_next/static/media/apple-touch-180x180.b6aae4a9.webp",
+      "page": "https://www.canva.dev/"
+    }
+  ]
+}

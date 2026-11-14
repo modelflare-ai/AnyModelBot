@@ -2,7 +2,7 @@
 import { REASONING_EFFORTS, ZOOMS, saveConfigFile } from "../../config.js";
 import { SEARCH_PROVIDERS, normalizeSearxUrl, type SearchProvider } from "../../tools/search.js";
 import { normalizeLang, setLangPref, t, type LangPref } from "../../i18n/index.js";
-import { SIDEBAR_LAYOUT_KEY, sanitizeSidebarLayout } from "../../domain/sidebar-layout.js";
+import { SIDEBAR_LAYOUT_KEY, sanitizeSidebarLayout, withoutRemovedCatalog } from "../../domain/sidebar-layout.js";
 import { HttpError, readJson, send, type Route, type WebContext } from "../http.js";
 
 export function settingsRoutes(ctx: WebContext): Route {
@@ -12,6 +12,10 @@ export function settingsRoutes(ctx: WebContext): Route {
     if (p === "/settings") {
       if (m === "PUT") {
         const b = await readJson(req);
+        if (b.keepAwakeForRules !== undefined) {
+          if (typeof b.keepAwakeForRules !== "boolean") throw new HttpError(400, "keepAwakeForRules must be boolean");
+          app.store.setKV("rules.keepAwake", String(b.keepAwakeForRules));
+        }
         if (b.defaultModel !== undefined) app.setDefaultModel(String(b.defaultModel));
         if (b.reasoningEffort !== undefined) {
           const effort = REASONING_EFFORTS.find((x) => x === b.reasoningEffort);
@@ -70,6 +74,7 @@ export function settingsRoutes(ctx: WebContext): Route {
         imageModel: cfg.media.imageModel,
         videoModel: cfg.media.videoModel,
         closeToTray: cfg.ui.closeToTray,
+        keepAwakeForRules: app.store.getKV("rules.keepAwake") === "true",
         autoDownloadUpdates: cfg.ui.autoDownloadUpdates,
         autoUpdateSupported: !!app.desktop?.updates,
         zoom: cfg.ui.zoom,
@@ -84,7 +89,7 @@ export function settingsRoutes(ctx: WebContext): Route {
     // 侧栏分组（domain/sidebar-layout.ts）：还没存过时 layout 为 null，界面用默认的两个分组
     if (p === "/sidebar-layout") {
       if (m === "PUT") {
-        const layout = sanitizeSidebarLayout((await readJson(req)).layout);
+        const layout = withoutRemovedCatalog(sanitizeSidebarLayout((await readJson(req)).layout), (id) => app.botInstaller.isRemoved(id));
         if (!layout) throw new HttpError(400, "bad sidebar layout");
         app.store.setKV(SIDEBAR_LAYOUT_KEY, JSON.stringify(layout));
         return send(res, 200, { layout });
@@ -92,7 +97,7 @@ export function settingsRoutes(ctx: WebContext): Route {
       if (m !== "GET") throw new HttpError(405, "method not allowed");
       let layout = null;
       try {
-        layout = sanitizeSidebarLayout(JSON.parse(app.store.getKV(SIDEBAR_LAYOUT_KEY) ?? "null"));
+        layout = withoutRemovedCatalog(sanitizeSidebarLayout(JSON.parse(app.store.getKV(SIDEBAR_LAYOUT_KEY) ?? "null")), (id) => app.botInstaller.isRemoved(id));
       } catch {
         /* 存坏了：当作没存过 */
       }

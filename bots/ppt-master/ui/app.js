@@ -1,7 +1,7 @@
 // PPT 大师的桌面工作区：左边是项目（顶上"上传文档"），右边是选中的项目——工具栏（名称、页数 | 打开导出的 PPTX）+
 // 要你处理的卡片（选好的文件怎么用、待确认的方案）+ 进度 + 幻灯片查看器（大图 + 缩略图，像演示软件那样翻页）+ 导出文件。
 // 数据都来自 app/state.json，改数据都交给 Bot。
-import { html, mount, useBot, useEffect, useRef, useState, Card, Row, Button, Field, Notice, Empty, Meter } from "/amb/botapp/kit/kit.js";
+import { Workspace, html, mount, useBot, useEffect, useRef, useState, Card, Row, Button, Field, Notice, Empty, Meter } from "/amb/botapp/kit/kit.js";
 
 const ACCEPT = ".pdf,.docx,.doc,.md,.txt,.html,.htm,.epub,.ipynb,.xlsx,.xlsm,.pptx,.png,.jpg,.jpeg,.webp";
 const RUNNING = new Set(["routed", "guard", "importing", "authoring", "finalizing", "exporting"]);
@@ -280,7 +280,7 @@ function App() {
   };
   const open = (path, reveal) => bot.openFile(path, { reveal }).catch(() => setError(bot.t("exports.failed")));
 
-  return html`<div class="kit-ws">
+  return html`<${Workspace} label=${bot.t("project.title")} current=${showNew ? bot.t("new.title") : project.name}>
     <nav class="kit-ws-list" aria-label=${bot.t("project.title")}>
       <div class="kit-list-head"><h2 class="t-label">${bot.t("project.title")}</h2><${Button} class="sm" onClick=${() => setCreating(true)}>${bot.t("new.button")}<//></div>
       ${projects.map((p) => html`<button type="button" key=${p.id} class=${`kit-item${!showNew && p.id === project?.id ? " on" : ""}`} aria-current=${!showNew && p.id === project?.id ? "true" : undefined} onClick=${() => { setSelected(p.id); setCreating(false); }}>
@@ -314,7 +314,7 @@ function App() {
             <section class="ppt-sec"><h2 class="t-label">${bot.t("exports.title")}</h2><${Exports} bot=${bot} project=${project} onError=${setError} /></section>`}
       </div>
     </main>
-  </div>`;
+  <//>`;
 }
 
 mount(App);

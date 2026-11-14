@@ -25,7 +25,7 @@ export function prefetchModelInfo() {
     .finally(() => (infoLoading = false));
 }
 /** 模型资料；还没取到时 null */
-function useModelInfoRaw() {
+export function useModelInfoRaw() {
   const info = useStore(infoStore);
   useEffect(prefetchModelInfo, []);
   return info;
@@ -171,7 +171,7 @@ function Sparks() {
  * account / onAccount：给了就先打开两个滑块（对话、机器人设置）；前沿不到两档时直接是列表。
  * effective：current 为空（跟随默认）时实际用的模型，滑块按它定位。
  */
-export function ModelPicker({ anchor, models, error, current, onPick, onClose, reset, foot, onRetry, prefer = "down", align = "left", account, onAccount, effective = "" }) {
+export function ModelPicker({ anchor, models, error, current, onPick, onClose, reset, foot, onRetry, prefer = "down", align = "left", account, onAccount, effective = "", draftOnly = false }) {
   const panelWanted = onAccount !== undefined;
   const infoRaw = useModelInfoRaw();
   const info = infoRaw || {};
@@ -207,10 +207,10 @@ export function ModelPicker({ anchor, models, error, current, onPick, onClose, r
         })
         .finally(() => setPendingStrategy(null));
     };
-    const showStrategy = showsStrategy(account);
+    const showStrategy = !draftOnly && showsStrategy(account);
     const home = showStrategy && strategy !== DEFAULT_STRATEGY ? tiers(models, info, DEFAULT_STRATEGY, shown) : tier;
     const homeModel = home.stops.length ? home.stops[defaultStop(home.stops.length)].id : "";
-    const showEffort = !!infoFor(info, shown)?.effort;
+    const showEffort = !draftOnly && !!infoFor(info, shown)?.effort;
     const effortChanged = showEffort && effort !== "auto";
     const onReset = () => {
       if (showStrategy && strategy !== DEFAULT_STRATEGY) setStrategy(DEFAULT_STRATEGY);

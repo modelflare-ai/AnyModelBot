@@ -483,6 +483,7 @@ export class AgentManager {
     // 只结束发起这次调用的那一轮：同一个机器人在别的会话里的回复不受影响。
     // 会话的子代理没有直接映射时，只有一轮在进行才算它；后台任务和规则不在这里停（拒绝说明会让它收尾）
     const sessionId = String(b?.sessionId ?? "");
+    if (sessionId && (this.taskOf(botId, sessionId) || this.ruleOf(botId, sessionId))) perms.attach(botId, { background: true, sessionId });
     let conv = sessionId ? this.o.store.conversationForSession(sessionId) : undefined;
     if (!conv && sessionId && !this.taskOf(botId, sessionId) && !this.ruleOf(botId, sessionId)) {
       const active = [...this.turnsInProgress].filter(([, t]) => t.botId === botId);
@@ -492,6 +493,8 @@ export class AgentManager {
     if (conv && t && t.botId === botId && !t.abort.signal.aborted) this.halt(conv, t, new TurnStopped("permission", Date.now() - t.since, false, r.missing));
     return { ok: false, missing: r.missing };
   }
+
+  get cuPermissions(): CuPermissions | undefined { return this.o.cuPermissions; }
 
   /** /stop、信息面板的"中止"：返回有没有正在处理的回合 */
   stopTurn(conversationId: string): boolean {

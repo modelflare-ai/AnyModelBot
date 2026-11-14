@@ -20,9 +20,11 @@
 .apps-card-meta.mono { font-family: var(--code); }
 .apps-card-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; }
 .apps-card.skel-card { grid-template-rows: none; align-content: start; min-height: 132px; }
-/* 应用标记：名字的第一个字，底色按名字定 */
+/* 内置应用使用官方标志，浅色衬底保留原始品牌颜色；自定义连接器用首字和按名字分配的底色。 */
 .apps-mark { flex: none; display: grid; place-items: center; width: var(--ctl-lg); height: var(--ctl-lg); border-radius: var(--r-mark); background: var(--pill); color: var(--fg-2); font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 .apps-mark.sm { width: var(--ctl-sm); height: var(--ctl-sm); font-size: var(--fs-xs); }
+.apps-mark.branded { padding: var(--space-1); background: var(--app-logo-bg); overflow: hidden; }
+.apps-mark.branded img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .apps-mark.tone-0 { background: var(--accent-soft); color: var(--accent); }
 .apps-mark.tone-1 { background: var(--green-soft); color: var(--green); }
 .apps-mark.tone-2 { background: var(--amber-soft); color: var(--amber); }
@@ -39,7 +41,8 @@
 
 /* —— 弹窗 —— */
 .apps-form, .apps-manage, .apps-done { display: grid; gap: var(--space-4); min-width: 0; }
-.apps-title { display: inline-flex; align-items: center; gap: var(--space-2); }
+.apps-title { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.apps-title > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .apps-form .seg, .apps-block-head .seg { justify-self: start; }   /* 分段控件按内容宽，不拉满一行 */
 .apps-links { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; font-size: var(--fs-md); }
 .apps-wait { display: grid; gap: var(--space-2); justify-items: start; }

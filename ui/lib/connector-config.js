@@ -112,15 +112,15 @@ export function splitHeaderLine(text) {
 }
 
 /** 一个服务对象（mcpServers 里的一项）→ draft。认不出来回 null */
-function serverToDraft(name, cfg) {
+function serverToDraft(name, cfg, partial = false) {
   if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) return null;
   const d = emptyDraft();
   d.name = String(name ?? cfg.name ?? "").trim();
   const type = String(cfg.type ?? cfg.transport ?? cfg.transportType ?? "").toLowerCase();
   const url = cfg.url ?? cfg.serverUrl ?? cfg.httpUrl ?? cfg.endpoint ?? cfg.baseUrl;
-  if (typeof url === "string" && url.trim()) {
+  if ((typeof url === "string" && url.trim()) || (partial && type !== "stdio" && typeof cfg.command !== "string")) {
     d.transport = "http";
-    d.url = url.trim();
+    d.url = typeof url === "string" ? url.trim() : "";
     d.sse = type === "sse" || /\/sse\/?(\?|$)/i.test(d.url);
     d.headers = pairs(cfg.headers ?? cfg.requestInit?.headers);
     d.query = pairs(cfg.query);
@@ -143,10 +143,10 @@ function serverToDraft(name, cfg) {
     if (d.auth === "query" && !d.query.length) moveQueryOut(d);
     return d;
   }
-  if (typeof cfg.command === "string" && cfg.command.trim()) {
+  if ((typeof cfg.command === "string" && cfg.command.trim()) || (partial && (type === "stdio" || typeof cfg.command === "string"))) {
     d.transport = "stdio";
     d.auth = "none";
-    const words = shellSplit(cfg.command);
+    const words = shellSplit(cfg.command || "");
     // command 里写了整条命令（"npx -y pkg"）时拆开
     d.command = words[0] ?? "";
     d.args = [...words.slice(1), ...(Array.isArray(cfg.args) ? cfg.args.map(String) : [])];
@@ -385,7 +385,7 @@ export function draftProblem(d) {
  */
 export function draftToJson(d, { mask = true } = {}) {
   const m = (v) => (mask && String(v ?? "") !== "" ? MASK : v);
-  const name = (d.name || autoName(d) || "server").trim();
+  const name = d.name.trim();
   const obj = {};
   if (d.transport === "stdio") {
     obj.command = d.command;
@@ -413,7 +413,7 @@ export function draftToJson(d, { mask = true } = {}) {
  * （prev 里也没有，说明是已保存连接的密钥，MASK 原样留着，后端保留已存的）。
  * error：json 不是合法 JSON · missing 缺少名称或地址 / 命令 · headers / query / env 写法不对 · auth 认证字段不完整
  */
-export function jsonToDraft(text, prev) {
+export function jsonToDraft(text, prev, { partial = false } = {}) {
   let data;
   try {
     data = JSON.parse(text);
@@ -421,17 +421,17 @@ export function jsonToDraft(text, prev) {
     return { error: "json" };
   }
   const map = data?.mcpServers ?? data?.servers;
-  const entries = map && typeof map === "object" && !Array.isArray(map) ? Object.entries(map) : typeof data?.url === "string" || typeof data?.command === "string" ? [[data.name ?? "", data]] : [];
+  const entries = map && typeof map === "object" && !Array.isArray(map) ? Object.entries(map) : typeof data?.url === "string" || typeof data?.command === "string" || (partial && data && typeof data === "object" && !Array.isArray(data)) ? [[data.name ?? "", data]] : [];
   if (!entries.length) return { error: "missing" };
   const [name, cfg] = entries[0];
   if (!cfg || typeof cfg !== "object") return { error: "missing" };
   const flat = (o) => o === undefined || (o && typeof o === "object" && !Array.isArray(o) && Object.values(o).every((v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean"));
-  if (!flat(cfg.headers)) return { error: "headers" };
-  if (!flat(cfg.query)) return { error: "query" };
-  if (!flat(cfg.env)) return { error: "env" };
-  if (cfg.auth !== undefined && (typeof cfg.auth !== "object" || !cfg.auth || (cfg.auth.method !== undefined && !AUTH_METHODS.includes(String(cfg.auth.method))))) return { error: "auth" };
-  if (cfg.auth?.method === "oauth" && cfg.auth.oauth !== undefined && (typeof cfg.auth.oauth !== "object" || !cfg.auth.oauth)) return { error: "auth" };
-  const d = serverToDraft(name, cfg);
+  if (!partial && !flat(cfg.headers)) return { error: "headers" };
+  if (!partial && !flat(cfg.query)) return { error: "query" };
+  if (!partial && !flat(cfg.env)) return { error: "env" };
+  if (!partial && cfg.auth !== undefined && (typeof cfg.auth !== "object" || !cfg.auth || (cfg.auth.method !== undefined && !AUTH_METHODS.includes(String(cfg.auth.method))))) return { error: "auth" };
+  if (!partial && cfg.auth?.method === "oauth" && cfg.auth.oauth !== undefined && (typeof cfg.auth.oauth !== "object" || !cfg.auth.oauth)) return { error: "auth" };
+  const d = serverToDraft(name, cfg, partial);
   if (!d) return { error: "missing" };
   if (prev) {
     const unmask = (rows, old) => rows.map(([k, v]) => [k, v === MASK ? (old.find(([ok]) => ok === k)?.[1] ?? MASK) : v]);

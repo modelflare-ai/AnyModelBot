@@ -1,7 +1,7 @@
 {
   "id": "us-stock-research",
   "version": "1.0.3",
-  "minAppVersion": "0.1.20",
+  "minAppVersion": "0.1.33",
   "name": {
     "zh-CN": "美股研报",
     "en": "US Stock Research",
@@ -64,39 +64,39 @@
   ],
   "starters": {
     "zh-CN": [
+      "用一段话介绍苹果公司的主要业务，再列出读它年报时值得关注的三个问题。只做入门概览，不取财务数据、不做估值。",
       "研究英伟达近五年的收入和毛利率趋势，生成报告",
-      "对比微软和 Alphabet 近三年的收入和营业利润率",
-      "读特斯拉最新 10-K 的风险因素，总结最重要的五条"
+      "对比微软和 Alphabet 近三年的收入和营业利润率"
     ],
     "en": [
+      "Introduce Apple’s main businesses in one paragraph and list three questions to consider when reading its annual report. Intro only, no financial data or valuation.",
       "Research NVIDIA's revenue and gross margin trends over five years into a report",
-      "Compare Microsoft and Alphabet on revenue and operating margin over three years",
-      "Read Tesla's latest 10-K risk factors and summarize the top five"
+      "Compare Microsoft and Alphabet on revenue and operating margin over three years"
     ],
     "ja": [
+      "Apple の主な事業を1段落で紹介し、年次報告書を読む際の質問を3つ挙げて。入門概要のみ、財務データ取得や評価は不要。",
       "NVIDIA の過去 5 年の売上と粗利率の推移を調べてレポートにして",
-      "Microsoft と Alphabet の過去 3 年の売上と営業利益率を比較して",
-      "Tesla の最新の 10-K のリスク要因を読んで、重要な 5 つにまとめて"
+      "Microsoft と Alphabet の過去 3 年の売上と営業利益率を比較して"
     ],
     "ko": [
+      "Apple의 주요 사업을 한 문단으로 소개하고 연차보고서를 읽을 때 살펴볼 질문 3개를 써 주세요. 재무 데이터 수집이나 가치 평가는 하지 마세요.",
       "NVIDIA의 최근 5년 매출과 매출총이익률 추이를 조사해 보고서로 만들어 줘",
-      "Microsoft와 Alphabet의 최근 3년 매출과 영업이익률을 비교해 줘",
-      "Tesla 최신 10-K의 위험 요인을 읽고 가장 중요한 다섯 가지로 요약해 줘"
+      "Microsoft와 Alphabet의 최근 3년 매출과 영업이익률을 비교해 줘"
     ],
     "ru": [
+      "В одном абзаце представь основные направления Apple и три вопроса для чтения годового отчёта. Без финансовых данных и оценки стоимости.",
       "Изучи динамику выручки и валовой маржи NVIDIA за пять лет и подготовь отчёт",
-      "Сравни выручку и операционную маржу Microsoft и Alphabet за три года",
-      "Прочитай факторы риска в последнем 10-K Tesla и выдели пять главных"
+      "Сравни выручку и операционную маржу Microsoft и Alphabet за три года"
     ],
     "es": [
+      "Presenta los negocios de Apple en un párrafo y tres preguntas para leer su informe anual. Solo introducción, sin datos financieros ni valoración.",
       "Analiza la evolución de los ingresos y el margen bruto de NVIDIA en cinco años y haz un informe",
-      "Compara los ingresos y el margen operativo de Microsoft y Alphabet en los últimos tres años",
-      "Lee los factores de riesgo del 10-K más reciente de Tesla y resume los cinco principales"
+      "Compara los ingresos y el margen operativo de Microsoft y Alphabet en los últimos tres años"
     ],
     "pt": [
+      "Apresente os negócios da Apple em um parágrafo e três perguntas para ler o relatório anual. Só introdução, sem dados financeiros ou avaliação.",
       "Pesquise a evolução da receita e da margem bruta da NVIDIA em cinco anos e faça um relatório",
-      "Compare a receita e a margem operacional da Microsoft e da Alphabet em três anos",
-      "Leia os fatores de risco do 10-K mais recente da Tesla e resuma os cinco principais"
+      "Compare a receita e a margem operacional da Microsoft e da Alphabet em três anos"
     ]
   },
   "skills": []

@@ -1,63 +1,10 @@
 // 报告里的第一张数字表画成两张小图：金额一类画柱（从 0 开始），百分比画线（只看走势，不从 0 开始）。
-// 两种单位不放进同一张图（不做双纵轴）；每张图最多两组数据，颜色是两级中性墨色，图例就是读数：
+// 金额与百分比分开；每张图最多两组数据，专用配色在图例、柱线和 KPI 中保持一致：
 // 平时显示最后一期，鼠标移到哪一期就显示哪一期（整列都是感应区，不用对准细小的点）。表格本身仍在报告里。
 import { html, useEffect, useRef, useState } from "/amb/botapp/kit/kit.js";
 
-// 千分位和小数点两种写法都认：1,234.5 / 1.234,5 / 1 234,5 / 41,78%
-const NUM = /^[-+(]?\s*[$€¥£]?\s*\d(?:[\d.,\u00a0\u202f ]*\d)?\s*(%|pp|个百分点)?\s*\)?$/i;
-const MAX_ROWS = 12;
-const MAX_SERIES = 2;
-
-function parseCell(raw) {
-  const s = String(raw ?? "").replace(/\*\*/g, "").trim();
-  if (!NUM.test(s)) return null;
-  const neg = /^\(.*\)$/.test(s) || s.startsWith("-");
-  return { neg, digits: s.replace(/[^\d.,]/g, ""), pct: /%$/.test(s), text: s.replace(/^\(|\)$/g, "") };
-}
-
-/** 这一格能不能单独看出小数点："41,78" → ","；"1,234.5" → "."；"1.234.567" → ","；"365,817" 这种只有一个分隔符、后面正好三位的看不出 → null */
-function decimalHint(d) {
-  if (d.includes(",") && d.includes(".")) return d.lastIndexOf(",") > d.lastIndexOf(".") ? "," : ".";
-  for (const sep of [",", "."]) {
-    const parts = d.split(sep);
-    if (parts.length === 1) continue;
-    if (parts.length > 2) return sep === "," ? "." : ",";
-    return parts[1].length === 3 ? null : sep;
-  }
-  return null;
-}
-
-/** 整列用同一种小数点：先看列里有没有能单独判断的格，都没有时按报告语言的习惯（ru、es、pt 用逗号） */
-function columnValues(cells, lang) {
-  const dec = cells.map((c) => c && decimalHint(c.digits)).find(Boolean)
-    ?? (new Intl.NumberFormat(lang || "en").format(1.5).includes(",") ? "," : ".");
-  const group = dec === "," ? "." : ",";
-  return cells.map((c) => {
-    if (!c) return null;
-    const n = Number(c.digits.split(group).join("").replace(dec, "."));
-    return Number.isFinite(n) ? { value: c.neg ? -n : n, pct: c.pct, text: c.text } : null;
-  });
-}
-
-/** 第一张能画的表：至少两行，第一列是期间或名称，至少一列大部分是数字 */
-export function chartsFrom(blocks, lang) {
-  for (const b of blocks) {
-    if (b.type !== "table" || b.rows.length < 2 || b.rows.length > MAX_ROWS || b.head.length < 2) continue;
-    const cats = b.rows.map((r) => String(r[0] ?? "").replace(/\*\*/g, ""));
-    const cols = [];
-    for (let c = 1; c < b.head.length; c++) {
-      const cells = columnValues(b.rows.map((r) => parseCell(r[c])), lang);
-      const ok = cells.filter(Boolean);
-      if (ok.length < Math.max(2, Math.ceil(cells.length * 0.7))) continue;
-      cols.push({ name: String(b.head[c]).replace(/\*\*/g, ""), cells, pct: ok.filter((x) => x.pct).length > ok.length / 2 });
-    }
-    if (!cols.length) continue;
-    const bars = cols.filter((c) => !c.pct).slice(0, MAX_SERIES);
-    const lines = cols.filter((c) => c.pct).slice(0, MAX_SERIES);
-    return { cats, bars, lines };
-  }
-  return null;
-}
+import { chartScale, lineSegments } from "./chart-data.js";
+export { chartsFrom } from "./chart-data.js";
 
 /** 宽度跟着容器走（每张图按实际像素画，字不会跟着缩放） */
 function useWidth() {
@@ -86,99 +33,72 @@ function useWidth() {
   return [ref, w];
 }
 
-const H = 132;
-const AXIS = 22;
-const TOP = 8;
-const BAR_MAX = 24;
-const R = 4;
-
-/** 上端 4px 圆角、贴着基线那端是直角的柱 */
-function barPath(x, y, w, h) {
-  const r = Math.min(R, w / 2, Math.abs(h));
-  if (h <= 0) return "";
-  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
-}
+const H = 208;
+const TOP = 12;
+const BOTTOM = 30;
+const LEFT = 64;
+const RIGHT = 8;
 
 function Legend({ series, at, cats }) {
   return html`<div class="ch-legend">
-    ${series.map((s, i) => html`<span class="ch-key" key=${s.name}>
-      ${series.length > 1 && html`<i class=${`ch-swatch s${i}`} aria-hidden="true"></i>`}
+    ${series.map((s) => html`<span class="ch-key" key=${s.name}>
+      <i class=${`ch-swatch s${s.color}`} aria-hidden="true"></i>
       <span class="ch-name">${s.name}</span><strong class="ch-value">${s.cells[at]?.text ?? "—"}</strong>
     </span>`)}
     <span class="ch-cat">${cats[at]}</span>
   </div>`;
 }
 
-function Axis({ cats, x, band, at }) {
-  const every = band < 44 ? 2 : 1;
-  return cats.map((c, i) => (i % every && i !== cats.length - 1 ? null : html`<text key=${i} class=${`ch-axis${i === at ? " on" : ""}`} x=${x(i) + band / 2} y=${H - 6} text-anchor="middle">${c}</text>`));
-}
-
-function Bars({ cats, series, w, at, setAt }) {
-  const plot = H - AXIS - TOP;
-  const band = w / cats.length;
-  const k = series.length;
-  const thick = Math.max(4, Math.min(BAR_MAX, (band * 0.56) / k));
-  const max = Math.max(0, ...series.flatMap((s) => s.cells.map((c) => c?.value ?? 0)));
-  const y = (v) => TOP + plot - (max > 0 ? (Math.max(0, v) / max) * plot : 0);
-  const x = (i) => i * band;
-  return html`<svg class="ch-svg" width=${w} height=${H} role="img" aria-label=${series.map((s) => s.name).join(" / ")}>
-    ${cats.map((_, i) => html`<g key=${i} class=${at === i ? "ch-col on" : "ch-col"}>
-      ${series.map((s, j) => {
-        const v = s.cells[i]?.value;
-        if (v == null) return null;
-        const bx = x(i) + band / 2 - (k * thick + (k - 1) * 2) / 2 + j * (thick + 2);
-        return html`<path key=${j} class=${`ch-bar s${j}`} d=${barPath(bx, y(v), thick, TOP + plot - y(v))} />`;
-      })}
-    </g>`)}
-    <line class="ch-base" x1="0" x2=${w} y1=${TOP + plot + 0.5} y2=${TOP + plot + 0.5} />
-    <${Axis} cats=${cats} x=${x} band=${band} at=${at} />
-    ${cats.map((_, i) => html`<rect key=${`hit${i}`} class="ch-hit" x=${x(i)} y="0" width=${band} height=${H} onPointerEnter=${() => setAt(i)} />`)}
-  </svg>`;
-}
-
-function Lines({ cats, series, w, at, setAt }) {
-  const plot = H - AXIS - TOP - 6;
-  const band = w / cats.length;
-  const vals = series.flatMap((s) => s.cells.filter(Boolean).map((c) => c.value));
-  let lo = Math.min(...vals);
-  let hi = Math.max(...vals);
-  const pad = (hi - lo) * 0.18 || Math.abs(hi) * 0.1 || 1;
-  lo -= pad;
-  hi += pad;
-  const x = (i) => i * band;
+function Plot({ kind, cats, series, w, at, setAt, lang }) {
+  const { lo, hi, ticks } = chartScale(series.flatMap((s) => s.cells.filter(Boolean).map((c) => c.value)), kind === "bars");
+  const band = Math.max(1, w - LEFT - RIGHT) / cats.length;
+  const y = (v) => TOP + (H - TOP - BOTTOM) * (hi - v) / (hi - lo);
+  const x = (i) => LEFT + i * band;
   const cx = (i) => x(i) + band / 2;
-  const y = (v) => TOP + 4 + plot - ((v - lo) / (hi - lo)) * plot;
+  const number = new Intl.NumberFormat(lang || "en", { notation: "compact", maximumFractionDigits: 1 });
+  const every = Math.max(1, Math.ceil(54 / band));
+  const thick = Math.max(1, Math.min(26, band * 0.65 / series.length));
   return html`<svg class="ch-svg" width=${w} height=${H} role="img" aria-label=${series.map((s) => s.name).join(" / ")}>
-    <line class="ch-cross" x1=${cx(at) + 0.5} x2=${cx(at) + 0.5} y1=${TOP} y2=${H - AXIS} />
-    ${series.map((s, j) => {
-      const pts = s.cells.map((c, i) => (c ? [cx(i), y(c.value)] : null)).filter(Boolean);
-      return html`<g key=${j}>
-        <polyline class=${`ch-line s${j}`} points=${pts.map((p) => p.join(",")).join(" ")} />
-        ${s.cells.map((c, i) => c && html`<circle key=${i} class=${`ch-dot s${j}${i === at ? " on" : ""}`} cx=${cx(i)} cy=${y(c.value)} r=${i === at ? 5 : 4} />`)}
-      </g>`;
-    })}
-    <${Axis} cats=${cats} x=${x} band=${band} at=${at} />
-    ${cats.map((_, i) => html`<rect key=${`hit${i}`} class="ch-hit" x=${x(i)} y="0" width=${band} height=${H} onPointerEnter=${() => setAt(i)} />`)}
+    ${ticks.map((v) => html`<g key=${v}><line class=${v === 0 ? "ch-base" : "ch-grid"} x1=${LEFT} x2=${w - RIGHT} y1=${y(v)} y2=${y(v)} />
+      <text class="ch-axis" x=${LEFT - 8} y=${y(v) + 4} text-anchor="end">${number.format(v)}${kind === "lines" ? "%" : ""}</text></g>`)}
+    <line class="ch-cross" x1=${cx(at)} x2=${cx(at)} y1=${TOP} y2=${H - BOTTOM} />
+    ${kind === "bars" ? cats.map((_, i) => html`<g key=${i} class=${at === i ? "ch-col on" : "ch-col"}>
+      ${series.map((s, j) => {
+        const c = s.cells[i];
+        if (!c) return null;
+        const bx = cx(i) - (series.length * thick + (series.length - 1) * 2) / 2 + j * (thick + 2);
+        return html`<rect key=${j} class=${`ch-bar s${s.color}`} x=${bx} y=${Math.min(y(0), y(c.value))} width=${thick} height=${Math.abs(y(c.value) - y(0))} rx="2"><title>${s.name}: ${c.text}</title></rect>`;
+      })}
+    </g>`) : series.map((s) => html`<g key=${s.name}>
+      ${lineSegments(s.cells, (c, i) => [cx(i), y(c.value)]).filter((points) => points.length > 1).map((points, i) => html`<polyline key=${i} class=${`ch-line s${s.color}`} points=${points.map((p) => p.join(",")).join(" ")} />`)}
+      ${s.cells.map((c, i) => c && html`<circle key=${i} class=${`ch-dot s${s.color}${i === at ? " on" : ""}`} cx=${cx(i)} cy=${y(c.value)} r=${i === at ? 5 : 3}><title>${s.name}: ${c.text}</title></circle>`)}
+    </g>`)}
+    ${cats.map((cat, i) => i % every && i !== cats.length - 1 ? null : html`<text key=${i} class=${`ch-axis${i === at ? " on" : ""}`} x=${cx(i)} y=${H - 8} text-anchor="middle">${cat}</text>`)}
+    ${cats.map((_, i) => html`<rect key=${i} class="ch-hit" x=${x(i)} y="0" width=${band} height=${H} onPointerEnter=${() => setAt(i)} onPointerDown=${() => setAt(i)} />`)}
   </svg>`;
 }
 
-function Chart({ kind, cats, series }) {
+function Chart({ kind, cats, series, unitNote, lang, t }) {
   const last = cats.length - 1;
   const [at, setAt] = useState(last);
+  const selected = Math.max(0, Math.min(last, at));
   const [ref, w] = useWidth();
-  const Plot = kind === "bars" ? Bars : Lines;
-  return html`<figure class="ch" onPointerLeave=${() => setAt(last)}>
-    <${Legend} series=${series} at=${at} cats=${cats} />
-    <div class="ch-plot" ref=${ref}>${w > 0 && html`<${Plot} cats=${cats} series=${series} w=${w} at=${at} setAt=${setAt} />`}</div>
+  useEffect(() => setAt(last), [cats.join("|"), series.map((s) => s.name).join("|")]);
+  return html`<figure class="ch" tabindex="0" aria-label=${t("chart.interact")} onKeyDown=${(e) => {
+    const next = { ArrowLeft: selected - 1, ArrowRight: selected + 1, Home: 0, End: last }[e.key];
+    if (next !== undefined) { e.preventDefault(); setAt(Math.max(0, Math.min(last, next))); }
+  }}>
+    <${Legend} series=${series} at=${selected} cats=${cats} />
+    <figcaption class="ch-note">${kind === "lines" ? "%" : unitNote || t("chart.units")}</figcaption>
+    <div class="ch-plot" ref=${ref}>${w > 0 && html`<${Plot} kind=${kind} cats=${cats} series=${series} w=${w} at=${selected} setAt=${setAt} lang=${lang} />`}</div>
   </figure>`;
 }
 
-export function Charts({ data }) {
+export function Charts({ data, lang, t }) {
   if (!data) return null;
   return html`<div class="ch-row">
-    ${data.bars.length > 0 && html`<${Chart} kind="bars" cats=${data.cats} series=${data.bars} />`}
-    ${data.lines.length > 0 && html`<${Chart} kind="lines" cats=${data.cats} series=${data.lines} />`}
+    ${data.bars.length > 0 && html`<${Chart} kind="bars" cats=${data.cats} series=${data.bars} unitNote=${data.unitNote} lang=${lang} t=${t} />`}
+    ${data.lines.length > 0 && html`<${Chart} kind="lines" cats=${data.cats} series=${data.lines} lang=${lang} t=${t} />`}
   </div>`;
 }
 
@@ -197,12 +117,12 @@ export function Kpis({ data, t, lang }) {
     const sign = diff > 0 ? "+" : diff < 0 ? "−" : "±";
     const digits = s.pct ? 2 : 1;
     const n = new Intl.NumberFormat(lang || "en", { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false }).format(Math.abs(diff));
-    return { name: s.name, value: b.text, delta: s.pct ? t("kpi.pp", { v: `${sign}${n}` }) : `${sign}${n}%`, up: diff > 0, down: diff < 0, from: data.cats[idx[0]], to: data.cats[idx[idx.length - 1]] };
+    return { color: s.color, name: s.name, value: b.text, delta: s.pct ? t("kpi.pp", { v: `${sign}${n}` }) : `${sign}${n}%`, up: diff > 0, down: diff < 0, from: data.cats[idx[0]], to: data.cats[idx[idx.length - 1]] };
   }).filter(Boolean);
   if (!tiles.length) return null;
   return html`<div class="kpis" role="list" aria-label=${t("kpi.title")}>
     ${tiles.map((k) => html`<div class="kpi" role="listitem" key=${k.name}>
-      <span class="kpi-name">${k.name}<span class="kpi-at">${k.to}</span></span>
+      <span class="kpi-name"><span><i class=${`ch-swatch s${k.color}`} aria-hidden="true"></i> ${k.name}</span><span class="kpi-at">${k.to}</span></span>
       <strong class="kpi-value">${k.value}</strong>
       <span class="kpi-delta"><span aria-hidden="true">${k.up ? "▲" : k.down ? "▼" : "■"}</span> ${k.delta} <span class="kpi-at">${t("kpi.vs", { cat: k.from })}</span></span>
     </div>`)}

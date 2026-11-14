@@ -57,5 +57,8 @@
   "q.and": "と",
   "kpi.title": "主要な数字",
   "kpi.pp": "{v} ポイント",
-  "kpi.vs": "{cat} 比"
+  "kpi.vs": "{cat} 比",
+  "chart.data": "元データ（{count} 行）",
+  "chart.units": "数値の単位は元データを参照",
+  "chart.interact": "推移グラフ。左右の矢印キーで期間を選択できます。"
 }

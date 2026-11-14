@@ -180,3 +180,15 @@ describe("GET / PUT /sidebar-layout", () => {
     expect((await (await fetch(base)).json()).layout).toEqual(saved);
   });
 });
+
+describe("移除的官方 Bot", () => {
+  it("从全部分组移除且目录同步不会放回；重新添加进入默认分组末尾", async () => {
+    const S = await load();
+    const base = S.place(S.defaultLayout(), { bots: [bot("a"), bot("cat-old", "old")], groups: [], catalog: [entry("new")] });
+    const removed = S.place(base, { bots: [bot("a")], groups: [], catalog: [{ ...entry("old"), userRemoved: true }, entry("new")] });
+    expect(items(removed)).toEqual({ mine: ["b:a"], latest: ["c:new"] });
+    expect(S.place(removed, { bots: [bot("a")], groups: [], catalog: [{ ...entry("old"), userRemoved: true }, entry("new")] })).toBe(removed);
+    const added = S.place(removed, { bots: [bot("a"), bot("cat-old", "old")], groups: [], catalog: [entry("old", true), entry("new")] });
+    expect(items(added)).toEqual({ mine: ["b:a", "c:old"], latest: ["c:new"] });
+  });
+});

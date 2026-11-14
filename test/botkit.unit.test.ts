@@ -650,11 +650,16 @@ describe("目录", () => {
     it("移除：默认清干净；保留数据时留下工作区，再次使用接着用", async () => {
       await inst.install("fixture-bot", "zh-CN");
       fs.writeFileSync(ws("app", "state.json"), JSON.stringify({ title: "mine", items: [] }));
-      store.deleteBot(id);
+      store.setKV("sidebar-layout", JSON.stringify({ version: 1, sections: [{ id: "mine", default: true, items: ["c:fixture-bot"] }] }));
+      inst.markRemoved("fixture-bot"); store.deleteBot(id);
       inst.cleanup(id, true);
+      expect(inst.isRemoved("fixture-bot")).toBe(true);
+      expect(JSON.parse(store.getKV("sidebar-layout")!).sections[0].items).toEqual([]);
       expect(fs.existsSync(path.join(data, "dsh", id))).toBe(false);
       await inst.install("fixture-bot", "zh-CN");
       expect(JSON.parse(fs.readFileSync(ws("app", "state.json"), "utf8")).title).toBe("mine");
+      expect(inst.isRemoved("fixture-bot")).toBe(false);
+      expect(store.getKV("catalog.removed.fixture-bot")).toBeUndefined();
       store.deleteBot(id);
       inst.cleanup(id, false);
       expect(fs.existsSync(ws())).toBe(false);

@@ -35,7 +35,7 @@ export function ModelButton({ value, models, modelsError, reloadModels, resetLab
     </button>
     ${open && html`<${ModelPicker} anchor=${ref.current} align="right" models=${models} error=${modelsError} onRetry=${reloadModels} current=${value}
       onPick=${onChange} onClose=${() => setOpen(false)} reset=${{ label: resetLabel, onSelect: () => onChange("") }}
-      account=${tiers && tiers.account} onAccount=${tiers && tiers.onAccount} effective=${tiers && tiers.effective} />`}`;
+      draftOnly=${!!tiers?.draftOnly} account=${tiers && tiers.account} onAccount=${tiers && tiers.onAccount} effective=${tiers && tiers.effective} />`}`;
 }
 
 /**
@@ -243,7 +243,7 @@ export function BotSettingsScreen({ bot, section, models, modelsError, reloadMod
           <${Row} id="nudge" name=${t("botSettings.proactive.nudge")} sub=${t("botSettings.proactive.nudgeSub")}>
             <${Switch} label=${t("botSettings.proactive.nudge")} value=${s.nudge} onChange=${(v) => put({ nudge: v })} />
           <//>
-          <${Row} id="rules" name=${t("botSettings.proactive.rules")} sub=${rules && rules.length ? t("botSettings.proactive.rulesCount", { count: rules.length }) : t("botSettings.proactive.rulesSub")}>
+          <${Row} id="rules" name=${t("botSettings.proactive.rules")} sub=${t("scheduled.settingsSub")}>
             <button type="button" class="btn" onClick=${() => setNewRule(true)}>${t("botSettings.proactive.newRule")}</button>
           <//>
         </div>

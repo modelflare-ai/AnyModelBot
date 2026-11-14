@@ -1,9 +1,10 @@
 // 发现页：一句话说明、精选、上新。点卡片直接打开 Bot，点开就是示例界面，不单独做详情页（docs/bot-framework.md）。
 // 卡片上面是封面（Bot 目录里的 cover/light.png、cover/dark.png，打包成 thumbs，跟着主题换），下面是头像、名字和一句话。
 // 精选是两列的大卡，其余是三列的小卡；没有封面的退回头像。
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Icon } from "../components/ui.js";
 import { BotAvatar } from "../components/avatar.js";
+import { templateFlow } from "../lib/template-flow.js";
 import { tr } from "../lib/catalog.js";
 import { t, useLang } from "../lib/i18n.js";
 
@@ -42,8 +43,10 @@ function Card({ entry, lang, theme, big, onOpen }) {
   </button>`;
 }
 
-export function DiscoverScreen({ catalog, onOpen }) {
+export function DiscoverScreen({ catalog, onOpen, onTemplates }) {
   const lang = useLang();
+  const root = useRef(null);
+  useLayoutEffect(() => { const el = root.current; el.scrollTop = templateFlow.get().discoverScroll; return () => templateFlow.set((s) => ({ ...s, discoverScroll: el.scrollTop })); }, []);
   const theme = useTheme();
   const [q, setQ] = useState("");
   const list = catalog || [];
@@ -55,7 +58,7 @@ export function DiscoverScreen({ catalog, onOpen }) {
   const featured = needle ? [] : hits.filter((e) => e.featured);
   const rest = needle ? hits : hits.filter((e) => !e.featured);
   const cards = (items, big) => items.map((e) => html`<${Card} key=${e.id} entry=${e} lang=${lang} theme=${theme} big=${big} onOpen=${onOpen} />`);
-  return html`<section class="discover" data-screen="discover">
+  return html`<section class="discover" ref=${root} data-screen="discover">
     <header class="discover-head">
       <h1 class="t-page">${t("botapp.discover.title")}</h1>
       <p>${t("botapp.discover.lead")}</p>
@@ -65,5 +68,6 @@ export function DiscoverScreen({ catalog, onOpen }) {
     ${featured.length > 0 && html`<section class="discover-sec"><h2 class="discover-part">${t("botapp.discover.featured")}</h2><div class="discover-grid big">${cards(featured, true)}</div></section>`}
     ${rest.length > 0 && html`<section class="discover-sec"><h2 class="discover-part">${t("botapp.discover.latest")}</h2><div class="discover-grid">${cards(rest, false)}</div></section>`}
     ${!hits.length && html`<p class="hint">${t("botapp.discover.empty")}</p>`}
+    <button type="button" class="template-entry" onClick=${onTemplates}><span><b>${t("templates.discoverEntry")}</b><small>${t("templates.entryHint")}</small></span><span>${t("templates.seeAll")}</span></button>
   </section>`;
 }

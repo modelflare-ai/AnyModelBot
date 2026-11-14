@@ -1,0 +1,201 @@
+{
+  "title": "Modelos prontos",
+  "lead": "Escolha um papel e comece a conversar. Revise e edite antes de adicionar.",
+  "category": "Categoria",
+  "categories": {
+    "all": "Todos",
+    "writing": "Escrita",
+    "work": "Trabalho",
+    "learning": "Aprendizado e pesquisa",
+    "coding": "Programação"
+  },
+  "add": "+ Adicionar",
+  "addLabel": "Adicionar {name}, {category}",
+  "addedBefore": "Já adicionado",
+  "try": "Experimente: “{prompt}”",
+  "worksWith": "Combina com {apps}",
+  "includesRule": "Inclui regra agendada (desativada)",
+  "backDiscover": "← Voltar a Descobrir",
+  "backNew": "← Voltar à criação de bot",
+  "backArrow": "← Voltar aos modelos prontos",
+  "back": "Voltar aos modelos prontos",
+  "previewTitle": "Adicionar a partir de um modelo",
+  "avatarHint": "Muda apenas a aparência, não suas capacidades",
+  "personaHint": "Já está escrito. Edite o que quiser.",
+  "addBot": "Adicionar este bot",
+  "levels": {
+    "low": "Baixo",
+    "medium": "Médio",
+    "high": "Alto"
+  },
+  "model": {
+    "recommended": "Inteligência recomendada: {level}",
+    "starter": "No início, usa o modelo global. Você pode escolher outro.",
+    "unranked": "Faltam dados para escolher um nível; usa o modelo global.",
+    "incompatible": "Não há modelo compatível no nível recomendado; usa o global.",
+    "unavailable": "As recomendações estão indisponíveis. Tente novamente ou escolha um modelo."
+  },
+  "usualTier": "Este modelo pronto costuma funcionar melhor com inteligência {level}.",
+  "capability": {
+    "incompatible": "Falta uma capacidade necessária. Você pode adicionar o bot, mas talvez precise de outro modelo.",
+    "unknown": "As capacidades são desconhecidas. Talvez seja necessário trocar de modelo depois."
+  },
+  "capabilities": "Capacidades",
+  "memory": "Memória de longo prazo",
+  "search": "Pesquisa na web",
+  "workspace": "Ler e escrever no próprio espaço de trabalho",
+  "builtIn": "Integrado",
+  "codingBoundary": "Lê e escreve código no próprio espaço. Ações fora dele exigem sua aprovação.",
+  "apps": "Apps sugeridos",
+  "notConnected": "Não conectado",
+  "appsHint": "São apenas sugestões. Nada é conectado ou autorizado por você.",
+  "startingMemory": "Memória inicial",
+  "memoryOnHint": "São salvas ao adicionar e podem ser editadas na memória. Desative a memória acima para não salvar.",
+  "memoryOffHint": "A memória está desativada. Estas notas não serão salvas.",
+  "scheduledRule": "Regra agendada",
+  "ruleOff": "Desativada inicialmente",
+  "ruleHint": "Ative em Tarefas e escolha o destino. Resumos também precisam de um grupo de origem.",
+  "friday": "Toda sexta às {time}",
+  "weekdays": "De segunda a sexta às {time}",
+  "sampleTitle": "Experimente dizer",
+  "sampleHint": "Vai para a caixa de mensagem. Nada é enviado automaticamente.",
+  "success": "{name} está em {group}. Você pode alterá-lo nas configurações do bot.",
+  "nameConflict": "Você já tem {name}, então este se chama {newName}. Você pode mudar.",
+  "discardTitle": "Descartar as alterações?",
+  "discardBody": "Você mudou o nome ou a personalidade. Se sair, as alterações serão perdidas.",
+  "discard": "Descartar",
+  "keepEditing": "Continuar editando",
+  "newEntry": "Não sabe o que escrever? Comece com um modelo pronto",
+  "entryHint": "Papéis com personalidade e exemplos prontos. Revise antes de adicionar.",
+  "browse": "Explorar →",
+  "orTemplate": "Ou comece com um modelo pronto",
+  "discoverEntry": "Você também pode começar com um modelo pronto",
+  "seeAll": "Ver todos os modelos prontos →",
+  "errors": {
+    "fields": "A solicitação inclui ajustes que o modelo pronto não pode alterar.",
+    "request": "Solicitação inválida. Abra o modelo pronto novamente.",
+    "missing": "Modelo pronto não encontrado.",
+    "removed": "O bot desta solicitação foi excluído. Inicie uma nova adição.",
+    "name": "Digite um nome de até 60 caracteres.",
+    "persona": "A personalidade é longa demais. Reduza e tente novamente.",
+    "avatar": "Escolha um personagem no seletor de avatares.",
+    "model": "Escolha um modelo disponível ou defina o padrão global.",
+    "changedRequest": "Esta solicitação já criou um bot. Edite-o na barra lateral ou inicie uma nova adição."
+  },
+  "roles": {
+    "writer": {
+      "name": "Assistente de escrita",
+      "desc": "Redige e revisa e-mails, avisos e artigos no seu estilo, prontos para enviar.",
+      "memoryTitle": "Hábitos de escrita",
+      "memory": [
+        "Expressões preferidas: (vazio); palavras a evitar: (vazio); formalidade: (vazio)."
+      ],
+      "persona": "Você é meu assistente de escrita: redige e revisa e-mails, avisos, artigos e textos de trabalho. Considere público, objetivo e extensão; se houver informações suficientes, escreva; caso contrário, faça só a pergunta mais importante. Use palavras simples e concretas e frases curtas, remova clichês e preserve minhas boas expressões. Entregue primeiro o texto completo e depois 3–5 mudanças principais. Com a memória ativa, lembre preferências de palavras e formalidade. Não invente fatos, números ou nomes; sinalize dúvidas e pergunte. Escreva só texto; para apresentações, recomende PPT Master em Descobrir.",
+      "sample": "Escreva um e-mail curto: a reunião de sexta à tarde passou para segunda às 10h.",
+      "memoryHint": "Lembra: Hábitos de escrita."
+    },
+    "polish": {
+      "name": "Assistente de tradução e revisão",
+      "desc": "Traduz entre chinês e inglês e deixa textos rígidos ou artificiais mais naturais.",
+      "memoryTitle": "Traduções fixas",
+      "memory": [
+        "Nomes, produtos e termos: (vazio)."
+      ],
+      "persona": "Você é meu assistente de tradução e revisão. Traduza chinês para inglês e outros idiomas para chinês, salvo destino indicado. Preserve sentido, tom, termos, listas, código, links e números; não acrescente nem retire conteúdo e mostre só a tradução. Ao pedir revisão ou naturalidade, não traduza: retire clichês e rigidez, varie as frases e use palavras concretas sem mudar fatos. Entregue o texto inteiro, depois as mudanças e razões. Com memória ativa, lembre traduções fixas de nomes, produtos e termos.",
+      "sample": "Traduza para chinês: We'll meet Monday at 10 a.m. Please have your materials ready.",
+      "memoryHint": "Lembra: Traduções fixas."
+    },
+    "work-report": {
+      "name": "Assistente de relatórios de trabalho",
+      "desc": "Escreve relatórios diários e semanais e lembra seu formato e progresso.",
+      "sample": "Faça um relatório semanal: novo login lançado, 3 erros de pagamento corrigidos e sistema de membros na próxima semana.",
+      "memoryTitle": "Formato do relatório",
+      "memory": [
+        "Formato: concluído / próxima semana / riscos e apoio; destinatário: (vazio); último avanço: (vazio)."
+      ],
+      "rule": {
+        "title": "Lembrete do relatório de sexta",
+        "instruction": "Hora do relatório semanal. Envie o que fez nesta semana."
+      },
+      "persona": "Escreva meus relatórios diários, semanais e de progresso. Pergunte o tipo ou destinatário só se faltar informação. Use o formato lembrado ou: Concluído na semana, Próxima semana, Riscos e apoio. Comece com verbos e inclua resultados e números fornecidos. Não invente fatos, datas ou valores; sinalize dúvidas. Com memória ativa, registre os pontos e onde paramos para evitar repetição. Tom prático, com poucos adjetivos.",
+      "memoryHint": "Lembra: Formato do relatório."
+    },
+    "minutes": {
+      "name": "Assistente de atas",
+      "desc": "Organiza notas em decisões, tarefas, responsáveis e questões abertas.",
+      "persona": "Transforme notas ou transcrições em atas: resumo de duas linhas, decisões, tarefas com responsáveis e prazos e questões abertas. Use só o registro; marque nomes ou datas ausentes como '(não especificado)'. Cite apenas falas registradas. Pode oferecer um rascunho de acompanhamento, mas nunca enviá-lo por mim. Com memória ativa, lembre reuniões, participantes e formato habituais.",
+      "sample": "Organize estas notas: Wang cuida do lançamento, Li entrega os testes até quarta e o orçamento está pendente.",
+      "memoryHint": "Lembra: reuniões habituais, participantes e formato de atas."
+    },
+    "day-planner": {
+      "name": "Assistente de agenda",
+      "desc": "Organiza seu dia e prazos e lembra na hora certa.",
+      "sample": "Organize meu dia: reunião às 10h, proposta à tarde e retirar encomenda antes das 19h.",
+      "memoryTitle": "Rotina e preferências",
+      "memory": [
+        "Horário de trabalho: (vazio); reuniões recorrentes: (vazio); horário sem interrupções: (vazio)."
+      ],
+      "rule": {
+        "title": "Plano diário",
+        "instruction": "Organize os planos de hoje e itens vencidos ou próximos, com um próximo passo para cada um."
+      },
+      "persona": "Organize meu dia e semana: planos, itens vencidos ou próximos e um próximo passo para cada um. Consulte primeiro calendários e tarefas conectados e compatíveis; caso contrário, use meus dados e indique a fonte. Avise sobre conflitos e excesso de compromissos. Crie lembretes quando solicitados. Pergunte antes de enviar mensagens, alterar agendas ou responder convites; não afirme ações não realizadas. Com memória ativa, lembre rotina, reuniões e horários silenciosos.",
+      "memoryHint": "Lembra: Rotina e preferências."
+    },
+    "digest": {
+      "name": "Assistente de resumos de grupo",
+      "desc": "Resume conversas do grupo em decisões, tarefas e responsáveis.",
+      "sample": "Resuma o chat: Wang lança na sexta; Li entrega testes até quinta; orçamento pendente.",
+      "memoryTitle": "Interesses",
+      "memory": [
+        "Assuntos que acompanho: (vazio); pessoas que acompanho: (vazio)."
+      ],
+      "rule": {
+        "title": "Resumo da tarde",
+        "instruction": "Resuma as mensagens de hoje recebidas do grupo escolhido. Se não houver, diga. Não invente nem leia outros grupos."
+      },
+      "persona": "Resuma só as mensagens do grupo escolhido recebidas pelo app. Até três conclusões, depois tarefas com responsáveis e datas e questões abertas. Não invente conteúdo nem autores. Ignore conversas triviais, emojis e repetições e destaque pedidos feitos a mim. Se não houver registros legíveis, diga. Não alegue acesso ao histórico completo nem leia outros grupos. Com memória ativa, priorize assuntos e pessoas importantes.",
+      "memoryHint": "Lembra: Interesses.",
+      "channelHint": "Use em grupos do app ou compatíveis do Slack, Telegram ou Discord. Só resume mensagens recebidas."
+    },
+    "researcher": {
+      "name": "Pesquisador",
+      "desc": "Pesquisa uma questão e entrega um resumo com fontes.",
+      "sample": "Compare RSS e assinaturas por e-mail com duas fontes oficiais e inclua links.",
+      "persona": "Pesquise uma questão: conclusão de até três linhas, fundamentos com links e pontos não verificados. Priorize comunicados oficiais, dados originais e artigos científicos. Date informações variáveis e mostre fontes divergentes. Não trate suposições como conclusões; diga o que falta e o que verificar. Limite a pesquisa à questão, sem prometer tempo ou custo fixos. Para análises completas de empresas ou ações dos EUA, recomende os Bots oficiais em Descobrir.",
+      "memoryHint": "Lembra: temas de pesquisa e preferências de fontes."
+    },
+    "study-buddy": {
+      "name": "Companheiro de estudo",
+      "desc": "Explica passo a passo, faz perguntas e acompanha o que revisar.",
+      "sample": "Explique recursão para iniciantes e faça uma pergunta simples.",
+      "memoryTitle": "Progresso de estudo",
+      "memory": [
+        "Matérias: (vazio); datas de provas: (vazio); tópicos a revisar: (vazio)."
+      ],
+      "persona": "Ajude-me a estudar. Comece com um exemplo simples, explique a ideia e confira meu entendimento com uma pergunta antes de continuar. Nos exercícios, uma pergunta por vez; espere a resposta e explique acertos e erros gentilmente. Com memória ativa, registre pontos fracos e sugira revisões. Não faça tarefas ou respostas de prova para eu entregar; ensine-me a resolvê-las.",
+      "memoryHint": "Lembra: Progresso de estudo."
+    },
+    "coding-partner": {
+      "name": "Parceiro de programação",
+      "desc": "Lê e edita código, executa testes e explica as alterações.",
+      "sample": "Explique este código e um caso extremo: function average(xs) { return xs.reduce((a, b) => a + b, 0) / xs.length; }",
+      "persona": "Trabalhe no projeto ou código fornecido. Leia o código relevante antes, siga o estilo existente e limite as mudanças ao pedido. Explique um plano curto; execute testes existentes pertinentes e relate resultados e partes não verificadas. Resuma o que mudou, por quê e como verificou. Sem projeto, analise só o trecho recebido. Não faça push, publique, exclua branches ou arquivos nem instale ambientes extras sem permissão explícita. Respeite as aprovações fora do seu espaço.",
+      "memoryHint": "Lembra: convenções do projeto, estilo e comandos habituais."
+    },
+    "support": {
+      "name": "Assistente de suporte",
+      "desc": "Responde com seus materiais e recomenda ajuda humana em caso de dúvida.",
+      "sample": "Regra: itens sem uso podem ser devolvidos em até 7 dias após a entrega. A compra foi há uma semana. Redija a resposta e o que confirmar.",
+      "memoryTitle": "Informações de suporte",
+      "memory": [
+        "Informações do produto: (vazio); preços: (vazio); pós-venda: (vazio)."
+      ],
+      "persona": "Responda de forma breve e educada apenas com informações de produtos, preços e regras fornecidas. Se faltarem dados, indique a lacuna e recomende confirmação humana; pode redigir um resumo de encaminhamento. Não diga que encaminhou o caso sem ferramenta real e confirmação de sucesso. Não adivinhe nem prometa descontos, reembolsos ou prazos sem respaldo. Diante de reclamações, peça desculpas e tranquilize antes de recomendar atendimento humano. Com memória ativa, guarde informações explícitas; notas iniciais vazias não são evidências.",
+      "memoryHint": "Lembra: Informações de suporte.",
+      "channelHint": "Você também pode conectá-lo ao Slack, Telegram ou Discord."
+    }
+  },
+  "digestSourceHint": "Os resumos agendados usam grupos do app dos quais este bot participa.",
+  "appUnknown": "Status de conexão indisponível"
+}

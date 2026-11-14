@@ -5,9 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { html, Icon, IconButton, DialogHost, Notice, Toasts, Splitter, tokenPx } from "./components/ui.js";
 import { Sidebar, SideRail } from "./screens/sidebar.js";
 import { ChatScreen } from "./screens/chat.js";
+import { ScheduledPage, ScheduledSync, NewRuleHost, newRule } from "./screens/scheduled.js";
+import { openScheduled } from "./lib/scheduled.js";
+import { PermissionSync } from "./components/cu-permission.js";
 import { WorkPanel, panelTabs } from "./screens/work-panel.js";
 import { SettingsScreen, SettingsSide, TABS } from "./screens/settings.js";
 import { BotSettingsScreen } from "./screens/bot-settings.js";
+import { TemplateGallery, TemplatePreview } from "./screens/templates.js";
+import { openTemplates, mayLeaveTemplate, templateFlow, blankBotDraft } from "./lib/template-flow.js";
 import { NewBotScreen } from "./screens/new-bot.js";
 import { NeedsYouScreen } from "./screens/needs-you.js";
 import { BotAppScreen } from "./screens/bot-app.js";
@@ -22,9 +27,11 @@ import { Onboarding } from "./screens/onboarding.js";
 import { CoachMark } from "./components/guide.js";
 import { WhatsNewHost, openWhatsNew } from "./components/whats-new.js";
 import { api } from "./lib/api.js";
-import { loadGuide, setFocus, setGuideTrim } from "./lib/guide.js";
+import { clearCatalogRemoved } from "./lib/catalog.js";
+import { loadGuide, leaveGuideSession, refreshGuide, isActive, setFocus, templateDraft } from "./lib/guide.js";
 import { restoreDrafts } from "./lib/chat-view.js";
 import { previewText } from "./lib/errors.js";
+import { PREVIEW_EVENT, addResource, emptyResources, removeResource } from "./lib/resource-preview.js";
 import { setThemeMode } from "./lib/theme.js";
 import { failed, toast, useStore } from "./lib/store.js";
 import { prefs, setPrefs } from "./lib/prefs.js";
@@ -42,9 +49,11 @@ function parseHash() {
   if (kind === "bot" && a && b === "settings") return { view: "bot-settings", botId: a, section: c || "" };
   if (kind === "group" && a) return { view: "group", groupId: a, ...focus };
   if (kind === "conversation" && a && focus.messageId) return { view: "conversation", conversationId: a, ...focus };
-  if (kind === "new") return { view: "new" };
+  if (kind === "new") return { view: "new", query };
+  if (kind === "templates") return { view: a ? "template-preview" : "templates", catalogId: a };
   if (kind === "needs") return { view: "needs" };
   if (kind === "discover") return { view: "discover" };
+  if (kind === "scheduled") return { view: "scheduled" };
   if (kind === "apps") return { view: "apps", tab: a === "connected" ? "connected" : "all" };
   if (kind === "app" && a) return { view: "app", botId: a };
   if (kind === "preview" && a) return { view: "preview", catalogId: a };
@@ -169,7 +178,6 @@ function App() {
   const [catalogData, , reloadCatalog] = useLoader(() => api("/catalog"));
   const catalog = catalogData ? catalogData.bots : [];
   useInterval(reloadCatalog, 600_000);
-  useEffect(() => setGuideTrim(catalog.length > 0), [catalog.length > 0]);
   // Modelflare 账户与余额：后端每 5 分钟读一次；界面每分钟取快照，切回窗口时请后端立刻刷新
   const [account, , , setAccount] = useLoader(() => api("/account"), [connected]);
   const managed = !!(mf && mf.mode === "managed");
@@ -200,7 +208,10 @@ function App() {
   // 没动过的按默认来——窗口够宽就开着，窄窗口里面板是盖住对话的抽屉，先不开。当前标签两类各记一个
   const [infoOpen, setInfoOpen] = useState(false);
   const [appPanels, setAppPanels] = useState({});
+  const [expandedScope, setExpandedScope] = useState("");
   const [panelTab, setPanelTab] = useState({ chat: "overview", app: "app" });
+  const [resourcePanels, setResourcePanels] = useState({});
+  const [extraPanelOpen, setExtraPanelOpen] = useState(false);
   const [appEntry, setAppEntry] = useState(null); // 专业 Bot 的目录条目 { catalogId, entry }（BotAppScreen 读到后给，概览里列出说明）
   const [workHost, setWorkHost] = useState(null); // 面板「工作台」标签的宿主节点，BotAppScreen 把界面渲染进去
   const [palette, setPalette] = useState(false);
@@ -215,17 +226,35 @@ function App() {
   const [settingsQ, setSettingsQ] = useState("");
   const [lastBot, setLastBot] = useState(readLastBot);
 
+  const acceptedHash = useRef(location.hash);
   useEffect(() => {
-    const on = () => { setRoute(parseHash()); setSearchOpen(false); };
+    let sequence = 0;
+    const on = async () => {
+      const destination = location.hash; const current = ++sequence;
+      if (destination === acceptedHash.current) return;
+      if (templateFlow.get().preview) {
+        history.replaceState(null, "", acceptedHash.current || "#/templates");
+        if (!await mayLeaveTemplate(destination) || current !== sequence) return;
+        history.replaceState(null, "", destination);
+      }
+      acceptedHash.current = destination;
+      if (/^#\/new\?fresh=/.test(destination)) { blankBotDraft.set(null); templateDraft.set(null); }
+      const next = parseHash();
+      if (["chat", "app"].includes(next.view) && next.botId) setLastBot(next.botId);
+      setRoute(next); setSearchOpen(false);
+    };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
 
   useInterval(() => api("/account").then(setAccount).catch(() => {}), 60_000, connected && managed);
+  const guideConnected = useRef(false);
   // 上手清单：连上 Modelflare 之后读进度（新用户在对话空状态里看到清单，老用户已做过的步骤会自动打勾）
   useEffect(() => {
+    if (!connected && guideConnected.current) leaveGuideSession();
+    guideConnected.current = connected;
     if (connected) loadGuide();
-  }, [connected]);
+  }, [connected, account?.state]);
   // 升级后第一次进到主界面：弹一次"更新了什么"（全新安装、首次登录引导时不弹）
   useEffect(() => {
     if (!connected) return;
@@ -257,6 +286,7 @@ function App() {
   }, [account]);
 
   const bots = botsData ? botsData.bots : null;
+  const appReturn = useRef(null);
   const wanted = route.botId || lastBot;
   const bot = bots && (bots.find((b) => b.id === wanted) || bots[0]);
   useEffect(() => {
@@ -268,6 +298,11 @@ function App() {
     }
   }, [bot && bot.id]);
 
+  if (route.view !== "apps") {
+    if (["chat", "app"].includes(route.view) && bot) appReturn.current = { ...bot, route: `/${bot.origin === "catalog" ? "app" : "chat"}/${encodeURIComponent(bot.id)}`, target: bot.id };
+    else if (route.view === "group" && route.groupId) appReturn.current = { id: route.groupId, route: `/group/${encodeURIComponent(route.groupId)}`, target: `group:${route.groupId}` };
+    else appReturn.current = null;
+  }
   // 目录 Bot（专业 Bot）的页面是 #/app/<实例>（还没有实例时 #/preview/<目录 id>）：对话在中间，专属界面在右侧面板；被安全原因下架的退回普通对话
   const isAppBot = (b) => !!b && b.origin === "catalog" && !b.app?.removed?.security;
   useEffect(() => {
@@ -276,25 +311,45 @@ function App() {
   const appCatalogId = route.view === "preview" ? route.catalogId : route.view === "app" && bot?.app ? bot.app.catalogId : "";
   const appBot = route.view === "preview" ? (bots || []).find((b) => b.app?.catalogId === route.catalogId) || null : route.view === "app" && appCatalogId ? bot : null;
   // 右侧面板：对话页是这个机器人的面板，专业 Bot 的页面是带工作台的面板；关上时多留一会儿，播完"列宽滑回 0、面板淡出"再卸载
-  const panelKind = route.view === "chat" && bot ? "chat" : appCatalogId ? "app" : "";
+  const panelKind = route.view === "chat" && bot ? "chat" : appCatalogId ? "app" : "resources";
+  const resourceScope = appCatalogId ? `app:${appCatalogId}` : route.view === "chat" && bot ? `chat:${bot.id}` : `${route.view}:${route.groupId || route.conversationId || route.botId || ""}`;
+  const resources = resourcePanels[resourceScope] || emptyResources();
   const appPanel = !!appCatalogId && (appPanels[appCatalogId] ?? !drawerMode());
-  const panelOpen = panelKind === "chat" ? infoOpen : panelKind === "app" ? appPanel : false;
+  const panelOpen = panelKind === "chat" ? infoOpen : panelKind === "app" ? appPanel : extraPanelOpen && resources.items.length > 0;
+  const workExpanded = panelKind === "app" && panelOpen && expandedScope === resourceScope;
+  useEffect(() => { setExpandedScope(""); }, [resourceScope, panelOpen]);
   const setPanelOpen = (open) => {
     if (panelKind === "chat") setInfoOpen(open);
     else if (panelKind === "app") setAppPanels((m) => ({ ...m, [appCatalogId]: typeof open === "function" ? open(appPanel) : open }));
+    else setExtraPanelOpen(open);
   };
   const togglePanel = () => setPanelOpen((v) => !v);
+  useEffect(() => {
+    const onOpen = (event) => {
+      const item = event.detail;
+      if (!item?.id || !["file", "website"].includes(item.type)) return;
+      event.preventDefault();
+      setResourcePanels((all) => ({ ...all, [resourceScope]: addResource(all[resourceScope], item) }));
+      setPanelTab((tabs) => ({ ...tabs, [panelKind]: "resources" }));
+      setPanelOpen(true);
+    };
+    window.addEventListener(PREVIEW_EVENT, onOpen);
+    return () => window.removeEventListener(PREVIEW_EVENT, onOpen);
+  }, [resourceScope, panelKind, appCatalogId]);
   const panel = panelOpen
     ? panelKind === "app"
-      ? { kind: "app", key: `app:${appCatalogId}`, bot: appBot, entry: appEntry?.catalogId === appCatalogId ? appEntry.entry : null }
-      : { kind: "chat", key: `chat:${bot.id}`, bot, entry: null }
+      ? { kind: "app", key: resourceScope, bot: appBot, entry: appEntry?.catalogId === appCatalogId ? appEntry.entry : null, resources }
+      : { kind: panelKind, key: resourceScope, bot: panelKind === "chat" ? bot : null, entry: null, resources }
     : null;
   const panelFx = usePresence(!!panel, "--dur-slow");
   const lastPanel = useRef(null);
   if (panel) lastPanel.current = panel;
   // 侧栏 / 右侧面板的宽度：拖分隔条调整，存在本机偏好里（lib/prefs.js 把它写成 <html> 上的 --side-w-user / --panel-w-user / --work-w-user；
   // 带工作台的面板更宽，宽度单独记）。侧栏收起也存在这里；设置页的侧栏是分页导航，不跟着收起
-  const { sideW, panelW, workW, sideHidden } = useStore(prefs);
+  const { sideW, panelW, workW, sideHidden, notify: notifyEnabled } = useStore(prefs);
+  useEffect(() => {
+    if (settings?.desktop) api("/desktop/preferences", { method: "POST", body: { notify: notifyEnabled } }).catch(() => {});
+  }, [settings?.desktop, notifyEnabled]);
   const toggleSide = () => setPrefs({ sideHidden: !prefs.get().sideHidden });
   const appRef = useRef(null);
   /** 拖宽一侧时最多还能给多宽：窗口 − 另一侧那一列此刻的宽度 − 主区最小宽度 */
@@ -369,7 +424,10 @@ function App() {
   useEffect(() => {
     const prev = prevWorking.current;
     prevWorking.current = working;
-    if (account?.state === "signed_in" && Object.keys(prev).some((id) => prev[id] && !working[id])) usageRefresh();
+    if (Object.keys(prev).some((id) => prev[id] && !working[id])) {
+      if (account?.state === "signed_in") usageRefresh();
+      if (isActive()) refreshGuide();
+    }
   }, [working]);
   const wantWorking = useRef({});
   const onWorking = useCallback((id, on) => {
@@ -386,7 +444,6 @@ function App() {
   };
   const openChat = (id) => {
     setSearchOpen(false); setFromSearch(false);
-    if (id) setLastBot(id);
     const target = id || (bot && bot.id) || "";
     go(`/${isAppBot((bots || []).find((b) => b.id === target)) ? "app" : "chat"}/${encodeURIComponent(target)}`);
   };
@@ -404,13 +461,18 @@ function App() {
   const openCatalog = (e) => (e.instanceId ? openChat(e.instanceId) : go(`/preview/${encodeURIComponent(e.id)}`));
   // 第一次发消息创建了实例：地址换成实例，界面不重新加载（BotAppScreen 按目录 id 复用）
   const onInstalled = async (b) => {
+    if (b.app?.catalogId) clearCatalogRemoved(b.app.catalogId);
     await reloadBots();
     reloadCatalog();
     setLastBot(b.id);
     history.replaceState(null, "", `#/app/${encodeURIComponent(b.id)}`);
     setRoute(parseHash());
   };
-  const newBot = () => go("/new");
+  useEffect(() => {
+    const on = () => setGroupSheet({}); window.addEventListener("amb-new-group", on);
+    return () => window.removeEventListener("amb-new-group", on);
+  }, []);
+  const newBot = () => go(`/new?fresh=${Date.now()}`);
   // 清单里点一项：回到对话页，引导卡片指着要点的地方
   const startGuide = (id) => {
     setFocus(id);
@@ -461,12 +523,17 @@ function App() {
     if (kind === "app") setAppPanels((m) => ({ ...m, [b.app.catalogId]: true }));
     else setInfoOpen(true);
   };
+  useEffect(() => {
+    const show = (event) => { const b = bots?.find((x) => x.id === event.detail.botId); if (b) openTasks(b); };
+    window.addEventListener("amb-open-rule", show);
+    return () => window.removeEventListener("amb-open-rule", show);
+  }, [bots]);
   // 面板里点了网页上的这段对话：它就在中间；窄窗口里面板盖着对话，先关上
   const panelToChat = () => {
     if (drawerMode()) setPanelOpen(false);
     requestAnimationFrame(() => document.querySelector(".main .composer textarea")?.focus());
   };
-  const onBotUpdated = () => reloadBots();
+  const onBotUpdated = () => { refreshGuide(); return reloadBots(); };
   // 建好后等列表里有了它再切过去：先切的话，新机器人还不在列表里，会闪一下第一个机器人
   const onCreated = async (b) => {
     await reloadBots();
@@ -474,13 +541,14 @@ function App() {
     location.hash = `/chat/${encodeURIComponent(b.id)}`;
     setRoute(parseHash()); // 不等 hashchange：占位行和新行不同时出现
   };
-  // 先从列表里拿掉：不留给对话页去请求已经删掉的机器人。正在看它时，换到列表里挨着它的那个，而不是跳回第一个
+  // 先从列表里拿掉：不留给对话页去请求已经删掉的机器人。正在看它时，回到剩余列表中的第一个机器人
   const onDeleted = (id) => {
     const list = bots || [];
     const rest = list.filter((b) => b.id !== id);
-    const next = rest[Math.min(list.findIndex((b) => b.id === id), rest.length - 1)];
+    const next = rest[0];
     setBotsData((d) => d && { ...d, bots: rest });
     reloadBots();
+    refreshGuide();
     reloadCatalog(); // 目录 Bot 移除后，发现页要变回没打开过
     reloadGroups();
     if (!bot || bot.id !== id) return;
@@ -521,27 +589,32 @@ function App() {
         const t = e.target;
         const typing = t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT");
         if (route.view === "bot-settings" && !typing) openChat(route.botId);
+        else if (route.view === "template-preview" && !document.querySelector(".pop")) go("/templates");
         else if (route.view === "new" && !typing && bots && bots.length) openChat();
         else if (route.view === "settings" && !typing) openChat();
         else if ((route.view === "needs" || route.view === "discover" || route.view === "apps") && !typing) openChat();
+        else if (workExpanded && !typing) setExpandedScope("");
         else if (panelOpen && !typing) setPanelOpen(false);
       }
     };
     window.addEventListener("keydown", key);
     window.addEventListener("keydown", closeSearchFirst, true);
     return () => { window.removeEventListener("keydown", key); window.removeEventListener("keydown", closeSearchFirst, true); };
-  }, [connected, route, panelKind, panelOpen, appCatalogId, searchOpen, bot && bot.id]);
+  }, [connected, route, panelKind, panelOpen, workExpanded, appCatalogId, searchOpen, bot && bot.id]);
 
   // keys：搜索用的关键词（不显示），两种语言的词典各有一份
   const setLang = (l) => changeLang(l).then(() => toast(t("common.saved"))).catch(failed);
   const commands = [
+    { label: t("scheduled.command"), keys: "定时 规则 提醒 routine schedule rule", run: openScheduled }, // i18n-ignore: multilingual command search keywords
+    { label: t("scheduled.newRule"), keys: "新规则 new routine schedule rule", run: newRule }, // i18n-ignore: multilingual command search keywords
     { label: t("search.title"), kbd: isMac ? "⌘⇧F" : "Ctrl+Shift+F", keys: t("search.commandKeys"), run: () => openSearch() },
     { label: t("app.cmd.settings"), kbd: isMac ? "⌘," : "Ctrl+,", keys: t("app.cmd.settingsKeys"), run: () => openSettings() },
+    { label: t("templates.title"), keys: "template role 模板 角色", run: () => openTemplates() }, // i18n-ignore: search aliases
     { label: t("app.cmd.newBot"), kbd: isMac ? "⌘N" : "Ctrl+N", keys: t("app.cmd.newBotKeys"), run: newBot },
     ...(needs.n > 0 ? [{ label: t("app.cmd.needs", { count: needs.n }), keys: t("app.cmd.needsKeys"), run: openNeeds }] : []),
     ...(catalog.length > 0 ? [{ label: t("botapp.sidebar.discover"), keys: "discover", run: openDiscover }] : []),
     { label: t("apps.menu"), keys: t("apps.commandKeys"), run: () => openApps() },
-    ...(panelKind ? [{ label: panelOpen ? t("app.cmd.closeInfo") : t("app.cmd.openInfo"), kbd: isMac ? "⌘⇧I" : "Ctrl+Shift+I", keys: t("app.cmd.infoKeys"), run: togglePanel }] : []),
+    ...(panelKind !== "resources" || resources.items.length ? [{ label: panelOpen ? t("app.cmd.closeInfo") : t("app.cmd.openInfo"), kbd: isMac ? "⌘⇧I" : "Ctrl+Shift+I", keys: t("app.cmd.infoKeys"), run: togglePanel }] : []),
     // 任务和规则在当前机器人右侧面板的「任务」标签里
     ...(bot ? [{ label: t("app.cmd.tasks"), keys: t("app.cmd.tasksKeys"), run: () => openTasks(bot) }] : []),
     ...(bot ? [{ label: t("app.cmd.botSettings", { name: bot.name }), keys: t("app.cmd.botSettingsKeys"), run: () => openBotSettings(bot.id) }] : []),
@@ -568,32 +641,35 @@ function App() {
   }
   if (!connected) {
     return html`<${Onboarding} gateway=${status && status.gateway} defaultModel=${settings && settings.defaultModel}
-        skipModelStep=${catalog.length > 0} existingConnection=${!!mf.setupRequired && (mf.official || mf.connected)}
+        connection=${mf} skipModelStep=${catalog.length > 0} existingConnection=${!!mf.setupRequired && (mf.official || mf.connected)}
         onDone=${() => { reloadMf(); reloadSettings(); go("/chat/"); }} />
       <${Toasts} />`;
   }
 
   const view = route.view;
   const groups = groupsData ? groupsData.groups : [];
+  const returnTarget = appReturn.current;
+  const appChatTarget = returnTarget && (returnTarget.target?.startsWith("group:") ? groups.some((g) => g.id === returnTarget.id) : (bots || []).some((b) => b.id === returnTarget.id)) ? returnTarget : null;
   const routedGroup = view === "group" ? groups.find((g) => g.id === route.groupId) : null;
   const shownPanel = panelFx.mounted ? panel || lastPanel.current : null;
   // 带工作台的面板更宽：关上时滑出的那一小会儿也保持原来的宽度
-  const wide = shownPanel?.kind === "app";
+  const wide = shownPanel?.kind === "app" || panelTab[shownPanel?.kind] === "resources";
   const routedBot = view === "bot-settings" && bots ? bots.find((b) => b.id === route.botId) : null;
-  const sideOff = sideHidden && view !== "settings";
+  const sideOff = sideHidden;
   const sideView = view === "chat" && bots && !bots.length ? "new" : view;
-  return html`<div class=${`app${panel ? " with-panel" : ""}${wide ? " panel-wide" : ""}${sideOff ? " side-off" : ""}${fromSearch && route.messageId ? " search-reading" : ""}`} ref=${appRef}>
+  return html`<div class=${`app${panel ? " with-panel" : ""}${wide ? " panel-wide" : ""}${workExpanded ? " panel-expanded" : ""}${sideOff ? " side-off" : ""}${fromSearch && route.messageId ? " search-reading" : ""}`} ref=${appRef}>
     ${view === "settings"
       ? html`<${SettingsSide} tab=${route.tab} query=${settingsQ} onQuery=${setSettingsQ} onTab=${(t) => openSettings(t)} onBack=${() => openChat()}
+          nav=${{ bots, view, onToggleSide: toggleSide, onOpenSearch: openSearch, onNew: newBot, onTemplates: () => openTemplates(), onNewGroup: () => setGroupSheet({}) }}
           username=${status && status.username} account=${managed ? account : null} update=${update} onUpdateChanged=${reloadUpdate} />`
       : html`<${Sidebar} bots=${bots} botsError=${botsErr} reloadBots=${reloadBots} selectedId=${bot && bot.id} view=${sideView} collapsed=${sideOff} onToggleSide=${toggleSide}
           previews=${previews} pending=${pending} working=${working} needs=${needs} username=${status && status.username} account=${managed ? account : null} update=${update} onUpdateChanged=${reloadUpdate}
-          onNew=${newBot} onSelect=${openChat} onNeeds=${openNeeds} onDeleted=${onDeleted} onOpenSettings=${(tab) => openSettings(tab)} onBotSettings=${openBotSettings} onGuide=${startGuide}
+          onNew=${newBot} onTemplates=${() => openTemplates()} onSelect=${openChat} onNeeds=${openNeeds} onDeleted=${onDeleted} onOpenSettings=${(tab) => openSettings(tab)} onBotSettings=${openBotSettings} onGuide=${startGuide}
           groups=${groups} groupsLoaded=${!!groupsData} groupId=${route.groupId} onNewGroup=${() => setGroupSheet({})} onSelectGroup=${openGroup} onEditGroup=${(group) => setGroupSheet({ group })} onDeletedGroup=${onDeletedGroup}
           catalog=${catalog} catalogId=${route.catalogId} onDiscover=${openDiscover} onOpenCatalog=${openCatalog}
           onOpenSearch=${openSearch} />`}
     ${sideOff
-      ? html`<${SideRail} bots=${bots} view=${sideView} onToggleSide=${toggleSide} onOpenSearch=${openSearch} onNew=${newBot} onNewGroup=${() => setGroupSheet({})} />`
+      ? html`<${SideRail} bots=${bots} view=${sideView} onToggleSide=${toggleSide} onOpenSearch=${openSearch} onNew=${newBot} onTemplates=${() => openTemplates()} onNewGroup=${() => setGroupSheet({})} />`
       : html`<${Splitter} class="split-side" size="--side-w" label=${t("app.resizeSide")} value=${sideW} room=${room("--panel-track")} onCommit=${(v) => setPrefs({ sideW: v })} />`}
     <main class="main">
       ${mf.keyChangeNotice && html`<div class="key-change-note"><${Notice} action=${html`<${IconButton} icon="close" label=${t("common.close")} onClick=${async () => { await api("/account/key-notice", { method: "DELETE" }); reloadMf(); }} />`}>${t("firstUse.keyChanged")}<//></div>`}
@@ -603,9 +679,13 @@ function App() {
         defaultModel=${settings && settings.defaultModel} infoOpen=${panelOpen} onToggleInfo=${togglePanel}
         onWorking=${onWorking} pending=${pending[bot.id] || 0} serverBusy=${!!agentWorking[bot.id]} onOpenSettings=${openSettings} onOpenBotSettings=${openBotSettings} onBotUpdated=${onBotUpdated}
         account=${managed ? account : null} onAccount=${setAccount} cuBlocked=${cuBlocked.includes(bot.id)} />`}
-      ${view === "discover" && html`<${DiscoverScreen} catalog=${catalog} onOpen=${openCatalog} />`}
+      ${view === "discover" && html`<${DiscoverScreen} catalog=${catalog} onOpen=${openCatalog} onTemplates=${() => openTemplates("discover")} />`}
+      ${view === "templates" && html`<${TemplateGallery} bots=${bots || []} />`}
+      ${view === "template-preview" && html`<${TemplatePreview} key=${route.catalogId} id=${route.catalogId} bots=${bots || []} models=${models} modelsError=${modelsError} reloadModels=${reloadModels} defaultModel=${settings?.defaultModel || ""} account=${account} onCreated=${onCreated} />`}
+      ${view === "scheduled" && html`<${ScheduledPage} bots=${bots || []} />`}
       ${view === "apps" && html`<${AppsScreen} initialTab=${route.tab} />`}
       ${appCatalogId && html`<${BotAppScreen} key=${appCatalogId} catalogId=${appCatalogId} bot=${appBot}
+        expanded=${workExpanded} onExpand=${(open) => setExpandedScope(open ? resourceScope : "")}
         frameHost=${workHost} panelOpen=${panelOpen} onTogglePanel=${togglePanel} onEntry=${(entry) => setAppEntry({ catalogId: appCatalogId, entry })}
         onInstalled=${onInstalled} onBotUpdated=${onBotUpdated} onOpenBotSettings=${openBotSettings} onOpenSettings=${openSettings}
         chatProps=${{ models, modelsError, reloadModels, defaultModel: settings && settings.defaultModel, onWorking, pending: (bot && pending[bot.id]) || 0, serverBusy: !!(bot && agentWorking[bot.id]), onOpenSettings: openSettings, onOpenBotSettings: openBotSettings, onBotUpdated, account: managed ? account : null, onAccount: setAccount, cuBlocked: !!(bot && cuBlocked.includes(bot.id)) }} />`}
@@ -613,7 +693,7 @@ function App() {
         initialFocus=${{ id: route.messageId, query: route.query, nonce: messageJump }} onBackToSearch=${fromSearch ? () => openSearch() : undefined} />`}
       ${view === "conversation" && html`<${ConversationHistoryScreen} key=${route.conversationId} conversationId=${route.conversationId} initialFocus=${{ id: route.messageId, query: route.query, nonce: messageJump }} onBack=${() => openSearch()} onBot=${openChat} bots=${bots || []} />`}
       ${view === "group" && groupsData && !routedGroup && html`<div class="empty-state"><b>${t("app.groupMissing")}</b><button type="button" class="text" onClick=${() => openChat()}>${t("app.backToChat")}</button></div>`}
-      ${(view === "new" || (view === "chat" && bots && !bots.length)) && html`<${NewBotScreen} first=${!!bots && !bots.length}
+      ${(view === "new" || (view === "chat" && bots && !bots.length)) && html`<${NewBotScreen} key=${route.query || ""} first=${!!bots && !bots.length}
         models=${models} modelsError=${modelsError} reloadModels=${reloadModels} defaultModel=${settings && settings.defaultModel}
         account=${managed ? account : null} onAccount=${setAccount}
         onCreated=${onCreated} onCancel=${bots && bots.length ? () => openChat() : null} />`}
@@ -633,15 +713,20 @@ function App() {
     ${panel && html`<${Splitter} key=${wide ? "work" : "info"} class="split-panel" size=${wide ? "--work-w" : "--panel-w"} edge="end" label=${t("app.resizePanel")} value=${wide ? workW : panelW} room=${room("--side-col")}
       onCommit=${(v) => setPrefs(wide ? { workW: v } : { panelW: v })} />`}
     ${shownPanel && html`<div class=${`panel-scrim${panelFx.leaving ? " leaving" : ""}`} onClick=${() => setPanelOpen(false)}></div>`}
-    ${shownPanel && html`<${WorkPanel} key=${shownPanel.key} bot=${shownPanel.bot} entry=${shownPanel.entry} tabs=${panelTabs({ app: shownPanel.kind === "app", bot: shownPanel.bot })}
+    ${shownPanel && html`<${WorkPanel} key=${shownPanel.key} bot=${shownPanel.bot} entry=${shownPanel.entry} tabs=${panelTabs({ app: shownPanel.kind === "app", bot: shownPanel.bot, resourcesOnly: shownPanel.kind === "resources" })}
+      expanded=${workExpanded} onExpand=${(open) => setExpandedScope(open ? resourceScope : "")}
       tab=${panelTab[shownPanel.kind]} onTab=${(id) => setPanelTab((p) => ({ ...p, [shownPanel.kind]: id }))} leaving=${panelFx.leaving} onClose=${() => setPanelOpen(false)} onHost=${setWorkHost}
+      resources=${shownPanel.resources}
+      onSelectResource=${(active) => setResourcePanels((all) => ({ ...all, [shownPanel.key]: { ...all[shownPanel.key], active } }))}
+      onRemoveResource=${(id) => setResourcePanels((all) => ({ ...all, [shownPanel.key]: removeResource(all[shownPanel.key], id) }))}
       onOpenBotSettings=${() => shownPanel.bot && openBotSettings(shownPanel.bot.id)} onOpenChat=${panelToChat} onOpenConnections=${(row) => openSettings("connections", row || "")} />`}
-    <${CoachMark} bot=${!searchOpen && view === "chat" ? bot : null} view=${searchOpen ? "search" : view} infoOpen=${panelKind === "chat" && !!panel} busy=${!!bot && working[bot.id]} onConnections=${(channel) => openSettings("connections", `add-channel-${channel}`)} />
+    <${CoachMark} bot=${!searchOpen && ["chat", "app"].includes(view) ? bot : null} view=${searchOpen ? "search" : view} infoOpen=${panelKind === "chat" && !!panel} busy=${Object.values(working).some(Boolean)} blocked=${needs.n > 0 || !!cuBlocked.length} onConnections=${(channel) => openSettings("connections", `add-channel-${channel}`)} />
+    <${ScheduledSync} /><${PermissionSync} /><${NewRuleHost} bots=${bots || []} />
     ${palette && html`<${Palette} commands=${commands} onClose=${() => setPalette(false)} />`}
     ${groupSheet && bots && html`<${GroupSheet} group=${groupSheet.group} bots=${bots} onClose=${() => setGroupSheet(null)}
       onSaved=${async (g) => { setGroupSheet(null); await reloadGroups(); openGroup(g.id); }} />`}
     <${WhatsNewHost} update=${update} onUpdateChanged=${reloadUpdate} />
-    <${AppDialogHost} bots=${bots || []} chatBot=${!searchOpen && view === "chat" ? bot : null} onOpenSettings=${(tab) => openSettings(tab)} />
+    <${AppDialogHost} bots=${bots || []} chatBot=${!searchOpen ? appChatTarget : null} onOpenSettings=${(tab) => openSettings(tab)} />
     <${DialogHost} />
     <${Toasts} />
   </div>`;

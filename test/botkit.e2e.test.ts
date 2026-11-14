@@ -158,6 +158,25 @@ describe("服务端", () => {
     expect(open.status).toBe(400);
     expect(open.body.code).toBe("desktop_only");
   });
+  it("文档和网站预览：只读 app/，HTML 使用隔离资源地址", async () => {
+    const dir = path.join(tmp, "data", "workspaces", inst);
+    fs.writeFileSync(path.join(dir, "app", "report.md"), "# Workbench report");
+    fs.writeFileSync(path.join(dir, "app", "index.html"), '<link rel="stylesheet" href="style.css"><h1>Site</h1>');
+    fs.writeFileSync(path.join(dir, "app", "style.css"), "h1 { color: blue; }");
+    fs.writeFileSync(path.join(dir, "outside.md"), "outside app/");
+    expect((await api(`/bots/${inst}/app/preview?path=app%2Freport.md`)).body).toMatchObject({ kind: "markdown", text: "# Workbench report" });
+    for (const p of ["outside.md", "app/../outside.md", "../../anymodel.db"]) expect((await api(`/bots/${inst}/app/preview?path=${encodeURIComponent(p)}`)).status).toBe(404);
+    const website = await api(`/bots/${inst}/app/preview?path=app%2Findex.html`);
+    expect(website.body.kind).toBe("html");
+    const page = new URL(website.body.url, base);
+    expect(await (await fetch(page)).text()).toContain("<h1>Site</h1>");
+    expect(await (await fetch(new URL("style.css", page))).text()).toContain("color: blue");
+    const svg = await api(`/bots/${inst}/app/preview?path=app%2Fout%2Fp.svg`);
+    expect(svg.body.kind).toBe("html");
+    const download = await fetch(`${base}/amb/api/bots/${inst}/app/download?path=app%2Freport.md&download=1`);
+    expect(download.headers.get("content-disposition")).toContain("attachment");
+    await download.arrayBuffer();
+  });
   it("改过人设就不再跟随目录升级", async () => {
     await api(`/bots/${inst}`, { method: "PUT", body: JSON.stringify({ systemPrompt: "我自己写的" }) });
     expect((await api(`/bots/${inst}/app`)).body.ref.customized).toBe(true);

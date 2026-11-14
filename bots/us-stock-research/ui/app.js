@@ -1,7 +1,7 @@
-// 桌面工作区：左边是研究记录，右边是选中的那一次——工具栏（问题、状态、进度）+ 两页：报告（图表 + 正文）、研究过程（计划、取数、局限）。
+// 研究工作区：面板中用记录选择器，展开后显示记录列表；报告先读结论、数字和趋势，再展开原始数据。
 // 时间线和完整报告从这次研究的文件读（脚本写的 tools.jsonl、Bot 写的 report.md）；示例数据没有这些文件，退回 state 里的 calls 和 preview。
 // 选哪一条、看哪一页是界面本地状态，不用走模型。正在研究、还没有报告时默认看研究过程，有报告后看报告。
-import { html, mount, useBot, useEffect, useState, Button, Empty, Meter } from "/amb/botapp/kit/kit.js";
+import { Workspace, html, mount, useBot, useEffect, useState, Button, Empty, Meter } from "/amb/botapp/kit/kit.js";
 import { parseBlocks, parseInline, parseTrace } from "./md.js";
 import { Charts, Kpis, chartsFrom } from "./chart.js";
 
@@ -57,7 +57,7 @@ const Inline = ({ text }) =>
     return part.text;
   });
 
-function Block({ block }) {
+function Block({ block, t }) {
   switch (block.type) {
     case "heading": {
       const Tag = `h${Math.min(block.level + 2, 6)}`;
@@ -74,16 +74,16 @@ function Block({ block }) {
     case "ol":
       return html`<ol class="md-list">${block.items.map((item) => html`<li><${Inline} text=${item} /></li>`)}</ol>`;
     case "table":
-      return html`<div class="md-scroll"><table class="md-table">
+      return html`<details class="us-data"><summary>${t("chart.data", { count: block.rows.length })}</summary><div class="md-scroll"><table class="md-table">
         <thead><tr>${block.head.map((cell, i) => html`<th class=${block.align[i] || ""}><${Inline} text=${cell} /></th>`)}</tr></thead>
         <tbody>${block.rows.map((row) => html`<tr>${row.map((cell, i) => html`<td class=${block.align[i] || ""}><${Inline} text=${cell} /></td>`)}</tr>`)}</tbody>
-      </table></div>`;
+      </table></div></details>`;
     default:
       return html`<p class="md-p"><${Inline} text=${block.text} /></p>`;
   }
 }
 
-const Markdown = ({ blocks }) => html`<div class="md">${blocks.map((block) => html`<${Block} block=${block} />`)}</div>`;
+const Markdown = ({ blocks, t }) => html`<div class="md">${blocks.map((block) => html`<${Block} block=${block} t=${t} />`)}</div>`;
 
 const METRICS = ["revenue", "grossMargin", "operatingMargin", "netIncome", "fcf", "risks"];
 const PERIODS = ["3", "5", "latest"];
@@ -191,9 +191,16 @@ function Report({ bot, run, report }) {
   if (!text) return html`<${Empty}>${bot.t("noReport")}<//>`;
   const blocks = parseBlocks(text);
   const charts = chartsFrom(blocks, bot.lang);
+  const tableAt = blocks.findIndex((b) => b.type === "table");
+  let split = tableAt;
+  while (split > 0 && blocks[split - 1].type !== "heading") split--;
+  if (split > 0) split--;
+  const lead = charts && split > 0 ? blocks.slice(0, split) : [];
+  const rest = lead.length ? blocks.slice(split) : blocks;
   return html`<article class="us-report">
-    ${charts && html`<${Kpis} data=${charts} t=${bot.t} lang=${bot.lang} /><${Charts} data=${charts} />`}
-    <${Markdown} blocks=${blocks} />
+    ${lead.length > 0 && html`<div class="us-summary"><${Markdown} blocks=${lead} t=${bot.t} /></div>`}
+    ${charts && html`<${Kpis} data=${charts} t=${bot.t} lang=${bot.lang} /><${Charts} data=${charts} lang=${bot.lang} t=${bot.t} />`}
+    <${Markdown} blocks=${rest} t=${bot.t} />
     ${report && html`<p class="kit-foot md-url">${bot.t("reportFile", { path: `app/reports/${run.id}/report.md` })}</p>`}
   </article>`;
 }
@@ -247,12 +254,12 @@ function App() {
   const files = useRunFiles(bot, run);
   if (!bot.ready) return null;
   const showNew = creating || !run;
-  return html`<div class="kit-ws">
+  return html`<${Workspace} label=${bot.t("runs")} current=${showNew ? bot.t("wiz.title") : run.question}>
     <${RunList} bot=${bot} runs=${runs} current=${run} creating=${showNew} onPick=${(id) => { setPicked(id); setCreating(false); }} onNew=${() => setCreating(true)} />
     ${showNew
       ? html`<${NewView} bot=${bot} onDone=${run ? () => setCreating(false) : null} />`
       : html`<${RunView} key=${run.id} bot=${bot} run=${run} files=${files} />`}
-  </div>`;
+  <//>`;
 }
 
 mount(App);

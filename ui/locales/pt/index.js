@@ -1,3 +1,6 @@
+import templates from "./templates.json" with { type: "json" };
+import scheduled from "./scheduled.js";
+import welcome from "./welcome.js";
 import firstUse from "./firstUse.js";
 import updates from "./updates.js";
 import search from "./search.js";
@@ -30,7 +33,7 @@ import tasks from "./tasks.js";
 import time from "./time.js";
 import troubleshoot from "./troubleshoot.js";
 import ui from "./ui.js";
-export default { apps, firstUse, updates, search,
+export default { templates, scheduled, welcome, apps, firstUse, updates, search,
   official,
   access,
   account,

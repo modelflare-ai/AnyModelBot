@@ -1,5 +1,8 @@
 import type { TranslatedCatalog } from "../../index.js";
 export default {
+  waiting: "Aguardando permissão",
+  channelWait: "Para operar este computador, é necessária a permissão {items}. Ative-a conforme as instruções no aplicativo e continuarei.",
+
   codexUnavailable: "Ponte do Codex Computer Use: requer macOS 14.4+ com o Codex Computer Use instalado",
   codexOff: "{base} ({why})",
   codexNotMac: "este sistema não é macOS",

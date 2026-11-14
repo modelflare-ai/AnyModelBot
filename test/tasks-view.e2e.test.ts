@@ -134,7 +134,7 @@ describe("任务视图的接口", () => {
     expect(rule).toMatchObject({ runBudgetUsd: 0.2, monthBudgetUsd: 5, mode: "act", state: { key: "act" } });
     const watch = (await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", mode: "observe", title: "看 Y 价格", instruction: "每天早上看看 Y 的价格", schedule: { kind: "daily", time: "08:00" } } })).data.rule;
     expect(watch).toMatchObject({ mode: "observe", state: { key: "observe", label: "观察中" } });
-    expect((await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", mode: "off", title: "x", instruction: "x", schedule: { kind: "daily", time: "08:00" } } })).status).toBe(400);
+    expect((await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", mode: "off", title: "x", instruction: "x", schedule: { kind: "daily", time: "08:00" } } })).status).toBe(200);
     await api(`/rules/${watch.id}`, { method: "DELETE" });
     expect((await api(`/rules/${rule.id}`, { method: "PUT", body: { runBudgetUsd: 0.15, monthBudgetUsd: 4 } })).data.rule).toMatchObject({ runBudgetUsd: 0.15, monthBudgetUsd: 4 });
     expect((await api("/rules", { method: "POST", body: { botId: "default", conversationId: CONV, kind: "check", title: "x", instruction: "x", schedule: { kind: "daily", time: "08:00" }, monthBudgetUsd: 0 } })).status).toBe(400);

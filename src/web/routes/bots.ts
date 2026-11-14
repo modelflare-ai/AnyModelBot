@@ -1,5 +1,7 @@
 /** 机器人：列表、新建、设置、技能、网页对话（含流式与接上进行中的消息），以及目录 Bot 接口的转发（web/botapp.ts）。 */
+import { TemplateCreator } from "../../templates/create.js";
 import { botAppApi } from "../botapp.js";
+import { FilePreviews } from "../file-previews.js";
 import { skillsApi } from "../skills.js";
 import { SseReply } from "../sse-reply.js";
 import { normalizeSettings } from "../../agent/settings.js";
@@ -21,8 +23,9 @@ function keepGranted(cur: Record<string, Record<string, string>>, next: unknown)
   return out;
 }
 
-export function botsRoutes(ctx: WebContext): Route {
+export function botsRoutes(ctx: WebContext, previews = new FilePreviews()): Route {
   const { app, host, live, startLive, runLive, interceptWeb } = ctx;
+  const templates = new TemplateCreator(app);
   return async (req, res, url, seg, p, m) => {
     if (seg[0] === "catalog" || (seg[0] === "bots" && seg[2] === "app")) {
       const handled = await botAppApi(req, res, url, seg, {
@@ -36,8 +39,14 @@ export function botsRoutes(ctx: WebContext): Route {
         appLang: () => String(req.headers["x-amb-lang"] || "en"),
         loopback: isLoopback(host),
         desktop: app.desktop,
+        previews,
+        dataDir: app.config.dataDir,
       });
       if (handled) return;
+    }
+    if (p === "/bots/from-template" && m === "POST") {
+      const result = await templates.create(await readJson(req));
+      return send(res, 201, { bot: publicBot(result.bot), sample: result.sample });
     }
     if (seg[0] === "bots") {
       if (seg.length === 1) {

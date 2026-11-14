@@ -2,6 +2,9 @@
 import type { Catalog } from "../types.js";
 
 export const zh = {
+  waiting: "等待开启权限",
+  channelWait: "电脑操作需要先在这台电脑上开启「{items}」权限。请在桌面端按提示开启，开启后我会接着做。",
+
   // Codex Computer Use 桥（tools/computer-use/index.ts）
   codexUnavailable: "Codex Computer Use 桥: 需要 macOS 14.4+ 和已安装的 Codex Computer Use",
   codexOff: "{base}（{why}）",
@@ -27,6 +30,9 @@ export const zh = {
 } satisfies Catalog;
 
 export const en: Catalog<typeof zh> = {
+  waiting: "Waiting for permission",
+  channelWait: "Computer Use needs the {items} permission on this computer first. Turn it on in the desktop app and I will continue.",
+
   codexUnavailable: "Codex Computer Use bridge: requires macOS 14.4+ with Codex Computer Use installed",
   codexOff: "{base} ({why})",
   codexNotMac: "this system isn't macOS",

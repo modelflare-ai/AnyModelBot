@@ -57,5 +57,8 @@
   "q.and": " and ",
   "kpi.title": "Key figures",
   "kpi.pp": "{v} pp",
-  "kpi.vs": "vs {cat}"
+  "kpi.vs": "vs {cat}",
+  "chart.data": "Source data ({count} rows)",
+  "chart.units": "See source data for value units",
+  "chart.interact": "Trend chart. Use left and right arrow keys to select a period."
 }

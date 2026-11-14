@@ -222,7 +222,7 @@ export function ConversationHistoryScreen({ conversationId, initialFocus, onBack
       <${HistoryPageButton} history=${history} direction="before" />
       ${(history.context?.messages || []).map((m) => html`<article class=${`msg-row ${m.role}`} data-message-id=${m.id} key=${m.id}>
         <div class="msg-author">${m.role === "user" ? t("search.you") : (bots.find((b) => b.id === m.botId)?.name || t("search.assistant"))}</div>
-        <div class="msg">${m.role === "user" ? html`<${Linkified} text=${m.content} />` : html`<${Markdown} text=${[...(m.interim || []), m.content].join("\n\n")} />`}</div>
+        <div class="msg">${m.role === "user" ? html`<${Linkified} text=${m.content} />` : html`<${Markdown} text=${[...(m.interim || []), m.content].join("\n\n")} conv=${m.conversationId} canOpen=${history.context.canOpen} />`}</div>
         <${DeliveredFiles} files=${m.files || []} conv=${m.conversationId} canOpen=${history.context.canOpen} />
         <time class="t-meta">${fmtTime(m.createdAt)}</time>
       </article>`)}

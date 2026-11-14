@@ -1,6 +1,6 @@
 // 专属界面的桥接（父页面这一侧）：界面跑在沙箱 iframe 里，只能发消息给这里，这里只放行白名单方法。
 // 审批相关的接口永远不开放给界面。界面这一侧在 ui/botkit/kit.js。
-const METHODS = new Set(["init", "readFile", "readImage", "readMedia", "releaseMedia", "openFile", "openUrl", "send", "stop", "subscribe", "pickFile", "openChannels", "reportError", "rendered"]);
+const METHODS = new Set(["init", "readFile", "readImage", "readMedia", "releaseMedia", "openFile", "openUrl", "setExpanded", "send", "stop", "subscribe", "pickFile", "openChannels", "reportError", "rendered"]);
 
 /** 外部链接地址的长度上限：再长的多半是想把数据放进地址带出去 */
 const URL_MAX = 2048;

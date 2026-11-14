@@ -134,7 +134,7 @@ export function apply(ctx) {
       parameters: {
         title: { type: 'string', required: true, description: 'Short, e.g. 看 X 价格.' },
         instruction: { type: 'string', required: true, description: 'The user\'s words, verbatim.' },
-        schedule: { type: 'string', required: true, description: 'Local time: once YYYY-MM-DD HH:MM | daily HH:MM | weekdays HH:MM | weekly mon,thu HH:MM | every 30m | cron M H DOM MON DOW' },
+        schedule: { type: 'string', required: true, description: 'Local time: once YYYY-MM-DD HH:MM | daily HH:MM | weekdays HH:MM | weekly mon,thu HH:MM | monthly 1–31 HH:MM | monthly last HH:MM | every 30m | cron M H DOM MON DOW' },
         kind: { type: 'string', enum: ['check', 'remind'] },
         mode: { type: 'string', enum: ['act', 'observe'], description: 'observe only when the user wants to watch first (先观察): it only records what it would say.' },
         message: { type: 'string', description: 'remind: the line to send.' },
@@ -144,7 +144,7 @@ export function apply(ctx) {
     }))
     ctx.tools.register(defineTool({
       name: 'rule_update',
-      description: 'Change a rule of this chat when the user asks: mode act (results are sent), observe (only records) or off; new instruction or schedule; or delete.',
+      description: 'Change a rule accessible to the current user when the user asks (the owner can manage all rules of this bot; ask which rule if names are ambiguous): mode act (results are sent), observe (only records) or off; new instruction or schedule; or delete.',
       parameters: {
         rule: { type: 'string', required: true, description: 'Rule id or part of its title.' },
         mode: { type: 'string', enum: ['observe', 'act', 'off'] },

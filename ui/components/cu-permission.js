@@ -1,58 +1,58 @@
-// 电脑操作的系统权限卡片（macOS 桌面版，第 18 项）：机器人要用电脑操作、系统还没给本应用对应权限时，
-// 宿主拦下工具调用并结束这一轮，这里按实际缺的那几项说明用途、给出系统原生请求和对应的系统设置入口。
-// 只在真的被拦下时出现；用户可以"稍后"收起，不影响普通聊天；授权后可以重新发送任务。
+// macOS 权限只占请求所在的一处；检测与继续由宿主统一处理。
 import { useEffect, useState } from "preact/hooks";
-import { html, Notice } from "./ui.js";
+import { html, Icon, Button } from "./ui.js";
 import { api } from "../lib/api.js";
-import { failed } from "../lib/store.js";
+import { createStore, failed, useStore } from "../lib/store.js";
 import { allDrafts } from "../lib/chat-view.js";
 import { t } from "../lib/i18n.js";
 
-export function CuPermissionCard({ botId, onRetry }) {
-  const [v, setV] = useState(null);
-  const [busy, setBusy] = useState("");
-  const load = () => api("/computer-use/permissions").then(setV).catch(() => {});
+export const permissionState = createStore(null);
+const load = () => api("/computer-use/permissions").then((v) => permissionState.set(v)).catch(() => {});
+export function PermissionSync() {
   useEffect(() => {
     load();
-    // 用户在系统设置里打开开关后自己回来：隔几秒看一次，不用手动刷新
     const timer = setInterval(load, 3000);
-    return () => clearInterval(timer);
+    const focus = () => { permissionState.set((v) => v && { ...v, checking: true }); api("/computer-use/permissions/check", { method: "POST", body: {} }).then((v) => permissionState.set(v)).catch(load); };
+    window.addEventListener("focus", focus);
+    return () => { clearInterval(timer); window.removeEventListener("focus", focus); };
   }, []);
-  if (!v || !v.supported) return null;
+  return null;
+}
+export function CuPermissionCard({ botId, messageId }) {
+  const v = useStore(permissionState);
+  const [busy, setBusy] = useState(false);
+  const [manual, setManual] = useState(false);
+  if (!v?.supported) return null;
   const blocked = v.blocked[botId];
-  if (!blocked) return null;
+  if (!blocked || blocked.messageId !== messageId) return null;
   const missing = blocked.missing.filter((k) => v.status[k] !== "granted");
-  const act = async (path, kind) => {
-    setBusy(`${path}-${kind}`);
-    try {
-      setV(await api(`/computer-use/permissions/${path}`, { method: "POST", body: { kind } }));
-    } catch (e) {
-      failed(e);
-    } finally {
-      setBusy("");
-    }
+  const key = (s) => `scheduled.permission.${s}`;
+  const call = async (path, body) => {
+    setBusy(true);
+    try { permissionState.set(await api(`/computer-use/permissions/${path}`, { method: "POST", body })); } catch (e) { failed(e); }
+    setBusy(false);
   };
-  const dismiss = () => api(`/computer-use/permissions/blocked/${encodeURIComponent(botId)}`, { method: "DELETE" }).then(setV).catch(() => {});
-  // 系统要求重新打开才生效：聊天和任务都在本机存着，输入框里没发出的草稿交给后端暂存一次，重新打开后放回去
-  const relaunch = () => api("/computer-use/permissions/relaunch", { method: "POST", body: { drafts: allDrafts() } }).catch(failed);
-  return html`<div class="cu-perm">
-    <${Notice} tone="amber">
-      <span class="err-main">${missing.length ? t("firstUse.cu.title") : t("firstUse.cu.granted")}</span>
-      ${missing.map((k) => html`<span class="cu-perm-row" key=${k}>
-        <span class="cu-perm-what"><b>${t(`firstUse.cu.${k}`)}</b><span class="hint">${t(`firstUse.cu.${k}Why`)}</span></span>
-        <span class="cluster">
-          <button type="button" class="btn sm" disabled=${!!busy} onClick=${() => act("request", k)}>${t("firstUse.cu.request")}</button>
-          <button type="button" class="btn sm" disabled=${!!busy} onClick=${() => act("open", k)}>${t("firstUse.cu.openSettings")}</button>
-        </span>
-      </span>`)}
-      ${missing.length > 0 && html`<span class="hint">${t("firstUse.cu.steps", { items: missing.map((k) => t(`firstUse.cu.${k}`)).join(t("firstUse.cu.sep")) })}</span>`}
-      ${v.restartSuggested && html`<span class="hint">${t("firstUse.cu.restart")}</span>`}
-      <span class="cluster cu-perm-actions">
-        ${!missing.length && html`<button type="button" class="btn primary sm" onClick=${() => { dismiss(); onRetry?.(); }}>${t("firstUse.cu.retry")}</button>`}
-        ${missing.length > 0 && html`<button type="button" class="btn sm" onClick=${load}>${t("firstUse.cu.recheck")}</button>`}
-        ${v.restartSuggested && html`<button type="button" class="btn sm" onClick=${relaunch}>${t("firstUse.cu.relaunch")}</button>`}
-        <button type="button" class="text" onClick=${dismiss}>${t("firstUse.cu.later")}</button>
-      </span>
-    <//>
+  const enable = () => missing.length && call("request", { kind: missing[0], botId });
+  const later = () => api(`/computer-use/permissions/blocked/${encodeURIComponent(botId)}`, { method: "DELETE" }).then((v) => permissionState.set(v)).catch(failed);
+  const reopen = async () => {
+    setBusy(true);
+    try { await api("/computer-use/permissions/relaunch", { method: "POST", body: { drafts: allDrafts() } }); } catch (e) { failed(e); setBusy(false); }
+  };
+  const done = !missing.length;
+  const continuing = blocked.state === "continuing" || blocked.state === "done";
+  const heading = done ? t(key(blocked.background ? "nextRun" : continuing ? "continuing" : "ready")) : t(key("title"), { count: missing.length });
+  if (blocked.collapsed && !done) return html`<div class="cu-permission-collapsed"><span>${t(key("collapsed"))}</span><button type="button" class="text" disabled=${busy} onClick=${enable}>${t(key("turnOn"))}</button></div>`;
+  return html`<div class=${`cu-permission-card${done ? " granted" : ""}`} role="status">
+    <div class="actions"><${Icon} name=${done ? "check" : "info"} size="md" /><b>${heading}</b></div>
+    ${!done && html`<p class="hint">${t(key("explanation"))}</p>`}
+    ${blocked.missing.map((k) => html`<div class="cu-perm-row" key=${k}><div class="cu-perm-what"><b>${t(`firstUse.cu.${k}`)}</b><span class="hint">${t(`firstUse.cu.${k}Why`)}</span></div><span class="hint">${t(key(v.checking ? "checking" : v.status[k] === "granted" ? "on" : "off"))}</span></div>`)}
+    <div class="actions">
+      ${!done && html`<${Button} variant="primary" loading=${busy} onClick=${enable}>${t(key("turnOn"))}<//><button type="button" class="text" onClick=${later}>${t(key("later"))}</button>`}
+      ${done && !continuing && !blocked.background && html`<${Button} variant="primary" loading=${busy} onClick=${() => call("continue", { botId })}>${t(key("continue"))}<//>`}
+    </div>
+    ${!done && html`<details open=${manual} onToggle=${(e) => setManual(e.currentTarget.open)}><summary>${t(key("manual"))}</summary>
+      <p class="hint">${t(key("path"), { item: t(`firstUse.cu.${missing[0]}`) })}</p><button type="button" class="text" onClick=${() => call("open", { kind: missing[0] })}>${t("firstUse.cu.openSettings")}</button>
+      ${v.restartSuggested && html`<p class="hint">${t(key("restart"))}</p><${Button} disabled=${busy} onClick=${reopen}>${t(key("reopen"))}<//>`}
+    </details>`}
   </div>`;
 }

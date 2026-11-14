@@ -1,15 +1,20 @@
 // 对话里交付的文件（代理的 present、后台任务的结果）：图片直接显示成缩略图，其它是一张文件卡片。
-// 桌面版点开用系统的默认程序打开（打开就会运行的文件，服务端改成在文件夹中显示），卡片上另有「在文件夹中显示」；
-// 网页里点开在新标签页打开（浏览器不该直接显示的类型，服务端让它下载）。文件由 /conversations/:id/file 提供，见 src/web/files.ts。
+// 点开在右侧「预览」查看；面板里提供下载和外部打开，桌面版另有「在文件夹中显示」。
+// 没有面板宿主时沿用浏览器/系统打开。文件权限见 src/web/files.ts，预览读取见 src/web/file-previews.ts。
 import { useState } from "preact/hooks";
 import { html, Icon, IconButton } from "./ui.js";
 import { api } from "../lib/api.js";
 import { failed } from "../lib/store.js";
 import { fmtSize } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
+import { fileUrl, fileResource, openResource, plainClick } from "../lib/resource-preview.js";
 
 const enc = encodeURIComponent;
-export const fileUrl = (conv, path) => `/amb/api/conversations/${enc(conv)}/file?path=${enc(path)}`;
+export { fileUrl } from "../lib/resource-preview.js";
+
+function preview(event, file, conv, canOpen) {
+  if (plainClick(event) && openResource(fileResource(file, conv, canOpen))) event.preventDefault();
+}
 
 /** 桌面版：open 用系统程序打开，reveal 在文件夹中显示 */
 function desktop(conv, path, action) {
@@ -22,9 +27,9 @@ export function FileCard({ file, conv, canOpen }) {
   const body = html`<${Icon} name="file" size="xl" class="fic" />
     <span class="grow"><span class="fname">${file.name}</span>${sub && html`<span class="fsub num">${sub}</span>`}</span>`;
   if (file.gone || !conv) return html`<div class="file-card off">${body}</div>`;
-  if (!canOpen) return html`<a class="file-card" href=${fileUrl(conv, file.path)} target="_blank" rel="noopener" title=${t("chat.file.open", { name: file.name })}>${body}</a>`;
+  if (!canOpen) return html`<a class="file-card" href=${fileUrl(conv, file.path)} target="_blank" rel="noopener" title=${t("info.preview.openPanel")} onClick=${(e) => preview(e, file, conv, canOpen)}>${body}</a>`;
   return html`<div class="file-card">
-    <button type="button" class="file-open" title=${t("chat.file.open", { name: file.name })} onClick=${() => desktop(conv, file.path, "open")}>${body}</button>
+    <button type="button" class="file-open" title=${t("info.preview.openPanel")} onClick=${() => { if (!openResource(fileResource(file, conv, canOpen))) desktop(conv, file.path, "open"); }}>${body}</button>
     <${IconButton} icon="folder" label=${t("chat.file.reveal")} onClick=${() => desktop(conv, file.path, "reveal")} />
   </div>`;
 }
@@ -35,8 +40,8 @@ export function ImageFile({ file, conv, canOpen, onLoad }) {
   if (broken || file.gone || !conv) return html`<${FileCard} file=${file} conv=${conv} canOpen=${canOpen} />`;
   const img = html`<img src=${fileUrl(conv, file.path)} alt=${file.name} loading="lazy" onLoad=${onLoad} onError=${() => setBroken(true)} />`;
   const title = t("chat.file.open", { name: file.name });
-  if (!canOpen) return html`<a class="msg-img" href=${fileUrl(conv, file.path)} target="_blank" rel="noopener" title=${title}>${img}</a>`;
-  return html`<button type="button" class="msg-img" title=${title} onClick=${() => desktop(conv, file.path, "open")}>${img}</button>`;
+  if (!canOpen) return html`<a class="msg-img" href=${fileUrl(conv, file.path)} target="_blank" rel="noopener" title=${title} onClick=${(e) => preview(e, file, conv, canOpen)}>${img}</a>`;
+  return html`<button type="button" class="msg-img" title=${title} onClick=${() => { if (!openResource(fileResource(file, conv, canOpen))) desktop(conv, file.path, "open"); }}>${img}</button>`;
 }
 
 /** 一条回复交付的文件，按交付的顺序；放得下就排在一行 */

@@ -2,7 +2,7 @@
 // （lib/connector-config.js 的 draft）。认证方式是一个下拉，以后加新的方式只多一项。
 // 保存后马上测试：通过就开启；不通过也保存，但保持关闭，写明原因。需要授权登录时自动打开浏览器。
 // 本地命令在添加前一定先确认要运行的完整命令。密钥在界面上打码；已保存的密钥界面手里没有，原样发回掩码，后端保留已存的。
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { html, Button, Icon, IconButton, MenuButton, Notice, Seg, Sheet, Spinner } from "./ui.js";
 import { api } from "../lib/api.js";
 import { setApps, stateText } from "../lib/apps.js";
@@ -64,6 +64,9 @@ export function CustomConnectorSheet({ id, apps, full, chatBot, onClose }) {
   const [tab, setTab] = useState("form");
   const [json, setJson] = useState("");
   const [jsonError, setJsonError] = useState("");
+  const [formWarning, setFormWarning] = useState(false);
+  const [showRequired, setShowRequired] = useState(false);
+  const jsonBase = useRef(null);
   const [advanced, setAdvanced] = useState(false);
   const [switched, setSwitched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -72,7 +75,7 @@ export function CustomConnectorSheet({ id, apps, full, chatBot, onClose }) {
   const [savedId, setSavedId] = useState(id || "");
   const [skipped, setSkipped] = useState([]);
   const oauth = useOAuthFlow((f) => setResult({ key: f.key }));
-  const patch = (p) => setDraft((d) => ({ ...d, ...p }));
+  const patch = (p) => { setDraft((d) => ({ ...d, ...p })); setError(""); };
   const flagged = useMemo(() => placeholdersIn(draft), [draft]);
   const problem = draftProblem(draft);
 
@@ -98,14 +101,16 @@ export function CustomConnectorSheet({ id, apps, full, chatBot, onClose }) {
   const toTab = (next) => {
     if (next === tab) return;
     if (next === "json") {
-      setJson(draftToJson(draft, { mask: true }));
+      if (!formWarning || draft !== jsonBase.current) setJson(draftToJson(draft, { mask: true }));
+      jsonBase.current = draft;
       setJsonError("");
       setTab("json");
       return;
     }
-    const r = jsonToDraft(json, draft);
-    if (r.error) return setJsonError(t(`apps.custom.jsonError.${r.error}`));
-    setDraft(r.draft);
+    const r = jsonToDraft(json, draft, { partial: true });
+    setFormWarning(!!r.error);
+    if (!r.error) { setDraft(r.draft); jsonBase.current = r.draft; }
+    setShowRequired(true);
     setJsonError("");
     setTab("form");
   };
@@ -147,10 +152,15 @@ export function CustomConnectorSheet({ id, apps, full, chatBot, onClose }) {
       d = r.draft;
       setDraft(d);
     }
+    setShowRequired(true);
+    if (!d.name.trim()) {
+      if (tab === "json") setJsonError(t("apps.custom.jsonError.missing"));
+      return;
+    }
     const bad = draftProblem(d);
     if (bad) {
       // 表单里有问题的字段下面已经有提示；JSON 页把同一个问题写在编辑区下方
-      if (tab === "json") setJsonError(bad === "placeholder" ? t("apps.custom.placeholder") : bad === "url" ? t("apps.custom.problem.url") : t(`apps.custom.jsonError.${bad === "command" ? "missing" : bad.replace("Empty", "")}`));
+      (tab === "json" ? setJsonError : setError)(bad === "placeholder" ? t("apps.custom.placeholder") : bad === "url" ? t("apps.custom.problem.url") : t(`apps.custom.jsonError.${bad === "command" ? "missing" : bad.replace("Empty", "")}`));
       return;
     }
     // 自己添加的本地命令会在这台电脑上运行：先让用户看清完整命令再确认。取消就不添加、不启动
@@ -259,8 +269,9 @@ export function CustomConnectorSheet({ id, apps, full, chatBot, onClose }) {
         <${ErrorLine} text=${jsonError} />
       </label>`}
       ${tab === "form" && html`
+        ${formWarning && html`<${Notice} tone="red">${t("welcome.jsonKept")}<//>`}
         <label class="set-field"><span class="k">${t("apps.custom.name")}</span>
-          <input class="field" maxlength="60" placeholder=${t(remote ? "apps.custom.namePlaceholder" : "apps.custom.namePlaceholderLocal")} value=${draft.name} onInput=${(e) => patch({ name: e.target.value })} /></label>
+          <input class="field" maxlength="60" placeholder=${t(remote ? "apps.custom.namePlaceholder" : "apps.custom.namePlaceholderLocal")} value=${draft.name} onInput=${(e) => patch({ name: e.target.value })} />${showRequired && !draft.name.trim() && html`<span class="hint tone-danger">${t("welcome.required")}</span>`}</label>
         <div class="set-field"><span class="k">${t("apps.custom.typeLabel")}</span>
           <${Seg} label=${t("apps.custom.typeLabel")} value=${draft.transport} onChange=${setType} options=${[["http", t("apps.custom.type.remote")], ["stdio", t("apps.custom.type.local")]]} />
           ${switched && html`<span class="hint">${t("apps.custom.switched")}</span>`}</div>
@@ -268,7 +279,7 @@ export function CustomConnectorSheet({ id, apps, full, chatBot, onClose }) {
           <label class="set-field"><span class="k">${t("apps.custom.url")} *</span>
             <input class=${`field mono${flagged.includes("url") ? " err" : ""}`} type=${draft.auth === "dedicatedUrl" && draft.url !== MASK ? "password" : "text"} autocomplete="off" spellcheck="false" placeholder=${t("apps.custom.urlPlaceholder")} value=${draft.url}
               onInput=${(e) => patch({ url: e.target.value })} />
-            ${problem === "url" && draft.url && html`<span class="hint tone-danger">${t("apps.custom.problem.url")}</span>`}</label>
+            ${problem === "url" && (draft.url || showRequired) && html`<span class="hint tone-danger">${t("apps.custom.problem.url")}</span>`}</label>
           <div class="set-field"><span class="k">${t("apps.custom.auth")}</span>
             <${MenuButton} label=${t("apps.custom.auth")} value=${draft.auth} options=${authOptions} width=${340} align="left" onChange=${(v) => patch({ auth: v })} />
             <span class="hint">${t(`apps.custom.authNote.${draft.auth}`)}</span></div>
@@ -296,7 +307,7 @@ export function CustomConnectorSheet({ id, apps, full, chatBot, onClose }) {
       <${ErrorLine} text=${error} />
       <div class="actions">
         <${Button} onClick=${onClose}>${t("common.cancel")}<//>
-        <${Button} type="submit" variant="primary" disabled=${busy || limitHit || (tab === "form" && !!problem)}>${busy ? html`<${Spinner} /> ${t("apps.state.testing")}` : t(editing || savedId ? "common.save" : "apps.custom.add")}<//>
+        <${Button} type="submit" variant="primary" disabled=${busy || limitHit}>${busy ? html`<${Spinner} /> ${t("apps.state.testing")}` : t(editing || savedId ? "common.save" : "apps.custom.add")}<//>
       </div>`}
     </form>
   <//>`;

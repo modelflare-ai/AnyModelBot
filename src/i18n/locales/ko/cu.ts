@@ -1,5 +1,8 @@
 import type { TranslatedCatalog } from "../../index.js";
 export default {
+  waiting: "권한 활성화 대기 중",
+  channelWait: "컴퓨터를 조작하려면 이 컴퓨터에서 {items} 권한이 필요합니다. 데스크톱 앱의 안내에 따라 켜면 계속 진행합니다.",
+
   "codexUnavailable": "Codex Computer Use 브리지: macOS 14.4 이상 및 Codex Computer Use 설치 필요",
   "codexOff": "{base}({why})",
   "codexNotMac": "현재 시스템이 macOS가 아닙니다",

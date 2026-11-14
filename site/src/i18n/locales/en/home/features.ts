@@ -6,6 +6,18 @@ export default {
     "h3": "And there's more.",
     "items": [
       {
+        "title": "Schedule it in a sentence",
+        "body": "Manage every bot’s rules on Scheduled, with undo, monthly schedules and catch-up within up to twelve hours. Your computer and the app must be on."
+      },
+      {
+        "title": "Start from a template",
+        "body": "Ten bot templates cover writing, work and learning. Preview the persona, memory and rules before creating a bot; template rules start off."
+      },
+      {
+        "title": "Preview files and websites",
+        "body": "Open Markdown, text, PDFs, images, HTML and websites in the right panel while keeping the conversation in view. Download or open externally when needed."
+      },
+      {
         "title": "Import your own skills",
         "body": "Import a ZIP in the bot's settings to add workflows like reports or document processing. You can turn each skill on, off, or replace it."
       },

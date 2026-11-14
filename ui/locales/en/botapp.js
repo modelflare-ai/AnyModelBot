@@ -33,10 +33,10 @@ export default {
   tip: { kept: "{name} stays in Mine. It'll be here tomorrow." },
   remove: {
     title: "Remove {name}?",
-    body: "It leaves the sidebar. You can still find it in Discover.",
+    body: "It will be removed from the sidebar, and its chats, tasks and rules will be deleted. You can add it again from Discover.",
     confirm: "Remove",
-    keep: "Keep its data so you can pick up where you left off",
-    done: "Removed {name}. You can find it again in Discover",
+    keep: "Keep its files and workspace so you can continue after adding it again",
+    done: "Removed {name}. You can add it again from Discover",
   },
   errors: {
     catalog_not_found: "This bot wasn't found.",

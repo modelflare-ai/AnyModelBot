@@ -287,7 +287,7 @@ export default {
       signedIn: "Sessão iniciada",
       enterprise: "O uso de {name} é cobrado na carteira da sua organização",
       signedOut: "Entre para ver o uso, as notificações e seu link de convite, e para definir orçamentos para cada bot",
-      keys: "conta entrar sair login logout cadastro criar conta account sign in sign up log in log out",
+      keys: "conta entrar login cadastro criar conta account sign in sign up log in",
       logout: "Sair",
       login: "Entrar",
     },

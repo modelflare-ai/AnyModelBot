@@ -1,7 +1,7 @@
 [
   {
     "id": "company-research",
-    "minAppVersion": "0.1.20",
+    "minAppVersion": "0.1.33",
     "avatar": "dossier",
     "name": {
       "zh-CN": "尽调助手",
@@ -60,45 +60,45 @@
     },
     "starters": {
       "zh-CN": [
+        "用一页纸介绍 Stripe 做什么、服务谁。只查官网的 1–2 个页面，不做完整尽调。",
         "对 Stripe 做完整尽调并生成报告",
-        "打开上一份报告的来源与策展列表",
-        "把当前报告导出为 PDF"
+        "打开上一份报告的来源与策展列表"
       ],
       "en": [
+        "Introduce what Stripe does and who it serves in one page. Use only 1–2 pages from its official site, without full diligence.",
         "Run full diligence on Stripe and generate a report",
-        "Open sources and curation from the latest report",
-        "Export the current report to PDF"
+        "Open sources and curation from the latest report"
       ],
       "ja": [
+        "Stripe の事業と顧客を1ページで紹介して。公式サイトの1〜2ページだけを調べ、完全な調査はしないで。",
         "Stripe を徹底的に調査してレポートを作成して",
-        "最新のレポートの出典と選別結果を開いて",
-        "現在のレポートを PDF に書き出して"
+        "最新のレポートの出典と選別結果を開いて"
       ],
       "ko": [
+        "Stripe의 사업과 고객을 한 페이지로 소개해 주세요. 공식 사이트 1~2페이지만 확인하고 전체 실사는 하지 마세요.",
         "Stripe를 전체 실사하고 보고서를 만들어 줘",
-        "최근 보고서의 출처와 선별 목록을 열어 줘",
-        "현재 보고서를 PDF로 내보내 줘"
+        "최근 보고서의 출처와 선별 목록을 열어 줘"
       ],
       "ru": [
+        "На одной странице расскажи, чем занимается Stripe и кто её клиенты. Используй 1–2 страницы официального сайта, без полного исследования.",
         "Проведи полное исследование Stripe и подготовь отчёт",
-        "Открой источники и результаты отбора из последнего отчёта",
-        "Экспортируй текущий отчёт в PDF"
+        "Открой источники и результаты отбора из последнего отчёта"
       ],
       "es": [
+        "Presenta qué hace Stripe y a quién sirve en una página. Consulta solo 1–2 páginas oficiales, sin análisis completo.",
         "Haz un análisis completo de Stripe y genera un informe",
-        "Abre las fuentes y la selección del informe más reciente",
-        "Exporta el informe actual a PDF"
+        "Abre las fuentes y la selección del informe más reciente"
       ],
       "pt": [
+        "Apresente o que a Stripe faz e quem atende em uma página. Consulte apenas 1–2 páginas oficiais, sem pesquisa completa.",
         "Faça uma due diligence completa da Stripe e gere um relatório",
-        "Abra as fontes e a curadoria do relatório mais recente",
-        "Exporte o relatório atual para PDF"
+        "Abra as fontes e a curadoria do relatório mais recente"
       ]
     }
   },
   {
     "id": "ppt-master",
-    "minAppVersion": "0.1.20",
+    "minAppVersion": "0.1.33",
     "avatar": "slides",
     "name": {
       "zh-CN": "PPT 大师",
@@ -157,45 +157,45 @@
     },
     "starters": {
       "zh-CN": [
+        "为“如何开好一次 30 分钟周会”写 3 页 PPT 文字大纲，每页一个标题和三个要点，不生成文件。",
         "快速做一份 5 页 16:9 的 PPT，主题是如何开好远程周会，不用确认",
-        "帮我做一份 8 页的新品发布 PPT，先给我看方案",
-        "做一套可以反复用的季度复盘模板，风格简洁"
+        "帮我做一份 8 页的新品发布 PPT，先给我看方案"
       ],
       "en": [
+        "Outline 3 slides on running a good 30-minute team meeting, with a title and three bullets per slide. Text only, no files.",
         "Quickly make a 5-page 16:9 deck on running better remote weekly meetings, no need to confirm",
-        "Make an 8-page product launch deck, and show me the plan first",
-        "Make a reusable quarterly review template in a clean style"
+        "Make an 8-page product launch deck, and show me the plan first"
       ],
       "ja": [
+        "良い30分の週次会議を行うためのスライド3枚の構成を、各タイトルと要点3つで書いて。ファイル作成は不要。",
         "リモート週次会議を上手に進める方法をテーマに、16:9 で 5 ページの PPT をすぐ作って。確認は不要",
-        "新製品発表の PPT を 8 ページで作って。先にプランを見せて",
-        "繰り返し使える四半期レビューのテンプレートをシンプルなスタイルで作って"
+        "新製品発表の PPT を 8 ページで作って。先にプランを見せて"
       ],
       "ko": [
+        "30분 주간 회의를 잘 진행하는 방법을 3장 슬라이드 개요로 써 주세요. 장마다 제목과 요점 3개, 파일은 만들지 마세요.",
         "원격 주간 회의를 잘 진행하는 법을 주제로 16:9 5페이지 PPT를 빠르게 만들어 줘. 확인은 필요 없어",
-        "8페이지 신제품 발표 PPT를 만들어 줘. 먼저 계획을 보여 줘",
-        "반복해서 쓸 수 있는 분기 리뷰 템플릿을 깔끔한 스타일로 만들어 줘"
+        "8페이지 신제품 발표 PPT를 만들어 줘. 먼저 계획을 보여 줘"
       ],
       "ru": [
+        "Составь план 3 слайдов о хорошей 30-минутной встрече команды: заголовок и 3 пункта на слайд. Только текст, без файлов.",
         "Быстро сделай презентацию 16:9 на 5 слайдов о том, как лучше проводить удалённые планёрки, подтверждение не нужно",
-        "Сделай презентацию запуска продукта на 8 слайдов, сначала покажи план",
-        "Сделай многоразовый шаблон квартального обзора в простом стиле"
+        "Сделай презентацию запуска продукта на 8 слайдов, сначала покажи план"
       ],
       "es": [
+        "Esboza 3 diapositivas sobre una buena reunión de 30 minutos: título y tres puntos por página. Solo texto, sin archivos.",
         "Haz rápidamente una presentación 16:9 de 5 páginas sobre cómo mejorar las reuniones semanales remotas, sin pedirme confirmación",
-        "Haz una presentación de lanzamiento de producto de 8 páginas y muéstrame primero el plan",
-        "Crea una plantilla reutilizable para revisiones trimestrales, con un estilo limpio"
+        "Haz una presentación de lanzamiento de producto de 8 páginas y muéstrame primero el plan"
       ],
       "pt": [
+        "Esboce 3 slides sobre uma boa reunião de 30 minutos: título e três tópicos por slide. Só texto, sem arquivos.",
         "Faça rapidamente uma apresentação 16:9 com 5 slides sobre como melhorar as reuniões semanais remotas, sem precisar confirmar",
-        "Faça uma apresentação de lançamento de produto com 8 slides e me mostre o plano antes",
-        "Crie um template reutilizável de revisão trimestral com um estilo limpo"
+        "Faça uma apresentação de lançamento de produto com 8 slides e me mostre o plano antes"
       ]
     }
   },
   {
     "id": "printfilm",
-    "minAppVersion": "0.1.23",
+    "minAppVersion": "0.1.33",
     "avatar": "film",
     "name": {
       "zh-CN": "影视创作室",
@@ -254,45 +254,45 @@
     },
     "starters": {
       "zh-CN": [
+        "写一个 150 字以内的短剧梗概：一位快递员每天收到来自明天的包裹。只写文字，不生成图片或视频。",
         "把我的创意做成完整短视频，先给我看文案和分镜",
-        "创建一部三集短剧，先规划故事、角色与分集",
-        "打开自由画布，创建一个角色和场景资产"
+        "创建一部三集短剧，先规划故事、角色与分集"
       ],
       "en": [
+        "Write a short film synopsis under 100 words: a courier receives packages from tomorrow every day. Text only, no images or video.",
         "Turn my idea into a complete short video; show me the script and storyboard first",
-        "Create a three-episode drama; plan the story, cast and episodes first",
-        "Open a free canvas and create a character and scene asset"
+        "Create a three-episode drama; plan the story, cast and episodes first"
       ],
       "ja": [
+        "毎日未来から荷物が届く配達員の短編あらすじを200字以内で書いて。文章のみ、画像や動画は作らないで。",
         "アイデアを短編動画に。まず脚本と絵コンテを見せて",
-        "全3話のドラマを作成。まず物語・登場人物・各話を構成して",
-        "自由キャンバスで人物と背景素材を作成して"
+        "全3話のドラマを作成。まず物語・登場人物・各話を構成して"
       ],
       "ko": [
+        "매일 내일에서 온 소포를 받는 배달원의 단편 줄거리를 짧게 써 주세요. 글만 쓰고 이미지나 영상은 만들지 마세요.",
         "아이디어를 완전한 숏폼 영상으로 만들고 먼저 대본과 스토리보드를 보여 줘",
-        "3부작 드라마의 이야기, 등장인물, 에피소드를 먼저 기획해 줘",
-        "자유 캔버스를 열고 등장인물과 장면 자산을 만들어 줘"
+        "3부작 드라마의 이야기, 등장인물, 에피소드를 먼저 기획해 줘"
       ],
       "ru": [
+        "Напиши синопсис до 100 слов: курьер каждый день получает посылки из завтрашнего дня. Только текст, без изображений и видео.",
         "Сделай из моей идеи короткий фильм; сначала покажи сценарий и раскадровку",
-        "Создай драму из трёх эпизодов; начни с истории, персонажей и плана",
-        "Открой свободный холст и создай персонажа и сцену"
+        "Создай драму из трёх эпизодов; начни с истории, персонажей и плана"
       ],
       "es": [
+        "Escribe una sinopsis de menos de 100 palabras: un repartidor recibe paquetes del mañana. Solo texto, sin imágenes ni vídeo.",
         "Convierte mi idea en un video corto completo; muéstrame primero el guion y el guion gráfico",
-        "Crea una serie de tres episodios; planifica primero la historia, el reparto y los episodios",
-        "Abre un lienzo libre y crea un recurso de personaje y otro de escenario"
+        "Crea una serie de tres episodios; planifica primero la historia, el reparto y los episodios"
       ],
       "pt": [
+        "Escreva uma sinopse com menos de 100 palavras: um entregador recebe pacotes do amanhã. Só texto, sem imagens nem vídeo.",
         "Transforme minha ideia em um vídeo curto completo; mostre o roteiro e o storyboard antes",
-        "Crie uma série de três episódios; planeje a história, o elenco e os episódios antes",
-        "Abra um canvas livre e crie um personagem e um cenário"
+        "Crie uma série de três episódios; planeje a história, o elenco e os episódios antes"
       ]
     }
   },
   {
     "id": "us-stock-research",
-    "minAppVersion": "0.1.20",
+    "minAppVersion": "0.1.33",
     "avatar": "ticker",
     "name": {
       "zh-CN": "美股研报",
@@ -351,39 +351,39 @@
     },
     "starters": {
       "zh-CN": [
+        "用一段话介绍苹果公司的主要业务，再列出读它年报时值得关注的三个问题。只做入门概览，不取财务数据、不做估值。",
         "研究英伟达近五年的收入和毛利率趋势，生成报告",
-        "对比微软和 Alphabet 近三年的收入和营业利润率",
-        "读特斯拉最新 10-K 的风险因素，总结最重要的五条"
+        "对比微软和 Alphabet 近三年的收入和营业利润率"
       ],
       "en": [
+        "Introduce Apple’s main businesses in one paragraph and list three questions to consider when reading its annual report. Intro only, no financial data or valuation.",
         "Research NVIDIA's revenue and gross margin trends over five years into a report",
-        "Compare Microsoft and Alphabet on revenue and operating margin over three years",
-        "Read Tesla's latest 10-K risk factors and summarize the top five"
+        "Compare Microsoft and Alphabet on revenue and operating margin over three years"
       ],
       "ja": [
+        "Apple の主な事業を1段落で紹介し、年次報告書を読む際の質問を3つ挙げて。入門概要のみ、財務データ取得や評価は不要。",
         "NVIDIA の過去 5 年の売上と粗利率の推移を調べてレポートにして",
-        "Microsoft と Alphabet の過去 3 年の売上と営業利益率を比較して",
-        "Tesla の最新の 10-K のリスク要因を読んで、重要な 5 つにまとめて"
+        "Microsoft と Alphabet の過去 3 年の売上と営業利益率を比較して"
       ],
       "ko": [
+        "Apple의 주요 사업을 한 문단으로 소개하고 연차보고서를 읽을 때 살펴볼 질문 3개를 써 주세요. 재무 데이터 수집이나 가치 평가는 하지 마세요.",
         "NVIDIA의 최근 5년 매출과 매출총이익률 추이를 조사해 보고서로 만들어 줘",
-        "Microsoft와 Alphabet의 최근 3년 매출과 영업이익률을 비교해 줘",
-        "Tesla 최신 10-K의 위험 요인을 읽고 가장 중요한 다섯 가지로 요약해 줘"
+        "Microsoft와 Alphabet의 최근 3년 매출과 영업이익률을 비교해 줘"
       ],
       "ru": [
+        "В одном абзаце представь основные направления Apple и три вопроса для чтения годового отчёта. Без финансовых данных и оценки стоимости.",
         "Изучи динамику выручки и валовой маржи NVIDIA за пять лет и подготовь отчёт",
-        "Сравни выручку и операционную маржу Microsoft и Alphabet за три года",
-        "Прочитай факторы риска в последнем 10-K Tesla и выдели пять главных"
+        "Сравни выручку и операционную маржу Microsoft и Alphabet за три года"
       ],
       "es": [
+        "Presenta los negocios de Apple en un párrafo y tres preguntas para leer su informe anual. Solo introducción, sin datos financieros ni valoración.",
         "Analiza la evolución de los ingresos y el margen bruto de NVIDIA en cinco años y haz un informe",
-        "Compara los ingresos y el margen operativo de Microsoft y Alphabet en los últimos tres años",
-        "Lee los factores de riesgo del 10-K más reciente de Tesla y resume los cinco principales"
+        "Compara los ingresos y el margen operativo de Microsoft y Alphabet en los últimos tres años"
       ],
       "pt": [
+        "Apresente os negócios da Apple em um parágrafo e três perguntas para ler o relatório anual. Só introdução, sem dados financeiros ou avaliação.",
         "Pesquise a evolução da receita e da margem bruta da NVIDIA em cinco anos e faça um relatório",
-        "Compare a receita e a margem operacional da Microsoft e da Alphabet em três anos",
-        "Leia os fatores de risco do 10-K mais recente da Tesla e resuma os cinco principais"
+        "Compare a receita e a margem operacional da Microsoft e da Alphabet em três anos"
       ]
     }
   }

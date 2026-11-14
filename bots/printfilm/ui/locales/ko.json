@@ -214,5 +214,11 @@
   "sheet.time": "시간",
   "sheet.words": "내레이션 / 대사",
   "sheet.visual": "화면 설명",
-  "sheet.media": "소재"
+  "sheet.media": "소재",
+  "shotDetails": "장면 설명 및 설정",
+  "canvas.zoomOut": "축소",
+  "canvas.zoomIn": "확대",
+  "canvas.fit": "화면에 맞추기",
+  "canvas.expand": "작업 공간 확장",
+  "canvas.restore": "대화로 돌아가기"
 }

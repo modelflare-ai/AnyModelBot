@@ -1,7 +1,7 @@
 {
   "id": "ppt-master",
   "version": "1.0.3",
-  "minAppVersion": "0.1.20",
+  "minAppVersion": "0.1.33",
   "name": {
     "zh-CN": "PPT 大师",
     "en": "PPT Master",
@@ -65,39 +65,39 @@
   ],
   "starters": {
     "zh-CN": [
+      "为“如何开好一次 30 分钟周会”写 3 页 PPT 文字大纲，每页一个标题和三个要点，不生成文件。",
       "快速做一份 5 页 16:9 的 PPT，主题是如何开好远程周会，不用确认",
-      "帮我做一份 8 页的新品发布 PPT，先给我看方案",
-      "做一套可以反复用的季度复盘模板，风格简洁"
+      "帮我做一份 8 页的新品发布 PPT，先给我看方案"
     ],
     "en": [
+      "Outline 3 slides on running a good 30-minute team meeting, with a title and three bullets per slide. Text only, no files.",
       "Quickly make a 5-page 16:9 deck on running better remote weekly meetings, no need to confirm",
-      "Make an 8-page product launch deck, and show me the plan first",
-      "Make a reusable quarterly review template in a clean style"
+      "Make an 8-page product launch deck, and show me the plan first"
     ],
     "ja": [
+      "良い30分の週次会議を行うためのスライド3枚の構成を、各タイトルと要点3つで書いて。ファイル作成は不要。",
       "リモート週次会議を上手に進める方法をテーマに、16:9 で 5 ページの PPT をすぐ作って。確認は不要",
-      "新製品発表の PPT を 8 ページで作って。先にプランを見せて",
-      "繰り返し使える四半期レビューのテンプレートをシンプルなスタイルで作って"
+      "新製品発表の PPT を 8 ページで作って。先にプランを見せて"
     ],
     "ko": [
+      "30분 주간 회의를 잘 진행하는 방법을 3장 슬라이드 개요로 써 주세요. 장마다 제목과 요점 3개, 파일은 만들지 마세요.",
       "원격 주간 회의를 잘 진행하는 법을 주제로 16:9 5페이지 PPT를 빠르게 만들어 줘. 확인은 필요 없어",
-      "8페이지 신제품 발표 PPT를 만들어 줘. 먼저 계획을 보여 줘",
-      "반복해서 쓸 수 있는 분기 리뷰 템플릿을 깔끔한 스타일로 만들어 줘"
+      "8페이지 신제품 발표 PPT를 만들어 줘. 먼저 계획을 보여 줘"
     ],
     "ru": [
+      "Составь план 3 слайдов о хорошей 30-минутной встрече команды: заголовок и 3 пункта на слайд. Только текст, без файлов.",
       "Быстро сделай презентацию 16:9 на 5 слайдов о том, как лучше проводить удалённые планёрки, подтверждение не нужно",
-      "Сделай презентацию запуска продукта на 8 слайдов, сначала покажи план",
-      "Сделай многоразовый шаблон квартального обзора в простом стиле"
+      "Сделай презентацию запуска продукта на 8 слайдов, сначала покажи план"
     ],
     "es": [
+      "Esboza 3 diapositivas sobre una buena reunión de 30 minutos: título y tres puntos por página. Solo texto, sin archivos.",
       "Haz rápidamente una presentación 16:9 de 5 páginas sobre cómo mejorar las reuniones semanales remotas, sin pedirme confirmación",
-      "Haz una presentación de lanzamiento de producto de 8 páginas y muéstrame primero el plan",
-      "Crea una plantilla reutilizable para revisiones trimestrales, con un estilo limpio"
+      "Haz una presentación de lanzamiento de producto de 8 páginas y muéstrame primero el plan"
     ],
     "pt": [
+      "Esboce 3 slides sobre uma boa reunião de 30 minutos: título e três tópicos por slide. Só texto, sem arquivos.",
       "Faça rapidamente uma apresentação 16:9 com 5 slides sobre como melhorar as reuniões semanais remotas, sem precisar confirmar",
-      "Faça uma apresentação de lançamento de produto com 8 slides e me mostre o plano antes",
-      "Crie um template reutilizável de revisão trimestral com um estilo limpo"
+      "Faça uma apresentação de lançamento de produto com 8 slides e me mostre o plano antes"
     ]
   },
   "skills": [

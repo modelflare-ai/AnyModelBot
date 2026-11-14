@@ -137,9 +137,10 @@ mount(App);
 | `readFile(path)` | Read other text files under `app/` (up to 2 MB) |
 | `readImage(path)` | Read an image under `app/` (png, jpg, gif, webp, svg, up to 16 MB). Returns `{ url }` for an `<img>`. Needs an instance; images for sample data live under `ui/` and use relative paths |
 | `readMedia(path)`, `releaseMedia(url)` | Since 0.1.23, preview audio/video under `app/` (up to 200 MB per file, four simultaneous previews). Returns `{ url, size }` for `<video>` / `<audio>`. Release the URL when switching files or unmounting. The parent passes the media data; Blob URLs are created inside the sandbox |
-| `openFile(path, { reveal })` | Open a file under `app/`. Call it from a user click. The desktop app opens it with the system app or shows it in its folder (anything that would run on opening is only shown in its folder). On the web it downloads |
+| `openFile(path, { reveal })` | Open a file under `app/`. Call it from a user click. Opens the right-hand Preview tab; unsupported formats offer download and system opening. `{ reveal: true }` keeps the folder action on desktop |
+| `expanded`, `setExpanded(boolean)` | Whether the workspace is expanded; expand from a user click, retaining editor state when restoring. Requires App 0.1.33 or newer |
 | `desktop` | This is the desktop app, so files can open with the system app |
-| `openUrl(url)` | Open an external page once the user confirms the address; http(s) only |
+| `openUrl(url)` | Preview an external page in the right panel once the user confirms its address; http(s) only, with a browser-opening fallback |
 
 The kit follows the app's theme, language, text size and motion preference on its own.
 
@@ -149,10 +150,10 @@ The kit follows the app's theme, language, text size and motion preference on it
 
 ### Desktop workspace
 
-A bot's UI is a window in a desktop app, not a web page that scrolls top to bottom. Bots that hold several pieces of work (projects, research runs, jobs) all use the same structure from `kit.css`:
+Design for the side panel first. Bots with multiple projects, research runs or jobs use `Workspace({ label, current, children })` from the kit: the first child is navigation, followed by the content. `label` names the list and `current` names the selected project or creation page. The component requires App 0.1.33 or newer:
 
-```html
-<div class="kit-ws">
+```js
+html`<${Workspace} label=${listTitle} current=${selectedTitle}>
   <nav class="kit-ws-list">
     <div class="kit-list-head"><h2 class="t-label">Projects</h2><button class="btn sm">New</button></div>
     <button class="kit-item on"><span class="kit-item-title">Name</span><span class="kit-item-meta">…</span></button>
@@ -161,14 +162,15 @@ A bot's UI is a window in a desktop app, not a web page that scrolls top to bott
     <header class="kit-bar"><div class="kit-bar-text"><h1>The selected one</h1><p>Status · one line</p></div><div class="kit-bar-actions">…</div></header>
     <div class="kit-ws-body"><div class="kit-tabs" role="tablist">…</div>…</div>
   </main>
-</div>
+<//>`;
 ```
 
-- The list on the left and the content on the right scroll separately and fill the UI's height; the toolbar stays over the content as it scrolls. Below 640px the list moves to the top.
+- Below an iframe width of 1100px, navigation becomes a compact project picker, dismissed by clicking outside or pressing Escape. At 1100px it becomes a persistent list. The host offers Expand workspace / Back to chat without unmounting the Bot UI.
+- `.kit-ws-main` defines the `workspace-content` container. Use container queries for internal columns so they respond to the actual content width after navigation. Existing third-party `<div class="kit-ws">` layouts remain supported.
 - The bot's name is already in the host's title bar, so the UI doesn't repeat a big title. Text that never changes, such as a disclaimer, goes in `.kit-foot` at the end instead of the top.
-- One primary action is enough: work out the next step from progress and put the rest under "More". Tabs use `.kit-tabs`, five at most.
+- Choose the primary next action from progress and put secondary actions under More. Keep around four main tabs; open auxiliary tools such as canvas and settings on demand. Fold lengthy descriptions, versions and history; show active generation status beside the current work.
 - The host shows starters as one row of single-line chips, so keep starters short; ones that don't fit are truncated.
-- The host title bar switches between Workspace and Chat for every bot: Workspace is the bot's UI, Chat is the full conversation (before first use, an introduction and the full starters). A UI doesn't build its own chat.
+- Chat occupies the main area and the workspace sits beside it. Expanding the workspace temporarily hides chat; restoring keeps its original width and state. A Bot UI does not build its own chat.
 - So that newcomers and experts both get going quickly, give each bot two things: "New" at the top of the list is a wizard — a few choices that the UI writes into one sentence (shown before sending) and passes to `send`; and at least one view experts know, such as key figures in a research note, a source audit, presentation mode or a storyboard sheet.
 
 Add components to `ui/botkit/kit.js` as real bots need them, rather than working around the kit in one bot. The kit ships with the app, so adding to it needs a release. Register new abilities in `KIT_SINCE` in `src/botkit/format.ts`: a bot using one can't have a lower `minAppVersion`, and the check enforces it (`ui.min-app-version`).
@@ -182,12 +184,12 @@ Add components to `ui/botkit/kit.js` as real bots need them, rather than working
 | `init` | Language, theme, text size, motion, text and basic bot info |
 | `readFile`, `readImage` | Read-only access to `app/` in the workspace, with no way out |
 | `readMedia`, `releaseMedia` | Read size-limited audio/video and manage preview resources. HTML and scripts are not supported |
-| `openFile` | Open or download a file under `app/`. Runs only if the parent page confirms the user just clicked |
+| `openFile` | Preview a file under `app/`, with download/system-open actions. Runs only if the parent page confirms the user just clicked |
 | `send`, `stop` | Send a message, stop |
 | `subscribe` | Receive `turn`, `file` and `env` events |
 | `pickFile` | Pick files |
 | `openChannels` | Open connection settings so the user can link a chat channel |
-| `openUrl` | Open an external page once the user confirms the address |
+| `openUrl` | Preview an external page once the user confirms its address |
 | `reportError`, `rendered` | Report an error (falls back to the conversation), rendering finished |
 
 The microphone, camera and external maps aren't available in the first phase. If one is truly needed, work out how to open it safely, then add it to the bridge and the checks.
@@ -318,7 +320,8 @@ All under `/amb/api`. Errors only return a `code`; the text lives in the UI dict
 | `GET /bots/:id/app/file?path=` | Read a file under `app/` |
 | `GET /bots/:id/app/image?path=` | Read an image under `app/` as a data URL |
 | `GET /bots/:id/app/list` | List files under `app/` (used by evals) |
-| `GET /bots/:id/app/download?path=` | Download a file under `app/` |
+| `GET /bots/:id/app/download?path=` | Read a file under `app/`; add `download=1` to force download |
+| `GET /bots/:id/app/preview?path=` | Read a preview descriptor for a file under `app/` |
 | `POST /bots/:id/app/open` | Desktop app: open a file under `app/` or show it in its folder |
 | `POST /bots/:id/app/inbox` | Put a file in `app/inbox/` |
 | `GET /bots/:id/app/watch` | SSE: file changes under `app/` |

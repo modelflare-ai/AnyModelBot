@@ -6,6 +6,18 @@ export default {
     "h3": "Y hay más.",
     "items": [
       {
+        "title": "Programa con una frase",
+        "body": "Gestiona las reglas de todos los bots en Programado: deshacer, horarios mensuales y recuperación de hasta doce horas. El ordenador y la aplicación deben estar encendidos."
+      },
+      {
+        "title": "Empieza con una plantilla",
+        "body": "Diez plantillas para escribir, trabajar y aprender. Revisa la personalidad, la memoria y las reglas antes de crear el bot; las reglas comienzan desactivadas."
+      },
+      {
+        "title": "Vista previa de archivos y sitios",
+        "body": "Abre Markdown, texto, PDF, imágenes, HTML y sitios en el panel derecho sin perder de vista la conversación. También puedes descargar o abrir externamente."
+      },
+      {
         "title": "Importa tus propias habilidades",
         "body": "Importa un ZIP en los ajustes del bot para agregar flujos de trabajo, como informes o procesamiento de documentos. Puedes activar, desactivar o reemplazar cada habilidad."
       },

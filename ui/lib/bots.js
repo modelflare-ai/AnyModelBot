@@ -1,4 +1,5 @@
 // 删除机器人：侧栏和机器人设置共用一份确认和请求，两处说法、行为都一样。
+import { markCatalogRemoved } from "./catalog.js";
 import { api } from "./api.js";
 import { channelName } from "./access.js";
 import { confirmSheet, failed, toast } from "./store.js";
@@ -33,6 +34,7 @@ export async function deleteBot(bot) {
   if (!ok) return false;
   try {
     await api(`/bots/${bot.id}${keep?.value ? "?keepData=1" : ""}`, { method: "DELETE" });
+    if (fromCatalog && bot.app?.catalogId) markCatalogRemoved(bot.app.catalogId);
     toast(t(fromCatalog ? "botapp.remove.done" : "sidebar.delete.done", { name: bot.name }));
     return true;
   } catch (e) {

@@ -226,6 +226,17 @@ describe("AccountManager", () => {
     await mf.close();
   });
 
+  it("在浏览器取消授权时回到未登录，不作为失败提示", async () => {
+    const loginUrl = new URL(await manager.startLogin());
+    const callback = new URL(loginUrl.searchParams.get("redirect_uri")!);
+    callback.searchParams.set("state", loginUrl.searchParams.get("state")!);
+    callback.searchParams.set("error", "access_denied");
+    await fetch(callback);
+    await until(() => manager.status().state === "signed_out");
+    expect(manager.status().error).toBe("");
+    expect(calls).toEqual([]);
+  });
+
   it("登录后签发本机 Key 并接到内置网关；refresh token 只存在 600 权限的账户文件里", async () => {
     await signIn();
     expect(calls).toEqual(["connect:sk-key-1"]);
@@ -241,7 +252,8 @@ describe("AccountManager", () => {
   it("重启后用 refresh token 换新令牌，轮换后的值立刻写回", async () => {
     await signIn();
     const again = make();
-    expect(again.status().state).toBe("signed_in");
+    expect(again.status()).toMatchObject({ state: "signed_in", name: "Ada", profileReady: true });
+    expect(AccountVault.at(dir).load()?.profile).toEqual({ name: "Ada", email: "", avatar: "" });
     await again.refresh();
     expect(again.status().balanceUsd).toBe(12.5);
     expect(AccountVault.at(dir).load()!.refreshToken).toBe("rt-2");
@@ -264,7 +276,7 @@ describe("AccountManager", () => {
     expect(r.revoked).toBe(true);
     expect(mf.s.revoked).toEqual(["rt-1"]);
     expect(calls.at(-1)).toBe("disconnect");
-    expect(manager.status().state).toBe("signed_out");
+    expect(manager.status()).toMatchObject({ state: "signed_out", name: "", avatar: "", email: "", profileReady: false });
   });
 
   it("余额跌破提醒线只提醒一次，回到线上后才会再提醒", async () => {

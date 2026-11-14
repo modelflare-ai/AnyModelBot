@@ -214,5 +214,11 @@
   "sheet.time": "时间",
   "sheet.words": "旁白 / 台词",
   "sheet.visual": "画面描述",
-  "sheet.media": "素材"
+  "sheet.media": "素材",
+  "shotDetails": "镜头描述与设置",
+  "canvas.zoomOut": "缩小画布",
+  "canvas.zoomIn": "放大画布",
+  "canvas.fit": "适应视图",
+  "canvas.expand": "展开工作台",
+  "canvas.restore": "返回对话"
 }

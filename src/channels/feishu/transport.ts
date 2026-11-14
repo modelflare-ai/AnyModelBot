@@ -78,7 +78,7 @@ export interface FeishuCardAction {
   operatorOpenId: string;
   messageId?: string;
 }
-export type CardActionHandler = (a: FeishuCardAction) => { toast: string; ok: boolean } | Promise<{ toast: string; ok: boolean }>;
+export type CardActionHandler = (a: FeishuCardAction) => { toast: string; ok: boolean; card?: Record<string, unknown> } | Promise<{ toast: string; ok: boolean; card?: Record<string, unknown> }>;
 
 export interface FeishuTransport {
   start(
@@ -188,7 +188,7 @@ export class LarkTransport implements FeishuTransport {
             operatorOpenId: data?.operator?.open_id ?? "",
             messageId: data?.context?.open_message_id,
           });
-          return { toast: { type: r.ok ? "success" : "warning", content: r.toast } };
+          return { toast: { type: r.ok ? "success" : "warning", content: r.toast }, ...(r.card ? { card: { type: "raw", data: r.card } } : {}) };
         } catch (e) {
           this.log.warn("card action failed", { message: (e as Error).message });
           return { toast: { type: "error", content: t("channel.card_action_failed") } };

@@ -3,6 +3,7 @@
  * 复制规格、安装技能、把示例数据写成初始状态；之后的升级、下架、移除也在这里。
  * 实例 id 固定是 cat-<目录 id>，所以移除时保留数据的话，再次使用能接上原来的工作区。
  */
+import { SIDEBAR_LAYOUT_KEY, sanitizeSidebarLayout, withoutRemovedCatalog } from "../domain/sidebar-layout.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { Bot, Store } from "../store/db.js";
@@ -115,6 +116,26 @@ export class BotInstaller {
     return installed;
   }
 
+  /** 旧版只保留工作区时，状态文件是曾安装的证据；预览不会创建工作区。 */
+  isRemoved(catalogId: string): boolean {
+    if (this.o.store.getBot(instanceId(catalogId))) return false;
+    if (this.o.store.getKV(`catalog.removed.${catalogId}`)) return true;
+    let layout;
+    try { layout = sanitizeSidebarLayout(JSON.parse(this.o.store.getKV(SIDEBAR_LAYOUT_KEY) || "null")); } catch { return false; }
+    const placed = layout?.sections.some((s) => s.items.includes(`c:${catalogId}`));
+    if (placed && (this.o.store.getKV(`catalog.installed.${catalogId}`) || fs.existsSync(path.join(this.workspace(instanceId(catalogId)), STATE_FILE)))) {
+      this.markRemoved(catalogId); return true;
+    }
+    return false;
+  }
+  markRemoved(catalogId: string): void {
+    this.o.store.setKV(`catalog.removed.${catalogId}`, "1");
+    this.o.store.setKV(`catalog.installed.${catalogId}`, "1");
+    try {
+      const layout = sanitizeSidebarLayout(JSON.parse(this.o.store.getKV(SIDEBAR_LAYOUT_KEY) || "null"));
+      if (layout) this.o.store.setKV(SIDEBAR_LAYOUT_KEY, JSON.stringify(withoutRemovedCatalog(layout, (id) => id === catalogId || !!this.o.store.getKV(`catalog.removed.${id}`))));
+    } catch { /* Missing legacy layout does not prevent removal. */ }
+  }
   /** 第一次使用：建实例。已经有实例就直接返回（重复点击、并发请求都安全） */
   async install(catalogId: string, lang: string): Promise<Bot> {
     const id = instanceId(catalogId);
@@ -140,6 +161,8 @@ export class BotInstaller {
     }
     const ref: BotAppRef = { catalogId, version: entry.version, ui: entry.ui.sha256, runtime: entry.runtime.sha256, permissions: entry.permissions, skills, avatar: entry.avatar };
     const bot = this.o.store.createBot({ id, name: localized(entry.name, lang) ?? catalogId, systemPrompt: persona, settings: settingsFor(entry), origin: "catalog", app: ref });
+    this.o.store.setKV(`catalog.installed.${catalogId}`, "1");
+    this.o.store.deleteKV(`catalog.removed.${catalogId}`);
     await this.o.startBot(id);
     return bot;
   }

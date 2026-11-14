@@ -48,7 +48,7 @@ export const LIMITS = {
  * 界面套件后来加的能力，从哪个 App 版本开始有。套件随 App 发布，界面用到的话 minAppVersion 不能更低，
  * 否则老版本的 App 上这些调用会失败。加新能力时在这里登记（check.ts 的 ui.min-app-version）。
  */
-export const KIT_SINCE: Record<string, string> = { readImage: "0.1.20", openFile: "0.1.20", openUrl: "0.1.20", Link: "0.1.20", readMedia: "0.1.23", releaseMedia: "0.1.23" };
+export const KIT_SINCE: Record<string, string> = { readImage: "0.1.20", openFile: "0.1.20", openUrl: "0.1.20", Link: "0.1.20", readMedia: "0.1.23", releaseMedia: "0.1.23", Workspace: "0.1.33", setExpanded: "0.1.33" };
 
 export const BOT_ID = /^[a-z0-9][a-z0-9-]{1,47}$/;
 export const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;

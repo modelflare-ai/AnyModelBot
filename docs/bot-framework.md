@@ -137,9 +137,10 @@ mount(App);
 | `readFile(path)` | 读 `app/` 下的其他文本文件（≤ 2 MB） |
 | `readImage(path)` | 读 `app/` 下的图片（png、jpg、gif、webp、svg，≤ 16 MB），返回 `{ url }`，放进 `<img>`；需要实例，示例数据里的图放在 `ui/` 下用相对路径 |
 | `readMedia(path)`、`releaseMedia(url)` | 0.1.23 起可预览 `app/` 下的音视频（单个 ≤ 200 MB，同时最多 4 个）。返回 `{ url, size }`，用于 `<video>` / `<audio>`；切换素材或卸载组件时释放 URL。数据经父页面传入，Blob URL 在沙箱内创建 |
-| `openFile(path, { reveal })` | 打开 `app/` 下的文件。要在用户点击时调用。桌面版用系统程序打开或在文件夹中显示（打开就会运行的只在文件夹中显示），网页里下载 |
+| `openFile(path, { reveal })` | 打开 `app/` 下的文件。要在用户点击时调用。默认在右侧「预览」打开；不支持的格式提供下载与系统打开。桌面版 `{ reveal: true }` 仍在文件夹中显示 |
 | `desktop` | 是桌面版，能用系统程序打开文件 |
-| `openUrl(url)` | 打开外部网页：用户确认地址后才打开，只放行 http(s) |
+| `expanded`、`setExpanded(boolean)` | 工作台是否展开；用户点击时可展开，收起保留当前编辑状态。新套件能力要求 App 0.1.33 起 |
+| `openUrl(url)` | 在右侧预览外部网页：用户确认地址后才打开，只放行 http(s)，保留浏览器打开入口 |
 
 主题、语言、字号、动效偏好由套件自动跟随，界面不用管。
 
@@ -149,10 +150,10 @@ mount(App);
 
 ### 桌面工作区
 
-专属界面是桌面应用里的一个窗口，不是一张从上往下滚的网页。有多份作品（项目、研究、任务）的 Bot 都用 `kit.css` 里同一套结构：
+专属界面首先适配右侧面板。有多份作品（项目、研究、任务）的 Bot 使用套件的 `Workspace({ label, current, children })`：第一个子项是导航，后面是内容。`label` 为列表名称，`current` 为当前项目或新建页面的标题。新组件要求 App 0.1.33 起：
 
-```html
-<div class="kit-ws">
+```js
+html`<${Workspace} label=${listTitle} current=${selectedTitle}>
   <nav class="kit-ws-list">
     <div class="kit-list-head"><h2 class="t-label">项目</h2><button class="btn sm">新建</button></div>
     <button class="kit-item on"><span class="kit-item-title">名称</span><span class="kit-item-meta">…</span></button>
@@ -161,14 +162,15 @@ mount(App);
     <header class="kit-bar"><div class="kit-bar-text"><h1>当前这一份</h1><p>状态 · 一行说明</p></div><div class="kit-bar-actions">…</div></header>
     <div class="kit-ws-body"><div class="kit-tabs" role="tablist">…</div>…</div>
   </main>
-</div>
+<//>`;
 ```
 
-- 左边列表、右边内容各自滚动，填满界面的高度；工具栏往下滚时盖在内容上。窗口窄于 640px 时列表收到上面。
+- iframe 小于 1100px 时，导航收进顶部项目选择器，点击外部或按 Escape 关闭；到达 1100px 后常驻左侧。宿主提供「展开工作台 / 返回对话」，切换时不卸载 Bot 界面。
+- `.kit-ws-main` 声明 `workspace-content` 容器，内部多栏用容器查询，按扣除导航后的实际宽度切换。外部 Bot 原有的直接 `<div class="kit-ws">` 结构仍可使用。
 - Bot 的名字已经在容器顶栏里，界面里不再写大标题；免责声明这类每次都一样的话放在末尾的 `.kit-foot`，不占顶部。
-- 主操作一个就够：按进度算出"下一步"，其余收进"更多"。分页用 `.kit-tabs`，最多五个。
+- 主操作按进度给出「下一步」，其余收进「更多」。默认主分页保持四个左右；画布、设置等辅助工具按需进入。长描述、版本、任务历史使用局部折叠，当前生成状态展示在当前作品附近。
 - 容器底部的示例是一排单行胶囊，可点的话写短一点，放不下时会被省略。
-- 容器顶栏有「工作台 / 对话」两种看法，所有 Bot 都一样：工作台是专属界面，对话是完整的对话流（还没用过时是一段开场白和完整的示例）。界面不用自己做聊天。
+- 对话在主区、工作台在右侧；展开工作台时暂时隐藏对话，返回时恢复原有宽度和状态。Bot 不需要自己做聊天。
 - 让新手和懂行的人都能上手，每个 Bot 做两样东西：列表顶上的「新建」是向导——点选几项，界面把要求写成一句话（发出前显示出来）再 `send`；另外至少一个懂行的人熟悉的专业视图，比如研报的关键数字、来源核对、放映、分镜表。
 
 组件按真实需要加到 `ui/botkit/kit.js`：加进套件，不要在单个 Bot 里绕过。套件随 App 发布，所以往里加东西要发版。新能力登记在 `src/botkit/format.ts` 的 `KIT_SINCE`，用到它的 Bot 的 `minAppVersion` 不能更低，检查会拦（`ui.min-app-version`）。
@@ -182,12 +184,12 @@ mount(App);
 | `init` | 下发语言、主题、字号、动效偏好、文案和 Bot 基本信息 |
 | `readFile`、`readImage` | 只读工作区 `app/` 下的文件，走不出去 |
 | `readMedia`、`releaseMedia` | 读取受限类型和大小的音视频，管理预览资源；不能读取 HTML 或脚本 |
-| `openFile` | 打开或下载 `app/` 下的文件。父页面确认用户刚点过才执行 |
+| `openFile` | 预览 `app/` 下的文件，提供下载与系统打开。父页面确认用户刚点过才执行 |
 | `send`、`stop` | 发消息、停止 |
 | `subscribe` | 接收 `turn`、`file`、`env` 事件 |
 | `pickFile` | 选文件 |
 | `openChannels` | 打开连接设置，让用户绑定聊天渠道 |
-| `openUrl` | 用户确认地址后打开外部网页 |
+| `openUrl` | 用户确认地址后在右侧预览外部网页 |
 | `reportError`、`rendered` | 上报错误（退回对话视图）、渲染完成 |
 
 一期不开放麦克风、摄像头和外部地图。确实需要时评估怎么安全地开放，加进桥接和约束检查。
@@ -319,7 +321,8 @@ age 用于加密私钥备份，不代替目录签名。当前沿用 Modelflare �
 | `GET /bots/:id/app/file?path=` | 读 `app/` 下的文件 |
 | `GET /bots/:id/app/image?path=` | 读 `app/` 下的图片，返回 data URL |
 | `GET /bots/:id/app/list` | 列出 `app/` 下的文件（评测用） |
-| `GET /bots/:id/app/download?path=` | 下载 `app/` 下的文件 |
+| `GET /bots/:id/app/download?path=` | 读取 `app/` 下的文件；加 `download=1` 强制下载 |
+| `GET /bots/:id/app/preview?path=` | 获取 `app/` 下文件的预览描述 |
 | `POST /bots/:id/app/open` | 桌面版打开 `app/` 下的文件，或在文件夹中显示 |
 | `POST /bots/:id/app/inbox` | 放文件进 `app/inbox/` |
 | `GET /bots/:id/app/watch` | SSE：`app/` 下的文件变化 |

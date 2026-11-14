@@ -45,12 +45,14 @@ export function accountRoutes(ctx: WebContext): Route {
         if (b?.stopRunning) for (const conv of app.runtime.activeConversations()) stopConversation(conv);
         const r = await app.account.logout();
         app.store.setKV("connection.setup", "1");
+        app.store.setKV("guide.welcomeConsumed", "1");
         return send(res, 200, { ...status(), revoked: r.revoked });
       }
       if (sub === "setup" && m === "POST") {
         const b = await readJson(req).catch(() => ({}));
         if (b?.stopRunning) for (const conv of app.runtime.activeConversations()) stopConversation(conv);
         app.store.setKV("connection.setup", "1");
+        app.store.setKV("guide.welcomeConsumed", "1");
         return send(res, 200, { ok: true });
       }
       if (sub === "continue" && m === "POST") {

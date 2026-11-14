@@ -49,6 +49,15 @@ export const RELEASE = {
   days: 30,
   /** 各版本的一句话亮点（可选），没有就显示"AnyModelBot {version} 已发布" */
   highlights: {
+    "0.1.34": {
+      zh: "启动诊断与重复启动处理改进",
+      en: "Startup diagnostics and second-launch handling",
+      ja: "起動診断と二重起動時の表示を改善",
+      ko: "시작 진단과 재실행 처리 개선",
+      ru: "Диагностика и обработка повторного запуска",
+      es: "Diagnóstico y gestión del segundo inicio",
+      pt: "Diagnóstico e tratamento da segunda inicialização",
+    },
     "0.1.33": {
       zh: "定时规则、机器人模板和右侧预览",
       en: "Scheduled rules, bot templates and resource previews",

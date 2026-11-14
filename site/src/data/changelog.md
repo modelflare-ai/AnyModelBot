@@ -4,6 +4,19 @@
 
 这里只写用户能感受到的变化。更早的版本见 [GitHub 发布页](https://github.com/modelflare-ai/AnyModelBot/releases)。
 
+## 0.1.34 - 2026-11-14
+
+### 新增
+
+- **启动早期诊断：** 桌面版在申请单实例锁前就写入独立的 `startup-<时间>-<PID>.log`，记录系统版本、实际数据目录、锁结果和启动阶段。数据目录无法写入时，会尝试系统临时目录。
+- **启动排查开关：** 使用 `--diagnose-startup` 启动时，如果未获得单实例锁，会显示诊断日志位置，方便排查无窗口退出。
+
+### 改进与修复
+
+- 重复启动发生在本机界面服务尚未就绪时，先保留窗口唤起请求，待就绪后再打开，避免过早创建窗口。
+- 每次启动使用独立日志，主实例保留最近 20 份；正常的 `app.log` 不受第二次启动的日志轮转影响。
+- 这是对 [#71](https://github.com/modelflare-ai/AnyModelBot/issues/71) 的诊断改进，尚不能确认 Win11 Insider Build 26300 的秒退根因。如果 `ELECTRON_RUN_AS_NODE` 让程序以 Node 模式启动，应用代码不会执行，仍需先检查这个环境变量。Windows 默认日志目录为 `%APPDATA%\anymodel bot\data\logs`，名称中有空格。
+
 ## 0.1.33 - 2026-11-14
 
 ### 新增

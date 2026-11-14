@@ -4,6 +4,19 @@
 
 Aquí se recogen los cambios que notarás en la app. Para versiones anteriores, consulta las [versiones publicadas en GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.34 - 2026-11-14
+
+### Novedades
+
+- **Diagnóstico desde el inicio:** antes de solicitar el bloqueo de instancia única, la aplicación crea un `startup-<time>-<PID>.log` separado con la versión del sistema, la carpeta real de datos, el resultado del bloqueo y las etapas de arranque. Si no puede escribir ahí, intenta usar la carpeta temporal del sistema.
+- **Opción de diagnóstico:** al iniciar con `--diagnose-startup`, se muestra la ubicación del registro si no se obtiene el bloqueo, para investigar cierres sin ventana.
+
+### Mejoras y correcciones
+
+- Si se vuelve a iniciar antes de que el servicio de interfaz esté listo, la solicitud de mostrar la ventana espera hasta terminar el arranque, evitando crearla antes de tiempo.
+- Cada inicio tiene su propio registro y la instancia principal conserva los veinte más recientes. Un segundo inicio no rota el `app.log` habitual de la aplicación en ejecución.
+- Esta actualización mejora el diagnóstico de [#71](https://github.com/modelflare-ai/AnyModelBot/issues/71); aún no se ha confirmado la causa del cierre inmediato en Win11 Insider Build 26300. Si `ELECTRON_RUN_AS_NODE` activa el modo Node, el código de la aplicación no se ejecuta y hay que revisar primero esa variable. La carpeta predeterminada de registros en Windows es `%APPDATA%\anymodel bot\data\logs`, con un espacio en el nombre.
+
 ## 0.1.33 - 2026-11-14
 
 ### Novedades

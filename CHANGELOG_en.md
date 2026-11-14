@@ -4,6 +4,19 @@
 
 This covers changes you'll notice in the app. For older versions, see the [GitHub releases](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.34 - 2026-11-14
+
+### New
+
+- **Early startup diagnostics:** the desktop app writes a separate `startup-<time>-<PID>.log` before requesting the single-instance lock, recording the OS version, actual data directory, lock result and startup stages. If the data directory is unwritable, it tries the system temporary directory.
+- **Startup troubleshooting switch:** launch with `--diagnose-startup` to show the diagnostic log location when the single-instance lock is not acquired, helping investigate exits without a window.
+
+### Improvements and fixes
+
+- If a second launch arrives before the local interface service is ready, its window activation is queued until startup finishes, avoiding premature window creation.
+- Each launch has its own log; the primary instance retains the latest twenty. A secondary launch does not rotate the running app’s ordinary `app.log`.
+- This improves diagnosis of [#71](https://github.com/modelflare-ai/AnyModelBot/issues/71); the immediate-exit cause on Win11 Insider Build 26300 is not yet confirmed. If `ELECTRON_RUN_AS_NODE` selects Node mode, application code never runs, so that variable still needs checking first. The default Windows log directory is `%APPDATA%\anymodel bot\data\logs`, with a space in the name.
+
 ## 0.1.33 - 2026-11-14
 
 ### New

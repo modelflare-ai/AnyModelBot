@@ -415,7 +415,7 @@ export default {
     webSearch: {
       name: "联网搜索",
       sub: "默认免费搜索，填写 Key 后优先使用",
-      keys: "搜索 网页 search web tavily exa 博查 bocha 智谱 zhipu keenable searxng",
+      keys: "搜索 网页 search web tavily exa 博查 bocha 智谱 zhipu keenable keirolabs searxng",
       auto: "自动",
       bocha: "博查",
       zhipu: "智谱",

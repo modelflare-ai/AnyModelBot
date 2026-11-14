@@ -7,7 +7,7 @@
  * - 默认（自动）不用 Key：Exa 的公开 MCP → 必应网页 → DuckDuckGo 网页，上一次成功的排最前。某个出错（网络、超时、
  *   限流、人机验证页、必应给出与问题无关的结果）就冷却一段时间不用；全都在冷却时照样都试。某个说"没有结果"不算出错，
  *   接着问下一个。
- * - 设置里选了带 Key 的接口（Tavily / Exa / 博查 / 智谱）或填了 SearXNG 地址时先用它；它出错就退回免费的
+ * - 设置里选了带 Key 的接口（Tavily / Exa / 博查 / 智谱 / Keenable / Keirolabs）或填了 SearXNG 地址时先用它；它出错就退回免费的
  *   （Key 被拒记一条警告，设置页也会提示），同样冷却一段时间。
  * - 结果按 URL 去重、截到 maxResults 条；日志只记用了哪个后端、几条、耗时，不记查询内容和 Key。
  */
@@ -18,11 +18,11 @@ const log = logger("agent.search");
 
 // ---------- 设置 ----------
 
-export const SEARCH_PROVIDERS = ["auto", "tavily", "exa", "bocha", "zhipu", "keenable", "searxng"] as const;
+export const SEARCH_PROVIDERS = ["auto", "tavily", "exa", "bocha", "zhipu", "keenable", "keirolabs", "searxng"] as const;
 export type SearchProvider = (typeof SEARCH_PROVIDERS)[number];
 /** 带 Key 的接口 */
 export type KeyedProvider = Exclude<SearchProvider, "auto" | "searxng">;
-const KEYED: readonly KeyedProvider[] = ["tavily", "exa", "bocha", "zhipu", "keenable"];
+const KEYED: readonly KeyedProvider[] = ["tavily", "exa", "bocha", "zhipu", "keenable", "keirolabs"];
 
 /** 应用级（不分机器人）：存在 SQLite 的 kv 表，和渠道令牌一样只靠数据目录的权限保护；Key 按接口分开存，切换不丢 */
 export interface WebSearchSettings {
@@ -589,6 +589,12 @@ export function keyedRequest(s: WebSearchSettings, query: string, count: number)
         url: "https://api.keenable.ai/v1/search",
         init: json({ "x-api-key": key, "x-keenable-title": "AnyModelBot" }, { query, max_results: Math.min(count, 20) }),
         parse: (j) => list(j?.results).filter((r) => httpUrl(r?.url)).map((r) => source(r.url, str(r.title), str(r.snippet), str(r.published_at))),
+      };
+    case "keirolabs":
+      return {
+        url: "https://api.keirolabs.cloud/api/v2/keiro",
+        init: json({ authorization: `Bearer ${key}` }, { query, maxResults: Math.min(count, 50) }),
+        parse: (j) => list(j?.results).filter((r) => httpUrl(r?.url)).map((r) => source(r.url, str(r.title), str(r.snippet), str(r.publishedDate))),
       };
   }
 }

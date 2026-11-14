@@ -401,6 +401,17 @@ describe("带 Key 的接口", () => {
     ]);
   });
 
+  it("Keirolabs：Bearer，query + maxResults（≤50）；results[].title / url / snippet / publishedDate", () => {
+    const r = keyedRequest(cfg("keirolabs"), "q", 80)!;
+    expect(r.url).toBe("https://api.keirolabs.cloud/api/v2/keiro");
+    expect(headers(r).authorization).toBe("Bearer k-123456");
+    expect(body(r)).toEqual({ query: "q", maxResults: 50 });
+    expect(r.parse({ results: [{ position: 1, title: "K", url: "https://k/", snippet: "s", publishedDate: "2026-01-15", score: 0.5 }, { title: "L", url: "https://l/", snippet: "s2", publishedDate: "" }, { title: "bad", url: "ftp://x" }] })).toEqual([
+      { url: "https://k/", title: "K", snippet: "s", publishedAt: "2026-01-15" },
+      { url: "https://l/", title: "L", snippet: "s2" },
+    ]);
+  });
+
   it("SearXNG：GET <地址>/search?q=…&format=json，不用 Key；results[].url / title / content / publishedDate", () => {
     const r = keyedRequest(normalizeWebSearch({ provider: "searxng", url: "https://searx.example/sub" }), "a b", 8)!;
     expect(r.url).toBe("https://searx.example/sub/search?q=a%20b&format=json");

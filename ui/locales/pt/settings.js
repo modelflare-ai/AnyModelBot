@@ -415,7 +415,7 @@ export default {
     webSearch: {
       name: "Pesquisa na web",
       sub: "Pesquisa gratuita por padrão. Uma chave que você adicionar é usada primeiro",
-      keys: "pesquisa busca web internet search tavily exa bocha zhipu keenable searxng",
+      keys: "pesquisa busca web internet search tavily exa bocha zhipu keenable keirolabs searxng",
       auto: "Automático",
       bocha: "Bocha",
       zhipu: "Zhipu",

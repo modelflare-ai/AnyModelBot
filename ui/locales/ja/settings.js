@@ -436,7 +436,7 @@ export default {
     "webSearch": {
       "name": "Web 検索",
       "sub": "標準では無料の検索を使います。キーを追加すると、そのサービスを優先します",
-      "keys": "検索 Web インターネット Tavily Exa Bocha Zhipu Keenable SearXNG",
+      "keys": "検索 Web インターネット Tavily Exa Bocha Zhipu Keenable Keirolabs SearXNG",
       "auto": "自動",
       "bocha": "Bocha",
       "zhipu": "Zhipu"

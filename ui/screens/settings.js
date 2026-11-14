@@ -111,6 +111,7 @@ const SEARCH_OPTIONS = () => [
   ["bocha", t("settings.rows.webSearch.bocha")],
   ["zhipu", t("settings.rows.webSearch.zhipu")],
   ["keenable", "Keenable"],
+  ["keirolabs", "Keirolabs"],
   ["searxng", "SearXNG"],
 ];
 

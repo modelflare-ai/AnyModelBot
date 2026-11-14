@@ -436,7 +436,7 @@ export default {
     "webSearch": {
       "name": "웹 검색",
       "sub": "기본적으로 무료 검색을 사용합니다. 키를 추가하면 해당 검색을 먼저 사용합니다",
-      "keys": "검색 웹 인터넷 tavily exa bocha zhipu keenable searxng",
+      "keys": "검색 웹 인터넷 tavily exa bocha zhipu keenable keirolabs searxng",
       "auto": "자동",
       "bocha": "Bocha",
       "zhipu": "Zhipu"

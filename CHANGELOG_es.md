@@ -6,10 +6,13 @@ Aquí se recogen los cambios que notarás en la app. Para versiones anteriores, 
 
 ## 0.1.35 - 2026-11-14
 
-### Mejoras y correcciones
+### Novedades
 
 - **Barra lateral e iconos más sencillos:** las acciones comunes usan Heroicons. Arriba quedan contraer, buscar y crear; Programadas pasa a la navegación con texto. El botón junto a la cuenta descarga actualizaciones y permite reiniciar para instalarlas cuando estén listas.
 - **Saldo visible en Ajustes:** Ajustes → Modelos muestra el saldo, los créditos de Bot y el porcentaje restante, con acciones para actualizar y recargar. Se eliminan el anillo de saldo y la tarjeta al pasar el cursor de la barra lateral.
+
+### Mejoras y correcciones
+
 - **Vistas previas estables:** el campo de dirección y el selector de recursos usan controles compartidos. Cambiar de pestaña en el panel derecho conserva su anchura, incluidos los ajustes manuales. Se corrige el botón para expandir la barra lateral después de contraerla.
 - **Errores más claros:** los fallos al reservar cuota se clasifican como saldo insuficiente, también con mensajes que llevan prefijos. Las acciones de recuperación corresponden al proveedor y la barra lateral no muestra errores sin procesar.
 - **Permisos del ordenador más claros:** se usa un título singular cuando falta un permiso y reabrir la app pasa a ser la acción principal cuando hace falta. Antes de reabrir se conservan los borradores de chats y formularios y las solicitudes pendientes.

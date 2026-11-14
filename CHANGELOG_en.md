@@ -6,10 +6,13 @@ This covers changes you'll notice in the app. For older versions, see the [GitHu
 
 ## 0.1.35 - 2026-11-14
 
-### Improvements and fixes
+### New
 
 - **Cleaner sidebar and icons:** standard actions now use Heroicons. Collapse, search and new stay at the top, while Scheduled becomes a labeled navigation item. The update button beside your account downloads updates and restarts to install when ready.
 - **Balance directly in Settings:** Settings → Models shows your account balance, Bot credits and remaining percentage, with refresh and top-up actions. The sidebar balance ring and hover card are removed.
+
+### Improvements and fixes
+
 - **Stable resource previews:** website entry and resource selection use shared controls. Switching right-panel tabs preserves its width, including manual adjustments. Fixed the sidebar expand button becoming unclickable after collapse.
 - **Clearer error recovery:** quota reservation failures are classified as low balance, including errors with prefixed messages. Recovery actions match the account provider, and sidebar previews no longer expose raw error responses.
 - **Clearer computer permissions:** one missing permission uses a singular heading, and reopening the app becomes the main action when required. Chat and form drafts and pending requests are preserved before reopening.

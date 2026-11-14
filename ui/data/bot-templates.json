@@ -1,0 +1,12 @@
+[
+  {"id":"writer","version":1,"category":"writing","avatar":"writing","tier":2,"apps":["feishu","tencent-docs","yuque","notion"],"memory":true},
+  {"id":"polish","version":1,"category":"writing","avatar":"translate","tier":2,"apps":[],"memory":true},
+  {"id":"work-report","version":1,"category":"work","avatar":"data","tier":0,"apps":["feishu","dingtalk","tencent-docs","yuque"],"globalApps":["linear","atlassian"],"memory":true,"rule":{"kind":"remind","schedule":{"kind":"weekly","time":"16:30","days":[5]}}},
+  {"id":"minutes","version":1,"category":"work","avatar":"purple","tier":2,"longContext":true,"apps":["feishu","tencent-docs","notion"]},
+  {"id":"day-planner","version":1,"category":"work","avatar":"orange","tier":0,"tools":true,"apps":["dingtalk","feishu","amap"],"globalApps":["linear"],"memory":true,"rule":{"kind":"check","schedule":{"kind":"daily","time":"08:30","days":[1,2,3,4,5]}}},
+  {"id":"digest","version":1,"category":"work","avatar":"red","tier":0,"longContext":true,"apps":["feishu"],"memory":true,"channelHint":true,"rule":{"kind":"check","sourceRequired":true,"schedule":{"kind":"daily","time":"18:00","days":[1,2,3,4,5]}}},
+  {"id":"researcher","version":1,"category":"learning","avatar":"science","tier":4,"tools":true,"reasoning":true,"apps":["yuque","notion","tencent-docs"]},
+  {"id":"study-buddy","version":1,"category":"learning","avatar":"education","tier":2,"reasoning":true,"vision":true,"apps":[],"memory":true},
+  {"id":"coding-partner","version":1,"category":"coding","avatar":"code","tier":4,"tools":true,"reasoning":true,"apps":["github","linear","atlassian"]},
+  {"id":"support","version":1,"category":"work","avatar":"yellow","tier":0,"apps":["feishu","yuque","tencent-docs"],"memory":true,"channelHint":true}
+]

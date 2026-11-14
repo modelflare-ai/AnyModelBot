@@ -5,6 +5,8 @@ release/
 data/
 # 应用数据目录之外的同名目录：官网的数据文件要入库
 !site/src/data/
+# 机器人模板定义也是应用源文件
+!ui/data/
 # 目录 Bot 引入的技能要原样入库，否则哈希对不上
 !bots/**/data/
 !bots/**/dist/

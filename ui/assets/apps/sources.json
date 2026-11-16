@@ -61,6 +61,12 @@
       "file": "canva.webp",
       "source": "https://www.canva.dev/_next/static/media/apple-touch-180x180.b6aae4a9.webp",
       "page": "https://www.canva.dev/"
+    },
+    {
+      "id": "levea",
+      "file": "levea.png",
+      "source": "https://github.com/brajendrak00068/agentic-ai-video-production/blob/main/mcp-server/icon-512.png",
+      "page": "https://www.livecore.ai/"
     }
   ]
 }

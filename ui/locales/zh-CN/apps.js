@@ -279,5 +279,13 @@ export default {
       steps: { oauth: { 0: "在浏览器里登录 Canva。", 1: "确认授权后，会自动回到这里。" } },
       example: "用 Canva 做一张活动海报的初稿",
     },
+    levea: {
+      desc: "用自然语言或录像剪辑视频，生成竖屏高光切片、动态字幕并导出 MP4。",
+      steps: {
+        oauth: { 0: "在浏览器里登录 Levea。", 1: "确认授权后，会自动回到这里。" },
+        header: { 0: "打开 livecore.ai 登录后生成一个 API Key。", 1: "把 Key 粘贴到下面。" },
+      },
+      example: "把最新的访谈录像剪成 3 条带动态字幕的竖屏短视频",
+    },
   },
 };

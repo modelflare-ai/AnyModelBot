@@ -279,5 +279,13 @@ export default {
       steps: { oauth: { 0: "Tarayıcıda Canva oturumu aç.", 1: "Onayladıktan sonra kendiliğinden buraya dönersin." } },
       example: "Canva'da bir etkinlik afişi taslağı hazırla",
     },
+    levea: {
+      desc: "Komutları veya kayıtları düzenlenmiş videolara, dikey kliplere, animasyonlu altyazılara ve MP4 çıktılara dönüştür.",
+      steps: {
+        oauth: { 0: "Tarayıcıda Levea oturumu aç.", 1: "Onayladıktan sonra kendiliğinden buraya dönersin." },
+        header: { 0: "livecore.ai adresinde oturum açıp bir Levea API anahtarı oluştur.", 1: "Anahtarı aşağıya yapıştır." },
+      },
+      example: "Son kaydımı animasyonlu altyazılı 3 dikey Reels videosuna dönüştür",
+    },
   },
 };

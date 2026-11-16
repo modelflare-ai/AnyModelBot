@@ -279,5 +279,13 @@ export default {
       steps: { oauth: { 0: "Sign in to Canva in the browser.", 1: "After you approve, you’ll return here automatically." } },
       example: "Draft an event poster in Canva",
     },
+    levea: {
+      desc: "Turn prompts or recordings into edited videos, vertical clips, animated captions, and MP4 exports.",
+      steps: {
+        oauth: { 0: "Sign in to Levea in the browser.", 1: "After you approve, you’ll return here automatically." },
+        header: { 0: "Sign in at livecore.ai and create a Levea API key.", 1: "Paste the key below." },
+      },
+      example: "Turn my latest recording into 3 vertical Reels with animated captions",
+    },
   },
 };

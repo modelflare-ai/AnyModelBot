@@ -279,5 +279,13 @@ export default {
       steps: { oauth: { 0: "Inicia sesión en Canva en el navegador.", 1: "Después de aprobar, volverás aquí automáticamente." } },
       example: "Crea un borrador de póster para un evento en Canva",
     },
+    levea: {
+      desc: "Convierte indicaciones o grabaciones en vídeos editados, clips verticales, subtítulos animados y exportaciones MP4.",
+      steps: {
+        oauth: { 0: "Inicia sesión en Levea en el navegador.", 1: "Después de aprobar, volverás aquí automáticamente." },
+        header: { 0: "Inicia sesión en livecore.ai y crea una clave de API de Levea.", 1: "Pega la clave abajo." },
+      },
+      example: "Convierte mi última grabación en 3 Reels verticales con subtítulos animados",
+    },
   },
 };

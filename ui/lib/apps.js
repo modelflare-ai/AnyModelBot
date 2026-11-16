@@ -67,7 +67,7 @@ export function appLabel(view, catalog, lang) {
 }
 
 /** 非中文界面置顶的顺序；其余按清单原来的顺序排在后面 */
-const GLOBAL_FIRST = ["github", "notion", "linear", "atlassian", "canva"];
+const GLOBAL_FIRST = ["github", "notion", "linear", "atlassian", "canva", "levea"];
 /** 中文界面：国内 5 个 + Notion 在前，其余在后；其他语言：GitHub、Notion、Linear、Atlassian、Canva 在前 */
 export function orderCatalog(catalog, lang) {
   const list = [...catalog];

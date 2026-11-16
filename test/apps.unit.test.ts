@@ -585,8 +585,8 @@ describe("授权登录", () => {
 });
 
 describe("内置应用", () => {
-  it("清单：国内 5 个、海外 5 个，没有 Google；每个都有连接方式和官方文档", () => {
-    expect(BUILTIN_APPS.map((a) => a.id)).toEqual(["feishu", "tencent-docs", "dingtalk", "amap", "yuque", "notion", "github", "linear", "atlassian", "canva"]);
+  it("清单：国内 5 个、海外 6 个，没有 Google；每个都有连接方式和官方文档", () => {
+    expect(BUILTIN_APPS.map((a) => a.id)).toEqual(["feishu", "tencent-docs", "dingtalk", "amap", "yuque", "notion", "github", "linear", "atlassian", "canva", "levea"]);
     expect(BUILTIN_APPS.filter((a) => a.region === "cn")).toHaveLength(5);
     expect(BUILTIN_APPS.some((a) => /google/i.test(a.id + a.name.en + a.keywords.join(" ")))).toBe(false);
     for (const a of BUILTIN_APPS) {

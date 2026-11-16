@@ -154,6 +154,17 @@ export const BUILTIN_APPS: readonly BuiltinApp[] = [
     methods: [{ kind: "oauth", url: "https://mcp.canva.com/mcp" }],
     docs: "https://www.canva.dev/docs/connect/canva-mcp-server-setup/",
   },
+  {
+    id: "levea",
+    name: { zh: "Levea", en: "Levea" },
+    region: "global",
+    keywords: ["levea", "livecore", "视频剪辑", "剪辑", "短视频", "切片", "字幕", "竖屏", "video editor", "video editing", "clips", "reels", "shorts", "tiktok", "captions", "subtitles", "reframe"],
+    methods: [
+      { kind: "oauth", url: "https://api.livecore.ai/api/v1/misc/mcp" },
+      { kind: "header", url: "https://api.livecore.ai/api/v1/misc/mcp", header: "Authorization", prefix: "Bearer ", getUrl: "https://www.livecore.ai" },
+    ],
+    docs: "https://github.com/brajendrak00068/agentic-ai-video-production/blob/main/mcp-server/README.md",
+  },
 ];
 
 export const CUSTOM_APP = "custom";

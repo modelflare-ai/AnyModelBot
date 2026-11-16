@@ -279,5 +279,13 @@ export default {
       steps: { oauth: { 0: "Entre no Canva pelo navegador.", 1: "Depois de aprovar, você volta para cá automaticamente." } },
       example: "Crie um rascunho de cartaz de evento no Canva",
     },
+    levea: {
+      desc: "Transforme comandos ou gravações em vídeos editados, clipes verticais, legendas animadas e exportações MP4.",
+      steps: {
+        oauth: { 0: "Entre no Levea pelo navegador.", 1: "Depois de aprovar, você volta para cá automaticamente." },
+        header: { 0: "Entre em livecore.ai e crie uma chave de API do Levea.", 1: "Cole a chave abaixo." },
+      },
+      example: "Transforme minha última gravação em 3 Reels verticais com legendas animadas",
+    },
   },
 };

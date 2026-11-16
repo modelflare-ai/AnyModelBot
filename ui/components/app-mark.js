@@ -12,6 +12,7 @@ const LOGOS = {
   linear: "linear.png",
   atlassian: "atlassian.png",
   canva: "canva.webp",
+  levea: "levea.png",
 };
 
 /** app 使用稳定的内置应用 ID，不根据翻译后的名称猜品牌。相邻文字提供可访问名称。 */

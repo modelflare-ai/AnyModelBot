@@ -7,7 +7,7 @@ export default {
   "items": [
     {
       "q": "Bir bota nasıl beceri eklerim?",
-      "a": "Üç yol: Uygulamalar ve beceriler’deki beceri kitaplığından bir kurulum istemini kopyala ya da bota bir becerinin GitHub bağlantısını gönder, sonra kartı onayla; botun ayarları → Beceriler → ZIP içe aktar altında SKILL.md içeren bir ZIP (en fazla 20 MB) içe aktar; ya da bir bot bir işi doğru yapınca “beceri olarak kaydet” de veya /skill gönder ve taslak kartı onayla, böylece Becerilerim’e kaydolur. Orada başka botlarda açabilir, ZIP olarak dışa aktarabilir veya zamanlayabilirsin. Gizli bilgiler asla bir beceriye yazılmaz; bir becerinin ihtiyaç duyduğu yazılım ve internet, beceriye bağlıdır."
+      "a": "Dört yol: Uygulamalar ve beceriler’deki beceri kitaplığından bir kurulum istemini kopyala ya da bota bir becerinin GitHub bağlantısını gönder, sonra kartı onayla; botun ayarları → Beceriler → ZIP içe aktar altında SKILL.md içeren bir ZIP (en fazla 20 MB) içe aktar; masaüstü uygulamasında Beceri kitaplığım → Bu bilgisayardan içe aktar… ile Claude Code, Codex, Cursor gibi araçların bu bilgisayara kurduğu becerileri tek seferde içe aktarıp ihtiyaç duyan botlarda aç; ya da bir bot bir işi doğru yapınca “beceri olarak kaydet” de veya /skill gönder ve taslak kartı onayla, böylece Becerilerim’e kaydolur. Orada başka botlarda açabilir, ZIP olarak dışa aktarabilir veya zamanlayabilirsin. Gizli bilgiler asla bir beceriye yazılmaz; bir becerinin ihtiyaç duyduğu yazılım ve internet, beceriye bağlıdır."
     },
     {
       "q": "Eski bir sohbeti nasıl bulurum?",

@@ -7,7 +7,7 @@ export default {
   "items": [
     {
       "q": "¿Cómo agrego habilidades a un bot?",
-      "a": "Hay tres formas: copia una instrucción de instalación de la biblioteca en Apps y habilidades o envíale al bot el enlace de GitHub de una habilidad, y confirma la tarjeta; importa un ZIP con un SKILL.md (hasta 20 MB) en los ajustes del bot → Habilidades → Importar ZIP; o, cuando un bot hace algo bien, di «guardar como habilidad» o envía /skill y confirma el borrador para guardarla en Mis habilidades, donde puedes activarla en otros bots, exportarla como ZIP o programarla. Los secretos nunca se escriben en una habilidad; el software y la conexión que necesita dependen de cada habilidad."
+      "a": "Hay cuatro formas: copia una instrucción de instalación de la biblioteca en Apps y habilidades o envíale al bot el enlace de GitHub de una habilidad, y confirma la tarjeta; importa un ZIP con un SKILL.md (hasta 20 MB) en los ajustes del bot → Habilidades → Importar ZIP; en la app de escritorio, importa desde Mi biblioteca de habilidades → Importar desde este equipo… las habilidades que Claude Code, Codex, Cursor y herramientas similares instalaron en este equipo, y actívalas en los bots que las necesiten; o, cuando un bot hace algo bien, di «guardar como habilidad» o envía /skill y confirma el borrador para guardarla en Mis habilidades, donde puedes activarla en otros bots, exportarla como ZIP o programarla. Los secretos nunca se escriben en una habilidad; el software y la conexión que necesita dependen de cada habilidad."
     },
     {
       "q": "¿Cómo encuentro una conversación anterior?",

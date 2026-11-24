@@ -7,7 +7,7 @@ export default {
   "items": [
     {
       "q": "How do I add skills to a bot?",
-      "a": "Three ways: copy an install prompt from the skill library in Apps & skills, or send the bot a skill's GitHub link, then confirm the card; import a ZIP containing a SKILL.md (up to 20 MB) under the bot's settings → Skills → Import ZIP; or, once a bot gets something right, say \"save as skill\" or send /skill and confirm the draft card to keep it in My skills, where you can turn it on for other bots, export it as a ZIP or schedule it. Secrets are never written into a skill; the software and internet access a skill needs depend on the skill."
+      "a": "Four ways: copy an install prompt from the skill library in Apps & skills, or send the bot a skill's GitHub link, then confirm the card; import a ZIP containing a SKILL.md (up to 20 MB) under the bot's settings → Skills → Import ZIP; in the desktop app, import skills that Claude Code, Codex, Cursor and similar tools installed on this computer from My skill library → Import from this machine…, then turn them on for the bots that need them; or, once a bot gets something right, say \"save as skill\" or send /skill and confirm the draft card to keep it in My skills, where you can turn it on for other bots, export it as a ZIP or schedule it. Secrets are never written into a skill; the software and internet access a skill needs depend on the skill."
     },
     {
       "q": "How do I find an older conversation?",

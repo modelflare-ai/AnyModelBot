@@ -32,6 +32,18 @@ Os nomes usam letras minúsculas do alfabeto inglês, dígitos e hifens simples,
 - O bot lê o nome, a descrição, a origem, a licença e o número de arquivos da habilidade e mostra um cartão de confirmação. Nada é gravado até você clicar em Instalar, e a habilidade é instalada só naquele bot. Nos canais de chat, responda com o código do cartão; os cartões do Feishu têm botões. Só o dono pode instalar habilidades.
 - As habilidades instaladas mostram a origem “GitHub · repositório” na lista; em Ver aparecem o repositório, o caminho, o branch, o commit instalado e a hora da instalação.
 
+## Importar deste computador (Minha biblioteca de habilidades)
+
+Habilidades já instaladas para outras ferramentas do computador (como Claude Code, Codex, Cursor ou CodeBuddy) podem ser importadas de uma vez para Minha biblioteca de habilidades e depois ativadas nos seus bots.
+
+- Onde: menu do avatar › Minha biblioteca de habilidades › Importar deste computador…, ou configurações do bot › Habilidades › Importar deste computador…. A busca só funciona no app para desktop do computador onde fica a biblioteca; no navegador ou remotamente, continue usando um ZIP ou um link do GitHub.
+- Seis locais são verificados automaticamente: `~/.codebuddy/skills/`, `~/.qwenworkcn/skills/`, `~/.agents/skills/`, `~/.claude/skills/`, `~/.cursor/skills/` e `~/.codex/skills/`. Só pastas e nomes de arquivo `SKILL.md` são listados; instruções, memórias e contas não são lidas. Para outros locais (como `~/.workbuddy/skills/`, `.user_skills/` do Doubao ou um projeto), use Escolher pasta…; num projeto só são verificados locais conhecidos como `.claude/skills/`. A pasta pessoal, a raiz de um disco e a pasta de dados de aplicativos nunca são percorridas inteiras.
+- No início nada está selecionado. As habilidades só são lidas depois de selecionadas e de você clicar em Próximo. A revisão mostra para cada uma: pronta para importar, já existe (conteúdo idêntico; mantém o estado), mesmo nome com conteúdo diferente (pulada por padrão; Salvar separadamente mantém o nome de invocação e acrescenta um número ao nome exibido) ou incompatível (com o motivo). As que têm scripts aparecem como “Contém scripts; importar não os executa” e as com dependências, “Dependências não verificadas”.
+- Ao abrir a partir de um bot, “Usar em {bot} após importar” vem marcado; a partir da biblioteca, elas só entram na biblioteca. No fim você vê quantas foram adicionadas, ativadas, puladas e com falha. Se a ativação falhar (já existe uma habilidade com o mesmo nome ativada ou o bot está cheio), o conteúdo adicionado continua na biblioteca.
+- Não são importadas habilidades com possíveis arquivos privados (`.env`, `id_rsa`, `credentials.json`, `memory.md`…), links que apontam para fora do local escolhido, restrições que este app não consegue manter igual (como `allowed-tools` ou `hooks`), variáveis de caminho da plataforma (como `${CLAUDE_PLUGIN_ROOT}`) ou arquivos referenciados que faltam. `disable-model-invocation` e `user-invocable` são mantidos como estão; `allow_implicit_invocation: false` do Codex é gravado como `disable-model-invocation: true`.
+- Importar é copiar: a origem não muda nem é sincronizada. Cada habilidade fica uma única vez na biblioteca e cada bot guarda só um interruptor: Adicionar da biblioteca… nas configurações do bot, ou o interruptor, afeta apenas aquele bot. Habilidades ZIP e do GitHub instaladas nos bots e as que você salvou também aparecem na biblioteca.
+- Em Minha biblioteca de habilidades, abra uma habilidade para ver o conteúdo e os bots que a usam. Se nenhum bot tiver uma habilidade importada ativada, ⋯ › Remover da biblioteca apaga só a cópia da biblioteca.
+
 ## Usar, substituir e excluir
 
 - Uma habilidade vale apenas para o bot ao qual você a adicionou (sobre Minhas habilidades, veja abaixo). Esse bot usa as mesmas habilidades no app e nos canais de chat.
@@ -70,3 +82,5 @@ Quando um bot faz algo do jeito certo, você pode salvar como ele fez em Minhas 
 Os pacotes extraídos ficam em `skills/<ID do bot>/`, na pasta de dados. As habilidades ativadas são copiadas para `dsh/<ID do bot>/skills/` para o runtime. A importação só envia arquivos para a instância do AnyModelBot que você está usando; em uma implantação em servidor, os arquivos ficam armazenados nesse servidor. Os nomes e as descrições das habilidades ativadas, assim como as instruções ou referências carregadas durante o uso, passam a ser contexto enviado ao modelo selecionado. Veja [Dados e privacidade](./privacy_pt.md).
 
 Minhas habilidades ficam em `my-skills/` no diretório de dados e, na execução, são copiadas para `dsh/<ID do bot>/skills/` de cada bot em que estão ativadas.
+
+Habilidades importadas deste computador ficam em `skill-library/` no diretório de dados e, na execução, são copiadas para `dsh/<ID do bot>/skills/` de cada bot que as tiver ativadas. Ao excluir um bot, as habilidades instaladas nele continuam em Minha biblioteca de habilidades.

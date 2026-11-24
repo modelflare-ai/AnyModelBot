@@ -4,6 +4,18 @@
 
 This covers changes you'll notice in the app. For older versions, see the [GitHub releases](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.48 - 2026-11-25
+
+### New
+
+- **Import skills from this machine:** in the desktop app, skills already installed for other tools on your computer (Claude Code, Codex, Cursor, CodeBuddy and more) can be imported in one go. Six common places such as `~/.claude/skills/` are searched automatically, and Choose folder… picks a skill folder or a project; only folders and file names are listed until you select skills and click Next. The review explains each one: ready to import, already exists, same name with different content (skipped by default, or saved separately) or incompatible with the reason. Importing never runs scripts, and skills with possible private files or invocation limits this app can't keep the same way are not imported. Coming from a bot's settings, imported skills are turned on for that bot by default.
+- **My skill library:** the avatar menu has a new My skill library that keeps one copy of each skill on this computer, with search, contents and the bots that use each skill. Bot settings › Skills adds Add from library…, and each switch affects only that bot. Skills installed from a ZIP or GitHub and the skills you saved are listed in the library too, without importing again.
+
+### Improvements and fixes
+
+- **Shared skills say who else is affected:** replacing a skill several bots use with a ZIP or GitHub link, or updating one of My skills that is on in several bots, now names the other bots that get the change.
+- **Deleting a bot keeps its skills:** the skills it had installed stay in My skill library, ready to add to another bot or to remove from the library.
+
 ## 0.1.47 - 2026-11-23
 
 ### New

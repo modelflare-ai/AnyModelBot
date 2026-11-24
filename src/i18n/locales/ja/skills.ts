@@ -22,6 +22,8 @@ export default {
   "replyReplace": "{bot} にだけインストールします。置き換えるなら y {code}、キャンセルするなら n {code} と返信してください。",
   "sourceGithub": "GitHub · {repo}",
   "sourceZip": "ローカル ZIP",
+  "sourceLocal": "このパソコンから取り込み",
+  "sharedHint": "このスキルは {bots} でも使われています。変更はそちらにも反映されます。",
   "install": "インストール",
   "replace": "置き換え",
   "cancel": "キャンセル",

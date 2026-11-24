@@ -1216,7 +1216,8 @@ exec "$REAL" "$@"
   /** 这个技能装了、开着，但还没进当前的进程（模型叫它时说「技能还在加载」） */
   skillPending(name: string): boolean {
     const mine = this.userSkills.mine.forBot(this.o.botId).find((s) => s.name === name);
-    const skill = this.userSkills.list(this.o.botId).find((s) => s.name === name) ?? (mine ? { name: mine.name, digest: mine.digest, enabled: true } : undefined);
+    const lib = this.userSkills.library.enabledFor(this.o.botId).find((e) => e.name === name);
+    const skill = this.userSkills.list(this.o.botId).find((s) => s.name === name) ?? (mine ? { name: mine.name, digest: mine.digest, enabled: true } : lib ? { name: lib.name, digest: lib.digest, enabled: true } : undefined);
     if (!skill) return false;
     const state = skillState(skill, this.skillRuntime());
     return state === "waiting" || state === "loading";
@@ -1268,7 +1269,15 @@ exec "$REAL" "$@"
       .forBot(this.o.botId)
       .filter((s) => deployed.get(s.name) === s.digest)
       .map((s) => ({ name: s.name, title: s.title, example: s.example }));
-    return [...own, ...mine];
+    // 库里在这个机器人上开着、已经部署进来的条目
+    const lib = this.userSkills.library
+      .enabledFor(this.o.botId)
+      .filter((e) => deployed.get(e.name) === e.digest && this.userSkills.modelInvocable(this.o.botId, { digest: e.digest, library: true }))
+      .map((e) => {
+        const d = skillDisplay({ name: e.name, description: e.description, source: e.source.type === "local" ? undefined : e.source, title: e.title, ...(e.example ? { example: e.example } : {}) });
+        return { name: e.name, title: d.title, example: d.example };
+      });
+    return [...own, ...mine, ...lib];
   }
 
   /** 上次写进 promptFile 的内容（没变就不写） */

@@ -45,7 +45,25 @@ export function skillsView(botId: string, skills: UserSkills, runtime?: SkillRun
         mine: mySkillInfo(m),
       };
     });
-  return [...own, ...mine];
+  // 库里和这个机器人有使用关系的条目（从本机导入的、登记进库的）：开关只影响这个机器人
+  const lib = skills.library.forBot(botId).map((e) => {
+    const enabled = !!e.uses[botId]?.on;
+    const d = skillDisplay({ name: e.name, description: e.description, source: e.source.type === "local" ? undefined : e.source, title: e.title, ...(e.example ? { example: e.example } : {}) });
+    return {
+      name: e.name,
+      description: e.description,
+      digest: e.digest,
+      enabled,
+      files: e.files,
+      bytes: e.bytes,
+      source: e.source,
+      ...d,
+      state: skillState({ name: e.name, digest: e.digest, enabled }, runtime),
+      modelInvocable: skills.modelInvocable(botId, { digest: e.digest, library: true }),
+      library: { id: e.id, imported: !!e.imported, shared: skills.sharedBots(e, botId), scripts: e.scripts, depsUnverified: !!e.depsUnverified },
+    };
+  });
+  return [...own, ...mine, ...lib];
 }
 
 /** 「我的技能」给界面的详情字段：未验证、保存时间、保存它的机器人、打开的机器人、上一版、用到的应用和技能、定时运行做不了的步骤 */

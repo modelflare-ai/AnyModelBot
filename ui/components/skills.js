@@ -2,20 +2,23 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { html, Button, Icon, Sheet, Switch, Skeleton } from "./ui.js";
 import { openGithub } from "./skill-library.js";
 import { api, uploadSkillZip } from "../lib/api.js";
-import { confirmSheet, failed, saved } from "../lib/store.js";
+import { confirmSheet, failed, saved, toast } from "../lib/store.js";
 import { t, has } from "../lib/i18n.js";
 import { fold } from "../lib/text-fold.js";
 import { fillChat, installedExample, loadBotSkills, setBotSkills, skillReady, skillReadyToast, useBotSkills } from "../lib/usage.js";
 import { CHIPS, LIST_FOLD_AT, LIST_SEARCH_AT, chipCounts, inChip, kindOf, matches, openSkillDetail, skillsFilter, sortSkills } from "../lib/my-skills.js";
+import { openLibraryAdd, openLocalImport, reasonText } from "../lib/my-library.js";
 import { useLang } from "../lib/i18n.js";
 
 // 名字被「我的技能」占用（R9）：说是哪个「我的技能」
 const errorText = (e) => e?.data?.code === "mine_name" ? t("mySkills.list.mineName", { name: e.data.name || "", title: e.data.title || "" })
-  : has(`botSettings.skills.errors.${e?.data?.code}`) ? t(`botSettings.skills.errors.${e.data.code}`) : e?.message || t("common.error");
+  : has(`botSettings.skills.errors.${e?.data?.code}`) ? t(`botSettings.skills.errors.${e.data.code}`)
+  : ["name_on", "bot_full", "in_use"].includes(e?.data?.code) ? reasonText(e.data.code) : e?.message || t("common.error");
 
 /** 来源：GitHub 安装的带仓库（点了在浏览器打开），ZIP 导入的（含 0.1.35 及以前导入、没有记录的）是本地 ZIP，对话里存下的是我的技能 */
 function SourceLine({ source }) {
   if (source?.type === "mine") return html`<div class="sub skill-source-line">${t("mySkills.list.sourceMine")}</div>`;
+  if (source?.type === "local") return html`<div class="sub skill-source-line">${t("skillLib.sourceLine", { source: t("skillLib.sourceLocal") })}</div>`;
   if (source?.type !== "github") return html`<div class="sub skill-source-line">${t("botSettings.skills.sourceZip")}</div>`;
   const repo = `${source.owner}/${source.repo}`;
   return html`<div class="sub skill-source-line">${t("botSettings.skills.sourceGithub", { repo: "" })}<a href=${source.url} onClick=${(e) => (e.preventDefault(), openGithub(source.url))}>${repo}<${Icon} name="ext" size="xs" /></a></div>`;
@@ -104,6 +107,14 @@ export function Skills({ botId, botName = "", onBrowse }) {
     setFresh(detail.name);
   });
   const toggle = (skill, enabled) => run(async () => {
+    // 库里的条目：只改这个机器人的开关（同名已开着、容量满了就说原因，不自动关别的）
+    if (skill.library) {
+      const r = await api(`/skill-library/items/${encodeURIComponent(skill.library.id)}/bots/${encodeURIComponent(botId)}`, { method: "PUT", body: { on: enabled } });
+      setSkills(r.skills);
+      if (enabled) toast(t(r.state === "waiting" || r.state === "loading" ? "skillLib.toggleWaiting" : "skillLib.toggleOn"));
+      else saved();
+      return;
+    }
     try {
       const r = await api(`${base}/${encodeURIComponent(skill.name)}`, { method: "PUT", body: { enabled } });
       setSkills(r.skills);
@@ -120,7 +131,7 @@ export function Skills({ botId, botName = "", onBrowse }) {
     setSkills(r.skills);
     saved();
   });
-  const view = (skill, manage = false) => openSkillDetail({ botId, name: skill.name, kind: kindOf(skill) === "mine" ? "mine" : "imported", manage });
+  const view = (skill, manage = false) => skill.library ? openSkillDetail({ botId, name: skill.name, kind: "library", id: skill.library.id }) : openSkillDetail({ botId, name: skill.name, kind: kindOf(skill) === "mine" ? "mine" : "imported", manage });
   const close = () => { if (!working.current) setDetail(null); };
 
   // —— 排序、搜索、筛选、折叠 ——
@@ -140,12 +151,13 @@ export function Skills({ botId, botName = "", onBrowse }) {
 
   const row = (skill) => {
     const mine = kindOf(skill) === "mine";
-    return html`<div class=${`row${fresh === skill.name ? " fresh" : ""}${skill.enabled ? "" : " skill-off"}`} key=${`${mine ? "m" : "s"}:${skill.name}`} data-skill=${skill.name}>
+    const lib = !!skill.library;
+    return html`<div class=${`row${fresh === skill.name ? " fresh" : ""}${skill.enabled ? "" : " skill-off"}`} key=${lib ? `l:${skill.library.id}` : `${mine ? "m" : "s"}:${skill.name}`} data-skill=${skill.name}>
       <div class="who"><div class="name skill-name"><span>${skill.title || skill.name}</span>${mine && skill.title !== skill.name && html`<span class="skill-file">${skill.name}</span>`}${skill.enabled && html`<${StateBadge} state=${skill.state} />`}${mine && skill.mine?.unverified && html`<span class="badge skill-unverified">${t("mySkills.list.unverified")}</span>`}</div>
         <div class="sub skill-desc" title=${skill.summary || skill.description}>${skill.summary || skill.description}</div><${SourceLine} source=${skill.source} /><${TryLine} botId=${botId} skill=${skill} /></div>
       <div class="ctl">
         <button type="button" class="text" disabled=${busy} onClick=${() => view(skill)}>${t(mine ? "mySkills.list.view" : "common.view")}</button>
-        ${mine
+        ${lib ? null : mine
           ? html`<button type="button" class="text" disabled=${busy} onClick=${() => view(skill, true)}>${t("mySkills.list.manage")}</button>`
           : html`<button type="button" class="text danger" disabled=${busy} onClick=${() => remove(skill)}>${t("common.delete")}</button>`}
         <span class="skill-switch" title=${t("mySkills.list.toggleHint", { bot: botName })}><${Switch} label=${t("botSettings.skills.enable", { name: skill.title || skill.name })} value=${skill.enabled} disabled=${busy} onChange=${(v) => toggle(skill, v)} /></span>
@@ -171,6 +183,12 @@ export function Skills({ botId, botName = "", onBrowse }) {
           ${onBrowse && html`<${Button} onClick=${onBrowse}>${t("botSettings.skills.browse")}<//>`}
           <${Button} disabled=${busy || skills === null} onClick=${() => input.current?.click()}>${busy ? t("common.loading") : t("botSettings.skills.import")}<//></div>
       </div>
+      <div class="row skill-lib-row">
+        <div class="who"><div class="name">${t("skillLib.title")}</div><div class="sub">${t("skillLib.botRowSub")}</div></div>
+        <div class="ctl">
+          <${Button} disabled=${busy} onClick=${() => openLocalImport({ botId, botName })}>${t("skillLib.importLocal")}<//>
+          <${Button} disabled=${busy || skills === null} onClick=${() => openLibraryAdd({ botId, botName })}>${t("skillLib.addFromLibrary")}<//></div>
+      </div>
       ${error ? html`<div class="row"><div class="who">${error}</div><${Button} disabled=${busy} onClick=${reload}>${t("common.retry")}<//></div>`
         : skills === null ? html`<div class="row"><${Skeleton} w="60%" /></div>`
         : !skills.length ? html`<div class="row"><div class="sub">${t("botSettings.skills.empty")}</div></div>`
@@ -182,6 +200,7 @@ export function Skills({ botId, botName = "", onBrowse }) {
       <p class="body">${detail.description}</p>
       <p class="body skill-meta">${t("botSettings.skills.files", { count: detail.files, size: Math.ceil(detail.bytes / 1024) })}</p>
       <p class="body">${t(detail.replaces ? "botSettings.skills.replaceBody" : "botSettings.skills.addBody")}</p>
+      ${detail.shared?.length > 0 && html`<p class="body hint">${t("skillLib.shared", { bots: detail.shared.join(t("chat.use.sep")) })}</p>`}
       <details class="skill-instructions"><summary>${t("botSettings.skills.instructions")}</summary><pre>${detail.instructions}</pre></details>
       <div class="actions">
         <${Button} disabled=${busy} data-autofocus onClick=${close}>${t("common.cancel")}<//>

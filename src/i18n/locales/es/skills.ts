@@ -26,6 +26,8 @@ export default {
   "replyReplace": "Se instala solo en {bot}. Responde y {code} para reemplazar o n {code} para cancelar.",
   "sourceGithub": "GitHub · {repo}",
   "sourceZip": "ZIP local",
+  "sourceLocal": "Importada desde este equipo",
+  "sharedHint": "Esta habilidad también se usa en {bots}. Los cambios se aplicarán allí también.",
   "install": "Instalar",
   "replace": "Reemplazar",
   "cancel": "Cancelar",

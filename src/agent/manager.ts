@@ -510,7 +510,7 @@ export class AgentManager {
     try {
       const r = await run({ ...input, observer, signal: t.abort.signal });
       t.activity.finish();
-      this.verifyMySkills(t.activity.steps);
+      this.verifyMySkills(botId, t.activity.steps);
       return r;
     } catch (e) {
       if (e instanceof TurnStopped && e.reason === "timeout") {
@@ -524,14 +524,18 @@ export class AgentManager {
     }
   }
 
-  /** 用到「我的技能」的这一轮正常结束了（没出错、没被打断）：这些技能去掉「未验证」 */
-  private verifyMySkills(steps: ReadonlyArray<ActivityStep>): void {
+  /**
+   * 用到「我的技能」的这一轮正常结束了（没出错、没被打断）：这些技能去掉「未验证」。
+   * 只认在这个机器人上打开的那一份：同名的导入技能（库条目、外部包）用成功了不算，不能借名字拿到可信验证
+   */
+  private verifyMySkills(botId: string, steps: ReadonlyArray<ActivityStep>): void {
     const mine = this.o.userSkills?.mine;
     if (!mine) return;
     if (steps.some((s) => s.kind === "error" || s.cut)) return;
     for (const s of steps) {
       if (s.kind !== "tool" || s.status !== "ok" || s.use?.kind !== "skill") continue;
-      if (mine.get(s.use.name)?.unverified) {
+      const m = mine.get(s.use.name);
+      if (m?.unverified && m.bots.includes(botId)) {
         mine.markVerified(s.use.name);
         log.info("my skill verified by a finished turn", { skill: s.use.name });
       }
@@ -1288,7 +1292,7 @@ export class AgentManager {
       skill: (name) => {
         const mine = skills?.mine.get(name);
         if (mine) return { name, title: mine.title, source: { type: "mine" } };
-        const own = skills?.list(botId).find((x) => x.name === name);
+        const own = skills?.list(botId).find((x) => x.name === name) ?? (skills?.library.enabledFor(botId).find((e) => e.name === name) ? skills.asUserSkill(skills.library.enabledFor(botId).find((e) => e.name === name)!, botId) : undefined);
         if (!own) return undefined;
         const title = skillDisplay(own).title;
         const src = own.source;

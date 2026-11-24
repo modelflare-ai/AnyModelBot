@@ -9,6 +9,7 @@ import { t, useLang } from "../lib/i18n.js";
 import { closeSkillDetail, kindOf, skillDetail } from "../lib/my-skills.js";
 import { loadBotSkills } from "../lib/usage.js";
 import { openGithub } from "./skill-library.js";
+import { sourceLabel } from "../lib/my-library.js";
 
 const when = (at) => (at ? new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "");
 
@@ -39,8 +40,30 @@ function MineFields({ skill }) {
   </dl>`;
 }
 
-/** 读一个技能的详情：「我的技能」优先（全局），其次这个机器人装的；都没有时返回 null */
-export async function fetchSkillDetail(botId, name, kind) {
+/** 「我的技能库」里一项的字段：来源（本机导入时带位置）、使用它的机器人（关着的注明）、文件、导入时补全的、依赖和脚本 */
+function LibraryFields({ skill }) {
+  const bots = (skill.bots || []).map((b) => (b.on ? b.name : t("skillLib.detail.off", { bot: b.name })));
+  const at = when(skill.source?.installedAt);
+  return html`<dl class="skill-source">
+    <div><dt>${t("skillLib.detail.source")}</dt><dd>${skill.source?.type === "github" ? html`<a href=${skill.source.url} onClick=${(e) => (e.preventDefault(), openGithub(skill.source.url))}>${sourceLabel(skill.source)}</a>` : sourceLabel(skill.source)}</dd></div>
+    ${skill.source?.type === "local" && html`<div><dt>${t("skillLib.detail.location")}</dt><dd class="mono">${skill.source.location}</dd></div>`}
+    <div><dt>${t("skillLib.detail.bots")}</dt><dd>${bots.length ? bots.join(t("chat.use.sep")) : t("skillLib.detail.noBots")}</dd></div>
+    ${skill.kind !== "mine" && html`<div><dt>${t("skillLib.detail.files")}</dt><dd>${t("skillLib.detail.filesValue", { count: skill.files, size: Math.ceil((skill.bytes || 0) / 1024) })}${skill.scripts ? ` · ${t("skillLib.import.scripts")}` : ""}${skill.depsUnverified ? ` · ${t("skillLib.import.deps")}` : ""}</dd></div>`}
+    ${skill.completed?.length > 0 && html`<div><dt>${t("skillLib.detail.completed")}</dt><dd>${skill.completed.map((c) => `${t(`skillLib.import.field.${c.field}`)}: ${c.value}`).join(t("chat.use.sep"))}</dd></div>`}
+    ${at && skill.source?.type !== "mine" && html`<div><dt>${t("skillLib.detail.importedAt")}</dt><dd>${at}</dd></div>`}
+  </dl>`;
+}
+
+/** 读一个技能的详情：「我的技能库」的条目按 id 读；「我的技能」优先（全局），其次这个机器人装的；都没有时返回 null */
+export async function fetchSkillDetail(botId, name, kind, id) {
+  if (kind === "library") {
+    try {
+      return { ...(await api(`/skill-library/items/${encodeURIComponent(id)}`)).item, libraryItem: true };
+    } catch (e) {
+      if (e?.status === 404) return null;
+      throw e;
+    }
+  }
   if (kind !== "imported") {
     try {
       return { ...(await api(`/my-skills/${encodeURIComponent(name)}`)).skill, mine: true };
@@ -66,7 +89,7 @@ export function SkillDetailHost() {
     setSkill(null);
     if (!req) return;
     let alive = true;
-    fetchSkillDetail(req.botId, req.name, req.kind).then(
+    fetchSkillDetail(req.botId, req.name, req.kind, req.id).then(
       (s) => {
         if (!alive) return;
         // 技能已删除，或已从这个机器人移除：只提示，不打开详情
@@ -89,7 +112,7 @@ export function SkillDetailHost() {
   if (!req) return null;
   if (!skill) return null;
   const close = () => !busy && closeSkillDetail();
-  const mine = kindOf(skill) === "mine";
+  const mine = !skill.libraryItem && kindOf(skill) === "mine";
   const manage = mine && !!req.manage;
   const refresh = () => {
     if (req.botId) loadBotSkills(req.botId).catch(() => {});
@@ -132,7 +155,7 @@ export function SkillDetailHost() {
   return html`<${Sheet} title=${head} label=${skill.title || skill.name} onClose=${close} class="skill-detail">
     <p class="body">${skill.summary || skill.description}</p>
     ${mine && skill.unverified && html`<p class="body hint"><span class="badge skill-unverified">${t("mySkills.list.unverified")}</span> ${t("mySkills.detail.unverified")}</p>`}
-    ${mine ? html`<${MineFields} skill=${skill} />` : html`<p class="body skill-meta">${t("botSettings.skills.files", { count: skill.files, size: Math.ceil((skill.bytes || 0) / 1024) })}</p><${SourceDetail} source=${skill.source} />`}
+    ${skill.libraryItem ? html`<${LibraryFields} skill=${skill} />` : mine ? html`<${MineFields} skill=${skill} />` : html`<p class="body skill-meta">${t("botSettings.skills.files", { count: skill.files, size: Math.ceil((skill.bytes || 0) / 1024) })}</p><${SourceDetail} source=${skill.source} />`}
     <details class="skill-instructions"><summary>${t("mySkills.card.showInstructions")}</summary><pre class="selectable">${skill.instructions}</pre></details>
     ${manage && html`<p class="hint skill-export-note">${t("mySkills.detail.exportNote")}</p>`}
     <div class="actions">

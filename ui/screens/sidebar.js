@@ -146,6 +146,8 @@ export function AccountButton({ account, onSettings, update, onUpdateChanged }) 
           <span class="menu-icon"><${Icon} name="gear" size="md" /></span><span class="menu-label">${t("sidebar.settings")}</span><kbd>${isMac ? "⌘," : "Ctrl+,"}</kbd></button>
         <button type="button" role="menuitem" onClick=${() => { setOpen(false); onApps?.(); }}>
           <span class="menu-icon"><${Icon} name="link" size="md" /></span><span class="menu-label">${t("apps.menu")}</span>${appsAttention && html`<span class="dot warn" title=${t("apps.attention")}></span>`}</button>
+        <button type="button" role="menuitem" onClick=${() => { setOpen(false); location.hash = "/skills/library"; }}>
+          <span class="menu-icon"><${Icon} name="library" size="md" /></span><span class="menu-label">${t("skillLib.menu")}</span></button>
         <button type="button" role="menuitem" aria-haspopup="dialog" onClick=${() => { setOpen(false); openFeedback({ source: "account_menu" }); }}>
           <span class="menu-icon"><${Icon} name="chat" size="md" /></span><span class="menu-label">${t("feedback.title")}</span></button>
         <div class="account-community" role="group" aria-label=${t("firstUse.community")}>

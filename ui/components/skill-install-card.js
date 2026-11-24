@@ -11,7 +11,7 @@ import { copyExample, fillChat, useBotSkills, useSkillReady } from "../lib/usage
 const FINAL = ["installed", "replaced", "failed", "canceled", "expired"];
 
 const fmtSize = (bytes) => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
-const sourceText = (src) => (src?.type === "github" ? t("skills.card.sourceGithub", { repo: `${src.owner}/${src.repo}` }) : t("skills.card.sourceZip"));
+const sourceText = (src) => (src?.type === "github" ? t("skills.card.sourceGithub", { repo: `${src.owner}/${src.repo}` }) : src?.type === "local" ? t("skillLib.sourceLocal") : t("skills.card.sourceZip"));
 const licenseText = (l) => (l === null || l === undefined ? t("skills.card.licenseNone") : l === "NOASSERTION" ? t("skills.detail.customLicense") : l);
 
 function errorText(c) {
@@ -113,6 +113,7 @@ export function SkillInstallCard({ id }) {
       <div class="skill-card-meta">${t("skills.card.license", { license: licenseText(s.license) })} · ${t("skills.card.files", { count: s.files, size: fmtSize(s.bytes) })}</div>
       ${pending && s.scripts > 0 && html`<p class="skill-card-hint">${t("skills.card.scripts", { count: s.scripts, permission: t(`skills.card.perm.${c.permission || "workspace"}`) })}</p>`}
       ${pending && s.replaces && html`<p class="skill-card-hint">${t("skills.card.replaceHint", { name: s.name, source: sourceText(s.replaces.source) })}</p>`}
+      ${pending && s.replaces?.shared?.length > 0 && html`<p class="skill-card-hint">${t("skillLib.shared", { bots: s.replaces.shared.join(t("chat.use.sep")) })}</p>`}
     </div>`}
     ${c.state === "installing" && html`<span class="skill-card-line"><${Spinner} />${t("skills.card.installing")}</span>`}
     ${done && html`<div class="skill-card-result">${readyText(c, mine)}</div>`}

@@ -4,6 +4,18 @@
 
 Aqui estão as mudanças que você vai notar no app. Para versões mais antigas, veja as [versões no GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.48 - 2026-11-25
+
+### Novidades
+
+- **Importar habilidades deste computador:** no app para desktop, as habilidades já instaladas para outras ferramentas do computador (Claude Code, Codex, Cursor, CodeBuddy e outras) podem ser importadas de uma vez. Seis locais comuns como `~/.claude/skills/` são verificados automaticamente, e Escolher pasta… permite pegar uma pasta de habilidade ou um projeto; só pastas e nomes de arquivo são listados até você selecionar e clicar em Próximo. A revisão explica cada uma: pronta para importar, já existe, mesmo nome com conteúdo diferente (pulada por padrão ou salva separadamente) ou incompatível, com o motivo. Importar nunca executa scripts, e habilidades com possíveis arquivos privados ou limites de invocação que este app não consegue manter igual não são importadas. Ao entrar pelas configurações de um bot, o que for importado já fica ativado nesse bot.
+- **Minha biblioteca de habilidades:** o menu do avatar ganhou Minha biblioteca de habilidades, que guarda uma cópia de cada habilidade neste computador, com busca, conteúdo e os bots que a usam. Em configurações do bot › Habilidades há Adicionar da biblioteca…, e cada interruptor afeta só aquele bot. Habilidades instaladas por ZIP ou GitHub e as que você salvou também aparecem na biblioteca, sem importar de novo.
+
+### Melhorias e correções
+
+- **Habilidades compartilhadas avisam quem é afetado:** ao substituir por ZIP ou link do GitHub uma habilidade usada por vários bots, ou ao atualizar uma de Minhas habilidades ativada em vários bots, aparecem os outros bots que recebem a mudança.
+- **Excluir um bot não apaga mais as habilidades dele:** as que estavam instaladas continuam em Minha biblioteca de habilidades, prontas para outro bot ou para serem removidas da biblioteca.
+
 ## 0.1.47 - 2026-11-23
 
 ### Novidades

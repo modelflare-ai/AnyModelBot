@@ -13,10 +13,11 @@
 import crypto from "node:crypto";
 import type { Store } from "../store/db.js";
 import type { OutboundOp } from "../core/types.js";
-import { t } from "../i18n/index.js";
+import { lang as currentLang, t } from "../i18n/index.js";
 import { SkillError, type SkillPackage } from "./archive.js";
 import { parseSkillLink, readGithubSkill, type GithubSkillSource, type SkillLink } from "./github.js";
-import type { SkillSource, UserSkills } from "./service.js";
+import type { UserSkills } from "./service.js";
+import type { LibrarySource } from "./library.js";
 import { logger } from "../log.js";
 
 const log = logger("skills.install");
@@ -51,7 +52,7 @@ export interface InstallCard {
     scripts: number;
     license: string | null;
     source: GithubSkillSource;
-    replaces: { digest: string; source: SkillSource } | null;
+    replaces: { digest: string; source: LibrarySource; shared?: string[] } | null;
   };
   decidedBy?: string;
 }
@@ -268,7 +269,7 @@ export class SkillInstalls {
           scripts: preview.scripts,
           license: r.license,
           source: r.source,
-          replaces: preview.replaces && preview.replacesSource ? { digest: preview.replaces, source: preview.replacesSource } : null,
+          replaces: preview.replaces && preview.replacesSource ? { digest: preview.replaces, source: preview.replacesSource, ...(preview.shared?.length ? { shared: preview.shared } : {}) } : null,
         },
       };
     } catch (e) {
@@ -423,12 +424,14 @@ export class SkillInstalls {
     ];
     if (s.scripts) lines.push(t("skills.scriptsHint", { count: s.scripts, permission: t(PERM_KEY[this.o.permission?.(c.botId) ?? "workspace"]) }));
     if (s.replaces) lines.push(t("skills.replaceHint", { name: s.name, source: this.sourceText(s.replaces.source) }));
+    // 替换的是库里多个机器人共用的那一份：说明还有哪些机器人一同生效
+    if (s.replaces?.shared?.length) lines.push(t("skills.sharedHint", { bots: new Intl.ListFormat(currentLang()).format(s.replaces.shared) }));
     lines.push(t(s.replaces ? "skills.replyReplace" : "skills.replyInstall", { code: c.code, bot }));
     return lines.join("\n");
   }
 
-  sourceText(s: SkillSource): string {
-    return s.type === "github" ? t("skills.sourceGithub", { repo: `${s.owner}/${s.repo}` }) : t("skills.sourceZip");
+  sourceText(s: LibrarySource): string {
+    return s.type === "github" ? t("skills.sourceGithub", { repo: `${s.owner}/${s.repo}` }) : s.type === "local" ? t("skills.sourceLocal") : t("skills.sourceZip");
   }
 
   /** 卡片当前结果的一句话（渠道的回执、失败卡片、编号对上已处理的卡片） */

@@ -60,7 +60,7 @@ Conversations, memory, files, and API keys stay on your device. Models can come 
 
 Ready to use after install: background tasks, scheduled rules, and items waiting for your OK are built in.
 
-**0.1.47:** when you're signed in to Modelflare, images in a chat can serve as references for image generation with the model selected at the bottom right; the model picker also lists image-generation models. [Changelog](./CHANGELOG_en.md#0147---2026-11-23)
+**0.1.48:** the desktop app can import skills that other tools installed on this computer in one go, keep them in My skill library and turn them on for the bots that need them. [Changelog](./CHANGELOG_en.md#0148---2026-11-25)
 
 📥 [Download](#-download-and-run) · 🌠 [Screenshots](#-screenshots) · 🌟 [Features](#-key-features) · 🆚 [Compare](#-anymodelbot-vs-grok-bot-openai-dots-and-claude-duet) · 🔐 [Privacy](#-how-it-works--privacy)
 
@@ -203,6 +203,7 @@ A bot is more than a chat window: it has a persona, a default model, its own wor
 - **Search chat history.** Search all messages saved on your device from the sidebar, filter by bot, conversation, channel or date, and jump to the original message. `Ctrl/Cmd+Shift+F` opens global search; `Ctrl/Cmd+F` searches the current chat. Searches do not call a model. Before you type, the search dialog lists recent chats by date.
 - **Work folders and ZIP files.** In the desktop app, choose a folder above the message box and the bot reads and edits the files in place (with Workspace access, changes inside that folder need no approval each time); drag a ZIP into a chat and the bot extracts it safely once you say what to do.
 - **Images as generation references.** Signed in to Modelflare, add images to a chat and turn on “Use as image-generation references”: the model selected at the bottom right generates a new image from them. You can also pick an image-generation model and generate from a sentence. When something blocks it, a note above the message box says why.
+- **Import skills from this machine.** The desktop app finds skills that Claude Code, Codex, Cursor and similar tools installed on this computer and, after a review, imports them into My skill library in one go; the library keeps one copy of each skill and every bot decides whether to turn it on.
 - **Slash commands** such as `/model` and `/reset` work in the app and in every chat channel. In a chat channel, `/bot` switches to another bot.
 
 <p align="center">

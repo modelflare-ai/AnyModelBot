@@ -104,6 +104,7 @@ export default {
       mine: "Мои навыки {count}",
       github: "GitHub {count}",
       zip: "Локальный ZIP {count}",
+      local: "С компьютера {count}",
       off: "Выключены {count}",
     },
     showAll: "Показать все навыки ({count})",

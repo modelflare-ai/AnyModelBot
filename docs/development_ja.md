@@ -289,6 +289,8 @@ MIT です。`LICENSE` を参照してください。magpie（MIT、改変した
 
 操作方法と ZIP 形式は[スキルの使い方](./skills_ja.md)を参照してください。`src/skills/archive.ts` がパス、展開サイズ、`SKILL.md` を検証し、`service.ts` がボットごとにパッケージ、有効状態、版の識別子を保存します。`src/web/skills.ts` がプレビューと管理 API を提供します。DSH が待機状態になってから有効なスキルを配置し、実行中の会話、サブエージェント、バックグラウンドコマンドを中断しません。カタログ Bot の更新時は `src/botkit/installer.ts` が名前の衝突を確認します。
 
+マイスキルライブラリ：`src/skills/library.ts` は、このパソコンから取り込んだ項目とライブラリに登録した項目を保存します（`skill-library/`。パッケージは内容ダイジェストごと、ボットはオン・オフだけを持つ）。`UserSkills.libraryView` はボットに入れたスキルと自分で保存したスキルを同じ索引にまとめ、ボットのスキルは別のボットに追加したときか元のボットを削除したときだけライブラリに登録します。`src/skills/local-import.ts` は発見（6 つの自動ルート、選んだフォルダ、リンクの境界）、確認時のチェック（呼び出し制限、個人的なファイル、プラットフォーム変数、同一内容）、項目ごとの取り込み（リクエスト ID で冪等、確認後に元が変わったら書き込まない）を担当します。API は `src/web/routes/skill-library.ts` にあり、探す機能はループバック経由のデスクトップアプリにだけ開放します。
+
 `src/store/chat-search.ts` は SQLite の検索索引、絞り込み、ページ分割、元のメッセージの前後関係を扱います。全体検索は `ui/screens/message-search.js`、現在のチャット内検索は `ui/components/chat-search.js` にあります。ローカル DB を直接読み、モデルは呼び出しません。
 
 関連テストは `test/skills*.test.ts` と `test/chat-search*.test.ts` です。ブラウザー検証用 Chromium は `AMB_TEST_CHROME` で指定できます。DSH があれば、スキルの発見、読み込み、資料の参照、作業中の無効化も検証します。

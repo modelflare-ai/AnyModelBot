@@ -32,6 +32,18 @@ Adlar küçük İngilizce harf, rakam ve tek tire kullanır; en çok 64 karakter
 - Bot, becerinin adını, açıklamasını, kaynağını, lisansını ve dosya sayısını okur ve bir onay kartı gösterir. Kur'a tıklayana kadar hiçbir şey yazılmaz ve beceri yalnızca o bota kurulur. Sohbet kanallarında karttaki kodla yanıtla; Feishu kartlarında düğmeler vardır. Becerileri yalnızca sahip kurabilir.
 - Kurulu beceriler listede kaynağını “GitHub · depo” olarak gösterir; Görüntüle depoyu, yolu, dalı, kurulan commit'i ve kurulum zamanını gösterir.
 
+## Bu bilgisayardan içe aktarma (Beceri kitaplığım)
+
+Bilgisayarınızdaki diğer araçlar için (Claude Code, Codex, Cursor, CodeBuddy gibi) zaten kurulu olan becerileri tek seferde Beceri kitaplığıma aktarıp botlarınızda açabilirsiniz.
+
+- Nerede: avatar menüsü › Beceri kitaplığım › Bu bilgisayardan içe aktar… veya bot ayarları › Beceriler › Bu bilgisayardan içe aktar…. Arama yalnızca kitaplığın bulunduğu bilgisayardaki masaüstü uygulamasında çalışır; tarayıcıda veya uzaktan ZIP ya da GitHub bağlantısını kullanmaya devam edin.
+- Altı yer otomatik olarak aranır: `~/.codebuddy/skills/`, `~/.qwenworkcn/skills/`, `~/.agents/skills/`, `~/.claude/skills/`, `~/.cursor/skills/` ve `~/.codex/skills/`. Yalnızca klasörler ve `SKILL.md` dosya adları listelenir; talimatlar, anılar ve hesaplar okunmaz. Diğer yerler için (`~/.workbuddy/skills/`, Doubao'nun `.user_skills/` klasörü veya bir proje) Klasör seç…'i kullanın; bir projede yalnızca `.claude/skills/` gibi bilinen yerlere bakılır. Ana klasör, disk kökü ve uygulama verileri klasörünün tamamı hiçbir zaman taranmaz.
+- Başta hiçbir şey seçili değildir. Beceriler yalnızca seçip İleri'ye tıkladıktan sonra okunur. Gözden geçirme her biri için şunu gösterir: içe aktarılabilir, zaten var (içerik birebir aynı; durumu korunur), aynı ad farklı içerik (varsayılan olarak atlanır; Ayrı kaydet çağrı adını korur ve görünen ada numara ekler) veya uyumsuz (nedeniyle). Betik içerenler “Betik içeriyor; içe aktarma onları çalıştırmaz”, bağımlılığı olanlar “Bağımlılıklar doğrulanmadı” olarak işaretlenir.
+- Bir bottan açıldığında “İçe aktardıktan sonra {bot} içinde kullan” işaretli gelir; kitaplıktan açıldığında beceriler yalnızca kitaplığa eklenir. Sonunda eklenen, açılan, atlanan ve başarısız sayıları gösterilir. Açma başarısız olursa (aynı adlı bir beceri açık veya bot dolu), eklenen içerik kitaplıkta kalır.
+- Şunlar içe aktarılmaz: özel olabilecek dosyalar (`.env`, `id_rsa`, `credentials.json`, `memory.md`…), seçilen yerin dışını gösteren bağlantılar, bu uygulamanın aynı şekilde koruyamayacağı kısıtlamalar (`allowed-tools`, `hooks` gibi), platform yol değişkenleri (`${CLAUDE_PLUGIN_ROOT}` gibi) veya başvurulan dosyası eksik beceriler. `disable-model-invocation` ve `user-invocable` olduğu gibi korunur; Codex'in `allow_implicit_invocation: false` değeri `disable-model-invocation: true` olarak yazılır.
+- İçe aktarma kopyalamadır: kaynak değişmez ve eşitlenmez. Her beceri kitaplıkta tek kopya olarak durur, her bot yalnızca bir aç/kapat anahtarı tutar: bot ayarlarındaki Kitaplıktan ekle… veya anahtar yalnızca o botu etkiler. Botlara kurulan ZIP ve GitHub becerileri ile kaydettiğiniz beceriler de kitaplıkta listelenir.
+- Beceri kitaplığımda bir beceriyi açarak içeriğini ve onu kullanan botları görün. İçe aktarılan bir beceri hiçbir botta açık değilse ⋯ › Kitaplıktan kaldır yalnızca kitaplıktaki kopyayı siler.
+
 ## Kullanma, değiştirme ve silme
 
 - Bir beceri yalnızca eklediğin bota uygulanır (aşağıdaki Becerilerim'e bak). O bot aynı becerileri uygulamada ve sohbet kanallarında kullanır.
@@ -70,3 +82,5 @@ Bir bot bir şeyi doğru yaptığında, nasıl yaptığını Becerilerim'e kayde
 Açılmış paketler veri klasöründe `skills/<bot ID>/` altında durur. Açık beceriler çalışma zamanı için `dsh/<bot ID>/skills/` içine kopyalanır. İçe aktarma yalnızca kullandığın AnyModelBot örneğine yüklenir; bir sunucu kurulumunda dosyalar o sunucuda durur. Açık becerilerin adları ve açıklamaları ile kullanım sırasında yüklenen yönergeler veya başvurular, seçtiğin modele giden bağlama dönüşür. Bkz. [Veriler ve gizlilik](./privacy_tr.md).
 
 Becerilerim, veri klasöründeki `my-skills/` içinde durur ve açık olduğu her bot için çalışma zamanında `dsh/<bot ID>/skills/` içine kopyalanır.
+
+Bu bilgisayardan içe aktarılan beceriler veri klasöründeki `skill-library/` içinde durur ve açık olduğu her bot için çalışma zamanında `dsh/<bot kimliği>/skills/` içine kopyalanır. Bir bot silindiğinde, ona kurulu beceriler Beceri kitaplığımda kalır.

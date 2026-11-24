@@ -32,6 +32,18 @@ Names use lowercase English letters, digits and single hyphens, up to 64 charact
 - The bot reads the skill's name, description, source, license and file count and shows a confirmation card. Nothing is written until you click Install, and the skill is installed only for that bot. In chat channels, reply with the code on the card; Feishu cards have buttons. Only the owner can install skills.
 - Installed skills show their source as "GitHub · repository" in the list; View shows the repository, path, branch, the commit installed and the install time.
 
+## Import from this machine (My skill library)
+
+Skills already installed for other tools on your computer (such as Claude Code, Codex, Cursor or CodeBuddy) can be imported into My skill library in one go and then turned on for your bots.
+
+- Where: avatar menu › My skill library › Import from this machine…, or bot settings › Skills › Import from this machine…. Finding skills works only in the desktop app on the computer that holds the library; in a browser or remote session, keep using a ZIP or a GitHub link.
+- Six places are searched automatically: `~/.codebuddy/skills/`, `~/.qwenworkcn/skills/`, `~/.agents/skills/`, `~/.claude/skills/`, `~/.cursor/skills/` and `~/.codex/skills/`. Only folders and `SKILL.md` file names are listed; no instructions, memories or accounts are read. For other places (such as `~/.workbuddy/skills/`, Doubao's `.user_skills/` or a project), use Choose folder…; for a project only known places such as `.claude/skills/` are checked. Your home folder, a disk root and the app-data root are never searched as a whole.
+- Nothing is selected at first. Only after you select skills and click Next are they read. The review lists each one as ready to import, already exists (identical content; its state is kept), same name with different content (skipped by default; choose Save separately to keep the invocation name and add a suffix to the shown name), or incompatible (with the reason). Skills with scripts are marked “Contains scripts; importing will not run them”, and skills with dependencies “Dependencies not verified”.
+- Coming from a bot, “Use in {bot} after import” is ticked; coming from the library, skills are only added to the library. Afterwards you get the counts of added, enabled, skipped and failed. If enabling fails (a skill with the same name is on, or the bot is full), the added content stays in the library.
+- Not imported: skills with possible private files (`.env`, `id_rsa`, `credentials.json`, `memory.md`, …), links pointing outside the chosen location, restrictions this app can't keep the same way (such as `allowed-tools` or `hooks`), platform path variables (such as `${CLAUDE_PLUGIN_ROOT}`) or missing referenced files. `disable-model-invocation` and `user-invocable` are kept as they are; Codex's `allow_implicit_invocation: false` is written as `disable-model-invocation: true`.
+- Importing copies: the source is unchanged and never synced. Each skill is stored once in the library and each bot only keeps an on/off switch: Add from library… in bot settings, or the switch, affects only that bot. ZIP and GitHub skills installed on bots and your saved skills are listed in the library too.
+- In My skill library, open a skill to see its contents and the bots that use it. When no bot has an imported skill on, ⋯ › Remove from library deletes the library copy only.
+
 ## Use, replace and delete
 
 - A skill applies only to the bot you add it to (see My skills below). That bot uses the same skills in the app and through chat channels.
@@ -70,3 +82,5 @@ Once a bot has done something right, you can save how it did it to My skills, us
 Extracted packages are stored under `skills/<bot ID>/` in the data directory. Enabled skills are copied to `dsh/<bot ID>/skills/` for the runtime. Import uploads only to the AnyModelBot instance you are using; for a server deployment, files are stored on that server. Enabled skill names and descriptions, and instructions or references loaded during use, become context sent to your selected model. See [Data and privacy](./privacy_en.md).
 
 My skills live in `my-skills/` in the data directory and are copied at runtime into `dsh/<bot ID>/skills/` for each bot they're turned on for.
+
+Skills imported from this machine are stored in `skill-library/` in the data directory and copied at runtime into `dsh/<bot ID>/skills/` for each bot that has them on. Deleting a bot keeps the skills it had installed in My skill library.

@@ -71,6 +71,7 @@ import { readLocalChangelog } from "./changelog.js";
 import { COMPACT_ENDPOINT, serverCompactionEnabled, type CompactEndpoint } from "./agent/server-compaction.js";
 import type { BotSettings } from "./agent/settings.js";
 import { UserSkills } from "./skills/service.js";
+import { LocalImports } from "./skills/local-import.js";
 import { SkillInstalls } from "./skills/installs.js";
 import { SkillDrafts } from "./skills/drafts.js";
 import { skillState } from "./skills/display.js";
@@ -104,7 +105,8 @@ export interface DesktopHooks {
    */
   saveFileAs?(src: string, name: string): Promise<{ canceled: true } | { canceled?: false; path: string; folder: string }>;
   /** 输入框上方的「选择文件夹…」：弹出系统的目录选择器，返回选中的路径；取消返回 undefined（folders/service.ts） */
-  pickFolder?(): Promise<string | undefined>;
+  /** 系统目录选择器；purpose 为 skills 时（从本机导入技能）显示隐藏目录、记住另一处上次的位置 */
+  pickFolder?(o?: { purpose?: "skills" }): Promise<string | undefined>;
   /** 右侧预览 HTML 的「在浏览器中打开」：用系统默认浏览器打开本机网页（.html 的默认程序可能是编辑器） */
   openFileInBrowser?(p: string): Promise<void>;
   openInBrowser(): void;
@@ -239,6 +241,8 @@ export class App {
   readonly catalog: BotCatalog;
   readonly botInstaller: BotInstaller;
   readonly userSkills: UserSkills;
+  /** 从本机导入技能（「我的技能库」和机器人设置里的「从本机导入…」） */
+  readonly localImports: LocalImports;
   /** 对话里的技能安装卡片：按 GitHub 链接读取、确认后装到这个机器人（skills/installs.ts） */
   readonly skillInstalls: SkillInstalls;
   /** 对话里「存成技能」的草稿卡：确认后存进「我的技能」（skills/drafts.ts、skills/mine.ts） */
@@ -313,6 +317,16 @@ export class App {
     // 旧版仅有默认会话的库仍需补齐默认机器人；用户删光机器人时会话也已删除，不重新创建。
     if (!freshData && (this.store.listBots().length || !this.store.listConversations("default").length)) this.store.setKV("bots.initialized", "1");
     this.userSkills = new UserSkills(config.dataDir, this.store);
+    this.localImports = new LocalImports({
+      store: this.store,
+      dataDir: config.dataDir,
+      lookup: { items: () => this.userSkills.libraryView().map((i) => ({ id: i.id, name: i.name, title: i.title, contentDigest: i.contentDigest })) },
+      add: (o) => this.userSkills.library.add({ ...o, imported: true }),
+      enable: (id, botId) => void this.userSkills.useLibrary(id, botId, true),
+      findImported: (importId, key) => this.userSkills.library.list().find((e) => e.importId === importId && e.itemKey === key),
+      botName: (id) => this.store.getBot(id)?.name,
+      picker: () => this.desktop?.pickFolder,
+    });
     this.outbox = new Outbox(this.store);
     this.delivery = new Delivery({ store: this.store, outbox: this.outbox, timeZone: opts.timeZone, ...opts.deliveryLimits });
     this.access = new AccessControl(this.store, { notify: (to, text, id) => this.reach(to, text, id) });
@@ -505,6 +519,8 @@ export class App {
       }
       void this.agent.refreshIdle();
     };
+    // 库条目改了（新开、关掉、原入口替换了内容）：用到它的机器人空闲后换新的代理进程
+    this.userSkills.library.onChange = () => void this.agent.refreshIdle();
     this.ruleEvents = new RuleEvents(this.tasks);
     // "需要你"的五份：在等的提问和审批、任务（失败、预算）、规则（连续失败、暂停了）、没送到的结果（出站队列）、渠道（微信登录过期）
     this.attention.addSource(() => approvalItems(this.store, this.agent.approvals.pendingAll()));

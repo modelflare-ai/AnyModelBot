@@ -96,6 +96,7 @@ export default {
       mine: "My skills {count}",
       github: "GitHub {count}",
       zip: "Local ZIP {count}",
+      local: "This machine {count}",
       off: "Off {count}",
     },
     showAll: "Show all {count} skills",

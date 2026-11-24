@@ -96,6 +96,7 @@ export default {
       mine: "Becerilerim {count}",
       github: "GitHub {count}",
       zip: "Yerel ZIP {count}",
+      local: "Bu bilgisayar {count}",
       off: "Kapalı {count}",
     },
     showAll: "{count} becerinin tümünü göster",

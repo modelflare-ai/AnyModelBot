@@ -28,6 +28,8 @@ export default {
   replyReplace: "Yalnızca {bot} içine yüklenir. Değiştirmek için y {code}, iptal için n {code} yanıtla.",
   sourceGithub: "GitHub · {repo}",
   sourceZip: "Yerel ZIP",
+  sourceLocal: "Bu bilgisayardan içe aktarıldı",
+  sharedHint: "Bu beceri {bots} içinde de kullanılıyor. Değişiklikler orada da geçerli olur.",
   install: "Yükle",
   replace: "Değiştir",
   cancel: "İptal",

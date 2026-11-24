@@ -4,6 +4,18 @@
 
 Uygulamada fark edeceğin değişiklikler burada. Daha eski sürümler için [GitHub sürümlerine](https://github.com/modelflare-ai/AnyModelBot/releases) bak.
 
+## 0.1.48 - 2026-11-25
+
+### Yenilikler
+
+- **Bu bilgisayardan beceri içe aktarma:** masaüstü uygulamasında, bilgisayardaki diğer araçlar için (Claude Code, Codex, Cursor, CodeBuddy ve diğerleri) zaten kurulu olan beceriler tek seferde içe aktarılabilir. `~/.claude/skills/` gibi sık kullanılan altı yer otomatik aranır, Klasör seç… ile bir beceri klasörü veya proje de seçilebilir; siz seçip İleri'ye tıklayana kadar yalnızca klasörler ve dosya adları görülür. Gözden geçirme her biri için içe aktarılabilir, zaten var, aynı ad farklı içerik (varsayılan olarak atlanır ya da ayrı kaydedilir) veya uyumsuz bilgisini nedeniyle birlikte verir. İçe aktarma hiçbir betiği çalıştırmaz; özel olabilecek dosyalar ya da bu uygulamanın aynı şekilde koruyamayacağı çağrı sınırları içeren beceriler içe aktarılmaz. Bir botun ayarlarından açıldığında içe aktarılanlar varsayılan olarak o botta açılır.
+- **Beceri kitaplığım:** avatar menüsüne, bu bilgisayardaki her becerinin tek kopyasını tutan Beceri kitaplığım eklendi; arama yapabilir, içeriği ve onu kullanan botları görebilirsiniz. Bot ayarları › Beceriler bölümüne Kitaplıktan ekle… geldi ve her anahtar yalnızca o botu etkiler. ZIP veya GitHub ile kurulan beceriler ve kaydettikleriniz de yeniden içe aktarmaya gerek kalmadan kitaplıkta listelenir.
+
+### İyileştirmeler ve düzeltmeler
+
+- **Paylaşılan beceriler kimin etkileneceğini söyler:** birkaç botun kullandığı bir beceriyi ZIP veya GitHub bağlantısıyla değiştirirken ya da birkaç botta açık olan Becerilerim'den birini güncellerken değişikliği alacak diğer botlar belirtilir.
+- **Bot silmek artık becerilerini silmiyor:** ona kurulu beceriler Beceri kitaplığımda kalır; başka bir bota eklenebilir veya kitaplıktan kaldırılabilir.
+
 ## 0.1.47 - 2026-11-23
 
 ### Yenilikler

@@ -92,6 +92,7 @@ export default {
       mine: "내 스킬 {count}",
       github: "GitHub {count}",
       zip: "로컬 ZIP {count}",
+      local: "이 컴퓨터 {count}",
       off: "꺼짐 {count}",
     },
     showAll: "스킬 {count}개 모두 보기",

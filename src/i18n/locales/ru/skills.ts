@@ -32,6 +32,8 @@ export default {
   "replyReplace": "Установка только для {bot}. Ответьте y {code}, чтобы заменить, или n {code}, чтобы отменить.",
   "sourceGithub": "GitHub · {repo}",
   "sourceZip": "Локальный ZIP",
+  "sourceLocal": "Импортирован с этого компьютера",
+  "sharedHint": "Этот навык также используется в {bots}. Изменения применятся и там.",
   "install": "Установить",
   "replace": "Заменить",
   "cancel": "Отмена",

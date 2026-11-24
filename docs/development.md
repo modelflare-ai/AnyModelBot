@@ -311,6 +311,8 @@ MIT，见 `LICENSE`；第三方组件（magpie MIT——含界面样式改编、
 
 用户入口与 ZIP 格式见[技能使用说明](./skills.md)。`src/skills/archive.ts` 校验 ZIP 路径、解压上限和 `SKILL.md`，`service.ts` 按机器人保存包、启用状态和版本指纹；`src/web/skills.ts` 提供预览与管理接口。DSH 空闲后部署启用项，变更不会中断运行中的回合、子代理或后台命令。`src/botkit/installer.ts` 在目录 Bot 升级时检查用户技能重名。
 
+「我的技能库」：`src/skills/library.ts` 保存从本机导入和登记进库的条目（`skill-library/`，按内容摘要存包，机器人只记开关）；`UserSkills.libraryView` 把各机器人装的旧技能、「我存的」合进同一份索引，旧技能加到别的机器人或所在机器人被删时才登记进库。`src/skills/local-import.ts` 负责本机发现（六个自动根、手选文件夹、链接边界）、预览校验（调用限制、私人文件、平台变量、同内容判定）和逐项导入（请求号幂等、预览后变化不写）；接口在 `src/web/routes/skill-library.ts`，只在本机回环访问的桌面版里开放查找。
+
 `src/store/chat-search.ts` 在 SQLite 中维护消息搜索索引，提供过滤、分页与原消息上下文；`ui/screens/message-search.js` 是全局搜索，`ui/components/chat-search.js` 负责当前聊天查找。搜索直接读取本机数据库，不经过模型。
 
 相关测试：`test/skills*.test.ts`、`test/chat-search*.test.ts`。浏览器验收可使用 `AMB_TEST_CHROME` 指定 Chromium 路径；有 DSH 运行时时还会验证技能发现、加载、资源读取及运行中停用。

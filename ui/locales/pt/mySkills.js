@@ -100,6 +100,7 @@ export default {
       mine: "Minhas habilidades {count}",
       github: "GitHub {count}",
       zip: "ZIP local {count}",
+      local: "Este computador {count}",
       off: "Desativadas {count}",
     },
     showAll: "Mostrar todas as {count} habilidades",

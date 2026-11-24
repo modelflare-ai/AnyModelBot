@@ -10,8 +10,8 @@ export const LIST_SEARCH_AT = 10;
 /** 选「全部」且不在搜索时先显示这么多个 */
 export const LIST_FOLD_AT = 20;
 
-/** 技能的来源：mine 我的技能（对话里存下的）· github 按链接装的 · zip ZIP 导入的（0.1.35 及以前导入、没有记录的也算） */
-export const kindOf = (s) => (s?.source?.type === "mine" || s?.mine ? "mine" : s?.source?.type === "github" ? "github" : "zip");
+/** 技能的来源：mine 我的技能（对话里存下的）· github 按链接装的 · local 从本机导入的 · zip ZIP 导入的（0.1.35 及以前导入、没有记录的也算） */
+export const kindOf = (s) => (s?.source?.type === "mine" || s?.mine ? "mine" : s?.source?.type === "github" ? "github" : s?.source?.type === "local" ? "local" : "zip");
 
 /** 界面上显示的名字（「我的技能」是标题，库里的是库里的标题，其余是技能名） */
 export const shownName = (s) => s?.title || s?.name || "";
@@ -38,8 +38,8 @@ export const matches = (s, q) => {
   return !needle || [s.name, s.title, s.summary, s.description].some((f) => f && fold(f).includes(needle));
 };
 
-/** 筛选胶囊：全部 / 我的技能 / GitHub / 本地 ZIP / 已关闭（一个技能可以同时在「已关闭」和它的来源里） */
-export const CHIPS = ["all", "mine", "github", "zip", "off"];
+/** 筛选胶囊：全部 / 我的技能 / GitHub / 本机导入 / 本地 ZIP / 已关闭（一个技能可以同时在「已关闭」和它的来源里） */
+export const CHIPS = ["all", "mine", "github", "local", "zip", "off"];
 export const inChip = (s, chip) => chip === "all" || (chip === "off" ? !s.enabled : kindOf(s) === chip);
 
 /** 每个胶囊的数量（在搜索时是命中数） */

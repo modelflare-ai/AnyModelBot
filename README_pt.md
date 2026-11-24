@@ -60,7 +60,7 @@ Conversas, memória, arquivos e chaves de API ficam no seu dispositivo. Os model
 
 Pronto para usar logo após a instalação: tarefas em segundo plano, regras agendadas e os itens que aguardam o seu OK já vêm integrados.
 
-**0.1.47:** com a conta do Modelflare conectada, as imagens de um chat podem servir de referência para gerar imagens com o modelo escolhido no canto inferior direito; o seletor também lista modelos de geração de imagens. [Registro de alterações](./CHANGELOG_pt.md#0147---2026-11-23)
+**0.1.48:** o app para desktop pode importar de uma vez as habilidades que outras ferramentas instalaram neste computador, guardá-las em Minha biblioteca de habilidades e ativá-las nos bots que precisarem. [Registro de alterações](./CHANGELOG_pt.md#0148---2026-11-25)
 
 📥 [Baixar](#-baixar-e-executar) · 🌠 [Capturas de tela](#-capturas-de-tela) · 🌟 [Recursos](#-principais-recursos) · 🆚 [Comparação](#-anymodelbot-vs-grok-bot-openai-dots-e-claude-duet) · 🔐 [Privacidade](#-como-funciona-e-privacidade)
 
@@ -203,6 +203,7 @@ Um bot é mais do que uma janela de chat: ele tem uma persona, um modelo padrão
 - **Pesquise o histórico de conversas.** Pesquise pela barra lateral todas as mensagens salvas no seu dispositivo, filtre por bot, conversa, canal ou data e vá direto à mensagem original. `Ctrl/Cmd+Shift+F` abre a pesquisa global; `Ctrl/Cmd+F` pesquisa no chat atual. As pesquisas não chamam nenhum modelo. Antes de você digitar, a janela de pesquisa lista os chats recentes por data.
 - **Pastas de trabalho e ZIP.** No app de desktop, escolha uma pasta acima da caixa de mensagem e o bot lê e edita os arquivos onde estão (com acesso ao espaço de trabalho, mudanças dentro dessa pasta não pedem aprovação a cada vez); arraste um ZIP para a conversa e o bot o extrai com segurança quando você disser o que fazer.
 - **Imagens como referências para gerar.** Com a conta do Modelflare conectada, adicione imagens a um chat e ligue “Usar como referências para gerar imagens”: o modelo escolhido no canto inferior direito gera uma nova imagem a partir delas. Você também pode escolher um modelo de geração de imagens e criar uma imagem com uma frase. Se algo impedir, uma nota acima da caixa de mensagem explica o motivo.
+- **Importar habilidades deste computador.** O app para desktop encontra as habilidades que Claude Code, Codex, Cursor e ferramentas parecidas instalaram neste computador e, depois de uma revisão, importa tudo de uma vez para Minha biblioteca de habilidades; a biblioteca guarda uma cópia de cada habilidade e cada bot decide se a ativa.
 - **Comandos de barra** como `/model` e `/reset` funcionam no app e em todos os canais de chat. Em um canal de chat, `/bot` troca para outro bot.
 
 <p align="center">

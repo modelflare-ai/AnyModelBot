@@ -26,6 +26,8 @@ export default {
   "replyReplace": "Instala só em {bot}. Responda y {code} para substituir ou n {code} para cancelar.",
   "sourceGithub": "GitHub · {repo}",
   "sourceZip": "ZIP local",
+  "sourceLocal": "Importada deste computador",
+  "sharedHint": "Esta habilidade também é usada em {bots}. As alterações também serão aplicadas lá.",
   "install": "Instalar",
   "replace": "Substituir",
   "cancel": "Cancelar",

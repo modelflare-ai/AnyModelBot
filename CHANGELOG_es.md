@@ -4,6 +4,18 @@
 
 Aquí se recogen los cambios que notarás en la app. Para versiones anteriores, consulta las [versiones publicadas en GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
 
+## 0.1.48 - 2026-11-25
+
+### Novedades
+
+- **Importar habilidades desde este equipo:** en la app de escritorio puedes importar de una vez las habilidades que ya instalaste para otras herramientas del equipo (Claude Code, Codex, Cursor, CodeBuddy y más). Se buscan automáticamente seis ubicaciones habituales como `~/.claude/skills/`, y Elegir carpeta… permite escoger una carpeta de habilidad o un proyecto; solo se listan carpetas y nombres de archivo hasta que seleccionas y pulsas Siguiente. La revisión explica cada una: lista para importar, ya existe, mismo nombre con contenido distinto (se omite por defecto o se guarda por separado) o no compatible, con el motivo. Importar nunca ejecuta scripts, y no se importan habilidades con posibles archivos privados ni con límites de invocación que esta app no puede mantener igual. Si entras desde los ajustes de un bot, lo importado se activa en ese bot por defecto.
+- **Mi biblioteca de habilidades:** el menú del avatar incluye Mi biblioteca de habilidades, que guarda una sola copia de cada habilidad en este equipo, con búsqueda, contenido y los bots que la usan. En ajustes del bot › Habilidades aparece Añadir desde la biblioteca…, y cada interruptor afecta solo a ese bot. Las habilidades instaladas desde un ZIP o GitHub y las que guardaste también aparecen en la biblioteca, sin volver a importarlas.
+
+### Mejoras y correcciones
+
+- **Las habilidades compartidas avisan a quién afectan:** al reemplazar con un ZIP o un enlace de GitHub una habilidad que usan varios bots, o al actualizar una de Mis habilidades activada en varios bots, se indican los demás bots que reciben el cambio.
+- **Eliminar un bot ya no borra sus habilidades:** las que tenía instaladas se quedan en Mi biblioteca de habilidades, listas para añadirlas a otro bot o quitarlas de la biblioteca.
+
 ## 0.1.47 - 2026-11-23
 
 ### Novedades

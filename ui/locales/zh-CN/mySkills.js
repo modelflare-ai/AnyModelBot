@@ -84,6 +84,7 @@ export default {
       mine: "我的技能 {count}",
       github: "GitHub {count}",
       zip: "本地 ZIP {count}",
+      local: "本机导入 {count}",
       off: "已关闭 {count}",
     },
     showAll: "显示全部 {count} 个技能",

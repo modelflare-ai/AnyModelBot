@@ -33,6 +33,10 @@ import { CoachMark } from "./components/guide.js";
 import { WhatsNewHost, openWhatsNew } from "./components/whats-new.js";
 import { FeedbackHost } from "./components/feedback.js";
 import { SkillDetailHost } from "./components/skill-detail.js";
+import { LocalImportHost } from "./components/local-import.js";
+import { LibraryAddHost } from "./components/library-add.js";
+import { MyLibraryScreen } from "./screens/my-library.js";
+import { openMyLibrary } from "./lib/my-library.js";
 import { api } from "./lib/api.js";
 import { clearCatalogRemoved } from "./lib/catalog.js";
 import { loadGuide, leaveGuideSession, refreshGuide, isActive, focusStep, stepBlock, templateDraft } from "./lib/guide.js";
@@ -67,6 +71,7 @@ function parseHash() {
   if (kind === "discover") return { view: "discover" };
   if (kind === "scheduled") return { view: "scheduled", sub: a === "library" ? "library" : "" };
   if (kind === "apps") return { view: "apps", tab: a === "connected" ? "connected" : "all" };
+  if (kind === "skills" && a === "library") return { view: "my-library" };
   if (kind === "skills") return { view: "apps", tab: "skills" };
   if (kind === "app" && a) return { view: "app", botId: a };
   if (kind === "preview" && a) return { view: "preview", catalogId: a };
@@ -657,7 +662,7 @@ function App() {
         else if (route.view === "template-preview" && !document.querySelector(".pop")) go("/templates");
         else if (route.view === "new" && !typing && bots && bots.length) openChat();
         else if (route.view === "settings" && !typing) openChat();
-        else if ((route.view === "needs" || route.view === "discover" || route.view === "apps") && !typing) openChat();
+        else if ((route.view === "needs" || route.view === "discover" || route.view === "apps" || route.view === "my-library") && !typing) openChat();
         else if (workExpanded && !typing) setExpandedState(null);
         else if (panelOpen && !typing) setPanelOpen(false);
       }
@@ -681,6 +686,7 @@ function App() {
     ...(needs.n > 0 ? [{ label: t("app.cmd.needs", { count: needs.n }), keys: t("app.cmd.needsKeys"), run: openNeeds }] : []),
     ...(catalog.length > 0 ? [{ label: t("botapp.sidebar.discover"), keys: "discover", run: openDiscover }] : []),
     { label: t("apps.menu"), keys: t("apps.commandKeys"), run: () => openApps() },
+    { label: t("skillLib.menu"), keys: t("skillLib.commandKeys"), run: () => openMyLibrary() },
     ...(panelKind !== "resources" || resources.items.length ? [{ label: panelOpen ? t("app.cmd.closeInfo") : t("app.cmd.openInfo"), kbd: isMac ? "⌘⇧I" : "Ctrl+Shift+I", keys: t("app.cmd.infoKeys"), run: togglePanel }] : []),
     // 任务和规则在当前机器人右侧面板的「任务」标签里
     ...(bot ? [{ label: t("app.cmd.tasks"), keys: t("app.cmd.tasksKeys"), run: () => openTasks(bot) }] : []),
@@ -750,6 +756,7 @@ function App() {
       ${view === "template-preview" && html`<${TemplatePreview} key=${route.catalogId} id=${route.catalogId} bots=${bots || []} models=${models} modelsError=${modelsError} reloadModels=${reloadModels} defaultModel=${settings?.defaultModel || ""} account=${account} onCreated=${onCreated} />`}
       ${view === "scheduled" && (route.sub === "library" ? html`<${RoutineLibraryPage} />` : html`<${ScheduledPage} bots=${bots || []} />`)}
       ${view === "apps" && html`<${AppsScreen} initialTab=${route.tab} />`}
+      ${view === "my-library" && html`<${MyLibraryScreen} bots=${bots || []} />`}
       ${appCatalogId && html`<${BotAppScreen} key=${appCatalogId} catalogId=${appCatalogId} bot=${appBot}
         expanded=${workExpanded && expandedState?.via === "app"} onExpand=${(open) => setExpandedState(open ? { scope: resourceScope, via: "app" } : null)}
         frameHost=${workHost} panelOpen=${panelOpen} onTogglePanel=${togglePanel} onEntry=${(entry) => setAppEntry({ catalogId: appCatalogId, entry })}
@@ -795,7 +802,7 @@ function App() {
       onOpenBotSettings=${() => shownPanel.bot && openBotSettings(shownPanel.bot.id)} onOpenChat=${panelToChat} onOpenConnections=${(row) => openSettings("connections", row || "")} onOpenSettings=${(tab) => openSettings(tab)} />`}
     ${workExpanded && html`<${Toasts} />`}
     <${CoachMark} bot=${!searchOpen && ["chat", "app"].includes(view) ? bot : null} view=${searchOpen ? "search" : view} infoOpen=${panelKind === "chat" && !!panel} busy=${Object.values(working).some(Boolean)} blocked=${!!guideStop} onConnections=${(channel) => openSettings("connections", `add-channel-${channel}`)} />
-    <${ScheduledSync} /><${PermissionSync} /><${NewRuleHost} bots=${bots || []} /><${SkillDetailHost} />
+    <${ScheduledSync} /><${PermissionSync} /><${NewRuleHost} bots=${bots || []} /><${SkillDetailHost} /><${LocalImportHost} /><${LibraryAddHost} />
     ${palette && html`<${Palette} commands=${commands} onClose=${() => setPalette(false)} />`}
     ${groupSheet && bots && html`<${GroupSheet} group=${groupSheet.group} bots=${bots} onClose=${() => setGroupSheet(null)}
       onSaved=${async (g) => { setGroupSheet(null); await reloadGroups(); openGroup(g.id); }} />`}

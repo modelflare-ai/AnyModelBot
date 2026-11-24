@@ -16,7 +16,9 @@ export type SkillErrorCode =
   // 按 GitHub 链接安装（skills/github.ts）
   | "invalid_link" | "repo_not_found" | "network" | "rate_limited"
   // 「我的技能」（skills/mine.ts）：名字被它占用、已满 100 个
-  | "mine_name" | "mine_full";
+  | "mine_name" | "mine_full"
+  // 我的技能库（skills/library.ts、skills/local-import.ts）：只在桌面版查找、预览后变了、这个机器人已开着同名的、容量满了、还在用不能移除、不能轻量移除
+  | "desktop_only" | "changed" | "name_on" | "bot_full" | "in_use" | "not_removable";
 /** detail：多个技能时的个数 n、限流解除的时间 resetAt（毫秒）、被占用的技能名 name、占用它的「我的技能」的标题 title */
 export class SkillError extends Error {
   constructor(readonly code: SkillErrorCode, readonly status = 400, readonly detail: { n?: number; resetAt?: number; name?: string; title?: string } = {}) { super(code); }

@@ -16,7 +16,7 @@ import crypto from "node:crypto";
 import { stringify } from "yaml";
 import type { Store } from "../store/db.js";
 import type { OutboundOp } from "../core/types.js";
-import { t } from "../i18n/index.js";
+import { lang as currentLang, t } from "../i18n/index.js";
 import { logger } from "../log.js";
 import { SkillError, skillName } from "./archive.js";
 import { findPersonal, findSecrets, scrubSecrets, type PersonalKind } from "./redact.js";
@@ -593,8 +593,11 @@ export class SkillDrafts {
     const check = d && c.state === "pending" ? this.check(d) : undefined;
     const diff = d && c.state === "pending" ? this.diff(d) : undefined;
     const skill = c.result ? this.mine.get(c.result.name) : undefined;
+    // 要更新的「我存的」还在别的机器人上打开着：更新后那些机器人一同生效（卡片上说明是哪些）
+    const shared = d?.same && c.state === "pending" ? this.sharedBots(d.same.name, c.botId) : [];
     return {
       ...c,
+      ...(shared.length ? { shared } : {}),
       botName: bot?.name ?? c.botId,
       botExists: !!bot,
       ...(check ? { check } : {}),
@@ -602,6 +605,11 @@ export class SkillDrafts {
       full: this.mine.list().length >= MY_SKILLS_MAX,
       ...(c.result ? { skill: skill ? { exists: true, name: skill.name, title: skill.title, example: skill.example, unverified: skill.unverified, blocked: skill.blocked, sends: skill.apps.filter((a) => a.sends).map((a) => a.name), on: skill.bots.includes(c.botId) } : { exists: false } } : {}),
     };
+  }
+
+  /** 这个「我存的」除了 botId 还在哪些机器人上打开着（名字） */
+  private sharedBots(name: string, botId: string): string[] {
+    return (this.mine.get(name)?.bots ?? []).filter((b) => b !== botId).map((b) => this.o.store.getBot(b)?.name ?? "").filter(Boolean);
   }
 
   /** 「查看技能说明 ›」：等确认时是这张草稿的全文，存好以后是存进去的那份 */
@@ -669,6 +677,8 @@ export class SkillDrafts {
     if (check.secrets) lines.push(t("mySkills.blockedSecrets", { n: check.secrets }));
     lines.push("");
     if (d.same) lines.push(t("mySkills.lineSame", { title: d.same.title }));
+    const shared = d.same ? this.sharedBots(d.same.name, c.botId) : [];
+    if (shared.length) lines.push(t("skills.sharedHint", { bots: new Intl.ListFormat(currentLang()).format(shared) }));
     lines.push(t("mySkills.lineConfirm"));
     return lines.join("\n");
   }

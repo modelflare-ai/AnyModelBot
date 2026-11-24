@@ -92,6 +92,7 @@ export default {
       mine: "マイスキル {count}",
       github: "GitHub {count}",
       zip: "ローカル ZIP {count}",
+      local: "このパソコン {count}",
       off: "オフ {count}",
     },
     showAll: "{count} 個のスキルをすべて表示",

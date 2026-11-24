@@ -22,6 +22,8 @@ export default {
   "replyReplace": "{bot}에만 설치합니다. 교체하려면 y {code}, 취소하려면 n {code}로 답장하세요.",
   "sourceGithub": "GitHub · {repo}",
   "sourceZip": "로컬 ZIP",
+  "sourceLocal": "이 컴퓨터에서 가져옴",
+  "sharedHint": "이 스킬은 {bots}에서도 사용 중입니다. 변경 사항이 함께 적용됩니다.",
   "install": "설치",
   "replace": "교체",
   "cancel": "취소",

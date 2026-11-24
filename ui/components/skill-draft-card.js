@@ -195,7 +195,7 @@ export function SkillDraftCard({ id }) {
   return html`<div ref=${root} class="card skill-card draft-card" aria-live="polite">
     ${head}
     ${d.unfinished && html`<p class="skill-card-hint draft-warn">${t("mySkills.card.unfinished", { step: d.unfinished })}</p>`}
-    ${d.same && html`<div class="draft-same"><b>${t("mySkills.card.same", { title: d.same.title })}</b>${changes > 0 && html`<span class="hint">${t("mySkills.card.changes", { count: changes })}</span>`}${changes > 0 && html`<${Diff} hunks=${c.diff} />`}</div>`}
+    ${d.same && html`<div class="draft-same"><b>${t("mySkills.card.same", { title: d.same.title })}</b>${changes > 0 && html`<span class="hint">${t("mySkills.card.changes", { count: changes })}</span>`}${c.shared?.length > 0 && html`<span class="hint">${t("skillLib.shared", { bots: c.shared.join(t("chat.use.sep")) })}</span>`}${changes > 0 && html`<${Diff} hunks=${c.diff} />`}</div>`}
     <div class="skill-card-body">
       <div class="draft-name"><span class="draft-title">${d.title}</span><span class="skill-file">${d.name}</span></div>
       ${d.description && html`<div class="draft-sec"><div class="t-label">${t("mySkills.card.when")}</div><div class="skill-card-desc">${d.description}</div></div>`}

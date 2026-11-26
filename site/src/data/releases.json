@@ -1,26 +1,26 @@
 {
-  "version": "0.1.41",
-  "publishedAt": "2026-11-16",
+  "version": "0.1.49",
+  "publishedAt": "2026-11-26",
   "platforms": {
     "win-x64": {
-      "url": "https://github.com/modelflare-ai/AnyModelBot/releases/download/v0.1.41/anymodel-bot-0.1.41-win-x64.exe",
-      "sha256": "5db087c1013514f0b92048a59ec0c4862aac38012458892bdb6c90548592da31",
-      "sizeMB": 188
+      "url": "https://github.com/modelflare-ai/AnyModelBot/releases/download/v0.1.49/anymodel-bot-0.1.49-win-x64.exe",
+      "sha256": "7f7481901a53cd6e7809c44757570997026b05068b7f5075d21ae6ff8977ee8d",
+      "sizeMB": 188.4
     },
     "mac-arm64": {
-      "url": "https://github.com/modelflare-ai/AnyModelBot/releases/download/v0.1.41/anymodel-bot-0.1.41-mac-arm64.dmg",
-      "sha256": "6b55c8b43aff541d31692fcfa93f2446f1b0dc079a9360e81f2be4fbb1a5079b",
-      "sizeMB": 218.2
+      "url": "https://github.com/modelflare-ai/AnyModelBot/releases/download/v0.1.49/anymodel-bot-0.1.49-mac-arm64.dmg",
+      "sha256": "f430c520cf72f81867ac435ac4fe659c15a21022d8c8bd08c7133a93ae04c869",
+      "sizeMB": 218.7
     },
     "mac-x64": {
-      "url": "https://github.com/modelflare-ai/AnyModelBot/releases/download/v0.1.41/anymodel-bot-0.1.41-mac-x64.dmg",
-      "sha256": "5b61fc27e8d04f0302c982f3d1b392eaac72e01f6efecad03690e51d38989368",
-      "sizeMB": 226.2
+      "url": "https://github.com/modelflare-ai/AnyModelBot/releases/download/v0.1.49/anymodel-bot-0.1.49-mac-x64.dmg",
+      "sha256": "b244ea2b1e0148e33fc59353f66cf3ba9d758dec1f9be358ccf79212a68e7ebb",
+      "sizeMB": 226.7
     },
     "linux-x64": {
-      "url": "https://github.com/modelflare-ai/AnyModelBot/releases/download/v0.1.41/anymodel-bot-0.1.41-linux-x86_64.AppImage",
-      "sha256": "f3f8e83cf38ed1cf02b718e9073dfc33bae15513a885903be7f6d907bd3ceb52",
-      "sizeMB": 203.7
+      "url": "https://github.com/modelflare-ai/AnyModelBot/releases/download/v0.1.49/anymodel-bot-0.1.49-linux-x86_64.AppImage",
+      "sha256": "413783e39904ec69d8ec5c48269809b7166c48284f902c3085026cb08eb26a1a",
+      "sizeMB": 204.2
     },
     "docker": {
       "image": "ghcr.io/modelflare-ai/anymodel-bot:latest",

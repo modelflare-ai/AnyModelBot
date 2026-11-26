@@ -1,6 +1,6 @@
 # Como contribuir
 
-[简体中文](./CONTRIBUTING.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | Português (Brasil) | [Türkçe](./CONTRIBUTING_tr.md)
+[简体中文](./CONTRIBUTING.md) | [繁體中文（台灣）](./CONTRIBUTING_zh-TW.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | Português (Brasil) | [Türkçe](./CONTRIBUTING_tr.md)
 
 Obrigado por ajudar a melhorar o AnyModelBot. Relatos de bugs, correções, documentação e ideias são todos bem-vindos.
 
@@ -63,7 +63,7 @@ A estrutura do repositório, o empacotamento e a configuração dos canais estã
 - A cor de destaque da marca é o amarelo-esverdeado fluorescente `#d7ff00`; não introduza azul na interface.
 - O console é Preact + htm, sem etapa de build; não adicione um bundler nem dependências de front-end que precisem de compilação.
 - Confira os temas claro e escuro.
-- Não deixe texto da interface fixo no código: adicione-o em `ui/locales/zh-CN/` e `ui/locales/en/` (nos dois idiomas) e use `t()`; execute `node scripts/i18n-check.mjs` antes de enviar. Confira os dois idiomas — o inglês costuma ser mais longo.
+- Use `t()` para os textos da interface. Adicione as traduções em `ui/locales/<idioma>/` para todos os idiomas do manifesto, incluindo `zh-TW` para chinês tradicional (Taiwan). Execute `npm run i18n:check` antes de enviar as alterações.
 
 ## Código e dependências de terceiros
 

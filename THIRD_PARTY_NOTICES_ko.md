@@ -1,6 +1,6 @@
 # 제3자 고지
 
-[简体中文](./THIRD_PARTY_NOTICES.md) | [English](./THIRD_PARTY_NOTICES_en.md) | [日本語](./THIRD_PARTY_NOTICES_ja.md) | 한국어 | [Русский](./THIRD_PARTY_NOTICES_ru.md) | [Español](./THIRD_PARTY_NOTICES_es.md) | [Português (Brasil)](./THIRD_PARTY_NOTICES_pt.md) | [Türkçe](./THIRD_PARTY_NOTICES_tr.md)
+[简体中文](./THIRD_PARTY_NOTICES.md) | [繁體中文（台灣）](./THIRD_PARTY_NOTICES_zh-TW.md) | [English](./THIRD_PARTY_NOTICES_en.md) | [日本語](./THIRD_PARTY_NOTICES_ja.md) | 한국어 | [Русский](./THIRD_PARTY_NOTICES_ru.md) | [Español](./THIRD_PARTY_NOTICES_es.md) | [Português (Brasil)](./THIRD_PARTY_NOTICES_pt.md) | [Türkçe](./THIRD_PARTY_NOTICES_tr.md)
 
 anymodel bot 자체는 MIT 라이선스로 배포됩니다(LICENSE 참조). 아래 구성 요소는 프로그램에 포함되어 배포되거나 포팅되었으며 원래 라이선스를 유지합니다.
 

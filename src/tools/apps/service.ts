@@ -25,7 +25,7 @@ import type { ConnectedAccount } from "../accounts/index.js";
 import { ConnectionError } from "../accounts/index.js";
 import type { ConnectionService } from "../accounts/connections.js";
 import { NOTION_WRITE_OPS } from "../accounts/notion.js";
-import { BUILTIN_APPS, CUSTOM_APP, MAX_CUSTOM, appName, builtinApp, customIdOf, customKey, isCustomKey, type BuiltinApp, type BuiltinMethod } from "./catalog.js";
+import { BUILTIN_APPS, CUSTOM_APP, MAX_CUSTOM, appName, builtinApp, matchesAppName, customIdOf, customKey, isCustomKey, type BuiltinApp, type BuiltinMethod } from "./catalog.js";
 import { describeTools, keyParams, toolHash, type ClassifyContext } from "./classify.js";
 import { McpFailure, McpSession, type McpTarget, type RawTool } from "./mcp-client.js";
 import { OAuthFlowError, OAuthManager, type OAuthChallenge } from "./oauth.js";
@@ -1261,7 +1261,7 @@ export class AppService {
     const raw = selector.trim();
     const lower = raw.toLowerCase();
     if (!lower) return undefined;
-    const b = BUILTIN_APPS.find((x) => x.id === lower || x.name.en.toLowerCase() === lower || x.name.zh === raw);
+    const b = BUILTIN_APPS.find((x) => x.id === lower || matchesAppName(x, lower));
     if (b) return b.id;
     const custom = this.store.list(CUSTOM_APP);
     if (isCustomKey(raw) && custom.some((c) => customKey(c.id) === raw)) return raw;
@@ -1288,10 +1288,10 @@ export class AppService {
     const mine = this.botApps(botId, input);
     const hit =
       mine.find((a) => a.key.toLowerCase() === lower) ??
-      mine.find((a) => a.name.toLowerCase() === lower || builtinApp(a.app)?.name.zh === raw) ??
+      mine.find((a) => a.name.toLowerCase() === lower || matchesAppName(builtinApp(a.app), lower)) ??
       mine.find((a) => a.name.toLowerCase().includes(lower) && lower.length >= 2);
     if (hit) return hit;
-    const builtin = BUILTIN_APPS.find((b) => b.id === lower || b.name.en.toLowerCase() === lower || b.name.zh === raw);
+    const builtin = BUILTIN_APPS.find((b) => b.id === lower || matchesAppName(b, lower));
     if (builtin && !this.accounts(builtin.id).length) throw new AppError(`${builtin.name.en} is not connected yet. Call app_connect with app "${builtin.id}" and a short reason, so the user can connect it here.`, { app: builtin.id, state: "off" });
     if (builtin) throw new AppError(`${builtin.name.en} is connected but not available to this bot. The user can change that in this bot's settings under Apps.`);
     throw new AppError(`There is no app "${raw.slice(0, 80)}". Connected apps: ${mine.map((a) => (a.app === CUSTOM_APP ? a.name : a.key)).join(", ") || "none"}.`);

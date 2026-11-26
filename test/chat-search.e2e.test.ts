@@ -309,12 +309,14 @@ describe.skipIf(!browserAvailable)("chat search UI", () => {
     await page.close();
   });
 
-  it.each(["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"])("renders %s search with working filters", async (lang) => {
+  it.each(["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"])("renders %s search with working filters", async (lang) => {
     const page = await pageFor(1200, lang, lang === "en" ? "dark" : "light");
     await page.keyboard.press("Control+Shift+f");
     const results = page.locator('[data-screen="message-search"]');
     await results.getByRole("searchbox").fill("分镜");
     await page.waitForFunction(() => document.querySelectorAll(".search-result").length === 5);
+    expect(await page.locator("html").getAttribute("lang")).toBe(lang);
+    if (lang === "zh-TW") expect(await results.getAttribute("aria-label")).toBe("搜尋聊天記錄");
     expect(await results.innerText()).not.toContain("search.");
     expect(await results.locator("select").count()).toBe(3);
     if (process.env.AMB_SEARCH_SCREENSHOTS && (lang === "zh-CN" || lang === "en")) {

@@ -35,6 +35,7 @@ export interface Announcement {
   end?: string;
   countdown?: boolean;
   zh: BannerCopy;
+  "zh-TW": BannerCopy;
   en: BannerCopy;
   ja: BannerCopy;
   ko: BannerCopy;
@@ -51,8 +52,20 @@ export const RELEASE = {
   days: 30,
   /** 各版本的一句话亮点（可选），没有就显示"AnyModelBot {version} 已发布" */
   highlights: {
+    "0.1.49": {
+      "zh": "繁体中文（台湾）",
+      "zh-TW": "新增台灣繁體中文",
+      "en": "Traditional Chinese (Taiwan)",
+      "ja": "繁体字中国語（台湾）に対応",
+      "ko": "중국어 번체(대만) 지원",
+      "ru": "Традиционный китайский (Тайвань)",
+      "es": "Chino tradicional (Taiwán)",
+      "pt": "Chinês tradicional (Taiwan)",
+      "tr": "Geleneksel Çince (Tayvan) desteği",
+    },
     "0.1.41": {
       "zh": "新增土耳其语",
+      "zh-TW": "新增土耳其語",
       "en": "Now in Turkish",
       "ja": "トルコ語に対応",
       "ko": "튀르키예어 지원",
@@ -63,6 +76,7 @@ export const RELEASE = {
     },
     "0.1.39": {
       "zh": "新建对话立刻切换，设置里能点的一眼看得出",
+      "zh-TW": "新建對話立刻切換，設定中能點的一眼看得出",
       "en": "Instant new conversations and clearer buttons in settings",
       "ja": "新しい会話がすぐ始まり、設定のボタンも見やすく",
       "ko": "새 대화가 바로 시작되고 설정 버튼이 더 잘 보여요",
@@ -73,6 +87,7 @@ export const RELEASE = {
     },
     "0.1.38": {
       "zh": "修复模型列表里的「auto/…」模型",
+      "zh-TW": "修復模型清單裡的「auto/…」模型",
       "en": "Fixes \"auto/…\" models in the model list",
       "ja": "モデル一覧の「auto/…」を修正",
       "ko": "모델 목록의 \"auto/…\" 모델 수정",
@@ -83,6 +98,7 @@ export const RELEASE = {
     },
     "0.1.37": {
       "zh": "关于我，和机器人之间发消息",
+      "zh-TW": "關於我，和機器人之間傳送訊息",
       "en": "About me and bots that message each other",
       "ja": "「わたしについて」とボット同士のメッセージ",
       "ko": "내 정보와 봇끼리 메시지 보내기",
@@ -93,6 +109,7 @@ export const RELEASE = {
     },
     "0.1.36": {
       "zh": "技能库，把做成的事存成技能",
+      "zh-TW": "技能庫，把做成的事存成技能",
       "en": "Skill library and saving work as skills",
       "ja": "スキルライブラリと作業のスキル保存",
       "ko": "스킬 라이브러리와 한 일을 스킬로 저장",
@@ -103,6 +120,7 @@ export const RELEASE = {
     },
     "0.1.35": {
       "zh": "更简洁的界面、余额展示与规则修复",
+      "zh-TW": "更簡潔的介面、餘額展示與規則修復",
       "en": "Cleaner UI, visible balances and rule fixes",
       "ja": "すっきりした画面、残高表示とルール修正",
       "ko": "간결한 화면, 잔액 표시와 규칙 수정",
@@ -113,6 +131,7 @@ export const RELEASE = {
     },
     "0.1.34": {
       zh: "启动诊断与重复启动处理改进",
+      "zh-TW": "啟動診斷與重復啟動處理改進",
       en: "Startup diagnostics and second-launch handling",
       ja: "起動診断と二重起動時の表示を改善",
       ko: "시작 진단과 재실행 처리 개선",
@@ -123,6 +142,7 @@ export const RELEASE = {
     },
     "0.1.33": {
       zh: "定时规则、机器人模板和右侧预览",
+      "zh-TW": "排程規則、機器人範本和右側預覽",
       en: "Scheduled rules, bot templates and resource previews",
       ja: "スケジュール、テンプレート、プレビュー",
       ko: "예약 규칙, 봇 템플릿, 리소스 미리보기",
@@ -133,6 +153,7 @@ export const RELEASE = {
     },
     "0.1.32": {
       zh: "新增西班牙语和葡萄牙语（巴西）界面",
+      "zh-TW": "新增西班牙語和葡萄牙語（巴西）介面",
       en: "Now in Spanish and Portuguese (Brazil)",
       ja: "スペイン語とポルトガル語（ブラジル）に対応",
       ko: "스페인어와 포르투갈어(브라질) 지원",
@@ -143,6 +164,7 @@ export const RELEASE = {
     },
     "0.1.31": {
       zh: "连接应用：内置 10 个应用连接器，支持自定义 MCP",
+      "zh-TW": "連線應用程式：內建 10 個應用程式連接器，支援自訂 MCP",
       en: "Connect apps: built-in connectors and custom MCP",
       ja: "アプリを接続：内蔵コネクタとカスタム MCP",
       ko: "앱 연결: 기본 제공 커넥터와 커스텀 MCP",
@@ -153,6 +175,7 @@ export const RELEASE = {
     },
     "0.1.30": {
       zh: "Bot 额度、更新说明和官方 Bot 工作台",
+      "zh-TW": "Bot 額度、更新說明和官方 Bot 工作台",
       en: "Bot credits, What's new and official bot workspaces",
       ja: "Bot クレジット、更新内容、公式ボットのワークスペース",
       ko: "Bot 크레딧, 업데이트 내용, 공식 봇 작업 공간",
@@ -163,6 +186,7 @@ export const RELEASE = {
     },
     "0.1.24": {
       zh: "ZIP 技能导入和聊天记录搜索",
+      "zh-TW": "ZIP 技能匯入和聊天記錄搜尋",
       en: "Import ZIP skills and search chat history",
       ja: "ZIP スキルのインポートとチャット履歴検索",
       ko: "ZIP 스킬 가져오기와 대화 기록 검색",
@@ -173,6 +197,7 @@ export const RELEASE = {
     },
     "0.1.10": {
       zh: "机器人能收微信里的图片和文件了",
+      "zh-TW": "機器人能收微信裡的圖片和檔案了",
       en: "Bots can now see the images and files you send",
       ja: "送信した画像やファイルをボットが読み取れるようになりました",
       ko: "이제 보낸 이미지와 파일을 봇이 읽을 수 있습니다",
@@ -193,6 +218,7 @@ export const ANNOUNCEMENTS: Announcement[] = [
     id: "promo-free-app",
     kind: "promo",
     zh: { tag: "免费开源", text: "一个 Key 用上 {modelCount} 个模型", cta: { label: "看价格", href: "/pricing" } },
+    "zh-TW": { tag: "免費開放原始碼", text: "一個 Key 用上 {modelCount} 個模型", cta: { label: "看價格", href: "/pricing" } },
     en: { tag: "Free app", text: "One key for {modelCount} models", cta: { label: "Pricing", href: "/pricing" } },
     ja: { tag: "無料・オープンソース", text: "1つのキーで{modelCount}のモデルを利用", cta: { label: "料金", href: "/pricing" } },
     ko: { tag: "무료 오픈 소스", text: "키 하나로 모델 {modelCount}개 이용", cta: { label: "요금", href: "/pricing" } },
@@ -208,6 +234,7 @@ export const ANNOUNCEMENTS: Announcement[] = [
     start: "2026-11-15",
     end: "2026-12-15",
     zh: { tag: "社群", text: "官方 QQ 群开通了，用法和想法都能来聊", cta: { label: "加入 QQ 群", href: COMMUNITY.qq.url }, link: { label: "Telegram", href: COMMUNITY.telegram.url } },
+    "zh-TW": { tag: "社群", text: "到 Discord 或 Telegram 和我們聊聊", cta: { label: "加入 Discord", href: COMMUNITY.discord.url }, link: { label: "Telegram", href: COMMUNITY.telegram.url } },
     en: { tag: "Community", text: "Come chat with us on Discord or Telegram", cta: { label: "Join Discord", href: COMMUNITY.discord.url }, link: { label: "Telegram", href: COMMUNITY.telegram.url } },
     ja: { tag: "コミュニティ", text: "Discord と Telegram で気軽に話しましょう", cta: { label: "Discord に参加", href: COMMUNITY.discord.url }, link: { label: "Telegram", href: COMMUNITY.telegram.url } },
     ko: { tag: "커뮤니티", text: "Discord와 Telegram에서 함께 이야기해요", cta: { label: "Discord 참여", href: COMMUNITY.discord.url }, link: { label: "Telegram", href: COMMUNITY.telegram.url } },

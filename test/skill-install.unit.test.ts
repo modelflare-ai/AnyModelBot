@@ -92,6 +92,7 @@ describe("技能链接", () => {
   });
 
   it("技能库的安装指令：中英文两种格式，每行一条；夹着别的话就不算", () => {
+    expect(installPromptLinks("幫我安裝這個技能：https://github.com/acme/skills/tree/main/a")).toEqual(["https://github.com/acme/skills/tree/main/a"]);
     expect(installPromptLinks("帮我安装这个技能：https://github.com/acme/skills/tree/main/a")).toEqual(["https://github.com/acme/skills/tree/main/a"]);
     expect(installPromptLinks("Install this skill for me: https://github.com/acme/b\n\ninstall this skill for me:https://github.com/acme/c")).toEqual(["https://github.com/acme/b", "https://github.com/acme/c"]);
     expect(installPromptLinks("帮我安装这个技能：https://github.com/acme/a\n顺便总结一下它")).toBeNull();

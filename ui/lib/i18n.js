@@ -1,6 +1,6 @@
 // 界面多语言：目标语言和就绪状态见 locales/manifest.json。
 //
-// 语言偏好（system | zh-CN | en | ja | ko | ru | es | pt | tr）是应用级设置，以服务端配置 config.ui.lang 为准：托盘菜单、服务端报错、
+// 语言偏好（system | zh-CN | zh-TW | en | ja | ko | ru | es | pt | tr）是应用级设置，以服务端配置 config.ui.lang 为准：托盘菜单、服务端报错、
 // 机器人发到微信 / 飞书的系统消息都跟着它。localStorage 只缓存一份给首帧用（index.html 先按它设 <html lang>），
 // 启动后 App 读到 /settings 里的 lang 再以服务端为准（adoptServerLang）。
 // 每个 API 请求带 x-amb-lang（解析后的语言），服务端据此返回同一种语言的报错和状态文字。
@@ -15,6 +15,7 @@
 // useMemo 的依赖里要带上 useLang() 的返回值。
 import { useEffect, useState } from "preact/hooks";
 import zhCN from "../locales/zh-CN/index.js";
+import zhTW from "../locales/zh-TW/index.js";
 import en from "../locales/en/index.js";
 import manifest from "../locales/manifest.json" with { type: "json" };
 import ja from "../locales/ja/index.js";
@@ -28,15 +29,15 @@ export const TARGET_LANGS = manifest.locales.map((l) => l.code);
 export const LANGS = manifest.locales.filter((l) => l.ready).map((l) => l.code);
 /** 各语言用自己的文字写名字（语言菜单的惯例），不随界面语言翻译 */
 export const LANG_NAMES = Object.fromEntries(manifest.locales.map((l) => [l.code, l.name]));
-const DICTS = { "zh-CN": zhCN, en, ja, ko, ru, es, pt, tr };
+const DICTS = { "zh-CN": zhCN, "zh-TW": zhTW, en, ja, ko, ru, es, pt, tr };
 const FALLBACK = "zh-CN";
 const KEY = "amb-lang";
 
-/** "zh" / "zh-Hans-CN" / "zh-TW" → zh-CN；"en-US" → en；其他 → null */
+/** "zh-Hans" → zh-CN；"zh-Hant" / "zh_TW.UTF-8" → zh-TW；"en-US" → en；其他 → null */
 export function normalizeLang(s) {
   const v = String(s || "").trim().toLowerCase();
-  const base = v.split(/[-_.@]/)[0];
-  if (base === "zh") return "zh-CN";
+  const [base, variant] = v.split(/[-_.@]/);
+  if (base === "zh") return ["hant", "tw", "hk", "mo"].includes(variant) ? "zh-TW" : "zh-CN";
   if (["en", "ja", "ko", "ru", "es", "pt", "tr"].includes(base)) return base;
   return null;
 }
@@ -64,9 +65,9 @@ let pref = readPref();
 let current = pref === "system" ? systemLang() : pref;
 const subs = new Set();
 
-/** 当前界面语言（解析后的 zh-CN | en | ja | ko | ru | es | pt | tr） */
+/** 当前界面语言（解析后的 zh-CN | zh-TW | en | ja | ko | ru | es | pt | tr） */
 export const getLang = () => current;
-/** 语言偏好（system | zh-CN | en | ja | ko | ru | es | pt | tr） */
+/** 语言偏好（system | zh-CN | zh-TW | en | ja | ko | ru | es | pt | tr） */
 export const getLangPref = () => pref;
 /** 给 Intl / toLocaleString 用的语言标签 */
 export const locale = () => current;
@@ -211,6 +212,6 @@ export const fmtList = (items, type = "conjunction") => {
   try {
     return new Intl.ListFormat(current, { type }).format(items.map(String));
   } catch {
-    return items.join(current === "zh-CN" || current === "ja" ? "、" : ", "); // i18n-ignore
+    return items.join(current.startsWith("zh") || current === "ja" ? "、" : ", "); // i18n-ignore
   }
 };

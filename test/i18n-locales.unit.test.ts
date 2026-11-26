@@ -19,6 +19,23 @@ describe("multi-language foundation (no database)", () => {
     expect(normalizeLang(input)).toBe(expected);
     expect(ui.normalizeLang(input)).toBe(expected ?? null);
   });
+  it.each([
+    ["zh", "zh-CN"], ["zh-SG", "zh-CN"], ["zh-Hans-TW", "zh-CN"],
+    ["zh-TW", "zh-TW"], ["zh_HK.UTF-8", "zh-TW"], ["zh-MO", "zh-TW"],
+    ["ZH_hAnT_CN", "zh-TW"], ["zh-TW-u-nu-hanidec", "zh-TW"],
+  ])("resolves the Chinese script or region of %s on the server and in the UI", (input, expected) => {
+    expect(normalizeLang(input)).toBe(expected);
+    expect(ui.normalizeLang(input)).toBe(expected);
+    expect(envLang({ LANG: input })).toBe(expected);
+  });
+  it("uses Taiwan wording when following a Traditional Chinese system", () => {
+    vi.stubGlobal("navigator", { languages: ["fr", "zh-Hant", "en"] });
+    ui.setLangPref("system");
+    expect(ui.getLang()).toBe("zh-TW");
+    expect(ui.t("common.save")).toBe("儲存");
+    expect(ui.t("time.minutesAgo", { count: 10 })).toBe("10 分鐘前");
+    expect(tl("zh-TW", "desktop.trayOpen", { product: "AnyModelBot" })).toBe("開啟 AnyModelBot");
+  });
   it("resolves command-line and browser preference lists", () => {
     expect(envLang({ AMB_LANG: "ru-RU", LANG: "ja_JP.UTF-8" })).toBe("ru");
     expect(envLang({ AMB_LANG: "ko_KR.UTF-8" })).toBe("ko");
@@ -63,7 +80,7 @@ describe("multi-language foundation (no database)", () => {
   it("round-trips every new language through the existing config file without a database", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amb-locale-config-"));
     try {
-      for (const language of ["ja", "ko", "ru", "es", "pt", "tr"] as const) {
+      for (const language of ["zh-TW", "ja", "ko", "ru", "es", "pt", "tr"] as const) {
         saveConfigFile(dir, (file) => { file.ui = { ...(file.ui || {}), lang: language }; });
         expect(loadConfig({ dataDir: dir, env: {} }).ui.lang).toBe(language);
       }
@@ -74,7 +91,7 @@ describe("multi-language foundation (no database)", () => {
   it("validates every authored message even while catalogs are incomplete", async () => {
     const dicts = await loadDicts(TARGET_LANGS);
     const base = Object.fromEntries(Object.entries(catalogs).map(([ns, c]) => [ns, c.en]));
-    for (const lang of ["ja", "ko", "ru", "es", "pt", "tr"] as const) {
+    for (const lang of ["zh-TW", "ja", "ko", "ru", "es", "pt", "tr"] as const) {
       expect(inspectLocale(dicts.en, dicts[lang], lang).errors.filter((e: { reason: string }) => e.reason !== "missing")).toEqual([]);
       expect(inspectLocale(base, translations[lang], lang).errors.filter((e: { reason: string }) => e.reason !== "missing")).toEqual([]);
     }

@@ -17,6 +17,7 @@
   <a href="https://anymodel.bot/tr/">Site</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">İndir</a> |
   <a href="./README.md">简体中文</a> |
+  <a href="./README_zh-TW.md">繁體中文（台灣）</a> |
   <a href="./README_en.md">English</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
@@ -60,7 +61,7 @@ Sohbetler, bellek, dosyalar ve API anahtarları cihazında kalır. Modeller [Mod
 
 Kurulumdan sonra kullanıma hazır: arka plan görevleri, zamanlanmış kurallar ve onayını bekleyen öğeler yerleşiktir.
 
-**0.1.48:** masaüstü uygulaması, diğer araçların bu bilgisayara kurduğu becerileri tek seferde içe aktarıp Beceri kitaplığımda tutabilir ve ihtiyaç duyan botlarda açabilir. [Değişiklik günlüğü](./CHANGELOG_tr.md#0148---2026-11-25)
+**0.1.49:** Geleneksel Çince (Tayvan) desteği eklendi. Ayarlar → Genel → Dil bölümünde 繁體中文（台灣） seçeneğini veya sistem dilini seçin. [Değişiklik günlüğü](./CHANGELOG_tr.md#0149---2026-11-26)
 
 📥 [İndir](#-paketi-indir-ve-çalıştır) · 🌠 [Ekran görüntüleri](#-ekran-görüntüleri) · 🌟 [Özellikler](#-temel-özellikler) · 🆚 [Karşılaştır](#-anymodelbot-vs-grok-bot-openai-dots-ve-claude-duet) · 🔐 [Gizlilik](#-nasıl-çalışır-ve-gizlilik)
 
@@ -141,7 +142,7 @@ Kaynaktan derlemek için gereksinimler: Node.js 22.13+ ve Go 1.26.8+. Docker ima
 
 # 🌠 Ekran görüntüleri
 
-Bu ekran görüntüleri Basitleştirilmiş Çince arayüzü gösterir. Uygulama ayrıca İngilizce, Japonca, Korece, Rusça, İspanyolca ve Portekizceyi (Brezilya) destekler; Ayarlar'dan değiştir.
+Bu ekran görüntüleri Basitleştirilmiş Çince arayüzü gösterir. Uygulama ayrıca Geleneksel Çince (Tayvan), İngilizce, Japonca, Korece, Rusça, İspanyolca, Portekizce (Brezilya) ve Türkçeyi destekler; Ayarlar'dan değiştir.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/chat-dark.webp">
@@ -362,7 +363,7 @@ Modelflare istek günlüklerini tutar; [Güven Merkezi](https://modelflare.dev/t
 - [x] **Zamanlanmış görevler**: bir botun işi bir zamanlayıcıyla çalıştırmasını sağla (yukarıda kurallar olarak yayınlandı).
 - [x] **Uygulama içi grup sohbetleri**: uygulamada bir grup oluştur ve birkaç botla birden sohbet et.
 - [ ] **Sohbet kanallarında grup sohbetleri**: sohbet kanalları bugün bire bir sohbetleri ele alır.
-- [x] **Çok dilli arayüz**: uygulama Basitleştirilmiş Çince, İngilizce, Japonca, Korece, Rusça, İspanyolca ve Portekizceyi (Brezilya) destekler; Ayarlar'dan değiştir.
+- [x] **Çok dilli arayüz**: uygulama Basitleştirilmiş Çince, Geleneksel Çince (Tayvan), İngilizce, Japonca, Korece, Rusça, İspanyolca, Portekizce (Brezilya) ve Türkçeyi destekler; Ayarlar'dan değiştir.
 - [ ] **macOS bilgisayar kullanımı**: doğrudan kipi daha çok gerçek makinede doğrula ve Beta'dan çıkar.
 - [ ] **E-posta, takvim ve olay tetikleri**: e-posta ve takvim hesaplarını bağla ve kuralların yalnızca bir zamanlayıcıda değil, bir şey olduğu anda çalışmasını sağla (belirli bir kişiden mesaj, başlamak üzere olan bir toplantı). Dışarıdan içerikle tetiklenen çalışmalar daha düşük izin alır, böylece başkasının yazdığı metin botuna emir veremez.
 - [ ] **Her zaman açık barındırma, yedekleme ve taşıma**: bilgisayarın kapalıyken kurallar çalışmaz. Herkesin kendi sunucusuna tek tıklamayla kurmasını, sohbetlerini, belleğini ve hesaplarını taşımasını ve yedekleyip geri yüklemesini olanaklı kıl.

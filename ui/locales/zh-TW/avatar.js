@@ -1,0 +1,30 @@
+// avatar · zh-TW：機器人大頭貼角色（components/avatar.js）。名字和介紹與官方網站一致（site/src/i18n/zh.ts 的 bots.looks）
+export default {
+  label: "大頭貼",
+  /** 每個角色：name 名字、about 一句介紹（大頭貼選擇器的提示裡顯示）。只講長相和配飾，不寫崗位：機器人做什麼由人設決定 */
+  chars: {
+    blue: { name: "天天", about: "頭頂的天線天天線上，訊息一到就接住。" },
+    yellow: { name: "閃閃", about: "頭頂一顆小星星，一笑就閃閃發亮，還會臉紅。" },
+    green: { name: "芽芽", about: "頭頂一株嫩芽，每天都長高一點。" },
+    red: { name: "噠噠", about: "耳機一戴，節拍就噠噠噠響個不停。" },
+    purple: { name: "晶晶", about: "頭頂結著一顆水晶，轉起來亮晶晶。" },
+    orange: { name: "飛飛", about: "飛行護目鏡一戴，隨時準備起飛。" },
+    law: { name: "衡衡", field: "法律", about: "頭頂一架小天平，什麼事都先稱一稱。" },
+    health: { name: "安安", field: "醫療健康", about: "掛著聽診器，頭頂一顆小愛心，總想讓你安心。" },
+    finance: { name: "元元", field: "金融", about: "頭頂一枚金幣，算清楚了就翻個面。" },
+    code: { name: "碼碼", field: "程式設計", about: "頭頂一串霓虹程式碼符號，一寫起來就亮。" },
+    design: { name: "彩彩", field: "設計", about: "頭頂一塊調色盤，五種顏色隨手取。" },
+    writing: { name: "墨墨", field: "寫作", about: "頭插一支羽毛筆，面罩邊縫著一圈墨藍線。" },
+    education: { name: "學學", field: "教育", about: "學士帽戴得穩穩的，流蘇垂在一邊。" },
+    science: { name: "泡泡", field: "科研", about: "頭頂一隻燒瓶，裡面的泡泡一直往上冒。" },
+    data: { name: "數數", field: "資料分析", about: "頭頂三根發光的柱子，一根比一根高。" },
+    marketing: { name: "響響", field: "營銷", about: "頭頂一隻小喇叭，有好訊息就喊出來。" },
+    cooking: { name: "香香", field: "烹飪", about: "戴著廚師帽，臉上兩團奶油色的腮紅。" },
+    translate: { name: "通通", field: "翻譯", about: "頭頂一隻小地球儀，轉到哪兒都聊得通。" },
+    slides: { name: "演演", field: "簡報", about: "頭頂一疊扇形展開的投影片卡，耳邊縫著一圈奶白線。" },
+    film: { name: "咔咔", field: "影視創作", about: "頭頂一塊場記板，耳朵是兩只黃銅膠片盤，面罩外縫著一圈白線。" },
+    dossier: { name: "察察", field: "公司盡職調查", about: "芥末黃粗花呢配皮革耳貼，頭頂一把黃銅放大鏡，什麼都要細細看。" },
+    ticker: { name: "盤盤", field: "美股研究", about: "額前一條行情燈帶，頭頂一支發光的趨勢箭頭。" },
+  },
+  groups: { expert: "領域專家", own: "專屬形象", base: "基礎角色" },
+};

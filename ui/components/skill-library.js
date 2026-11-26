@@ -5,7 +5,7 @@ import { html, Button, Icon, Popover, Sheet, Spinner } from "./ui.js";
 import { toast } from "../lib/store.js";
 import { t, useLang } from "../lib/i18n.js";
 import {
-  authorName, avatarFailed, avatarKnown, avatarLoaded, avatarSrc, categoryName, copyText, initialOf, installPrompt, matchesSkill, openExternal, repoUrl, skillText,
+  authorBio, authorName, avatarFailed, avatarKnown, avatarLoaded, avatarSrc, categoryName, copyText, initialOf, installPrompt, matchesSkill, openExternal, repoUrl, skillText,
 } from "../lib/skill-library.js";
 
 /** 打开 GitHub：浏览器打不开时把地址复制下来 */
@@ -134,7 +134,7 @@ function AuthorPop({ pop, lib, onClose, onAuthor, hover }) {
         <${SkillAvatar} author=${a} big />
         <div class="skill-author-names"><strong>${authorName(a)}</strong><span>@${a.id}</span></div>
       </div>
-      ${a.bio && html`<p class="skill-author-bio">${a.bio}</p>`}
+      ${a.bio && html`<p class="skill-author-bio">${authorBio(a)}</p>`}
       <p class="skill-author-meta">${authorMeta(a)}</p>
       <div class="skill-author-actions">
         <${Button} size="sm" onClick=${() => (onAuthor(a.id), onClose())}>${t("skills.author.only")}<//>
@@ -284,7 +284,7 @@ function SkillDetail({ s, lib, manual, nonce, copied, onCopy, onAuthor, onClose 
         <div class="skill-author-card">
           <${SkillAvatar} author=${a} />
           <div class="skill-author-names"><strong>${authorName(a)}</strong><span>@${a.id}</span></div>
-          ${a.bio && html`<p class="skill-author-bio">${a.bio}</p>`}
+          ${a.bio && html`<p class="skill-author-bio">${authorBio(a)}</p>`}
           <p class="skill-author-meta">${authorMeta(a)}</p>
           <div class="skill-author-actions">
             <${Button} size="sm" onClick=${() => onAuthor(a.id)}>${t("skills.author.only")}<//>

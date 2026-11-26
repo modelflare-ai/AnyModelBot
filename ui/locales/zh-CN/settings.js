@@ -191,7 +191,7 @@ export default {
   rows: {
     language: {
       sub: "界面、托盘菜单和机器人发出的系统消息都用这种语言",
-      keys: "语言 中文 英文 土耳其语 Türkçe English language",
+      keys: "语言 中文 英文 土耳其语 Türkçe English language 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese",
     },
     sendKey: {
       name: "发送消息",

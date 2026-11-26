@@ -19,7 +19,8 @@ import { isBotProviderModel, isGatewayGroupModel } from "../providers/modelflare
 import type { ApprovalRow, Conversation } from "../store/db.js";
 import type { AccessControl } from "./access.js";
 import { takeTaskNotes } from "./task-notes.js";
-import { t } from "../i18n/index.js";
+import { lang, t } from "../i18n/index.js";
+import { replyLanguageHint } from "../agent/prompts/system.js";
 import { localProxyFailureHint } from "../network-error.js";
 import type { CuBlocked } from "../tools/computer-use/permissions.js";
 import { installPromptLinks, MAX_CARDS_PER_MESSAGE, type SkillInstalls } from "../skills/installs.js";
@@ -566,7 +567,8 @@ export class BotRuntime {
     run.userStored = true;
     const history = store.contextWindow(conv.id, this.opts.contextMessages, this.opts.contextChars);
     const messages: ChatMessage[] = [];
-    if (bot.systemPrompt.trim()) messages.push({ role: "system", content: bot.systemPrompt });
+    const system = [replyLanguageHint(lang()), bot.systemPrompt].filter((part) => part.trim()).join("\n\n");
+    if (system) messages.push({ role: "system", content: system });
     messages.push(...this.withAttachments(bot.id, history.filter((m) => m.role !== "system"), canSee));
     const last = messages[messages.length - 1];
     if (!pre && seen.length && last?.role === "user" && typeof last.content === "string") {

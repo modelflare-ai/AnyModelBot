@@ -223,7 +223,7 @@ function checkEvals(dir: string): Issue[] {
 /** 模板里的 TODO 没填完不能过 */
 function checkPlaceholders(dir: string): Issue[] {
   const issues: Issue[] = [];
-  for (const f of ["bot.json", "persona.md", ...SAMPLE_FILES, "ui/locales/zh-CN.json", "ui/locales/en.json", "evals/tasks.json", "evals/injection.json"]) {
+  for (const f of ["bot.json", "persona.md", ...SAMPLE_FILES, "ui/locales/zh-CN.json", "ui/locales/zh-TW.json", "ui/locales/en.json", "evals/tasks.json", "evals/injection.json"]) {
     const p = path.join(dir, f);
     if (fs.existsSync(p) && /\bTODO\b/.test(fs.readFileSync(p, "utf8"))) issues.push({ rule: "format.placeholder", message: "模板里的 TODO 还没填", file: f });
   }

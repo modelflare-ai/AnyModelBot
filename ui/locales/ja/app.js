@@ -31,7 +31,7 @@ export default {
     "themeDark": "テーマ：ダーク",
     "themeDarkKeys": "テーマ ダーク 夜 暗い",
     "lang": "言語：{name}",
-    "langKeys": "言語 日本語 英語 中国語 韓国語 ロシア語 スペイン語 ポルトガル語 トルコ語 Türkçe",
+    "langKeys": "言語 日本語 英語 中国語 韓国語 ロシア語 スペイン語 ポルトガル語 トルコ語 Türkçe 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese",
     "switchBot": "「{name}」に切り替える"
   },
   "lowBalance": "Modelflare の残高が ${amount} になりました",

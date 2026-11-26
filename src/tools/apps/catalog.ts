@@ -28,7 +28,7 @@ export type BuiltinMethod =
 export interface BuiltinApp {
   id: string;
   /** 中文名和英文名（其他语言用英文名） */
-  name: { zh: string; en: string };
+  name: { zh: string; "zh-TW"?: string; en: string };
   /** 国内应用在中文界面置顶，海外应用在其他语言置顶 */
   region: "cn" | "global";
   /** 搜索用的别名和用途词（中英文） */
@@ -69,18 +69,18 @@ const FEISHU_TOOLS: Record<string, ToolCategory> = {
 export const BUILTIN_APPS: readonly BuiltinApp[] = [
   {
     id: "feishu",
-    name: { zh: "飞书", en: "Feishu" },
+    name: { zh: "飞书", "zh-TW": "飛書", en: "Feishu" },
     region: "cn",
-    keywords: ["飞书", "feishu", "lark", "云文档", "文档", "消息", "群聊", "协作", "docs", "messages", "chat"],
+    keywords: ["飞书", "feishu", "lark", "云文档", "雲端文件", "訊息", "文档", "消息", "群聊", "协作", "docs", "messages", "chat"],
     methods: [{ kind: "oauth", url: "https://mcp.feishu.cn/mcp", variants: [{ id: "lark", label: "Lark", url: "https://mcp.larksuite.com/mcp" }] }],
     docs: "https://open.feishu.cn/document/mcp_open_tools/developers-call-remote-mcp-server",
     categories: FEISHU_TOOLS,
   },
   {
     id: "tencent-docs",
-    name: { zh: "腾讯文档", en: "Tencent Docs" },
+    name: { zh: "腾讯文档", "zh-TW": "騰訊文件", en: "Tencent Docs" },
     region: "cn",
-    keywords: ["腾讯文档", "tencent docs", "qq docs", "文档", "表格", "幻灯片", "在线文档", "docs", "sheets", "slides", "spreadsheet"],
+    keywords: ["腾讯文档", "tencent docs", "qq docs", "文档", "表格", "幻灯片", "投影片", "在线文档", "docs", "sheets", "slides", "spreadsheet"],
     methods: [
       { kind: "oauth", url: "https://docs.qq.com/openapi/mcp" },
       { kind: "header", url: "https://docs.qq.com/openapi/mcp", header: "Authorization", getUrl: "https://docs.qq.com/open/auth/mcp.html" },
@@ -89,15 +89,15 @@ export const BUILTIN_APPS: readonly BuiltinApp[] = [
   },
   {
     id: "dingtalk",
-    name: { zh: "钉钉", en: "DingTalk" },
+    name: { zh: "钉钉", "zh-TW": "釘釘", en: "DingTalk" },
     region: "cn",
-    keywords: ["钉钉", "dingtalk", "日程", "待办", "通讯录", "办公", "calendar", "todo", "contacts"],
+    keywords: ["钉钉", "dingtalk", "日程", "待办", "通讯录", "通訊錄", "行事曆", "待辦", "办公", "calendar", "todo", "contacts"],
     methods: [{ kind: "dedicatedUrl", getUrl: "https://open.dingtalk.com/document/development/mcp-square-introduction" }],
     docs: "https://open.dingtalk.com/document/development/mcp-square-introduction",
   },
   {
     id: "amap",
-    name: { zh: "高德地图", en: "Amap" },
+    name: { zh: "高德地图", "zh-TW": "高德地圖", en: "Amap" },
     region: "cn",
     keywords: ["高德", "高德地图", "amap", "gaode", "地图", "路线", "导航", "天气", "周边", "出行", "地址", "map", "maps", "route", "weather", "navigation"],
     methods: [{ kind: "key", urlTemplate: "https://mcp.amap.com/mcp?key={key}", getUrl: "https://console.amap.com/dev/key/app" }],
@@ -106,9 +106,9 @@ export const BUILTIN_APPS: readonly BuiltinApp[] = [
   },
   {
     id: "yuque",
-    name: { zh: "语雀", en: "Yuque" },
+    name: { zh: "语雀", "zh-TW": "語雀", en: "Yuque" },
     region: "cn",
-    keywords: ["语雀", "yuque", "知识库", "文档", "笔记", "小记", "knowledge base", "wiki", "docs", "notes"],
+    keywords: ["语雀", "yuque", "知识库", "知識庫", "筆記", "文档", "笔记", "小记", "knowledge base", "wiki", "docs", "notes"],
     // 包读的是 YUQUE_PERSONAL_TOKEN；YUQUE_TOKEN 是文档里的旧名，一起给
     methods: [{ kind: "localToken", program: "yuque", env: ["YUQUE_PERSONAL_TOKEN", "YUQUE_TOKEN"], getUrl: "https://www.yuque.com/settings/tokens" }],
     docs: "https://github.com/yuque/yuque-mcp-server",
@@ -118,7 +118,7 @@ export const BUILTIN_APPS: readonly BuiltinApp[] = [
     id: "notion",
     name: { zh: "Notion", en: "Notion" },
     region: "global",
-    keywords: ["notion", "知识库", "文档", "笔记", "数据库", "页面", "knowledge base", "wiki", "docs", "notes", "database", "pages"],
+    keywords: ["notion", "知识库", "知識庫", "筆記", "文档", "笔记", "数据库", "資料庫", "页面", "knowledge base", "wiki", "docs", "notes", "database", "pages"],
     methods: [{ kind: "notion-oauth" }, { kind: "notion-token", getUrl: "https://www.notion.so/developers" }],
     docs: "https://developers.notion.com/docs/mcp",
   },
@@ -126,7 +126,7 @@ export const BUILTIN_APPS: readonly BuiltinApp[] = [
     id: "github",
     name: { zh: "GitHub", en: "GitHub" },
     region: "global",
-    keywords: ["github", "代码", "仓库", "issue", "pr", "pull request", "开发", "code", "repo", "repository"],
+    keywords: ["github", "代码", "仓库", "儲存庫", "程式碼", "issue", "pr", "pull request", "开发", "code", "repo", "repository"],
     methods: [{ kind: "header", url: "https://api.githubcopilot.com/mcp/", header: "Authorization", prefix: "Bearer ", getUrl: "https://github.com/settings/personal-access-tokens" }],
     docs: "https://github.com/github/github-mcp-server",
   },
@@ -134,7 +134,7 @@ export const BUILTIN_APPS: readonly BuiltinApp[] = [
     id: "linear",
     name: { zh: "Linear", en: "Linear" },
     region: "global",
-    keywords: ["linear", "项目管理", "任务", "issue", "工单", "进度", "project", "tasks", "tickets"],
+    keywords: ["linear", "项目管理", "專案管理", "任务", "issue", "工单", "进度", "project", "tasks", "tickets"],
     methods: [{ kind: "oauth", url: "https://mcp.linear.app/mcp" }],
     docs: "https://linear.app/docs/mcp",
   },
@@ -142,7 +142,7 @@ export const BUILTIN_APPS: readonly BuiltinApp[] = [
     id: "atlassian",
     name: { zh: "Atlassian", en: "Atlassian" },
     region: "global",
-    keywords: ["atlassian", "jira", "confluence", "工单", "项目管理", "知识库", "wiki", "tickets", "project"],
+    keywords: ["atlassian", "jira", "confluence", "工单", "项目管理", "專案管理", "知识库", "知識庫", "筆記", "wiki", "tickets", "project"],
     methods: [{ kind: "oauth", url: "https://mcp.atlassian.com/v1/mcp" }],
     docs: "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/",
   },
@@ -150,7 +150,7 @@ export const BUILTIN_APPS: readonly BuiltinApp[] = [
     id: "canva",
     name: { zh: "Canva", en: "Canva" },
     region: "global",
-    keywords: ["canva", "可画", "设计", "海报", "幻灯片", "design", "poster", "slides", "presentation"],
+    keywords: ["canva", "可画", "设计", "設計", "海报", "幻灯片", "投影片", "design", "poster", "slides", "presentation"],
     methods: [{ kind: "oauth", url: "https://mcp.canva.com/mcp" }],
     docs: "https://www.canva.dev/docs/connect/canva-mcp-server-setup/",
   },
@@ -164,10 +164,16 @@ export function builtinApp(id: string): BuiltinApp | undefined {
   return BUILTIN_APPS.find((a) => a.id === id);
 }
 
+/** Match the display name in any supported script. The caller has already trimmed and lowercased the input. */
+export function matchesAppName(app: BuiltinApp | undefined, lowerName: string): boolean {
+  return !!app && Object.values(app.name).some((name) => name.toLowerCase() === lowerName);
+}
+
 /** 给模型和日志看的名字（英文）；界面按语言选 name.zh / name.en */
 export function appName(id: string, lang = "en"): string {
   const a = builtinApp(id);
   if (!a) return id;
+  if (lang === "zh-TW") return a.name["zh-TW"] ?? a.name.en;
   return lang.startsWith("zh") ? a.name.zh : a.name.en;
 }
 

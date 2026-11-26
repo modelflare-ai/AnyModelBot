@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { templateCatalog, templateName, templateStrings } from "../src/templates/catalog.js";
 import { validTopic, ENTRY_MAX } from "../src/agent/memory.js";
 import { PICKABLE_AVATARS } from "../src/domain/bot-settings.js";
-const languages = ["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"] as const;
-describe("模板目录与八种语言", () => {
+const languages = ["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"] as const;
+describe("模板目录与各语言", () => {
   it("十个稳定标识，头像不同、均可选且不用默认助手头像", () => {
     const catalog = templateCatalog();
     expect(catalog.map((x) => x.id)).toEqual(["writer", "polish", "work-report", "minutes", "day-planner", "digest", "researcher", "study-buddy", "coding-partner", "support"]);

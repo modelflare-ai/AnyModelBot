@@ -9,6 +9,12 @@
       "ready": true
     },
     {
+      "code": "zh-TW",
+      "siteCode": "zh-TW",
+      "name": "繁體中文（台灣）",
+      "ready": true
+    },
+    {
       "code": "en",
       "siteCode": "en",
       "name": "English",

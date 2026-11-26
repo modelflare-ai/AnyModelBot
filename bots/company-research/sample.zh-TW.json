@@ -1,0 +1,161 @@
+{
+  "title": "公司盡職調查",
+  "runtime": {
+    "mode": "auto",
+    "track": "b"
+  },
+  "jobs": [
+    {
+      "id": "job-sample-sprucefield",
+      "company": "雲杉機器人",
+      "companyUrl": "https://example.com/sprucefield/about",
+      "industry": "倉儲機器人",
+      "hqLocation": "蘇州",
+      "status": "completed",
+      "track": "b",
+      "currentStep": "editor",
+      "progress": 100,
+      "docCounts": {
+        "financial": 9,
+        "news": 7,
+        "industry": 8,
+        "company": 11
+      },
+      "nodes": {
+        "grounding": "done",
+        "financial_analyst": "done",
+        "news_scanner": "done",
+        "industry_analyst": "done",
+        "company_analyst": "done",
+        "collector": "done",
+        "curator": "done",
+        "enricher": "done",
+        "briefing": "done",
+        "editor": "done"
+      },
+      "curation": {
+        "total": 35,
+        "kept": 22,
+        "threshold": 0.4
+      },
+      "sample": true,
+      "updatedAt": "2026-11-03T02:10:00Z"
+    }
+  ],
+  "timeline": [
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:00:00Z",
+      "node": "grounding",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:01:00Z",
+      "node": "financial_analyst",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:02:00Z",
+      "node": "news_scanner",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:03:00Z",
+      "node": "industry_analyst",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:04:00Z",
+      "node": "company_analyst",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:05:00Z",
+      "node": "collector",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:06:00Z",
+      "node": "curator",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:07:00Z",
+      "node": "enricher",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:08:00Z",
+      "node": "briefing",
+      "status": "done"
+    },
+    {
+      "jobId": "job-sample-sprucefield",
+      "at": "2026-11-03T02:09:00Z",
+      "node": "editor",
+      "status": "done"
+    }
+  ],
+  "selectedJobId": "job-sample-sprucefield",
+  "view": "report",
+  "reportPreview": "# 雲杉機器人 盡職調查報告\n\n> 這是介面範例。公司、數字和來源全部虛構，用來展示一份報告的樣子。\n\n## 摘要\n\n- 雲杉機器人做倉儲分揀機器人，主要客戶是區域電商和第三方物流公司（[官方網站介紹](https://example.com/sprucefield/about)）。\n- 2026 年 3 月完成 B 輪融資，金額 6000 萬美元，由松石資本領投（[融資公告](https://example.org/news/sprucefield-series-b)）。\n- 公開來源裡沒有經審計的營收數字，公司自述 2025 年訂單較去年同期翻倍，**未驗證**。\n\n## 公司與業務\n\n公司成立於 2019 年，總部在蘇州，產品是模組化分揀機器人和排程軟體（[官方網站介紹](https://example.com/sprucefield/about)）。按台數收費，軟體按年訂閱（[產品頁](https://example.com/sprucefield/pricing)）。\n\n## 行業與競爭\n\n行業報告估計，2025 年全球倉儲機器人市場約 90 億美元，年增速約 15%（[行業報告](https://example.net/reports/warehouse-robotics-2026)）。主要競爭對手是兩家規模更大的上市公司，雲杉的差異在於部署週期短（[行業報告](https://example.net/reports/warehouse-robotics-2026)）。\n\n## 財務情況\n\n| 專案 | 數字 | 來源 |\n| --- | --- | --- |\n| B 輪融資 | 6000 萬美元（2026 年 3 月） | [融資公告](https://example.org/news/sprucefield-series-b) |\n| 累計融資 | 約 9500 萬美元 | [融資資料庫](https://example.org/data/sprucefield) |\n| 2025 年營收 | 未披露 | 無 |\n\n## 近期新聞\n\n- 2026 年 6 月，和一家區域物流公司簽下三年合作（[合作新聞](https://example.org/news/sprucefield-partnership)）。\n- 2026 年 8 月，任命新的首席財務官（[人事新聞](https://example.org/news/sprucefield-cfo)）。\n\n## 資訊缺口與未驗證項\n\n- 沒有找到經審計的財務資料。\n- 訂單翻倍來自公司自述，沒有第三方來源。\n\n## 來源\n\n1. [官方網站介紹](https://example.com/sprucefield/about)\n2. [產品頁](https://example.com/sprucefield/pricing)\n3. [融資公告](https://example.org/news/sprucefield-series-b)\n4. [融資資料庫](https://example.org/data/sprucefield)\n5. [行業報告](https://example.net/reports/warehouse-robotics-2026)\n6. [合作新聞](https://example.org/news/sprucefield-partnership)\n7. [人事新聞](https://example.org/news/sprucefield-cfo)\n\n---\n\n**免責聲明**：本報告由 AI 根據公開來源整理，僅供資訊和學習參考，不構成投資、稅務或法律建議。來源可能過時或有誤，使用前請自行覈實。作者和 AnyModelBot 不對依據本報告作出的決定承擔責任。\n",
+  "sourcesPreview": [
+    {
+      "url": "https://example.com/sprucefield/about",
+      "title": "官方網站介紹",
+      "score": 0.95,
+      "domain": "company",
+      "used": true
+    },
+    {
+      "url": "https://example.org/news/sprucefield-series-b",
+      "title": "融資公告",
+      "score": 0.92,
+      "domain": "financial",
+      "used": true
+    },
+    {
+      "url": "https://example.net/reports/warehouse-robotics-2026",
+      "title": "行業報告",
+      "score": 0.88,
+      "domain": "industry",
+      "used": true
+    },
+    {
+      "url": "https://example.org/data/sprucefield",
+      "title": "融資資料庫",
+      "score": 0.81,
+      "domain": "financial",
+      "used": true
+    },
+    {
+      "url": "https://example.org/news/sprucefield-partnership",
+      "title": "合作新聞",
+      "score": 0.77,
+      "domain": "news",
+      "used": true
+    },
+    {
+      "url": "https://example.com/sprucefield/pricing",
+      "title": "產品頁",
+      "score": 0.74,
+      "domain": "company",
+      "used": true
+    },
+    {
+      "url": "https://example.org/news/sprucefield-cfo",
+      "title": "人事新聞",
+      "score": 0.62,
+      "domain": "news",
+      "used": true
+    }
+  ]
+}

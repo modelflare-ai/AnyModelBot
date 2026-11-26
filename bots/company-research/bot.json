@@ -4,6 +4,7 @@
   "minAppVersion": "0.1.33",
   "name": {
     "zh-CN": "尽调助手",
+    "zh-TW": "盡職調查助手",
     "en": "Company Research",
     "ja": "企業リサーチ",
     "ko": "기업 리서치",
@@ -14,6 +15,7 @@
   },
   "summary": {
     "zh-CN": "在你的电脑上做公司尽调，生成可追溯的简报和 PDF。",
+    "zh-TW": "在你的電腦上做公司盡職調查，產生可追溯的簡報和 PDF。",
     "en": "Company research on your computer, with sourced briefings and PDF reports.",
     "ja": "手元のパソコンで企業を調査し、出典付きの要約と PDF レポートを作成します。",
     "ko": "내 컴퓨터에서 기업을 실사하고 출처가 있는 브리핑과 PDF를 만듭니다.",
@@ -27,6 +29,11 @@
       "研究流程和 PDF 导出对齐开源项目 Company Research Agent",
       "报告和来源留在你的设备上；在聊天渠道里发起，结果也发回那里",
       "仅供信息与学习参考，不构成投资建议"
+    ],
+    "zh-TW": [
+      "研究流程和 PDF 匯出對齊開放原始碼專案 Company Research Agent",
+      "報告和來源留在你的裝置上；在聊天管道裡發起，結果也發回那裡",
+      "僅供資訊與學習參考，不構成投資建議"
     ],
     "en": [
       "Follows the research flow and PDF export of the open-source Company Research Agent",
@@ -74,6 +81,11 @@
       "用一页纸介绍 Stripe 做什么、服务谁。只查官网的 1–2 个页面，不做完整尽调。",
       "对 Stripe 做完整尽调并生成报告",
       "打开上一份报告的来源与策展列表"
+    ],
+    "zh-TW": [
+      "用一頁紙介紹 Stripe 做什麼、服務誰。只查官方網站的 1–2 個頁面，不做完整盡職調查。",
+      "對 Stripe 做完整盡職調查並產生報告",
+      "開啟上一份報告的來源與策展清單"
     ],
     "en": [
       "Introduce what Stripe does and who it serves in one page. Use only 1–2 pages from its official site, without full diligence.",

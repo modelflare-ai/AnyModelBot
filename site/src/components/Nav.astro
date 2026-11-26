@@ -4,7 +4,7 @@ import Icon from "./Icon.astro";
 import DownloadButton from "./DownloadButton.astro";
 import Community from "./Community.astro";
 import CommunityQr from "./CommunityQr.astro";
-import { dict, href, READY_LANGS, LOCALES, switchHref, type Lang } from "../i18n";
+import { dict, href, languageLabel, READY_LANGS, LOCALES, switchHref, type Lang } from "../i18n";
 import { GITHUB_URL } from "../lib/site";
 import { docsUrl } from "../lib/docs";
 import { communityFor, QQ_GROUP } from "../data/community";
@@ -65,7 +65,7 @@ const community = communityFor(lang);
         <div class="nav__menu">
           <button class="nav__util nav__util--icon" type="button" aria-haspopup="menu" aria-expanded="false" aria-label={t.nav.langLabel} data-tip={t.nav.langLabel} data-menu-toggle><Icon name="globe" size={16} /></button>
           <div class="menu" role="menu" aria-label={t.nav.langLabel} hidden>
-            {READY_LANGS.map((code) => ({ code, ...LOCALES[code], name: code === "zh" && lang === "en" ? "Simplified Chinese" : LOCALES[code].name, textLang: code === "zh" && lang === "en" ? "en" : LOCALES[code].tag })).map((l) => l.code === lang
+            {READY_LANGS.map((code) => ({ code, ...LOCALES[code], name: languageLabel(code, lang).name, textLang: languageLabel(code, lang).tag })).map((l) => l.code === lang
               ? <button type="button" role="menuitemradio" aria-checked="true" lang={l.textLang}><span class="menu__label">{l.name}</span><Icon name="check" size={16} class="menu__check" /></button>
               : <a role="menuitemradio" aria-checked="false" href={switchHref(l.code, path)} hreflang={l.tag} lang={l.textLang} data-lang-switch={l.code}><span class="menu__label">{l.name}</span><Icon name="check" size={16} class="menu__check" /></a>)}
           </div>
@@ -109,7 +109,7 @@ const community = communityFor(lang);
   <div class="container drawer__foot">
     <div class="drawer__prefs">
       <div class="language-options" aria-label={t.nav.langLabel}>
-        {READY_LANGS.map((l) => <a class="chip" href={switchHref(l, path)} hreflang={LOCALES[l].tag} lang={l === "zh" && lang === "en" ? "en" : LOCALES[l].tag} aria-current={l === lang ? "page" : undefined} data-lang-switch={l}>{l === "zh" && lang === "en" ? "Simplified Chinese" : LOCALES[l].name}</a>)}
+        {READY_LANGS.map((l) => <a class="chip" href={switchHref(l, path)} hreflang={LOCALES[l].tag} lang={languageLabel(l, lang).tag} aria-current={l === lang ? "page" : undefined} data-lang-switch={l}>{languageLabel(l, lang).name}</a>)}
       </div>
       <div class="drawer__theme" role="group" aria-label={t.nav.theme}>
         <button type="button" class="chip" data-theme-set="light">{t.nav.themeLight}</button>

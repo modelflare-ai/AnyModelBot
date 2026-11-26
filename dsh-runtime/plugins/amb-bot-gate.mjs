@@ -41,7 +41,7 @@ export function apply(ctx) {
     return {
       kind: 'ask',
       reason: `First use of ${tool}: this bot declared the permission, confirm with the user`,
-      displayReason: { en: `First time this bot uses ${tool}`, zh: `这个 Bot 第一次使用 ${tool}，需要你确认` },
+      displayReason: { en: `First time this bot uses ${tool}`, zh: `这个 Bot 第一次使用 ${tool}，需要你确认`, 'zh-TW': `這個機器人第一次使用 ${tool}，需要你確認` },
     }
   }, { prepend: true })
 

@@ -1,8 +1,15 @@
 # Registro de cambios
 
-[简体中文](./CHANGELOG.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | Español | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
+[简体中文](./CHANGELOG.md) | [繁體中文（台灣）](./CHANGELOG_zh-TW.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | Español | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
 
 Aquí se recogen los cambios que notarás en la app. Para versiones anteriores, consulta las [versiones publicadas en GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
+
+## 0.1.49 - 2026-11-26
+
+### Novedades
+
+- Se añadió chino tradicional (Taiwán). Elige 繁體中文（台灣） en Ajustes → General → Idioma o usa el idioma del sistema.
+- La traducción abarca las interfaces de escritorio y web, el menú de la bandeja, los mensajes del sistema, las bibliotecas de habilidades y tareas, y los espacios de trabajo y ejemplos de los cuatro bots integrados.
 
 ## 0.1.48 - 2026-11-25
 

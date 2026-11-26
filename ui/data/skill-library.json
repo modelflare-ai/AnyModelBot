@@ -2,13 +2,13 @@
   "checkedAt": "2026-11-14",
   "categories": ["research", "writing", "images", "video", "publish", "seo", "business", "personas", "office"],
   "authors": {
-    "kostja94": {"name": "Kostja Zhang", "nameEn": "Kostja Zhang", "bio": "AI/SaaS Growth Expert，SEO 与内容营销"},
+    "kostja94": {"name": "Kostja Zhang", "nameEn": "Kostja Zhang", "bio": "AI/SaaS Growth Expert，SEO 与内容营销", "bioTW": "AI 與 SaaS 成長專家，專長為 SEO 與內容行銷"},
     "affaan-m": {"name": "Affaan Mustafa", "nameEn": "Affaan Mustafa", "bio": "Compute Trading Lead @ Jump Trading"},
     "alchaincyf": {"name": "花叔", "nameEn": "Huashu (花叔)", "bio": "AI Native Coder"},
-    "dontbesilent2025": {"name": "dontbesilent", "nameEn": "dontbesilent", "bio": "这里是 dontbesilent 用 AI 写的东西"},
-    "JimLiu": {"name": "宝玉（Jim Liu）", "nameEn": "Jim Liu (宝玉)", "bio": ""},
-    "KKKKhazix": {"name": "数字生命卡兹克（Khazix）", "nameEn": "Khazix (数字生命卡兹克)", "bio": ""},
-    "ziguishian": {"name": "子圭时安", "nameEn": "Zigui Shian (子圭时安)", "bio": "让我们一起加速 ASI 的实现"},
+    "dontbesilent2025": {"name": "dontbesilent", "nameEn": "dontbesilent", "bio": "这里是 dontbesilent 用 AI 写的东西", "bioTW": "這裡是 dontbesilent 用 AI 寫的作品"},
+    "JimLiu": {"name": "宝玉（Jim Liu）", "nameTW": "寶玉（Jim Liu）", "nameEn": "Jim Liu (宝玉)", "bio": ""},
+    "KKKKhazix": {"name": "数字生命卡兹克（Khazix）", "nameTW": "數字生命卡茲克（Khazix）", "nameEn": "Khazix (数字生命卡兹克)", "bio": ""},
+    "ziguishian": {"name": "子圭时安", "nameTW": "子圭時安", "nameEn": "Zigui Shian (子圭时安)", "bio": "让我们一起加速 ASI 的实现", "bioTW": "讓我們一起加速實現 ASI"},
     "isjiamu": {"name": "甲木（Jiamu）", "nameEn": "Jiamu (甲木)", "bio": "Prompt & Agent. Java/PHP developer. AI lover."}
   },
   "skills": [

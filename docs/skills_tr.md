@@ -1,6 +1,6 @@
 # Becerileri içe aktarma ve yönetme
 
-[简体中文](./skills.md) | [English](./skills_en.md) | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | Türkçe
+[简体中文](./skills.md) | [繁體中文（台灣）](./skills_zh-TW.md) | [English](./skills_en.md) | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | Türkçe
 
 AnyModelBot 0.1.24 ile birlikte, elindeki iş akışlarını bir bota ZIP beceri paketleri olarak ekleyebilirsin. Haftalık rapor, belge işleme ve araştırma gibi işler için kullanılır.
 

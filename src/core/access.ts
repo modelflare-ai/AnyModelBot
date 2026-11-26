@@ -208,11 +208,11 @@ export class AccessControl {
    * 只认主人（各渠道的主人和本机网页），只认这个机器人待处理请求的配对码；其余交给工具审批处理。
    */
   handleReply(ev: InboundEvent): { handled: boolean; ack?: string } {
-    const m = /^(同意|允许|批准|通过|y|yes|ok|拒绝|不同意|n|no)\s*[#:：]?\s*(\d{4})$/i.exec(eventText(ev).trim());
+    const m = /^(同意|允[许許]|批准|核准|通[过過]|y|yes|ok|拒[绝絕]|不同意|n|no)\s*[#:：]?\s*(\d{4})$/i.exec(eventText(ev).trim());
     if (!m || !this.isOwner(ev)) return { handled: false };
     const e = this.store.pendingAccessByCode(accountOf(ev), m[2]);
     if (!e) return { handled: false };
-    const allow = !/^(拒绝|不同意|n|no)$/i.test(m[1]);
+    const allow = !/^(拒[绝絕]|不同意|n|no)$/i.test(m[1]);
     this.decide(e.id, allow, `${ev.channel}:${ev.sender.id}`);
     return { handled: true, ack: tr(allow ? "access.allowedAck" : "access.deniedAck", { who: whoText(e) }) };
   }

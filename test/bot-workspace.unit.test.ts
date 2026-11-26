@@ -10,7 +10,7 @@ import { parseBlocks } from "../bots/us-stock-research/ui/md.js";
 import { dragPosition, fitCanvas } from "../bots/printfilm/ui/canvas-layout.js";
 
 const root = path.join(import.meta.dirname, "..");
-const languages = ["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"];
+const languages = ["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"];
 
 describe("Bot workspaces", () => {
   it.each(["printfilm", "us-stock-research", "company-research", "ppt-master"])("%s keeps its sandbox and localization contracts", (id) => {
@@ -36,7 +36,7 @@ describe("research charts", () => {
     expect(data.lines).toHaveLength(1);
     expect(data.unitNote).toBeTruthy();
     // Chinese uses hundred-million USD, Portuguese uses million USD; the others use billion USD.
-    expect(data.bars[0].cells[0].value).toBeCloseTo(lang === "zh-CN" ? 3658.17 : lang === "pt" ? 365817 : 365.817);
+    expect(data.bars[0].cells[0].value).toBeCloseTo(lang.startsWith("zh") ? 3658.17 : lang === "pt" ? 365817 : 365.817);
     expect(data.lines[0].cells.at(-1).value).toBeCloseTo(46.91);
     expect(new Set([...data.bars, ...data.lines].map((s: any) => s.color)).size).toBe(3);
   });

@@ -479,7 +479,7 @@ const track = (n: string, p?: object) => { try { (window as any).umami?.track(n,
   hosts.forEach((h) => io.observe(h));
 })();
 
-// —— 演示导览（DemoTour 现在没有渲染，这里找不到就跳过）与循环示意动画 ——
+// —— 演示导览（繁体中文页使用本地化的交互演示）与循环示意动画 ——
 const tour = document.getElementById("demo-tour") as HTMLDialogElement | null;
 if (tour) mountTour(tour);
 $$("[data-loop]").forEach(mountLoop);

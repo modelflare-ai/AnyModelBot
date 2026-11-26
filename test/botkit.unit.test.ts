@@ -37,7 +37,7 @@ afterEach(() => {
 /** 从模板起一个填好 TODO 的 Bot 包 */
 function makeBot(dest: string, id = "fixture-bot", version = "1.0.0"): string {
   fs.cpSync(TEMPLATE, dest, { recursive: true });
-  for (const f of ["bot.json", "persona.md", "sample.zh-CN.json", "sample.en.json", "ui/locales/zh-CN.json", "ui/locales/en.json", "evals/tasks.json"]) {
+  for (const f of ["bot.json", "persona.md", "sample.zh-CN.json", "sample.zh-TW.json", "sample.en.json", "ui/locales/zh-CN.json", "ui/locales/zh-TW.json", "ui/locales/en.json", "evals/tasks.json"]) {
     const p = path.join(dest, f);
     fs.writeFileSync(p, fs.readFileSync(p, "utf8").replaceAll("TODO", "filled").replaceAll("__ID__", id).replaceAll("__APP_VERSION__", "0.1.0").replaceAll("__AVATAR__", "blue").replace('"version": "1.0.0"', `"version": "${version}"`));
   }
@@ -695,8 +695,8 @@ describe("评测", () => {
       return Response.json(url.includes("/app/file") ? { json: { n: n++ }, issues: [] } : {});
     });
     const report = await runEvals({ dir, manifest: checkStatic(dir).manifest!, app: "http://app" });
-    expect(installs.filter(Boolean)).toEqual(["zh-CN", "zh-CN", "en", "en"]);
-    expect(report.results.filter((r) => r.kind === "starter")).toHaveLength(4);
+    expect(installs.filter(Boolean)).toEqual(["zh-CN", "zh-CN", "zh-TW", "zh-TW", "en", "en"]);
+    expect(report.results.filter((r) => r.kind === "starter")).toHaveLength(6);
   });
   it("产物只信文件本身：存在、大小、zip 条目、不该有的文件", async () => {
     const dir = makeBot(path.join(tmp, "bot"));

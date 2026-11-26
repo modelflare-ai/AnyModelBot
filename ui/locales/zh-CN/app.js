@@ -31,7 +31,7 @@ export default {
     themeDark: "主题：深色",
     themeDarkKeys: "theme dark 外观 主题 暗色",
     lang: "语言：{name}",
-    langKeys: "language 语言 中文 英文 日语 韩语 俄语 西班牙语 葡萄牙语 土耳其语 English 日本語 한국어 Русский Español Português Türkçe",
+    langKeys: "language 语言 中文 英文 日语 韩语 俄语 西班牙语 葡萄牙语 土耳其语 English 日本語 한국어 Русский Español Português Türkçe 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese",
     switchBot: "切换到「{name}」",
   },
   lowBalance: "Modelflare 余额只剩 {amount} 美元",

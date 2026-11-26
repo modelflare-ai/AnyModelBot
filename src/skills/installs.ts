@@ -72,7 +72,7 @@ export interface SkillInstallsOptions {
 }
 
 /** 技能库「复制安装指令」的固定格式：每行一条，前缀 + 链接（两种语言）。整条消息都是这种行时由应用直接出卡片，不经过模型 */
-const PROMPT_LINE = /^(?:帮我安装这个技能\s*[：:]|install this skill for me\s*:)\s*(https?:\/\/\S+)$/i; // i18n-ignore: fixed install prompt formats
+const PROMPT_LINE = /^(?:(?:帮我安装这个技能|幫我安裝這個技能)\s*[：:]|install this skill for me\s*:)\s*(https?:\/\/\S+)$/i; // i18n-ignore: fixed install prompt formats
 export function installPromptLinks(text: string): string[] | null {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return null;
@@ -85,8 +85,8 @@ export function installPromptLinks(text: string): string[] | null {
   return urls;
 }
 
-const YES = /^(y|yes|ok|是|好|同意|安装|install|替换|replace)$/i;
-const REPLY = /^(y|yes|ok|是|好|同意|安装|install|替换|replace|n|no|否|不|取消|cancel)\s*[#:：]?\s*(\d{4})?$/i;
+const YES = /^(y|yes|ok|是|好|同意|安[装裝]|install|替[换換]|replace)$/i;
+const REPLY = /^(y|yes|ok|是|好|同意|安[装裝]|install|替[换換]|replace|n|no|否|不|取消|cancel)\s*[#:：]?\s*(\d{4})?$/i;
 
 export function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

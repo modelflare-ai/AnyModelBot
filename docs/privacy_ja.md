@@ -1,6 +1,6 @@
 # データとプライバシー
 
-[简体中文](./privacy.md) | [English](./privacy_en.md) | 日本語 | [한국어](./privacy_ko.md) | [Русский](./privacy_ru.md) | [Español](./privacy_es.md) | [Português (Brasil)](./privacy_pt.md) | [Türkçe](./privacy_tr.md)
+[简体中文](./privacy.md) | [繁體中文（台灣）](./privacy_zh-TW.md) | [English](./privacy_en.md) | 日本語 | [한국어](./privacy_ko.md) | [Русский](./privacy_ru.md) | [Español](./privacy_es.md) | [Português (Brasil)](./privacy_pt.md) | [Türkçe](./privacy_tr.md)
 
 **要点：** 会話、記憶、ファイル、キーは端末に保存します。モデルへ送る内容は選択した提供元に届きます。公式 API キーの場合は直接、それ以外は Modelflare を経由します。データに一切のリスクがないとは主張しません。モデルに送るものは端末の外に出ます。
 

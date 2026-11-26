@@ -206,7 +206,7 @@ export default {
   "rows": {
     "language": {
       "sub": "画面、トレイメニュー、ボットからのシステムメッセージに使用します",
-      "keys": "言語 日本語 英語 中国語 韓国語 ロシア語 トルコ語 Türkçe"
+      "keys": "言語 日本語 英語 中国語 韓国語 ロシア語 トルコ語 Türkçe 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese"
     },
     "sendKey": {
       "name": "送信キー",

@@ -1,6 +1,6 @@
 # Импорт навыков и управление ими
 
-[简体中文](./skills.md) | [English](./skills_en.md) | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | Русский | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
+[简体中文](./skills.md) | [繁體中文（台灣）](./skills_zh-TW.md) | [English](./skills_en.md) | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | Русский | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
 
 Начиная с AnyModelBot 0.1.24, боту можно добавлять готовые рабочие инструкции в виде ZIP-пакетов: например, для еженедельных отчётов, обработки документов и сбора материалов.
 

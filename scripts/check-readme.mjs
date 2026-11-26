@@ -16,14 +16,14 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ALLOW_MISSING = process.argv.includes("--allow-missing");
 
-const TARGET_READMES = { zh: "README.md", en: "README_en.md", ja: "README_ja.md", ko: "README_ko.md", ru: "README_ru.md", es: "README_es.md", pt: "README_pt.md", tr: "README_tr.md" };
+const TARGET_READMES = { zh: "README.md", "zh-TW": "README_zh-TW.md", en: "README_en.md", ja: "README_ja.md", ko: "README_ko.md", ru: "README_ru.md", es: "README_es.md", pt: "README_pt.md", tr: "README_tr.md" };
 const checkAll = process.argv.includes("--all-languages");
 const locales = JSON.parse(fs.readFileSync(path.join(ROOT, "ui/locales/manifest.json"), "utf8")).locales;
 const codes = locales.filter((l) => checkAll || l.ready).map((l) => l.siteCode);
 const READMES = Object.fromEntries(Object.entries(TARGET_READMES).filter(([code]) => codes.includes(code)));
 const LINKED_DOCS = [
   ...Object.values(READMES),
-  ...["ja", "ko", "ru", "es", "pt", "tr"].filter((l) => codes.includes(l)).flatMap((l) => [`CONTRIBUTING_${l}.md`, `SECURITY_${l}.md`, `CHANGELOG_${l}.md`, `THIRD_PARTY_NOTICES_${l}.md`, `docs/development_${l}.md`, `docs/privacy_${l}.md`, `docs/skills_${l}.md`]),
+  ...["zh-TW", "ja", "ko", "ru", "es", "pt", "tr"].filter((l) => codes.includes(l)).flatMap((l) => [`CONTRIBUTING_${l}.md`, `SECURITY_${l}.md`, `CHANGELOG_${l}.md`, `THIRD_PARTY_NOTICES_${l}.md`, `docs/development_${l}.md`, `docs/privacy_${l}.md`, `docs/skills_${l}.md`]),
   "CONTRIBUTING.md",
   "CONTRIBUTING_en.md",
   "SECURITY.md",

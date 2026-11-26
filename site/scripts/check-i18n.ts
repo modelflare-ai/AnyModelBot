@@ -20,9 +20,11 @@ function cmp(a: unknown, b: unknown, p: string) {
     for (const k of ka) if (kb.includes(k)) cmp((a as any)[k], (b as any)[k], `${p}.${k}`);
   } else if (typeof a !== typeof b) diffs.push(`${p}：类型不同`);
   else if (typeof a === "string") {
-    if (/^(ja|ko|ru|es|pt)\./.test(p) && a.trim() && !(b as string).trim()) diffs.push(`${p}：空译文`);
-    const exception = (sourceExceptions as Record<string, { value: string; reason: string }>)[p.replace(/^(ja|ko|ru|es|pt)\./, "")];
-    if (/^(ja|ko|ru|es|pt)\./.test(p) && !(exception?.value === a && exception.reason) && a === b && a.length > 18 && /[A-Za-z]{3,}\s+[a-z]{3,}/.test(a) && !/[`{}<>]|https?:\/\//.test(a)) diffs.push(`${p}：尚未翻译的英文正文`);
+    const prefix = p.indexOf(".");
+    const translated = !["zh", "en"].includes(p.slice(0, prefix));
+    if (translated && a.trim() && !(b as string).trim()) diffs.push(`${p}：空译文`);
+    const exception = (sourceExceptions as Record<string, { value: string; reason: string }>)[p.slice(prefix + 1)];
+    if (translated && !(exception?.value === a && exception.reason) && a === b && a.length > 18 && /[A-Za-z]{3,}\s+[a-z]{3,}/.test(a) && !/[`{}<>]|https?:\/\//.test(a)) diffs.push(`${p}：尚未翻译的英文正文`);
     const va = [...a.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(","), vb = [...(b as string).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
     if (va !== vb) diffs.push(`${p}：变量不同（${va} / ${vb}）`);
   }

@@ -4,6 +4,7 @@
   "minAppVersion": "0.1.33",
   "name": {
     "zh-CN": "影视创作室",
+    "zh-TW": "影視創作室",
     "en": "Film Studio",
     "ja": "映像スタジオ",
     "ko": "영상 스튜디오",
@@ -14,6 +15,7 @@
   },
   "summary": {
     "zh-CN": "做短视频和分集短剧，从剧本、分镜到配音、剪辑和成片。",
+    "zh-TW": "做短片和分集短劇，從劇本、分鏡到配音、剪輯和成片。",
     "en": "Short videos and serials: script, storyboard, voice, editing, and final cut.",
     "ja": "短編動画と連続ドラマを、脚本・絵コンテから音声・編集・完成まで制作します。",
     "ko": "숏폼과 시리즈 드라마를 대본, 스토리보드부터 음성, 편집, 완성까지 만듭니다.",
@@ -27,6 +29,11 @@
       "移植 PRINTFILM 的编剧、分镜、资产设定与 FFmpeg 合成能力",
       "模型调用使用 Modelflare，项目与素材保存在你的设备",
       "支持逐镜修改、素材版本、共享资产库和中断恢复"
+    ],
+    "zh-TW": [
+      "移植 PRINTFILM 的編劇、分鏡、資產設定與 FFmpeg 合成能力",
+      "模型呼叫使用 Modelflare，專案與素材儲存在你的裝置",
+      "支援逐鏡修改、素材版本、共用資產庫和中斷還原"
     ],
     "en": [
       "Ports PRINTFILM scriptwriting, storyboards, asset design and FFmpeg composition",
@@ -74,6 +81,11 @@
       "写一个 150 字以内的短剧梗概：一位快递员每天收到来自明天的包裹。只写文字，不生成图片或视频。",
       "把我的创意做成完整短视频，先给我看文案和分镜",
       "创建一部三集短剧，先规划故事、角色与分集"
+    ],
+    "zh-TW": [
+      "寫一個 150 字以內的短劇梗概：一位快遞員每天收到來自明天的包裹。唯寫文字，不產生圖片或影片。",
+      "把我的創意做成完整短片，先給我看文案和分鏡",
+      "建立一部三集短劇，先規劃故事、角色與分集"
     ],
     "en": [
       "Write a short film synopsis under 100 words: a courier receives packages from tomorrow every day. Text only, no images or video.",

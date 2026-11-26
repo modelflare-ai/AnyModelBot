@@ -160,6 +160,10 @@
   /* —— Hero 舞台 ——
      App 的语义 token 抄到 --a-* 上（ui/design/tokens/semantic.css，深浅两套），窗口、流动卡片都只用这一层，质感和 App 一致：
      环境光 + 毛玻璃 + 半透明填充 + 细描边 + 磨砂颗粒；字体也用 App 的系统字体。 */
+  :lang(zh-TW):is(.hstage, .tour__stage) {
+    --a-font: var(--font-sans);
+    --a-code: var(--font-mono);
+  }
   .hstage {
     --tilt: 0deg; --side-w: 232px;
     --a-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;

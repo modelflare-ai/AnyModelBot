@@ -1,6 +1,6 @@
 # Política de seguridad
 
-[English / 简体中文](./SECURITY.md) | [日本語](./SECURITY_ja.md) | [한국어](./SECURITY_ko.md) | [Русский](./SECURITY_ru.md) | Español | [Português (Brasil)](./SECURITY_pt.md) | [Türkçe](./SECURITY_tr.md)
+[English / 简体中文](./SECURITY.md) | [繁體中文（台灣）](./SECURITY_zh-TW.md) | [日本語](./SECURITY_ja.md) | [한국어](./SECURITY_ko.md) | [Русский](./SECURITY_ru.md) | Español | [Português (Brasil)](./SECURITY_pt.md) | [Türkçe](./SECURITY_tr.md)
 
 ## Cómo reportar una vulnerabilidad
 

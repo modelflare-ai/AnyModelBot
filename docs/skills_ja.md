@@ -1,6 +1,6 @@
 # スキルのインポートと管理
 
-[简体中文](./skills.md) | [English](./skills_en.md) | 日本語 | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
+[简体中文](./skills.md) | [繁體中文（台灣）](./skills_zh-TW.md) | [English](./skills_en.md) | 日本語 | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
 
 AnyModelBot 0.1.24 から、週報作成、文書処理、資料整理などの作業手順を ZIP 形式のスキルとしてボットに追加できます。
 

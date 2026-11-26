@@ -30,15 +30,6 @@ function sessionIdOf(agent) {
   return agent?.session?.id ?? agent?.sessionId ?? agent?.id
 }
 
-function reasonText(req) {
-  const d = req.displayReason
-  if (d && typeof d === 'object') {
-    const t = d['zh-CN'] ?? d.zh ?? d.en ?? Object.values(d).find((v) => typeof v === 'string')
-    if (t) return String(t)
-  } else if (typeof d === 'string' && d) return d
-  return req.reason ? String(req.reason) : undefined
-}
-
 async function ask(call, kind, payload, signal) {
   const { id } = await call('/dsh/ask', { kind, botId: process.env.AMB_BOT_ID ?? '', ...payload }, signal)
   const onAbort = () => { void call('/dsh/cancel', { id }).catch(() => {}) }
@@ -123,7 +114,8 @@ export function apply(ctx) {
         sessionId: String(sessionIdOf(req.agent) ?? ''),
         toolName: String(req.toolName ?? ''),
         callId: req.callId ? String(req.callId) : undefined,
-        reason: reasonText(req),
+        reason: req.reason,
+        displayReason: req.displayReason,
       }, req.signal)
       if (r.cancelled) return 'cancelled'
       return r.outcome === 'allowed-once' ? 'allowed-once' : 'rejected'

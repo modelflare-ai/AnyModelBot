@@ -1,6 +1,6 @@
 # Данные и приватность
 
-[简体中文](./privacy.md) | [English](./privacy_en.md) | [日本語](./privacy_ja.md) | [한국어](./privacy_ko.md) | Русский | [Español](./privacy_es.md) | [Português (Brasil)](./privacy_pt.md) | [Türkçe](./privacy_tr.md)
+[简体中文](./privacy.md) | [繁體中文（台灣）](./privacy_zh-TW.md) | [English](./privacy_en.md) | [日本語](./privacy_ja.md) | [한국어](./privacy_ko.md) | Русский | [Español](./privacy_es.md) | [Português (Brasil)](./privacy_pt.md) | [Türkçe](./privacy_tr.md)
 
 **Главное:** разговоры, память, файлы и ключи хранятся на вашем устройстве; всё отправляемое модели идёт выбранному поставщику: напрямую с официальным API-ключом, иначе через Modelflare. Мы не обещаем полного отсутствия рисков: данные, отправленные модели, покидают устройство.
 

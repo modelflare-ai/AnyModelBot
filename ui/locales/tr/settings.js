@@ -191,7 +191,7 @@ export default {
   rows: {
     language: {
       sub: "Arayüz, sistem tepsisi menüsü ve botlarının sistem mesajları için kullanılır",
-      keys: "dil türkçe turkce turkish ingilizce çince language english chinese 中文", // i18n-ignore
+      keys: "dil türkçe turkce turkish ingilizce çince language english chinese 中文 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese", // i18n-ignore
     },
     sendKey: {
       name: "Şununla gönder",

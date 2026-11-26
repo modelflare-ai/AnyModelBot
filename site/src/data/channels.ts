@@ -1,3 +1,4 @@
+import zhTW from "./channels.zh-TW";
 import ja from "./channels.ja";
 import ko from "./channels.ko";
 import ru from "./channels.ru";
@@ -31,7 +32,7 @@ export interface Channel {
 }
 
 export const CHANNELS: Record<Lang, Channel[]> = {
-  ja, ko, ru, es, pt, tr,
+  "zh-TW": zhTW, ja, ko, ru, es, pt, tr,
   zh: [
     {
       id: "wechat", icon: "chat", title: "微信", body: "扫码接入，在微信里直接聊，图片和文件也能发。", format: "渠道（iLink 扫码登录）",

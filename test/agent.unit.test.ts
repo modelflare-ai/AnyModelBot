@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Store } from "../src/store/db.js";
-import { ApprovalCenter, isOptionReply, parseAnswer, promptText, taskPromptText } from "../src/agent/approvals.js";
+import { ApprovalCenter, approvalReason, isOptionReply, parseAnswer, promptText, taskPromptText } from "../src/agent/approvals.js";
 import { WeixinReply } from "../src/channels/weixin/channel.js";
 import { WeixinQuota } from "../src/channels/weixin/quota.js";
 import { AgentHost, SHELL_LIMITS, agentApi, claudeAdaptive, effortApplies, modelLimits, providerFor, providerProfiles, type AgentApi, type ModelRoute } from "../src/agent/host.js";
@@ -27,6 +27,14 @@ afterEach(() => {
 const base = { botId: "b", conversationId: "b:weixin:u1", sessionId: "s", tool: "bash", detail: "rm -rf build", reason: "" };
 
 describe("ApprovalCenter", () => {
+  it("prefers Traditional Chinese tool explanations and accepts older bridge messages", () => {
+    const copy = { zh: "电脑操作", "zh-TW": "電腦操作", en: "Computer Use" };
+    expect(approvalReason(copy, "", "zh-TW")).toBe("電腦操作");
+    expect(approvalReason(copy, "", "zh-CN")).toBe("电脑操作");
+    expect(approvalReason({ zh: "电脑操作", en: "Computer Use" }, "", "zh-TW")).toBe("Computer Use");
+    expect(approvalReason(undefined, "reason from an older bridge", "zh-TW")).toBe("reason from an older bridge");
+  });
+
   it("formats the WeChat prompt and accepts 'y CODE' once", async () => {
     const c = new ApprovalCenter(store);
     const row = c.create({ kind: "approval", ...base });

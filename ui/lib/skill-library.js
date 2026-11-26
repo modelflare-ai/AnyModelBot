@@ -38,7 +38,13 @@ function prepare(d) {
 }
 
 /** 作者昵称：中文界面用中文写法，其余语言用英文写法 */
-export const authorName = (a) => (a ? (getLang() === "zh-CN" ? a.name : a.nameEn || a.name) : "");
+export function authorName(a) {
+  if (!a) return "";
+  const lang = getLang();
+  if (lang === "zh-TW") return a.nameTW || a.name;
+  return lang === "zh-CN" ? a.name : a.nameEn || a.name;
+}
+export const authorBio = (a) => (getLang() === "zh-TW" && a.bioTW) || a.bio;
 /** 首字母占位（头像取不到时） */
 export const initialOf = (a) => [...authorName(a).replace(/^[^\p{L}\p{N}]+/u, "")][0]?.toUpperCase() || "?";
 export const skillText = (s, field) => (has(`skillItems.${s.id}.${field}`) ? t(`skillItems.${s.id}.${field}`) : "");
@@ -46,14 +52,15 @@ export const categoryName = (c) => t(`skills.categories.${c}`);
 export const repoUrl = (s) => `https://github.com/${s.repo}`;
 
 /** 安装指令：中文界面复制中文，其余语言复制英文（格式由 src/skills/installs.ts 的 installPromptLinks 识别） */
-export const installPrompt = (s) => (getLang() === "zh-CN" ? `帮我安装这个技能：${s.url}` : `Install this skill for me: ${s.url}`); // i18n-ignore: fixed install prompt formats
+const installPrefixes = { "zh-CN": "帮我安装这个技能：", "zh-TW": "幫我安裝這個技能：" }; // i18n-ignore: fixed install prompt formats
+export const installPrompt = (s) => (installPrefixes[getLang()] ?? "Install this skill for me: ") + s.url;
 
 /** 搜索：名称、标题、简介、触发方式、作者（昵称两种写法和 GitHub 账号）、标记，不区分大小写 */
 export function matchesSkill(s, q, lib) {
   const needle = fold(q.trim());
   if (!needle) return true;
   const a = lib.authors[s.author];
-  const hay = [s.id, skillText(s, "title"), skillText(s, "summary"), skillText(s, "try"), a?.name, a?.nameEn, s.author, ...s.marks.map((m) => t(`skills.marks.${m}`))];
+  const hay = [s.id, skillText(s, "title"), skillText(s, "summary"), skillText(s, "try"), a?.name, a?.nameTW, a?.nameEn, s.author, ...s.marks.map((m) => t(`skills.marks.${m}`))];
   return hay.some((x) => x && fold(x).includes(needle));
 }
 

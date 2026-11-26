@@ -17,7 +17,7 @@ const t = dict(lang);
 const u = t.home.tour.ui;
 const P = t.home.bots.personas;
 const L = t.home.bots.looks;
-const isZh = lang === "zh" || lang === "ja" || lang === "ko";
+const isZh = lang.startsWith("zh") || lang === "ja" || lang === "ko";
 const cps = isZh ? 34 : 64;            // 回复逐字打出的速度：英文字母多，快一点，两种语言差不多同时写完
 const durations = [6000, 8000, 7000, 7500, 8000, 8500, 6500];
 const connected = fmt(u.connected, { n: pricing.counts.text });

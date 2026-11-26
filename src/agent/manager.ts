@@ -22,9 +22,9 @@ import { SearchAborted, type SearchService, type WebSource } from "../tools/sear
 import { ConnectionError } from "../tools/accounts/index.js";
 import type { AppService, GateInput } from "../tools/apps/service.js";
 import { AppError } from "../tools/apps/types.js";
-import { CUSTOM_APP, appName, builtinApp, customKey } from "../tools/apps/catalog.js";
+import { CUSTOM_APP, appName, builtinApp, matchesAppName, customKey } from "../tools/apps/catalog.js";
 import type { ToolInfo } from "../tools/apps/types.js";
-import { ALWAYS_RESULT, APPROVAL_TTL_MS, APPS_BY, ApprovalCenter, RULE_APPROVAL_TTL_MS, TASK_APPROVAL_TTL_MS, appConnectOf, type AppConnectPayload, type AppToolPayload, type QuestionItem } from "./approvals.js";
+import { ALWAYS_RESULT, APPROVAL_TTL_MS, APPS_BY, ApprovalCenter, RULE_APPROVAL_TTL_MS, TASK_APPROVAL_TTL_MS, appConnectOf, approvalReason, type AppConnectPayload, type AppToolPayload, type QuestionItem } from "./approvals.js";
 import { MemoryError, MemoryStore, type Scope } from "./memory.js";
 import { AboutMe, type BotAddResult, type BotForgetResult } from "./about-me.js";
 import type { TaskHost, TaskService } from "../tasks/service.js";
@@ -1126,7 +1126,7 @@ export class AgentManager {
     const raw = String(args.app ?? "").trim();
     const lower = raw.toLowerCase();
     const custom = apps.store.list(CUSTOM_APP).find((c) => c.label.toLowerCase() === lower);
-    const builtin = builtinApp(lower) ?? [...apps.connectable(botId, input)].find((x) => x.name.en.toLowerCase() === lower || x.name.zh === raw);
+    const builtin = builtinApp(lower) ?? [...apps.connectable(botId, input)].find((x) => matchesAppName(x, lower));
     const key = custom ? customKey(custom.id) : builtin?.id;
     if (!key) {
       const more = apps.connectable(botId, input).map((x) => x.id);
@@ -1437,7 +1437,7 @@ export class AgentManager {
     const pick = (a?.selected?.[0] ?? "").trim();
     const text = (a?.custom ?? "").trim();
     if (CANCELS.includes(pick) || /^(取消|不要?|不用|算了|no?|cancel|don'?t|stop|skip)$/i.test(text)) return { cancel: true };
-    if (!pick && /^(好的?|行|可以|确认|确定|是的?|对|嗯|ok(ay)?|y(es)?|sure|confirm|go( ahead)?|generate( it)?|生成吧?|就用它)$/i.test(text)) return { model: plan.model };
+    if (!pick && /^(好的?|行|可以|[确確][认認]|[确確]定|是的?|[对對]|嗯|ok(ay)?|y(es)?|sure|confirm|go( ahead)?|generate( it)?|生成吧?|就用它)$/i.test(text)) return { model: plan.model };
     const want = (pick || text).replace(/^(用|换成|改用)\s*/, "").replace(/^(use|switch to)\s+/i, "");
     const hit = plan.all.find((m) => m.id.toLowerCase() === want.toLowerCase());
     if (hit) return { model: hit };
@@ -1799,7 +1799,7 @@ export class AgentManager {
       sessionId,
       tool,
       detail: call ? callDetail(call.name, call.args) : "",
-      reason: String(b?.reason ?? ""),
+      reason: approvalReason(b?.displayReason, b?.reason),
       ...task,
     });
     return { id: row.id };

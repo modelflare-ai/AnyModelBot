@@ -1,6 +1,6 @@
 # セキュリティポリシー
 
-[简体中文](./SECURITY.md#简体中文) | [English](./SECURITY.md#english) | 日本語 | [한국어](./SECURITY_ko.md) | [Русский](./SECURITY_ru.md) | [Español](./SECURITY_es.md) | [Português (Brasil)](./SECURITY_pt.md) | [Türkçe](./SECURITY_tr.md)
+[简体中文](./SECURITY.md#简体中文) | [繁體中文（台灣）](./SECURITY_zh-TW.md) | [English](./SECURITY.md#english) | 日本語 | [한국어](./SECURITY_ko.md) | [Русский](./SECURITY_ru.md) | [Español](./SECURITY_es.md) | [Português (Brasil)](./SECURITY_pt.md) | [Türkçe](./SECURITY_tr.md)
 
 ## 脆弱性の報告
 

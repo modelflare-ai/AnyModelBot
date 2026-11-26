@@ -72,7 +72,8 @@ const tr = (id: string, kind: string, where: string) => ({ "data-track": "banner
     var langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""], target = "en";
     var supported = (bar.getAttribute("data-languages") || "zh,en").split(",");
     for (var j = 0; j < langs.length; j++) {
-      var base = langs[j].toLowerCase().split(/[-_]/)[0];
+      var parts = langs[j].toLowerCase().split(/[-_.@]/), base = parts[0];
+      if (base === "zh" && ["hant", "tw", "hk", "mo"].includes(parts[1])) base = "zh-TW";
       if (supported.indexOf(base) >= 0) { target = base; break; }
     }
     var langItem = langItems.find(function (it) { return it.getAttribute("data-target-lang") === target; });

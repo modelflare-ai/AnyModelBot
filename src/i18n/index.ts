@@ -16,6 +16,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { catalogs } from "./messages/index.js";
 import type { Msg } from "./types.js";
 import manifest from "../../ui/locales/manifest.json" with { type: "json" };
+import zhTW from "./locales/zh-TW/index.js";
 import ja from "./locales/ja/index.js";
 import ko from "./locales/ko/index.js";
 import ru from "./locales/ru/index.js";
@@ -23,7 +24,7 @@ import es from "./locales/es/index.js";
 import pt from "./locales/pt/index.js";
 import tr from "./locales/tr/index.js";
 
-export type Lang = "zh-CN" | "en" | "ja" | "ko" | "ru" | "es" | "pt" | "tr";
+export type Lang = "zh-CN" | "zh-TW" | "en" | "ja" | "ko" | "ru" | "es" | "pt" | "tr";
 export type LangPref = "system" | Lang;
 export const TARGET_LANGS = manifest.locales.map((l) => l.code) as Lang[];
 export const LANGS = manifest.locales.filter((l) => l.ready).map((l) => l.code) as Lang[];
@@ -34,13 +35,13 @@ export type Params = Record<string, string | number | boolean | null | undefined
 export type TranslatedCatalog = { [N in keyof Catalogs]: { [K in keyof Catalogs[N]["zh"]]: Msg } };
 /** 简体中文、英文之外、各自独立翻译的语言 */
 export type TranslatedLang = Exclude<Lang, "zh-CN" | "en">;
-export const translations: Record<TranslatedLang, TranslatedCatalog> = { ja, ko, ru, es, pt, tr };
+export const translations: Record<TranslatedLang, TranslatedCatalog> = { "zh-TW": zhTW, ja, ko, ru, es, pt, tr };
 
-/** "zh" / "zh_CN.UTF-8" / "zh-Hans" → zh-CN；"en-US" → en；其他 → undefined */
+/** "zh" / "zh_CN.UTF-8" / "zh-Hans" → zh-CN；"zh-Hant" / "zh_TW.UTF-8" → zh-TW；"en-US" → en；其他 → undefined */
 export function normalizeLang(s: unknown): Lang | undefined {
   const v = String(s ?? "").trim().toLowerCase();
-  const base = v.split(/[-_.@]/)[0];
-  if (base === "zh") return "zh-CN";
+  const [base, variant] = v.split(/[-_.@]/);
+  if (base === "zh") return ["hant", "tw", "hk", "mo"].includes(variant) ? "zh-TW" : "zh-CN";
   if (base === "en" || base === "ja" || base === "ko" || base === "ru" || base === "es" || base === "pt" || base === "tr") return base;
   return undefined;
 }

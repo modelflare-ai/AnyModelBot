@@ -6,6 +6,7 @@
  * 聊天规则改编自 dsh-superagent（MIT，DeepSeek）的注意力原则：少占用户的注意力，多给有用的结果。
  */
 
+import type { Lang } from "../../i18n/index.js";
 import { collabRules } from "./collab.js";
 
 /** 机器人段在 DSH 系统提示词里的名字与位置：排在 DSH 所有段之后，人设改了也不动前面的部分（前缀缓存） */
@@ -64,7 +65,13 @@ export const MEMORY_GUIDE = [
   "每段对话的第一条消息附有当时的记忆快照；之后关于我有变化时，消息前面会带上新的全文。",
 ].join("\n");
 
+/** Default for a Taiwan interface when the user has not indicated another language. */
+export function replyLanguageHint(lang?: Lang): string {
+  return lang === "zh-TW" ? "使用者的介面語言是繁體中文（台灣）。沒有其他語言偏好時，請使用台灣繁體中文回覆及撰寫文件。" : "";
+}
+
 export interface BotPromptInput {
+  lang?: Lang;
   /** 机器人名称 */
   name: string;
   /** 用户写的人设 / 系统提示词 */
@@ -132,5 +139,5 @@ export function botIdentity(name: string, persona: string): string {
  * 顺序按变化频率从低到高：聊天规则、本机文件与系统权限（随应用升级）→ 记忆说明（随开关）→ 其他机器人（增删或改名时）→ 名字与人设（用户随时改）。
  */
 export function botPrompt(o: BotPromptInput): string {
-  return [CHAT_RULES, FILE_RULES, o.memory ? MEMORY_GUIDE : "", botTeam(o.others ?? [], o.collab), botIdentity(o.name, o.persona)].filter(Boolean).join("\n\n");
+  return [CHAT_RULES, FILE_RULES, o.memory ? MEMORY_GUIDE : "", botTeam(o.others ?? [], o.collab), replyLanguageHint(o.lang), botIdentity(o.name, o.persona)].filter(Boolean).join("\n\n");
 }

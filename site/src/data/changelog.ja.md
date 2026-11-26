@@ -1,8 +1,15 @@
 # 変更履歴
 
-[简体中文](./CHANGELOG.md) | [English](./CHANGELOG_en.md) | 日本語 | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
+[简体中文](./CHANGELOG.md) | [繁體中文（台灣）](./CHANGELOG_zh-TW.md) | [English](./CHANGELOG_en.md) | 日本語 | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
 
 アプリを使っていて気付く変更をまとめています。以前のバージョンは [GitHub Releases](https://github.com/modelflare-ai/AnyModelBot/releases) をご覧ください。
+
+## 0.1.49 - 2026-11-26
+
+### 新機能
+
+- 台湾の繁体字中国語に対応しました。設定 → 一般 → 言語で「繁體中文（台灣）」を選ぶか、システム言語に合わせてください。
+- デスクトップ版、Web 版、トレイ、システムメッセージ、スキルとタスクのライブラリ、および内蔵ボット 4 種のワークスペースとサンプルを台湾の繁体字中国語で利用できます。
 
 ## 0.1.48 - 2026-11-25
 

@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-[简体中文](./THIRD_PARTY_NOTICES.md) | English | [日本語](./THIRD_PARTY_NOTICES_ja.md) | [한국어](./THIRD_PARTY_NOTICES_ko.md) | [Русский](./THIRD_PARTY_NOTICES_ru.md) | [Español](./THIRD_PARTY_NOTICES_es.md) | [Português (Brasil)](./THIRD_PARTY_NOTICES_pt.md) | [Türkçe](./THIRD_PARTY_NOTICES_tr.md)
+[简体中文](./THIRD_PARTY_NOTICES.md) | [繁體中文（台灣）](./THIRD_PARTY_NOTICES_zh-TW.md) | English | [日本語](./THIRD_PARTY_NOTICES_ja.md) | [한국어](./THIRD_PARTY_NOTICES_ko.md) | [Русский](./THIRD_PARTY_NOTICES_ru.md) | [Español](./THIRD_PARTY_NOTICES_es.md) | [Português (Brasil)](./THIRD_PARTY_NOTICES_pt.md) | [Türkçe](./THIRD_PARTY_NOTICES_tr.md)
 
 anymodel bot itself is released under the MIT License (see LICENSE). The components below are distributed with or ported into this program, and each keeps its original license.
 

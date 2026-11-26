@@ -1,0 +1,777 @@
+{
+  "competitive-platform-analysis": {
+    "title": "競品格局梳理",
+    "summary": "先圈定誰算競品、分幾檔、去哪找資料。",
+    "try": "幫我梳理這個賽道有哪些競品"
+  },
+  "competitive-report-structure": {
+    "title": "競品報告成稿",
+    "summary": "把競品資料整理成給管理層看的決策報告。",
+    "try": "把這些競品分析整理成彙報材料"
+  },
+  "market-research": {
+    "title": "市場調查研究",
+    "summary": "做市場規模、競品對比和行業調查研究，注明出處。",
+    "try": "幫我調查研究一下這個市場有多大"
+  },
+  "osint-investigation": {
+    "title": "公開情報調查",
+    "summary": "從零散線索裡找關聯，交叉覈實公開資訊。",
+    "try": "幫我查查這張圖是在哪拍的"
+  },
+  "prediction-market-oracle-research": {
+    "title": "預測市場研究",
+    "summary": "研究預測市場的概率資料能不能當決策參考。",
+    "try": "預測市場對這件事怎麼看"
+  },
+  "scientific-thinking-literature-review": {
+    "title": "文獻綜述",
+    "summary": "系統檢索、篩選、歸納學術文獻並核對引用。",
+    "try": "幫我做一份這個方向的文獻綜述"
+  },
+  "scientific-thinking-scholar-evaluation": {
+    "title": "論文品質評估",
+    "summary": "按固定標準評審論文、研究方法和論據。",
+    "try": "幫我評估一下這篇論文"
+  },
+  "huashu-info-search": {
+    "title": "多管道查新",
+    "summary": "多管道搜新產品、新技術，交叉核對後存檔。",
+    "try": "幫我查查 XX 的最新資訊"
+  },
+  "huashu-research": {
+    "title": "結構化網路調查研究",
+    "summary": "邊查邊存檔案，調查研究中途斷了也不丟。",
+    "try": "幫我調查研究一下 XX"
+  },
+  "huashu-topic-gen": {
+    "title": "選題方向",
+    "summary": "一次給 3～4 個選題，帶標題、大綱和優劣。",
+    "try": "下一篇寫什麼好"
+  },
+  "dbs-benchmark": {
+    "title": "找對標",
+    "summary": "用五重過濾找值得模仿的對標，排除干擾。",
+    "try": "幫我找幾個可以對標的帳號"
+  },
+  "dbs-content-value": {
+    "title": "內容價值評估",
+    "summary": "判斷內容會吸引誰、能不能留人、值不值錢。",
+    "try": "這條內容發出去會有流量嗎"
+  },
+  "dbs-good-question": {
+    "title": "把問題問清楚",
+    "summary": "把模糊提問改寫成能推理、能驗證的好問題。",
+    "try": "幫我把這個問題問清楚"
+  },
+  "dbs-learning": {
+    "title": "連載式學習",
+    "summary": "把課題拆成連續文章，按你的意見回饋調深淺。",
+    "try": "我想系統學一下 XX"
+  },
+  "dbs-spread": {
+    "title": "傳播原因拆解",
+    "summary": "拆解一條內容為什麼火、戳中了誰。",
+    "try": "這條內容為什麼會火"
+  },
+  "dbs-standard-answer": {
+    "title": "找標準答案",
+    "summary": "結合理論和歷史案例，提供帶條件的答案。",
+    "try": "歷史上這類問題是怎麼解決的"
+  },
+  "dbs-theory-grounding": {
+    "title": "理論溯源",
+    "summary": "檢查觀點站不站得住，找可信理論來支撐。",
+    "try": "幫我給這頁 PPT 找理論依據"
+  },
+  "hv-analysis": {
+    "title": "橫縱分析法研究",
+    "summary": "縱向講來龍去脈，橫向比同類，出研究報告。",
+    "try": "用橫縱分析法研究一下 XX"
+  },
+  "competitor-research": {
+    "title": "競爭對手調查研究",
+    "summary": "找競品，比較內容、關鍵詞、外部連結和定位。",
+    "try": "幫我找找這個網站的競品"
+  },
+  "research-sources": {
+    "title": "資訊源清單",
+    "summary": "為選題、競品監測和行業跟蹤找資訊源。",
+    "try": "做這個行業該關注哪些資訊源"
+  },
+  "article-writing": {
+    "title": "長文寫作",
+    "summary": "參照範文或品牌語氣寫文章、教學和長帖。",
+    "try": "照這幾篇的風格寫一篇長文"
+  },
+  "brand-voice": {
+    "title": "品牌語氣",
+    "summary": "從真實文章裡提煉寫作風格，之後照著寫。",
+    "try": "總結一下我的寫作風格"
+  },
+  "content-engine": {
+    "title": "多平台內容生產",
+    "summary": "按 X、領英、YouTube 等平台習慣做內容和排期。",
+    "try": "把這篇改成各平台能發的內容"
+  },
+  "crosspost": {
+    "title": "多平台改寫",
+    "summary": "同一內容按平台分別改寫，不發一模一樣的。",
+    "try": "把這條改成 X 和領英兩個版本"
+  },
+  "huashu-article-edit": {
+    "title": "改稿流程",
+    "summary": "改稿前先定範圍，改動有記錄、進度可查。",
+    "try": "幫我改一下這篇文章"
+  },
+  "huashu-article-to-x": {
+    "title": "長文改短帖",
+    "summary": "把長文壓成 200～500 字短帖，留住觀點。",
+    "try": "把這篇縮成一條短帖"
+  },
+  "huashu-material-search": {
+    "title": "個人素材檢索",
+    "summary": "從個人素材庫找真實經歷，給文章加人味。",
+    "try": "幫我找個真實案例放進這段"
+  },
+  "huashu-proofreading": {
+    "title": "三遍審校",
+    "summary": "審校三遍，去掉 AI 味，讀起來更自然。",
+    "try": "這篇 AI 味太重了"
+  },
+  "tramstop-skill": {
+    "title": "電車站去 AI 味",
+    "summary": "先分層診斷 AI 味，再用真實素材改寫。",
+    "try": "幫我改得像人寫的"
+  },
+  "dbs-ai-check": {
+    "title": "AI 味偵測",
+    "summary": "掃出文案裡的 AI 寫作痕跡，先診斷不改寫。",
+    "try": "檢查一下這篇有沒有 AI 味"
+  },
+  "dbs-content": {
+    "title": "內容方案",
+    "summary": "選題定了以後，規劃怎麼組織和論證。",
+    "try": "這個選題該怎麼寫"
+  },
+  "dbs-plain-writing": {
+    "title": "平實說明文",
+    "summary": "把產品和功能說明寫清楚，不帶營銷腔。",
+    "try": "把這段說明寫得平實一點"
+  },
+  "dbs-resonate": {
+    "title": "稿件共鳴診斷",
+    "summary": "找出稿子哪裡沒打動讀者，提供刪改建議。",
+    "try": "這篇稿子為什麼沒人共鳴"
+  },
+  "dbs-speak-human": {
+    "title": "說人話",
+    "summary": "把微信、私信、客戶回覆改成真人口吻。",
+    "try": "說人話，幫我改得口語一點"
+  },
+  "baoyu-format-markdown": {
+    "title": "Markdown 排版整理",
+    "summary": "給文字補標題、摘要、小標題和清單。",
+    "try": "幫我整理一下這篇 Markdown"
+  },
+  "human-writing": {
+    "title": "活人感寫作",
+    "summary": "寫或改中文長文，去掉機構腔和模型腔。",
+    "try": "幫我把這篇改得有活人感"
+  },
+  "khazix-writer": {
+    "title": "公眾號長文寫作",
+    "summary": "按卡茲克的方法寫公眾號長文，也能仿你的風格。",
+    "try": "幫我把這些素材寫成公眾號文章"
+  },
+  "article-content": {
+    "title": "文章正文寫作",
+    "summary": "寫博客正文、教學和清單類長文。",
+    "try": "幫我寫一篇博客正文"
+  },
+  "copywriting": {
+    "title": "營銷文案",
+    "summary": "寫標題、按鈕文案、廣告和落地頁文案。",
+    "try": "幫我寫幾條廣告標題"
+  },
+  "page-content-adapter": {
+    "title": "頁面文案支援",
+    "summary": "把通用區塊的文案按每個頁面改得貼合。",
+    "try": "把功能卡片的文案按頁面改一改"
+  },
+  "baoyu-article-illustrator": {
+    "title": "文章配圖",
+    "summary": "找出文章該配圖的位置並產生插圖。",
+    "try": "給這篇文章配幾張圖"
+  },
+  "baoyu-comic": {
+    "title": "知識漫畫",
+    "summary": "把知識點畫成多格教育漫畫。",
+    "try": "把這個概念畫成漫畫"
+  },
+  "baoyu-compress-image": {
+    "title": "圖片壓縮",
+    "summary": "把圖片壓成 WebP 或 PNG，體積變小。",
+    "try": "把這些圖片壓縮一下"
+  },
+  "baoyu-cover-image": {
+    "title": "文章封面圖",
+    "summary": "按配色、風格和比例產生文章封面。",
+    "try": "給這篇文章做個封面"
+  },
+  "baoyu-diagram": {
+    "title": "專業圖表",
+    "summary": "畫流程圖、架構圖、組織圖等示意圖。",
+    "try": "幫我畫一張流程圖"
+  },
+  "baoyu-infographic": {
+    "title": "資訊圖",
+    "summary": "把內容做成資訊圖，有 21 種版式可選。",
+    "try": "把這篇做成一張資訊圖"
+  },
+  "baoyu-xhs-images": {
+    "title": "小紅書圖片組",
+    "summary": "把內容拆成 1～10 張小紅書風格卡片。",
+    "try": "把這篇做成小紅書圖片"
+  },
+  "brand-visual-generator": {
+    "title": "品牌視覺規範",
+    "summary": "定字型、配色和間距，做品牌視覺規範。",
+    "try": "幫我定一套品牌配色和字型"
+  },
+  "favicon-generator": {
+    "title": "網站圖示",
+    "summary": "製作和檢查網站 favicon 與應用程式圖示。",
+    "try": "幫我做網站的 favicon"
+  },
+  "visual-content": {
+    "title": "視覺內容策劃",
+    "summary": "規劃各管道的配圖、資訊圖和社媒圖片。",
+    "try": "幫我規劃這次活動的配圖"
+  },
+  "og-image-generator": {
+    "title": "分享預覽圖",
+    "summary": "產生連結分享時顯示的 OG 預覽圖。",
+    "try": "給這個頁面做一張分享預覽圖"
+  },
+  "xhs-visual-director": {
+    "title": "小紅書視覺導演",
+    "summary": "規劃小紅書圖文每頁的構圖和生圖提示詞。",
+    "try": "幫我規劃這組小紅書圖文的視覺"
+  },
+  "manim-video": {
+    "title": "Manim 動畫講解",
+    "summary": "用 Manim 做概念、公式和圖表講解動畫。",
+    "try": "用動畫講解一下這個公式"
+  },
+  "remotion-video-creation": {
+    "title": "Remotion 影片",
+    "summary": "用 React 寫影片：動畫、字幕、圖表和轉場。",
+    "try": "用 Remotion 做一段影片"
+  },
+  "tasteforge-video": {
+    "title": "影片風格策劃",
+    "summary": "先摸清審美偏好，再規劃素材，可匯出剪輯工程。",
+    "try": "幫我定一下這支影片的風格"
+  },
+  "ui-demo": {
+    "title": "網頁示範影片",
+    "summary": "用 Playwright 自動錄製網頁產品示範。",
+    "try": "給這個網頁錄一段示範影片"
+  },
+  "huashu-motion": {
+    "title": "程式碼動效影片",
+    "summary": "用程式碼做發布片和解說動畫，指著畫面就能改。",
+    "try": "幫我做一支產品發布動畫"
+  },
+  "huashu-script-polish": {
+    "title": "指令碼口語化",
+    "summary": "去掉書面腔，讓影片指令碼念起來順口。",
+    "try": "這個指令碼太書面了"
+  },
+  "huashu-video-outline": {
+    "title": "影片大綱",
+    "summary": "給 2～3 個影片大綱，含標題和封面建議。",
+    "try": "幫我出幾個影片大綱"
+  },
+  "huashu-seedance": {
+    "title": "Seedance 影片產生",
+    "summary": "先定參數和白模參考，再寫 Seedance 提示詞。",
+    "try": "幫我寫 Seedance 影片提示詞"
+  },
+  "dbs-script-flow": {
+    "title": "旁白稿流暢度",
+    "summary": "檢查短片文稿銜接，標出觀眾會划走的地方。",
+    "try": "查看這篇旁白稿哪裡會掉人"
+  },
+  "dbs-video-navigation": {
+    "title": "影片章節導覽",
+    "summary": "按章節產生導覽條和進度列影片素材。",
+    "try": "給這個影片做章節進度列"
+  },
+  "podcast-marketing": {
+    "title": "播客策劃",
+    "summary": "規劃播客選題、節目介紹和分發推廣。",
+    "try": "幫我規劃一檔播客"
+  },
+  "video-marketing": {
+    "title": "營銷影片策劃",
+    "summary": "做影片營銷規劃，寫短片和長影片指令碼。",
+    "try": "幫我寫一個短片指令碼"
+  },
+  "brand-discovery": {
+    "title": "品牌定位訪談",
+    "summary": "分幾次訪談理清品牌定位，最後出品牌手冊。",
+    "try": "幫我梳理一下品牌定位"
+  },
+  "marketing-campaign": {
+    "title": "營銷活動策劃",
+    "summary": "從受眾、賣點到文案和排期，策劃整場營銷。",
+    "try": "幫我策劃一次新品推廣"
+  },
+  "huashu-video-check": {
+    "title": "影片標題封面檢查",
+    "summary": "按 MrBeast 的方法檢查標題、封面和開頭。",
+    "try": "幫我查看這個影片標題行不行"
+  },
+  "x-mastery-mentor": {
+    "title": "X 營運",
+    "summary": "做 X 選題、寫推文、診斷帳號和漲粉。",
+    "try": "我的推特怎麼漲粉"
+  },
+  "dbs-content-risk-check": {
+    "title": "發布前排雷",
+    "summary": "發布前逐句檢查可能違規或被限流的地方。",
+    "try": "這條小紅書能不能發"
+  },
+  "dbs-title-cover-intro": {
+    "title": "標題封面開頭",
+    "summary": "為各平台寫標題、封面文字和影片開頭。",
+    "try": "幫我想幾個標題和開頭"
+  },
+  "dbs-wechat-html": {
+    "title": "公眾號 HTML",
+    "summary": "把 Markdown 轉成能貼進公眾號背景的 HTML。",
+    "try": "把這篇排成公眾號格式"
+  },
+  "gzh-design": {
+    "title": "公眾號排版引擎",
+    "summary": "把文章一鍵排成公眾號樣式，可自訂主題。",
+    "try": "幫我排版這篇公眾號文章"
+  },
+  "baoyu-markdown-to-html": {
+    "title": "Markdown 轉 HTML",
+    "summary": "把 Markdown 轉成支援公眾號的帶樣式 HTML。",
+    "try": "把這篇 md 轉成 html"
+  },
+  "branding": {
+    "title": "品牌策略",
+    "summary": "梳理品牌使命、價值觀、定位和品牌故事。",
+    "try": "幫我寫品牌故事"
+  },
+  "cold-start-strategy": {
+    "title": "冷啟動",
+    "summary": "從零找到第一批使用者的打法。",
+    "try": "新產品怎麼找到第一批使用者"
+  },
+  "content-marketing": {
+    "title": "內容營銷",
+    "summary": "規劃內容類型、管道組合和二次利用。",
+    "try": "幫我做一份內容營銷計畫"
+  },
+  "conversion-optimization": {
+    "title": "轉化率優化",
+    "summary": "找漏斗裡的流失點，設計 A/B 測試。",
+    "try": "落地頁轉化率太低怎麼辦"
+  },
+  "email-marketing": {
+    "title": "郵件營銷",
+    "summary": "規劃郵件營銷和訂閱簡報，提高送達率。",
+    "try": "幫我規劃郵件營銷"
+  },
+  "growth-funnel": {
+    "title": "增長漏斗",
+    "summary": "用 AARRR 框架找增長瓶頸。",
+    "try": "幫我用 AARRR 分析一下增長"
+  },
+  "influencer-marketing": {
+    "title": "達人營銷",
+    "summary": "規劃找達人、談合作和投放。",
+    "try": "怎麼找達人推我們的產品"
+  },
+  "product-hunt-launch": {
+    "title": "Product Hunt 發布",
+    "summary": "準備 Product Hunt 上線材料和發布當天節奏。",
+    "try": "幫我準備 Product Hunt 發布"
+  },
+  "product-launch": {
+    "title": "產品發布",
+    "summary": "做發布計畫、選管道、列上線清單。",
+    "try": "幫我列一份產品發布清單"
+  },
+  "retention-strategy": {
+    "title": "使用者留存",
+    "summary": "降低流失，規劃使用者生命週期營運。",
+    "try": "使用者流失嚴重怎麼辦"
+  },
+  "content-optimization": {
+    "title": "內容 SEO 優化",
+    "summary": "從字數、小標題和關鍵詞密度優化文章。",
+    "try": "幫我優化這篇文章的 SEO"
+  },
+  "content-strategy": {
+    "title": "SEO 內容規劃",
+    "summary": "規劃主題集群和內容日曆。",
+    "try": "幫我規劃網站的內容主題"
+  },
+  "meta-description": {
+    "title": "Meta 描述",
+    "summary": "寫和檢查頁面的 meta 描述。",
+    "try": "幫這個頁面寫 meta 描述"
+  },
+  "generative-engine-optimization": {
+    "title": "AI 搜尋優化（GEO）",
+    "summary": "讓產品更容易被 ChatGPT 等 AI 搜尋提到。",
+    "try": "怎麼讓 AI 搜尋推薦我們"
+  },
+  "internal-links": {
+    "title": "內鏈優化",
+    "summary": "檢查和設計站內連結，解決孤立頁面。",
+    "try": "幫我檢查網站的內鏈"
+  },
+  "keyword-discovery": {
+    "title": "關鍵詞拓展",
+    "summary": "從種子詞、競品和使用者說法裡挖長尾詞。",
+    "try": "幫我拓展一下這個關鍵詞"
+  },
+  "keyword-research": {
+    "title": "關鍵詞研究",
+    "summary": "從拓詞、意圖分組到頁面分配的完整流程。",
+    "try": "幫我做一輪關鍵詞研究"
+  },
+  "local-seo": {
+    "title": "本機 SEO",
+    "summary": "優化地圖和本機搜尋，完善商家資料。",
+    "try": "我的店怎麼在地圖搜尋裡靠前"
+  },
+  "schema-markup": {
+    "title": "結構化資料",
+    "summary": "給頁面加 Schema 結構化資料，爭取富摘要。",
+    "try": "給這個頁面加結構化資料"
+  },
+  "seo-audit": {
+    "title": "SEO 體檢",
+    "summary": "給網站做技術 SEO 檢查，列出問題。",
+    "try": "幫我的網站做個 SEO 體檢"
+  },
+  "title-tag": {
+    "title": "頁面標題",
+    "summary": "寫和檢查頁面的 title 標籤。",
+    "try": "幫我優化這個頁面的標題"
+  },
+  "carrier-relationship-management": {
+    "title": "承運商管理",
+    "summary": "篩選承運商、談運價、做績效考核。",
+    "try": "幫我準備一份運輸招標方案"
+  },
+  "counterparty-channel-discipline": {
+    "title": "外部群聊規範",
+    "summary": "讓機器人在外部群裡被點名才說話、不洩密。",
+    "try": "我要把機器人拉進客戶群"
+  },
+  "customs-trade-compliance": {
+    "title": "海關貿易合規",
+    "summary": "商品歸類、報關單據、貿易條款和合規篩查。",
+    "try": "這個商品的 HS 編碼是什麼"
+  },
+  "energy-procurement": {
+    "title": "能源採購",
+    "summary": "優化企業電費和燃氣費，做採購招標。",
+    "try": "幫我查看工廠電費怎麼降"
+  },
+  "inventory-demand-planning": {
+    "title": "庫存與需求計畫",
+    "summary": "預測需求，設安全庫存和補貨點。",
+    "try": "這個商品該備多少貨"
+  },
+  "investor-materials": {
+    "title": "融資材料",
+    "summary": "做 BP、一頁紙和財務模型等融資材料。",
+    "try": "幫我做一份融資 BP"
+  },
+  "investor-outreach": {
+    "title": "投資人溝通",
+    "summary": "寫給投資人的首封郵件、引薦語和進展更新。",
+    "try": "幫我寫封郵件聯繫投資人"
+  },
+  "logistics-exception-management": {
+    "title": "物流異常處理",
+    "summary": "處理延誤、破損、丟件和運費索賠。",
+    "try": "貨物破損了該怎麼索賠"
+  },
+  "product-lens": {
+    "title": "產品方向評審",
+    "summary": "動手前先驗證為什麼做，提供做或不做的建議。",
+    "try": "這個功能值得做嗎"
+  },
+  "production-scheduling": {
+    "title": "生產排程",
+    "summary": "安排生產順序、解決瓶頸、減少換線。",
+    "try": "幫我排一下下週的生產計畫"
+  },
+  "quality-nonconformance": {
+    "title": "品質問題處理",
+    "summary": "不合格品處理、根因分析和糾正預防。",
+    "try": "幫我寫這批不良品的 8D 報告"
+  },
+  "returns-reverse-logistics": {
+    "title": "退貨處理",
+    "summary": "退貨審核、檢驗、處置和退款判斷。",
+    "try": "幫我設計退貨處理流程"
+  },
+  "dbs-action": {
+    "title": "拖延診斷",
+    "summary": "知道該做卻一直沒做時，找出卡在哪。",
+    "try": "我知道該做，但就是拖著"
+  },
+  "dbs-decision": {
+    "title": "長期決策檔案",
+    "summary": "給長期決策立檔，定期回填結果和復盤。",
+    "try": "幫我給這個決定立個檔"
+  },
+  "dbs-deconstruct": {
+    "title": "概念拆解",
+    "summary": "拆清楚一個商業概念到底指什麼。",
+    "try": "「私域」到底是什麼意思"
+  },
+  "dbs-diagnosis": {
+    "title": "商業問診",
+    "summary": "拆解具體經營問題，或給商業模式做體檢。",
+    "try": "幫我查看我的生意哪裡有問題"
+  },
+  "dbs-goal": {
+    "title": "目標落地",
+    "summary": "把模糊願望變成可執行、可驗收的目標。",
+    "try": "幫我把這個想法定成目標"
+  },
+  "dbs-jtbd": {
+    "title": "顧客任務分析",
+    "summary": "用 JTBD 分析顧客為什麼選你、不選別人。",
+    "try": "顧客為什麼會買我們的產品"
+  },
+  "gtm-strategy": {
+    "title": "上市策略",
+    "summary": "規劃進入市場的打法、目標客戶和管道。",
+    "try": "幫我做一份上市策略"
+  },
+  "indie-hacker-strategy": {
+    "title": "獨立開發者經營",
+    "summary": "一個人做產品的增長、管道和公開建置打法。",
+    "try": "獨立開發怎麼找到前 100 個使用者"
+  },
+  "pmf-strategy": {
+    "title": "產品市場匹配",
+    "summary": "驗證產品有沒有找到市場，再決定擴張。",
+    "try": "怎麼判斷我們有沒有 PMF"
+  },
+  "pricing-strategy": {
+    "title": "定價策略",
+    "summary": "設計價格檔位、免費版和定價模型。",
+    "try": "我的產品該怎麼定價"
+  },
+  "council": {
+    "title": "四人議事會",
+    "summary": "請四個不同立場的角色先辯一輪再做決定。",
+    "try": "這個決定幫我開個議事會"
+  },
+  "elon-musk-perspective": {
+    "title": "馬斯克視角",
+    "summary": "用第一性原理拆成本，挑戰行業預設做法。",
+    "try": "用馬斯克的視角查看"
+  },
+  "feynman-perspective": {
+    "title": "費曼視角",
+    "summary": "檢驗你是真懂了，還是只記住了名詞。",
+    "try": "用費曼的視角查看"
+  },
+  "ilya-sutskever-perspective": {
+    "title": "Ilya 視角",
+    "summary": "用 Ilya 的眼光看 AI 方向和研究品味。",
+    "try": "用 Ilya 的視角查看"
+  },
+  "andrej-karpathy-perspective": {
+    "title": "Karpathy 視角",
+    "summary": "用工程現實主義看 AI 能力、學習和產品。",
+    "try": "Karpathy 會怎麼看"
+  },
+  "munger-perspective": {
+    "title": "芒格視角",
+    "summary": "逆向思考，找認知偏誤和激勵結構。",
+    "try": "用芒格的視角逆向想想"
+  },
+  "naval-perspective": {
+    "title": "Naval 視角",
+    "summary": "從槓桿、專長和慾望看工作與財富。",
+    "try": "用 Naval 的視角查看"
+  },
+  "paul-graham-perspective": {
+    "title": "Paul Graham 視角",
+    "summary": "用 PG 的眼光看創業、寫作和產品。",
+    "try": "PG 會怎麼看"
+  },
+  "steve-jobs-perspective": {
+    "title": "喬布斯視角",
+    "summary": "用喬布斯的標準評產品、做取捨。",
+    "try": "讓喬布斯評一下"
+  },
+  "taleb-perspective": {
+    "title": "塔勒布視角",
+    "summary": "看黑天鵝、尾部風險和反脆弱。",
+    "try": "用塔勒布的視角查看風險"
+  },
+  "trump-perspective": {
+    "title": "特朗普視角",
+    "summary": "分析談判和傳播套路，預判他的下一步。",
+    "try": "特朗普會怎麼做"
+  },
+  "zhang-yiming-perspective": {
+    "title": "張一鳴視角",
+    "summary": "用張一鳴的思路看產品、組織和全球化。",
+    "try": "用張一鳴的視角查看"
+  },
+  "zhangxuefeng-perspective": {
+    "title": "張雪峰視角",
+    "summary": "用張雪峰的思路看報考、就業和職業規劃。",
+    "try": "張雪峰會怎麼說"
+  },
+  "dbs-chatroom": {
+    "title": "專家聊天室",
+    "summary": "請幾位專家圍繞話題對談，最後總結分歧。",
+    "try": "找幾個專家聊聊這個問題"
+  },
+  "dbs-chatroom-austrian": {
+    "title": "奧派聊天室",
+    "summary": "請哈耶克、米塞斯用奧派經濟學討論問題。",
+    "try": "用奧派經濟學分析一下"
+  },
+  "frontend-slides": {
+    "title": "網頁投影片",
+    "summary": "做帶動畫的網頁版投影片，也能把 PPT 轉網頁。",
+    "try": "幫我做一套網頁投影片"
+  },
+  "growth-log": {
+    "title": "復盤記錄",
+    "summary": "把做完的事提煉成可復用的經驗，不記流水帳。",
+    "try": "把這次的經驗記下來"
+  },
+  "master-agreement-generator": {
+    "title": "主協議起草",
+    "summary": "用範本和參數產生合作主協議草稿。",
+    "try": "幫我起草一份主協議"
+  },
+  "token-budget-advisor": {
+    "title": "回答詳略控制",
+    "summary": "回答前讓你選詳略，並估算 token 用量。",
+    "try": "簡短回答就行"
+  },
+  "visa-doc-translate": {
+    "title": "簽證材料翻譯",
+    "summary": "把證明材料圖片譯成英文，出雙語 PDF。",
+    "try": "把這份在職證明翻成英文"
+  },
+  "freud-skill": {
+    "title": "提示詞調優",
+    "summary": "用心理分析的方法診斷和重寫提示詞。",
+    "try": "幫我優化這段 prompt"
+  },
+  "huashu-excel": {
+    "title": "Excel 資料分析",
+    "summary": "清洗髒表、定口徑、算指標，對帳出報告。",
+    "try": "這兩個數為什麼對不上"
+  },
+  "huashu-report": {
+    "title": "研究報告",
+    "summary": "寫行業報告、白皮書和學術論文，配圖表。",
+    "try": "幫我寫一份行業研究報告"
+  },
+  "huashu-data-pro": {
+    "title": "資料分析與彙報",
+    "summary": "從資料處理、分析到報告和 PPT 一條龍。",
+    "try": "幫我分析這份投放資料"
+  },
+  "huashu-md-to-pdf": {
+    "title": "Markdown 轉 PDF",
+    "summary": "把 Markdown 排成帶封面目錄的 PDF 白皮書。",
+    "try": "把這份文件轉成 PDF"
+  },
+  "huashu-prompt-save": {
+    "title": "提示詞收藏",
+    "summary": "自動給提示詞分類並儲存。",
+    "try": "幫我儲存這個 prompt"
+  },
+  "huashu-speech-coach": {
+    "title": "演講教練",
+    "summary": "按 MIT《How to Speak》的方法準備分享。",
+    "try": "幫我準備一場分享"
+  },
+  "dbs-content-system": {
+    "title": "內容資產整理",
+    "summary": "把舊文稿、選題和案例整理成可復用的素材庫。",
+    "try": "幫我整理一下以前的稿子"
+  },
+  "dbs-knowledge": {
+    "title": "本機知識庫",
+    "summary": "把本機資料夾建成機器人能查的知識庫。",
+    "try": "用這個資料夾建個知識庫"
+  },
+  "dbs-report": {
+    "title": "診斷匯總報告",
+    "summary": "把多次診斷存檔合併成一份報告。",
+    "try": "把之前的診斷匯總成報告"
+  },
+  "dbs-restore": {
+    "title": "接著上次診斷",
+    "summary": "還原上次儲存的診斷進度。",
+    "try": "接著上次的診斷繼續"
+  },
+  "dbs-save": {
+    "title": "儲存診斷進度",
+    "summary": "儲存目前診斷結論，下次接著聊。",
+    "try": "把這次的結論存一下"
+  },
+  "dbs-skill-maker": {
+    "title": "製作技能",
+    "summary": "做新技能或改進已有技能，並實測效果。",
+    "try": "幫我把這個流程做成技能"
+  },
+  "baoyu-slide-deck": {
+    "title": "投影片圖片",
+    "summary": "根據內容產生大綱和一頁頁投影片圖片。",
+    "try": "把這篇做成投影片"
+  },
+  "baoyu-translate": {
+    "title": "文章翻譯",
+    "summary": "快翻或精翻文章，支援中英互譯。",
+    "try": "把這篇文章翻譯成中文"
+  },
+  "leader": {
+    "title": "Agent 任務書",
+    "summary": "把一句話的想法拆成 Agent 能獨立跑完的任務書。",
+    "try": "幫我給 agent 寫個任務書"
+  },
+  "storage-analyzer": {
+    "title": "磁碟清理",
+    "summary": "唯讀掃描磁碟佔用，分級提供清理建議。",
+    "try": "我的磁碟滿了"
+  },
+  "contextus": {
+    "title": "團隊上下文管理",
+    "summary": "維護團隊的產品現狀、決策和變更記錄。",
+    "try": "幫我整理團隊的產品現狀"
+  },
+  "translation": {
+    "title": "在地化翻譯",
+    "summary": "翻譯和校對多語言的產品與營銷內容。",
+    "try": "把官方網站文案翻成英文和日文"
+  }
+}

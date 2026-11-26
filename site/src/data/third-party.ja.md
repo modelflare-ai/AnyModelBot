@@ -1,6 +1,6 @@
 # 第三者に関する告知
 
-[简体中文](./THIRD_PARTY_NOTICES.md) | [English](./THIRD_PARTY_NOTICES_en.md) | 日本語 | [한국어](./THIRD_PARTY_NOTICES_ko.md) | [Русский](./THIRD_PARTY_NOTICES_ru.md) | [Español](./THIRD_PARTY_NOTICES_es.md) | [Português (Brasil)](./THIRD_PARTY_NOTICES_pt.md) | [Türkçe](./THIRD_PARTY_NOTICES_tr.md)
+[简体中文](./THIRD_PARTY_NOTICES.md) | [繁體中文（台灣）](./THIRD_PARTY_NOTICES_zh-TW.md) | [English](./THIRD_PARTY_NOTICES_en.md) | 日本語 | [한국어](./THIRD_PARTY_NOTICES_ko.md) | [Русский](./THIRD_PARTY_NOTICES_ru.md) | [Español](./THIRD_PARTY_NOTICES_es.md) | [Português (Brasil)](./THIRD_PARTY_NOTICES_pt.md) | [Türkçe](./THIRD_PARTY_NOTICES_tr.md)
 
 anymodel bot 自体は MIT ライセンスで公開されています（LICENSE 参照）。以下は本プログラムに同梱、または移植されたコンポーネントです。それぞれ元のライセンスが適用されます。
 

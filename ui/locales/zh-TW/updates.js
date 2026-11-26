@@ -1,0 +1,40 @@
+export default {
+  "downloadVersion": "下載新版本 {version}",
+  "browserVersion": "發現新版本 {version}，去下載 ↗",
+  "restartVersion": "重新啟動並更新到 {version}",
+  "autoDownload": "自動下載更新",
+  "autoDownloadHint": "發現新版本後在背景下載，完成後提醒你重新啟動安裝。",
+  "manualOnly": "此執行方式需要手動下載安裝套件。",
+  "checking": "正在檢查更新…",
+  "download": "下載更新",
+  "downloadingAction": "下載中…",
+  "downloading": "正在下載 {version} · {percent}%",
+  "ready": "{version} 已下載，重新啟動後更新",
+  "restart": "重新啟動並更新",
+  "installing": "正在重新啟動並更新…",
+  "check": "檢查更新",
+  "busy": "有任務在執行，完成後可以重新啟動更新",
+  "errors": {
+    "failed": "更新操作失敗，請稍後重試。",
+    "check_failed": "暫時無法檢查更新，請稍後重試。",
+    "download_failed": "更新下載失敗，請重試。",
+    "install_failed": "更新安裝未完成，請重試。",
+    "busy": "有任務正在執行，請完成後再重新啟動更新。",
+    "not_ready": "更新尚未下載完成。",
+    "unsupported": "此執行方式不支援應用程式內更新。"
+  },
+  "whatsNew": {
+    "title": "AnyModelBot 已更新到 {version}",
+    "availableTitle": "{version} 更新了什麼",
+    "historyTitle": "更新紀錄",
+    "earlier": "更早的版本",
+    "loading": "正在讀取更新內容…",
+    "failed": "暫時取不到更新內容，可以到 GitHub 上查看。",
+    "viewOnGithub": "在 GitHub 上查看 ↗",
+    "allReleases": "全部發布記錄 ↗",
+    "gotIt": "知道了",
+    "later": "以後再說",
+    "view": "更新紀錄",
+    "empty": "暫時沒有更新說明。"
+  }
+};

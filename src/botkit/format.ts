@@ -11,7 +11,7 @@ export { BOT_PERMISSIONS, normalizeAppRef, type BotAppRef, type BotPermission } 
 
 /** 文案必须有这两种语言；其余语言缺了退回 en */
 export const REQUIRED_LANGS = ["zh-CN", "en"] as const;
-export const BOT_LANGS = ["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"] as const;
+export const BOT_LANGS = ["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"] as const;
 
 /** 示例数据按语言放一份：sample.<语言>.json。规则和文案一样，zh-CN、en 必须有，其余语言缺了退回 en */
 export const sampleName = (lang: string): string => `sample.${lang}.json`;

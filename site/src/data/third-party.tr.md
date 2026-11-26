@@ -1,6 +1,6 @@
 # Üçüncü taraf bildirimleri
 
-[简体中文](./THIRD_PARTY_NOTICES.md) | [English](./THIRD_PARTY_NOTICES_en.md) | [日本語](./THIRD_PARTY_NOTICES_ja.md) | [한국어](./THIRD_PARTY_NOTICES_ko.md) | [Русский](./THIRD_PARTY_NOTICES_ru.md) | [Español](./THIRD_PARTY_NOTICES_es.md) | [Português (Brasil)](./THIRD_PARTY_NOTICES_pt.md) | Türkçe
+[简体中文](./THIRD_PARTY_NOTICES.md) | [繁體中文（台灣）](./THIRD_PARTY_NOTICES_zh-TW.md) | [English](./THIRD_PARTY_NOTICES_en.md) | [日本語](./THIRD_PARTY_NOTICES_ja.md) | [한국어](./THIRD_PARTY_NOTICES_ko.md) | [Русский](./THIRD_PARTY_NOTICES_ru.md) | [Español](./THIRD_PARTY_NOTICES_es.md) | [Português (Brasil)](./THIRD_PARTY_NOTICES_pt.md) | Türkçe
 
 anymodel bot'un kendisi MIT Lisansı altında yayınlanır (LICENSE dosyasına bak). Aşağıdaki bileşenler bu programla birlikte dağıtılır veya programa taşınmıştır ve her biri özgün lisansını korur.
 

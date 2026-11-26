@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { ApprovalRow, Store } from "../store/db.js";
 import { logger } from "../log.js";
-import { t } from "../i18n/index.js";
+import { lang, t, type Lang } from "../i18n/index.js";
 
 const log = logger("approvals");
 
@@ -108,8 +108,21 @@ export function appConnectOf(row: Pick<ApprovalRow, "kind" | "payload">): AppCon
   return p && typeof p === "object" && typeof p.app === "string" && typeof p.kind === "string" ? (p as AppConnectPayload) : undefined;
 }
 
-const YES = /^(y|yes|ok|是|同意|批准|允许)$/i;
-const YES_NO = /^(y|yes|ok|是|同意|批准|允许|n|no|否|拒绝|不)\s*[#:：]?\s*(\d{4})?$/i;
+/** The bridge forwards the tool's explanation. Choose the display language in the host, where preferences can change between requests. */
+export function approvalReason(display: unknown, fallback: unknown, locale: Lang = lang()): string {
+  if (typeof display === "string" && display) return display;
+  if (display && typeof display === "object") {
+    const reasons = display as Record<string, unknown>;
+    const alias = locale === "zh-CN" ? "zh" : locale === "zh-TW" ? "zh-Hant" : locale;
+    for (const text of [reasons[locale], reasons[alias], reasons.en, reasons["zh-CN"], reasons.zh, ...Object.values(reasons)]) {
+      if (typeof text === "string" && text) return text;
+    }
+  }
+  return typeof fallback === "string" ? fallback : "";
+}
+
+const YES = /^(y|yes|ok|是|同意|批准|核准|允[许許])$/i;
+const YES_NO = /^(y|yes|ok|是|同意|批准|核准|允[许許]|n|no|否|拒[绝絕]|不)\s*[#:：]?\s*(\d{4})?$/i;
 
 /**
  * 审批中心：DSH 插件经 bridge 发来的审批/提问请求落入 sqlite（4 位码、10 分钟过期、重启后仍可查），

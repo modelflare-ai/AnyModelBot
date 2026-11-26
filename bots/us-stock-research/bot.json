@@ -4,6 +4,7 @@
   "minAppVersion": "0.1.33",
   "name": {
     "zh-CN": "美股研报",
+    "zh-TW": "美股研究報告",
     "en": "US Stock Research",
     "ja": "米国株リサーチ",
     "ko": "미국 주식 리서치",
@@ -14,6 +15,7 @@
   },
   "summary": {
     "zh-CN": "查阅美股财报和申报文件，写出数据可追溯的研究报告。",
+    "zh-TW": "查閱美股財報和申報檔案，寫出資料可追溯的研究報告。",
     "en": "Research US-listed companies from SEC filings, with every number traceable.",
     "ja": "米国上場企業の決算と SEC 提出書類を調べ、数字の出典をたどれるレポートを作成します。",
     "ko": "미국 상장사의 재무제표와 SEC 공시를 조사해 수치를 추적할 수 있는 보고서를 작성합니다.",
@@ -27,6 +29,11 @@
       "用 SEC EDGAR 的财报和申报文件研究美国上市公司：列计划、取数、自检、写报告",
       "取数记录和原始数据都留在你的工作区；没有股价、PE 和筛选器",
       "研究流程灵感来自开源项目 Dexter，不含其代码，也无关联。仅供参考，不构成投资建议"
+    ],
+    "zh-TW": [
+      "用 SEC EDGAR 的財報和申報檔案研究美國上市公司：列計畫、取數、自檢、寫報告",
+      "取數記錄和原始資料都留在你的工作區；沒有股價、PE 和篩選器",
+      "研究流程靈感來自開放原始碼專案 Dexter，不含其程式碼，也無關聯。僅供參考，不構成投資建議"
     ],
     "en": [
       "Researches US-listed companies from SEC EDGAR filings: plans, fetches, checks, then writes a report",
@@ -74,6 +81,11 @@
       "用一段话介绍苹果公司的主要业务，再列出读它年报时值得关注的三个问题。只做入门概览，不取财务数据、不做估值。",
       "研究英伟达近五年的收入和毛利率趋势，生成报告",
       "对比微软和 Alphabet 近三年的收入和营业利润率"
+    ],
+    "zh-TW": [
+      "用一段話介紹蘋果公司的主要業務，再列出讀它年報時值得關注的三個問題。只做入門概覽，不取財務資料、不做估值。",
+      "研究英偉達近五年的收入和毛利率趨勢，產生報告",
+      "對比微軟和 Alphabet 近三年的收入和營業利潤率"
     ],
     "en": [
       "Introduce Apple’s main businesses in one paragraph and list three questions to consider when reading its annual report. Intro only, no financial data or valuation.",

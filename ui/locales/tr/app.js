@@ -31,7 +31,7 @@ export default {
     themeDark: "Tema: koyu",
     themeDarkKeys: "tema koyu gece karanlık görünüm theme dark night appearance",
     lang: "Dil: {name}",
-    langKeys: "dil türkçe turkish ingilizce çince japonca korece rusça ispanyolca portekizce language english chinese japanese korean russian spanish portuguese 中文 English 日本語 한국어 Русский Español Português Türkçe",
+    langKeys: "dil türkçe turkish ingilizce çince japonca korece rusça ispanyolca portekizce language english chinese japanese korean russian spanish portuguese 中文 English 日本語 한국어 Русский Español Português Türkçe 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese",
     switchBot: "“{name}” botuna geç",
   },
   lowBalance: "Modelflare bakiyen ${amount} düzeyine indi",

@@ -1,6 +1,6 @@
 # Dados e privacidade
 
-[简体中文](./privacy.md) | [English](./privacy_en.md) | [日本語](./privacy_ja.md) | [한국어](./privacy_ko.md) | [Русский](./privacy_ru.md) | [Español](./privacy_es.md) | Português (Brasil) | [Türkçe](./privacy_tr.md)
+[简体中文](./privacy.md) | [繁體中文（台灣）](./privacy_zh-TW.md) | [English](./privacy_en.md) | [日本語](./privacy_ja.md) | [한국어](./privacy_ko.md) | [Русский](./privacy_ru.md) | [Español](./privacy_es.md) | Português (Brasil) | [Türkçe](./privacy_tr.md)
 
 **Em uma frase:** conversas, memória, arquivos e chaves ficam armazenados no seu dispositivo; o que você envia a um modelo vai para o provedor de modelos que você escolheu, diretamente com sua própria chave de API oficial e, caso contrário, pelo Modelflare. Não afirmamos que seus dados estão livres de qualquer risco — tudo o que é enviado a um modelo sai do seu dispositivo.
 

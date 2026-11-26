@@ -17,6 +17,7 @@
   <a href="https://anymodel.bot/pt/">Site</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">Baixar</a> |
   <a href="./README.md">简体中文</a> |
+  <a href="./README_zh-TW.md">繁體中文（台灣）</a> |
   <a href="./README_en.md">English</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
@@ -60,7 +61,7 @@ Conversas, memória, arquivos e chaves de API ficam no seu dispositivo. Os model
 
 Pronto para usar logo após a instalação: tarefas em segundo plano, regras agendadas e os itens que aguardam o seu OK já vêm integrados.
 
-**0.1.48:** o app para desktop pode importar de uma vez as habilidades que outras ferramentas instalaram neste computador, guardá-las em Minha biblioteca de habilidades e ativá-las nos bots que precisarem. [Registro de alterações](./CHANGELOG_pt.md#0148---2026-11-25)
+**0.1.49:** Adicionado suporte a chinês tradicional (Taiwan). Selecione 繁體中文（台灣） em Configurações → Geral → Idioma ou use o idioma do sistema. [Registro de alterações](./CHANGELOG_pt.md#0149---2026-11-26)
 
 📥 [Baixar](#-baixar-e-executar) · 🌠 [Capturas de tela](#-capturas-de-tela) · 🌟 [Recursos](#-principais-recursos) · 🆚 [Comparação](#-anymodelbot-vs-grok-bot-openai-dots-e-claude-duet) · 🔐 [Privacidade](#-como-funciona-e-privacidade)
 
@@ -141,7 +142,7 @@ Requisitos para compilar a partir do código-fonte: Node.js 22.13+ e Go 1.26.8+.
 
 # 🌠 Capturas de tela
 
-Estas capturas mostram a interface em chinês simplificado. O app também está disponível em inglês, japonês, coreano, russo, espanhol e português (Brasil); troque o idioma nas Configurações.
+Estas capturas mostram a interface em chinês simplificado. O app também está disponível em chinês tradicional (Taiwan), inglês, japonês, coreano, russo, espanhol, português (Brasil) e turco; troque o idioma nas Configurações.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/chat-dark.webp">
@@ -362,7 +363,7 @@ Direções que estamos explorando. Não são promessas, e a ordem não é um cro
 - [x] **Tarefas agendadas**: permitir que um bot execute trabalhos em horários definidos (lançado como regras, acima).
 - [x] **Conversas em grupo no app**: crie um grupo no app e converse com vários bots ao mesmo tempo.
 - [ ] **Conversas em grupo nos canais de chat**: hoje os canais de chat atendem conversas individuais.
-- [x] **Interface multilíngue**: o app está disponível em chinês simplificado, inglês, japonês, coreano, russo, espanhol e português (Brasil); troque o idioma nas Configurações.
+- [x] **Interface multilíngue**: o app está disponível em chinês simplificado, chinês tradicional (Taiwan), inglês, japonês, coreano, russo, espanhol, português (Brasil) e turco; troque o idioma nas Configurações.
 - [ ] **Uso do computador no macOS**: validar o modo direto em mais máquinas reais e tirá-lo do Beta.
 - [ ] **E-mail, calendário e gatilhos de eventos**: conectar contas de e-mail e calendário e permitir que as regras sejam executadas no momento em que algo acontece (uma mensagem de determinada pessoa, uma reunião prestes a começar), e não só em horários definidos. Execuções disparadas por conteúdo externo recebem permissões mais restritas, para que um texto escrito por outra pessoa não possa dar ordens ao seu bot.
 - [ ] **Hospedagem sempre ativa, backup e migração**: as regras não rodam enquanto o computador está desligado. Permitir que qualquer pessoa implante no próprio servidor com um clique, leve para lá seus chats, memória e contas, e faça backup e restauração.

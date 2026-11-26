@@ -99,7 +99,7 @@ function NewProject({ bot, send, close }) {
     <div class="kit-tabs" role="tablist" aria-label=${bot.t("kind")}>${["short", "drama", "canvas"].map((k) => html`<button type="button" role="tab" aria-selected=${form.kind === k} onClick=${() => edit("kind", k)}>${bot.t(`kind.${k}`)}</button>`)}</div>
     <${Field} label=${bot.t("title")} value=${form.title} onInput=${(e) => edit("title", e.target.value)} />
     <${Text} label=${bot.t("source")} value=${form.source} onChange=${(v) => edit("source", v)} />
-    <div class="pf-actions"><${Button} primary disabled=${bot.busy || !form.title.trim()} onClick=${() => { send("create", { ...form, settings: { language: bot.lang } }, false); close(); }}>${bot.t("create")}<//>${close && html`<${Button} class="ghost" onClick=${close}>${bot.t("close")}<//>`}</div>
+    <div class="pf-actions"><${Button} primary disabled=${bot.busy || !form.title.trim()} onClick=${() => { send("create", { ...form, settings: { language: bot.lang, ...(bot.lang === "zh-TW" ? { voice: "zh-TW-HsiaoChenNeural" } : {}) } }, false); close(); }}>${bot.t("create")}<//>${close && html`<${Button} class="ghost" onClick=${close}>${bot.t("close")}<//>`}</div>
   </section>`;
 }
 

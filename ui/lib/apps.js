@@ -50,7 +50,9 @@ const zh = (lang) => String(lang || "").toLowerCase().startsWith("zh");
 
 /** 内置应用的名字：中文界面用中文名，其他语言用英文名 */
 export function builtinName(entry, lang) {
-  return entry ? (zh(lang) ? entry.name.zh : entry.name.en) : "";
+  if (!entry) return "";
+  if (lang === "zh-TW") return entry.name["zh-TW"] ?? entry.name.en;
+  return zh(lang) ? entry.name.zh : entry.name.en;
 }
 
 /** 审批卡片、连接卡片上的应用名：内置应用按界面语言取，清单还没到时用后端给的名字 */
@@ -137,7 +139,7 @@ export function matchesApp(q, { entry, view, lang }) {
   const needle = fold(String(q || "").trim());
   if (!needle) return true;
   const hay = [];
-  if (entry) hay.push(entry.name.zh, entry.name.en, entry.id, ...(entry.keywords || []));
+  if (entry) hay.push(...Object.values(entry.name), entry.id, ...(entry.keywords || []));
   if (view) {
     if (view.name) hay.push(view.name);
     for (const a of view.accounts || []) hay.push(a.label);

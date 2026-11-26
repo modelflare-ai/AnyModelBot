@@ -1,6 +1,6 @@
 # 导入和管理技能
 
-简体中文 | [English](./skills_en.md) | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
+简体中文 | [繁體中文（台灣）](./skills_zh-TW.md) | [English](./skills_en.md) | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
 
 从 AnyModelBot 0.1.24 起，你可以把已有的工作流程作为 ZIP 技能包添加给机器人，例如写周报、处理文档或整理资料。
 

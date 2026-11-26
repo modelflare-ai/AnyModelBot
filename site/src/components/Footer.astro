@@ -8,7 +8,7 @@ import "../styles/footer.css";
 import EyesMark from "./EyesMark.astro";
 import Icon from "./Icon.astro";
 import Community from "./Community.astro";
-import { dict, fmt, href, READY_LANGS, LOCALES, switchHref, type Lang } from "../i18n";
+import { dict, fmt, href, languageLabel, READY_LANGS, LOCALES, switchHref, type Lang } from "../i18n";
 import { GITHUB_URL, MF, pricing } from "../lib/site";
 import { docsUrl } from "../lib/docs";
 import { pickModels } from "../lib/eyefield";
@@ -83,7 +83,7 @@ const badges = [...BADGES.filter((b) => b.dark), ...BADGES.filter((b) => !b.dark
     <span>{t.footer.copyright}</span>
     <span>{t.footer.art}</span>
     <span class="footer__switch">
-      <span class="language-options" aria-label={t.nav.langLabel}>{READY_LANGS.map((l) => <a href={switchHref(l, path)} hreflang={LOCALES[l].tag} lang={l === "zh" && lang === "en" ? "en" : LOCALES[l].tag} aria-current={l === lang ? "page" : undefined} data-lang-switch={l}>{l === "zh" && lang === "en" ? "Simplified Chinese" : LOCALES[l].name}</a>)}</span>
+      <span class="language-options" aria-label={t.nav.langLabel}>{READY_LANGS.map((l) => <a href={switchHref(l, path)} hreflang={LOCALES[l].tag} lang={languageLabel(l, lang).tag} aria-current={l === lang ? "page" : undefined} data-lang-switch={l}>{languageLabel(l, lang).name}</a>)}</span>
       <button type="button" data-theme-cycle aria-label={t.nav.theme}>{t.nav.theme}</button>
     </span>
   </div>

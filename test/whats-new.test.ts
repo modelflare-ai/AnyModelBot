@@ -48,6 +48,8 @@ describe("更新日志解析", () => {
 
   it("界面语言对应的文件：简体中文是 CHANGELOG.md，不认识的语言用英文", () => {
     expect(changelogFile("zh-CN")).toBe("CHANGELOG.md");
+    expect(changelogFile("zh-TW")).toBe("CHANGELOG_zh-TW.md");
+    expect(changelogFile("zh-Hant")).toBe("CHANGELOG_zh-TW.md");
     expect(changelogFile("ja")).toBe("CHANGELOG_ja.md");
     expect(changelogFile("fr")).toBe("CHANGELOG_en.md");
   });
@@ -56,7 +58,7 @@ describe("更新日志解析", () => {
     const versions = (lang: string) => readLocalChangelog(lang, root).map((e) => e.version);
     const zh = versions("zh-CN");
     expect(zh).toContain(appVersion());
-    for (const lang of ["en", "ja", "ko", "ru", "es", "pt", "tr"]) expect(versions(lang)).toEqual(zh);
+    for (const lang of ["zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"]) expect(versions(lang)).toEqual(zh);
   });
 
   it("读不到文件时回空列表", () => {

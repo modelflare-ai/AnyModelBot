@@ -1,8 +1,15 @@
 # Değişiklik günlüğü
 
-[简体中文](./CHANGELOG.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | Türkçe
+[简体中文](./CHANGELOG.md) | [繁體中文（台灣）](./CHANGELOG_zh-TW.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | Türkçe
 
 Uygulamada fark edeceğin değişiklikler burada. Daha eski sürümler için [GitHub sürümlerine](https://github.com/modelflare-ai/AnyModelBot/releases) bak.
+
+## 0.1.49 - 2026-11-26
+
+### Yenilikler
+
+- Geleneksel Çince (Tayvan) desteği eklendi. Ayarlar → Genel → Dil bölümünde 繁體中文（台灣） seçeneğini veya sistem dilini seçin.
+- Masaüstü ve web arayüzleri, sistem tepsisi menüsü ve sistem iletileri, beceri ve görev kitaplıkları ile dört yerleşik botun çalışma alanları ve örnekleri Geleneksel Çinceye çevrildi.
 
 ## 0.1.48 - 2026-11-25
 

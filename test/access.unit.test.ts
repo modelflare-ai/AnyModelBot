@@ -85,6 +85,14 @@ describe("AccessControl", () => {
     expect(access.handleReply(ev("weixin", "owner@im.wechat", `同意 ${code}`)).handled).toBe(false);
   });
 
+  it("handles a Traditional Chinese refusal without granting access", () => {
+    const { access } = setup();
+    access.admit(ev("weixin", "s@im.wechat", "hi"));
+    const { code, id } = access.view("b").requests[0];
+    expect(access.handleReply(ev("weixin", "owner@im.wechat", `拒絕 ${code}`)).handled).toBe(true);
+    expect(access.view("b").entries.find((e) => e.id === id)?.status).toBe("denied");
+  });
+
   it("denied senders get no reply; removing them lets them ask again", () => {
     const { access, tick } = setup();
     access.admit(ev("weixin", "spam@im.wechat", "hi"));

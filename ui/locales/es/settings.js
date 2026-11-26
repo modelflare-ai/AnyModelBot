@@ -191,7 +191,7 @@ export default {
   rows: {
     language: {
       sub: "Se usa en la interfaz, en el menú de la bandeja del sistema y en los mensajes del sistema de tus bots",
-      keys: "idioma lengua español inglés chino japonés coreano ruso portugués turco Türkçe language english chinese turkish 中文 English 日本語 한국어 Español Português", // i18n-ignore
+      keys: "idioma lengua español inglés chino japonés coreano ruso portugués turco Türkçe language english chinese turkish 中文 English 日本語 한국어 Español Português 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese", // i18n-ignore
     },
     sendKey: {
       name: "Enviar con",

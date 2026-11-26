@@ -253,7 +253,7 @@ export function apply(ctx) {
     return {
       kind: 'ask',
       reason: `Recursive delete (${hit}) needs the user's approval, even with full access`,
-      displayReason: { en: `Recursive delete: ${hit}`, zh: `递归删除，需要你确认（${hit}）` },
+      displayReason: { en: `Recursive delete: ${hit}`, zh: `递归删除，需要你确认（${hit}）`, 'zh-TW': `遞迴刪除，需要你確認（${hit}）` },
     }
   }, { prepend: true })
 }

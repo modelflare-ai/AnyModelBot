@@ -1,0 +1,185 @@
+{
+  "title": "PRINTFILM",
+  "sample": true,
+  "projects": [
+    {
+      "id": "sample-film",
+      "title": "月光郵局",
+      "kind": "drama",
+      "path": "",
+      "revision": 1,
+      "updatedAt": "",
+      "episodes": 1,
+      "assets": 1,
+      "exports": 0,
+      "archived": false
+    }
+  ],
+  "selectedProjectId": "sample-film",
+  "sampleProject": {
+    "id": "sample-film",
+    "kind": "drama",
+    "title": "月光郵局",
+    "source": "小狐狸在月光下送出最後一封信。",
+    "summary": {
+      "synopsis": "小狐狸在月光下送出最後一封信。"
+    },
+    "settings": {
+      "mode": "video",
+      "ratio": "9:16",
+      "resolution": "720p",
+      "style": "cgi-3d-animation",
+      "audioMode": "native",
+      "voice": "zh-TW-HsiaoChenNeural",
+      "subtitles": true,
+      "imageModel": "",
+      "videoModel": "",
+      "bgm": "",
+      "bgmVolume": 0.15,
+      "targetDuration": 60,
+      "episodeCount": 3,
+      "language": "zh-TW"
+    },
+    "episodes": [
+      {
+        "id": "sample-ep",
+        "number": 1,
+        "title": "月光郵局",
+        "summary": "月光郵局",
+        "revision": 1,
+        "path": ""
+      }
+    ],
+    "assets": [
+      {
+        "id": "sample-fox",
+        "type": "character",
+        "name": "郵差小狐",
+        "prompt": "月光郵局",
+        "voice": "",
+        "media": {},
+        "assetIds": [],
+        "selectedMedia": {}
+      }
+    ],
+    "canvas": {
+      "nodes": [
+        {
+          "id": "sample-a",
+          "label": "角色",
+          "x": 40,
+          "y": 50,
+          "assetId": "sample-fox"
+        },
+        {
+          "id": "sample-b",
+          "label": "鏡頭",
+          "x": 360,
+          "y": 50,
+          "episodeId": "sample-ep",
+          "shotId": "sample-shot-0"
+        }
+      ],
+      "edges": [
+        {
+          "from": "sample-a",
+          "to": "sample-b"
+        }
+      ]
+    },
+    "exports": [],
+    "jobs": [],
+    "history": [],
+    "archived": false,
+    "revision": 1
+  },
+  "sampleEpisode": {
+    "id": "sample-ep",
+    "number": 1,
+    "title": "月光郵局",
+    "summary": "月光郵局",
+    "content": "小狐狸在月光下送出最後一封信。",
+    "shots": [
+      {
+        "id": "sample-shot-0",
+        "title": "場景",
+        "narration": "",
+        "visualPrompt": "月光郵局",
+        "videoPrompt": "月光郵局",
+        "segmentScript": "",
+        "duration": 8,
+        "assetIds": [
+          "sample-fox"
+        ],
+        "dialogue": [],
+        "locked": false,
+        "media": {
+          "image": [
+            {
+              "id": "sample-img-0",
+              "path": "./samples/shot-0.svg",
+              "model": "sample",
+              "at": "",
+              "kind": "image"
+            }
+          ]
+        },
+        "selectedMedia": {}
+      },
+      {
+        "id": "sample-shot-1",
+        "title": "角色",
+        "narration": "小狐狸在月光下送出最後一封信。",
+        "visualPrompt": "月光郵局",
+        "videoPrompt": "月光郵局",
+        "segmentScript": "",
+        "duration": 8,
+        "assetIds": [
+          "sample-fox"
+        ],
+        "dialogue": [],
+        "locked": false,
+        "media": {
+          "image": [
+            {
+              "id": "sample-img-1",
+              "path": "./samples/shot-1.svg",
+              "model": "sample",
+              "at": "",
+              "kind": "image"
+            }
+          ]
+        },
+        "selectedMedia": {}
+      },
+      {
+        "id": "sample-shot-2",
+        "title": "道具",
+        "narration": "",
+        "visualPrompt": "月光郵局",
+        "videoPrompt": "月光郵局",
+        "segmentScript": "",
+        "duration": 8,
+        "assetIds": [
+          "sample-fox"
+        ],
+        "dialogue": [],
+        "locked": false,
+        "media": {
+          "image": [
+            {
+              "id": "sample-img-2",
+              "path": "./samples/shot-2.svg",
+              "model": "sample",
+              "at": "",
+              "kind": "image"
+            }
+          ]
+        },
+        "selectedMedia": {}
+      }
+    ],
+    "exports": [],
+    "revision": 1
+  }
+}

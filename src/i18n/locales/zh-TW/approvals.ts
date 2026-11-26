@@ -1,0 +1,26 @@
+import type { TranslatedCatalog } from "../../index.js";
+
+export default {
+  noSuchCode: "⚠️ 沒有編號為 {code} 的待核准請求（可能已過期或已處理）",
+  needCode: "有 {count} 個待核准請求，請帶上編號回覆，例如 y {code}",
+  expiredOrDone: "⚠️ 請求 {code} 已過期或已處理",
+  approved: "✅ 已核准 {code}（僅本次）",
+  rejected: "❌ 已拒絕 {code}",
+  prompt: "需核准: {tool}{cmd}{why} — 回覆 y {code} / n {code}",
+  promptWhy: "（{reason}）",
+  hintMulti: "（每行回答一個問題：回覆編號或直接寫答案）",
+  hintOptions: "（回覆編號{multi}，或直接寫答案）",
+  hintOptionsMulti: "，可多選用逗號分隔",
+  hintFree: "（直接回覆答案）",
+  replyYesNo: "回覆 y {code} 核准，n {code} 拒絕",
+  quoteNeedsAnswer: "引用時寫上你的回答",
+  alreadyAnswered: "這個問題已經回答過了",
+  taskApproval: "需核准（任務「{title}」）：{what} — 回覆 y {code} / n {code}",
+  taskQuestion: "❓「{title}」想問你：{question}",
+  taskHintOptions: "（回覆編號{multi}，或引用這則訊息回答）",
+  taskHintMulti: "，可多選",
+  taskHintQuote: "（引用這則訊息回答）",
+  taskDefault: "不回覆就按{answer}做",
+  allowOnce: "允許（僅本次）",
+  deny: "拒絕",
+} satisfies TranslatedCatalog["approvals"];

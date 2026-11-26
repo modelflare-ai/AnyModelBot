@@ -16,7 +16,7 @@ import path from "node:path";
 import { findAppRoot } from "../magpie/supervisor.js";
 import { lang as currentLang, type Lang } from "../i18n/index.js";
 import type { Schedule } from "../domain/schedule.js";
-import { BUILTIN_APPS } from "../tools/apps/catalog.js";
+import { appName as builtinName, BUILTIN_APPS } from "../tools/apps/catalog.js";
 import { isNewer } from "../updates/check.js";
 import { appVersion } from "../version.js";
 import { describe, normalizeSchedule, previewSchedule } from "./schedule.js";
@@ -126,8 +126,7 @@ export function libraryTask(id: string): RoutineTask | undefined {
 
 /** 应用的名字（中文界面用中文名） */
 export function appName(id: string, l: Lang = currentLang()): string {
-  const a = BUILTIN_APPS.find((x) => x.id === id);
-  return a ? (l === "zh-CN" ? a.name.zh : a.name.en) : id;
+  return builtinName(id, l);
 }
 
 // ---------- 参数 ----------
@@ -342,8 +341,8 @@ export function searchText(task: RoutineTask, l: Lang): string {
     if (!c) continue;
     parts.push(c.title, c.oneLine, c.audience, ...Object.values(c.params).map((p) => p.label));
   }
-  for (const a of task.needs.apps ?? []) for (const id of [a.id, ...(a.alternatives ?? [])]) parts.push(appName(id, "zh-CN"), appName(id, "en"), id);
-  for (const p of task.params) if (p.type === "app") for (const id of p.options ?? []) parts.push(appName(id, "zh-CN"), appName(id, "en"));
+  for (const a of task.needs.apps ?? []) for (const id of [a.id, ...(a.alternatives ?? [])]) parts.push(...langs.map((lang) => appName(id, lang)), id);
+  for (const p of task.params) if (p.type === "app") for (const id of p.options ?? []) parts.push(...langs.map((lang) => appName(id, lang)));
   return parts.join(" ").toLowerCase();
 }
 

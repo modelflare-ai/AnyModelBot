@@ -1,6 +1,6 @@
 # Import and manage skills
 
-[简体中文](./skills.md) | English | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
+[简体中文](./skills.md) | [繁體中文（台灣）](./skills_zh-TW.md) | English | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | [Español](./skills_es.md) | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
 
 Starting with AnyModelBot 0.1.24, you can add existing workflows to a bot as ZIP skill packages, for tasks such as weekly reports, document processing and research.
 

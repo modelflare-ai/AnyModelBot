@@ -1,6 +1,6 @@
 # 開発ガイド
 
-[简体中文](./development.md) | [English](./development_en.md) | 日本語 | [한국어](./development_ko.md) | [Русский](./development_ru.md) | [Español](./development_es.md) | [Português (Brasil)](./development_pt.md) | [Türkçe](./development_tr.md)
+[简体中文](./development.md) | [繁體中文（台灣）](./development_zh-TW.md) | [English](./development_en.md) | 日本語 | [한국어](./development_ko.md) | [Русский](./development_ru.md) | [Español](./development_es.md) | [Português (Brasil)](./development_pt.md) | [Türkçe](./development_tr.md)
 
 ソースからの実行、パッケージ作成、開発への参加を考えている方のためのガイドです。アプリを使うだけなら [Releases](https://github.com/modelflare-ai/AnyModelBot/releases) からインストーラーを入手してください。[README](../README_ja.md#-ダウンロードと実行) に手順があります。
 
@@ -38,7 +38,7 @@ src/
 electron/        デスクトップのメインプロセス（起動とトレイ）
 ui/              コンソール画面（Preact+htm、ビルド不要）
   design/        デザインシステム：tokens/、base/、components/、ボットのキャラクター bots/
-  locales/       画面文言：zh-CN/、en/ など、名前空間ごとのファイル
+  locales/       画面文言：zh-CN/、zh-TW/、en/ など、名前空間ごとのファイル
   css/ lib/ components/ screens/ assets/ main.js
 dsh-runtime/     DSH ランタイムの依存関係と AnyModelBot プラグイン（plugins/）
 scripts/         setup / build-magpie / fetch-cua-driver / prepare-dsh / bundle-dsh / electron-smoke / check-readme など
@@ -81,7 +81,7 @@ npm run test:dsh-bundle  # build/dsh の実ランタイムを Electron でテス
 - コンソールは 127.0.0.1 のみで待ち受け、毎回ランダムなトークンを作り、他のローカルプログラムによる管理 API の直接利用を防ぎます。
 - 終了はチャネルを先に止め、その後 magpie を止めます。強制終了で残った magpie は次の起動時に処理します（Linux/macOS）。
 
-リリースでは `CHANGELOG.md`、`CHANGELOG_en.md`、`CHANGELOG_ja.md`、`CHANGELOG_ko.md`、`CHANGELOG_ru.md`、`CHANGELOG_es.md`、`CHANGELOG_pt.md`、`CHANGELOG_tr.md` に当該版の項目を書きます。対象はユーザーが気付くアプリの変更であり、サイトや内部実装ではありません。英語サイトでは WeChat・Feishu に言及する行を除外します。`package.json` の `version` を更新、コミットし、`v<version>` タグをプッシュします。変更履歴がないとワークフローは最初に失敗し、あれば GitHub Release のノートとサイトに反映します。アプリの「更新内容」ダイアログも同じ変更履歴を読みます。`CHANGELOG*.md` はインストーラーと Docker イメージに同梱され（`src/changelog.ts`）、未インストールの新バージョンの内容は、ユーザーが開いたときにそのバージョンのタグから読み込みます。`.github/workflows/release.yml` は OS・アーキテクチャ別の 6 ランナーでビルドし、インストーラーと `SHA256SUMS` を公開します。署名・公証用のシークレットは同ファイル冒頭のコメントを参照してください。同じタグで `.github/workflows/docker.yml` も動き、x64+arm64 イメージを `ghcr.io/modelflare-ai/anymodel-bot` に `<version>`、`latest` タグで公開します。 タグでのリリースでは macOS 版に Developer ID 署名と公証が必須で、パッケージ後に .app と DMG 内の .app を `spctl` などで検証し、通らなければ失敗します。正式版では開発者ツールを無効にしています。デバッグ版が必要なときは `npm run dist:debug`、または Release を手動実行するときに `debug_build` を選びます（ファイル名に `-debug-` が付き、タグでは使えず、`scripts/check-build-flavor.mjs` がパッケージ結果を確認します）。
+リリースでは `CHANGELOG.md`、`CHANGELOG_zh-TW.md`, `CHANGELOG_en.md`、`CHANGELOG_ja.md`、`CHANGELOG_ko.md`、`CHANGELOG_ru.md`、`CHANGELOG_es.md`、`CHANGELOG_pt.md`、`CHANGELOG_tr.md` に当該版の項目を書きます。対象はユーザーが気付くアプリの変更であり、サイトや内部実装ではありません。英語サイトでは WeChat・Feishu に言及する行を除外します。`package.json` の `version` を更新、コミットし、`v<version>` タグをプッシュします。変更履歴がないとワークフローは最初に失敗し、あれば GitHub Release のノートとサイトに反映します。アプリの「更新内容」ダイアログも同じ変更履歴を読みます。`CHANGELOG*.md` はインストーラーと Docker イメージに同梱され（`src/changelog.ts`）、未インストールの新バージョンの内容は、ユーザーが開いたときにそのバージョンのタグから読み込みます。`.github/workflows/release.yml` は OS・アーキテクチャ別の 6 ランナーでビルドし、インストーラーと `SHA256SUMS` を公開します。署名・公証用のシークレットは同ファイル冒頭のコメントを参照してください。同じタグで `.github/workflows/docker.yml` も動き、x64+arm64 イメージを `ghcr.io/modelflare-ai/anymodel-bot` に `<version>`、`latest` タグで公開します。 タグでのリリースでは macOS 版に Developer ID 署名と公証が必須で、パッケージ後に .app と DMG 内の .app を `spctl` などで検証し、通らなければ失敗します。正式版では開発者ツールを無効にしています。デバッグ版が必要なときは `npm run dist:debug`、または Release を手動実行するときに `debug_build` を選びます（ファイル名に `-debug-` が付き、タグでは使えず、`scripts/check-build-flavor.mjs` がパッケージ結果を確認します）。
 
 リリースごとに、公式サイト、関連ドキュメント、全言語の README を更新します。`npm --prefix site run sync` でサイトの内容を同期し、GitHub Release と Docker イメージの公開後、[サイトのデプロイ手順](../site/README.md)に従って本番サイトを更新します。`/download`、`/changelog`、`/bots` のバージョン、ダウンロードリンク、説明が一致していることを確認し、本番サイトの更新まで完了して初めてリリース完了とします。
 
@@ -157,7 +157,7 @@ docker exec amb cat /data/ui-token     # http://<host>:3600/?token=<token> を�
 - サイドバー：上部に折りたたみ・検索・新規作成、下に文字付きのスケジュール項目があります。ボット、グループ、カタログBotをセクションに整理し、セクションの作成・名前変更・削除・ドラッグ並べ替えができます。左下のアバターでアカウントメニューと設定（`⌘/Ctrl+,`）を開き、横の更新ボタンからダウンロードし、準備後に再起動して更新できます。
 - 会話：上のボット名から情報パネル（`⌘/Ctrl+⇧+I`）を開き、既定で応答するチャネルアカウント、承認待ち、タスク・ルール、記憶、最近のセッションを確認します。⚙ はボット設定です。返信は Markdown とコードのワンクリックコピーに対応し、逐次表示して `Esc` で止められます。承認・質問はカードになり、上にスクロールしても強制的に末尾へ戻しません。
 - コマンドパレットは `⌘/Ctrl+K`。外観（システム・ライト・ダーク）は設定 → 一般にあります。
-- 言語：中国語簡体字、英語、日本語、韓国語、ロシア語、スペイン語、ポルトガル語（ブラジル）を設定 → 一般 → 言語で選びます。初回画面右上やコマンドパレットでも選べます。既定はシステムに従い、未対応言語では英語です。選択は config.json の `ui.lang` に保存し、トレイ、サーバーのエラー・状態、WeChat/Feishu に送る `/help` や承認通知にも反映します。CLI・Docker のシステム設定は `AMB_LANG`、次に `LC_ALL` / `LC_MESSAGES` / `LANG` を見て、なければ中国語簡体字です。ログ、モデル用プロンプト、ユーザーが付けた名前は翻訳しません。
+- 言語：中国語簡体字、中国語繁体字（台湾）、英語、日本語、韓国語、ロシア語、スペイン語、ポルトガル語（ブラジル）、トルコ語を設定 → 一般 → 言語で選びます。初回画面右上やコマンドパレットでも選べます。既定はシステムに従い、未対応言語では英語です。選択は config.json の `ui.lang` に保存し、トレイ、サーバーのエラー・状態、WeChat/Feishu に送る `/help` や承認通知にも反映します。CLI・Docker のシステム設定は `AMB_LANG`、次に `LC_ALL` / `LC_MESSAGES` / `LANG` を見て、なければ中国語簡体字です。ログ、モデル用プロンプト、ユーザーが付けた名前は翻訳しません。
   - 画面文言は `ui/locales/<lang>/<namespace>.js` に置き、`t("namespace.key", { params })`（`ui/lib/i18n.js`）で使います。サーバー文言は `src/i18n/messages/<namespace>.ts` にあり、キーを型検査します。各画面リクエストの `x-amb-lang` と同じ言語でサーバーが返答します。
   - 新規文言は両方の基準言語へ追加します。`node scripts/i18n-check.mjs [files…]` は画面コードに残る中国語、存在しないキー、zh/en の不一致を検出します。`npm test` の `test/i18n.unit.test.ts` でも同じ内容を検査します。フォント名や中国語を照合する正規表現など必要な文字列には、その行に `// i18n-ignore` を付けます。
 - 初回チェックリスト：空の会話に、挨拶、モデル変更、WeChat 接続、作業依頼、記憶、画像生成の 6 段階を出します。最後は画像・動画モデルの有無にかかわらず内蔵デモです。通常どおり即生成して会話に表示しますが、ボットに送らずモデルも呼ばず課金しません。画像は `ui/assets/guide-demo.svg` です。費用をかけずに流れを学ぶ目的で、実際の描画依頼・画像受信でも完了になります。送信で直接試し、案内ボタンや左下の項目で該当操作をリングで強調するカードを出します。返信、モデル変更、ファイル・画像受信、チャネル接続、記憶への書き込みで自動完了し、config.json の `ui.guide`（API `/amb/api/guide`）に保存します。既存ユーザーの完了済み操作も数えます。左下に折りたたむ、完全に隠す、設定 → 一般からやり直すことができます。 挨拶は実際の返信が必要で（エラー表示は数えません）、チャネルは実際に接続されている必要があります（設定だけでは完了しません）。「よく使うチャットアプリを接続」では WeChat、Feishu、Telegram、Slack、Discord を選べ、UI 言語はおすすめの初期値を決めるだけです。「覚えて…」と明示した場合は、ターン後の記憶整理を 90 秒待たずにすぐ行います。進捗はユーザーごとに保存し（Modelflare にログイン中はアカウントごとに KV の `guide.owner.*`、未ログイン時は従来どおり config.json の `ui.guide`）、すべて完了すると以後は自動で隠れます。自動で出る案内カードは、入力欄に下書きがあるときやタスク実行中は表示を待ちます。

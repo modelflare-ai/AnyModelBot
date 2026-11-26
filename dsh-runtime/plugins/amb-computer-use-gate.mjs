@@ -59,7 +59,7 @@ export function apply(ctx) {
     return {
       kind: 'ask',
       reason: `Computer Use input action "${action}" needs the user's approval (this bot asks before input actions)`,
-      displayReason: { en: `Computer Use: ${action}`, zh: `电脑操作：${action}` },
+      displayReason: { en: `Computer Use: ${action}`, zh: `电脑操作：${action}`, 'zh-TW': `電腦操作：${action}` },
     }
   }, { prepend: true })
 }

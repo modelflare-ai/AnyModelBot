@@ -23,12 +23,12 @@ const HAN = /^\p{Script=Han}/u;
  */
 export function sortSkills(list, lang = getLang()) {
   const ui = new Intl.Collator(lang, { sensitivity: "base", numeric: true });
-  const pinyin = new Intl.Collator("zh-CN-u-co-pinyin", { sensitivity: "base", numeric: true });
+  const hanOrder = lang === "zh-TW" ? ui : new Intl.Collator("zh-CN-u-co-pinyin", { sensitivity: "base", numeric: true });
   const han = (s) => HAN.test(shownName(s));
   return [...(list || [])].sort((a, b) =>
     Number(!a.enabled) - Number(!b.enabled)
     || Number(han(a)) - Number(han(b))
-    || (han(a) ? pinyin : ui).compare(shownName(a), shownName(b))
+    || (han(a) ? hanOrder : ui).compare(shownName(a), shownName(b))
     || a.name.localeCompare(b.name));
 }
 

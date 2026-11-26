@@ -1,0 +1,75 @@
+{
+  "title": "美股研究",
+  "runs": [
+    {
+      "id": "sample-aapl",
+      "question": "研究蘋果近五年的收入和毛利率趨勢，產生報告",
+      "status": "done",
+      "updatedAt": "2026-11-03T10:30:00Z",
+      "plan": [
+        {
+          "text": "查蘋果的 CIK",
+          "done": true
+        },
+        {
+          "text": "取 FY2021–FY2025 的收入和毛利",
+          "done": true
+        },
+        {
+          "text": "讀 FY2025 10-K 裡的毛利率說明",
+          "done": true
+        },
+        {
+          "text": "計算毛利率，並核對原始資料",
+          "done": true
+        },
+        {
+          "text": "寫報告",
+          "done": true
+        }
+      ],
+      "limitations": [
+        "FY2023 有 53 周，其他會計年度是 52 周",
+        "分部毛利率只取了 FY2023 到 FY2025"
+      ],
+      "preview": "# 蘋果公司 FY2021–FY2025 收入與毛利率\n\n## 結論\n\n五個會計年度裡，收入從 3,658.17 億美元增至 4,161.61 億美元，增長 13.8%；毛利率從 41.78% 升至 46.91%，提高 5.13 個百分點。從 10-K 的分部資料看，FY2023 以來的提升主要來自服務業務：服務毛利率從 70.8% 升至 75.4%，產品毛利率只從 36.5% 升至 36.8%。\n\n## 資料\n\n單位：億美元。毛利率由表中數值計算。\n\n| 會計年度 | 截止日 | 收入 | 毛利 | 毛利率 |\n| --- | --- | ---: | ---: | ---: |\n| FY2021 | 2021-09-25 | 3,658.17 | 1,528.36 | 41.78% |\n| FY2022 | 2022-09-24 | 3,943.28 | 1,707.82 | 43.31% |\n| FY2023 | 2023-09-30 | 3,832.85 | 1,691.48 | 44.13% |\n| FY2024 | 2024-09-28 | 3,910.35 | 1,806.83 | 46.21% |\n| FY2025 | 2025-09-27 | 4,161.61 | 1,952.01 | 46.91% |\n\nFY2025 10-K 第 7 項披露的分部毛利率：\n\n| | FY2023 | FY2024 | FY2025 |\n| --- | ---: | ---: | ---: |\n| 產品 | 36.5% | 37.2% | 36.8% |\n| 服務 | 70.8% | 73.9% | 75.4% |\n\n## 分析\n\n- 收入在 FY2023 下降 2.8%，之後連續兩年增長。\n- FY2025 的 10-K 提到，產品毛利率下降主要因為產品結構變化和關稅成本。\n- 同一份 10-K 提示，公司認為未來毛利率總體上會面臨波動和下行壓力。\n\n## 局限\n\n- FY2023 有 53 周，其他會計年度是 52 周，較去年同期時略有影響。\n- 分部毛利率只取了 FY2023 到 FY2025，更早的年份沒有讀。\n- 範例在 2026-11-03 取數，當時 EDGAR 上最新的年報是 FY2025。\n\n## 來源\n\n- XBRL 資料：accession 0000320193-23-000106、0000320193-24-000123、0000320193-25-000079\n- FY2025 10-K：https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm\n\n> 本報告由 AI 根據公開資料產生，僅供學習和資訊參考，不構成投資、稅務或法律建議。資料可能有錯漏或滯後，不保證準確完整；既往表現不代表未來。投資前請諮詢持牌專業人士，相關損失由使用者自行承擔。\n",
+      "calls": [
+        {
+          "ts": "2026-11-03T10:25:58Z",
+          "tool": "lookup",
+          "target": "AAPL",
+          "url": "https://www.sec.gov/files/company_tickers.json",
+          "status": 200
+        },
+        {
+          "ts": "2026-11-03T10:25:59Z",
+          "tool": "concept",
+          "target": "0000320193 us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax annual",
+          "url": "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json",
+          "status": 200
+        },
+        {
+          "ts": "2026-11-03T10:26:00Z",
+          "tool": "concept",
+          "target": "0000320193 us-gaap/GrossProfit annual",
+          "url": "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/GrossProfit.json",
+          "status": 200
+        },
+        {
+          "ts": "2026-11-03T10:26:01Z",
+          "tool": "filings",
+          "target": "0000320193 10-K 1",
+          "url": "https://data.sec.gov/submissions/CIK0000320193.json",
+          "status": 200
+        },
+        {
+          "ts": "2026-11-03T10:26:02Z",
+          "tool": "read",
+          "target": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm",
+          "status": 200
+        }
+      ]
+    }
+  ]
+}

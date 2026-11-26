@@ -1,6 +1,6 @@
 # 貢献ガイド
 
-[简体中文](./CONTRIBUTING.md) | [English](./CONTRIBUTING_en.md) | 日本語 | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
+[简体中文](./CONTRIBUTING.md) | [繁體中文（台灣）](./CONTRIBUTING_zh-TW.md) | [English](./CONTRIBUTING_en.md) | 日本語 | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
 
 AnyModelBot の改善にご協力いただきありがとうございます。不具合報告、修正、文書、アイデアのいずれも歓迎します。
 
@@ -63,7 +63,7 @@ npm run setup          # vendor/magpie サブモジュールを取得し build/b
 - ブランドのアクセントは蛍光イエローグリーン `#d7ff00` です。画面に青を持ち込まないでください。
 - コンソールはビルド不要の Preact + htm です。バンドラーやコンパイルが必要なフロントエンド依存関係は追加しないでください。
 - ライトとダークの両テーマを確認してください。
-- 画面の文言を直接埋め込まず、`ui/locales/zh-CN/` と `ui/locales/en/` の両方に追加して `t()` を使ってください。提出前に `node scripts/i18n-check.mjs` を実行します。英語のほうが長くなりやすいため、両言語を確認してください。
+- 画面の文言は `t()` で表示します。マニフェストにある全言語の訳を `ui/locales/<言語>/` に追加してください。台湾の繁体字中国語には `zh-TW` を使います。提出前に `npm run i18n:check` を実行してください。
 
 ## 第三者のコードと依存関係
 

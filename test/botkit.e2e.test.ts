@@ -22,7 +22,7 @@ const post = (p: string, body: unknown = {}) => api(p, { method: "POST", body: J
 /** 用命令行起一个 Bot 包，把 TODO 填掉 */
 function scaffold(dir: string, id: string): void {
   bot("new", id, "--dir", dir);
-  for (const f of ["bot.json", "persona.md", "sample.zh-CN.json", "sample.en.json", "ui/locales/zh-CN.json", "ui/locales/en.json", "evals/tasks.json"]) {
+  for (const f of ["bot.json", "persona.md", "sample.zh-CN.json", "sample.zh-TW.json", "sample.en.json", "ui/locales/zh-CN.json", "ui/locales/zh-TW.json", "ui/locales/en.json", "evals/tasks.json"]) {
     const p = path.join(dir, f);
     fs.writeFileSync(p, fs.readFileSync(p, "utf8").replaceAll("TODO", "filled"));
   }

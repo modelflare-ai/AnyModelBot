@@ -1,0 +1,53 @@
+// botapp · zh-TW：目錄 Bot（發現頁、專屬介面容器、側邊欄分組）
+export default {
+  sidebar: { discover: "發現", mine: "我的", latest: "上新", new: "有新的" },
+  discover: {
+    title: "發現",
+    lead: "找到適合你的工具，也聊聊企業工作如何連接。",
+    featured: "精選",
+    latest: "上新",
+    empty: "沒有符合條件的",
+  },
+  app: {
+    sample: "範例",
+    placeholder: "說一句，介面就會變",
+    uiFailed: "介面無法開啟，可以在對話裡接著用。",
+    openUrlTitle: "開啟這個網頁？",
+    openUrlConfirm: "開啟",
+    removed: "這個 Bot 已下架，你的資料還在。",
+    removedSecurity: "這個 Bot 因安全原因已下架，它的技能已經停用，你的資料還在。",
+  },
+  info: { what: "能做什麼", skills: "用到的技能", perms: "需要的權限" },
+  perm: {
+    "workspace-write": "讀寫自己的資料夾",
+    network: "連線上網",
+    "channel-send": "主動傳送訊息到聊天管道",
+    "computer-use": "操作電腦",
+    accounts: "使用你授權的帳號",
+  },
+  intro: {
+    hello: "你好，我是{name}。",
+    try: "可以這樣開始",
+    note: "也可以直接說你想做什麼。發出第一則訊息後我才開始工作，現在看到的都是範例。",
+  },
+  tip: { kept: "{name} 留在「我的」了，明天還在" },
+  remove: {
+    title: "移除 {name}？",
+    body: "它會從側邊欄移除，聊天記錄、任務和規則會被刪除。之後可以在發現頁重新新增。",
+    confirm: "移除",
+    keep: "保留它的檔案和工作台內容，重新新增後接著用",
+    done: "已移除 {name}，可以在發現頁重新新增",
+  },
+  errors: {
+    catalog_not_found: "找不到這個 Bot。",
+    catalog_removed: "這個 Bot 已下架。",
+    catalog_download_failed: "Bot 檔案載入失敗，請重試。",
+    catalog_failed: "出了點問題，請重試。",
+    file_not_found: "找不到這個檔案。",
+    inbox_too_large: "檔案太大了。",
+    skill_conflict: "新版本的技能與使用者匯入的技能重名，請先刪除或重新命名匯入的技能。",
+    reserved_skill: "這個 Bot 的技能名字不合規，無法安裝。",
+    dev_invalid: "這個目錄不是合法的 Bot 包。",
+    dev_loopback_only: "只有在本機執行階段才能載入本機目錄。",
+  },
+};

@@ -1,0 +1,23 @@
+// needs · zh-TW（screens/needs-you.js：「需要你」）
+export default {
+  title: "需要你",
+  head: "{bot}的{what}",
+  headSpaced: "{bot}的 {what}",
+  collapse: "收起",
+  viewTask: "查看任務",
+  viewRule: "查看規則",
+  openChat: "開啟對話",
+  reply: "回覆…",
+  approveOnce: "核准一次",
+  deny: "拒絕",
+  stop: "停止",
+  relogin: "重新掃碼",
+  answerPlaceholder: "你的回答",
+  send: "傳送",
+  none: "沒有需要你處理的事",
+  dismiss: "不再提示",
+  continue: "繼續",
+  raiseBudget: "調整預算",
+  toAct: "改為執行",
+  keepObserving: "繼續觀察",
+};

@@ -62,7 +62,7 @@ describe("界面 t()", () => {
 
   it("语言代码规整", () => {
     expect(ui.normalizeLang("zh-Hans-CN")).toBe("zh-CN");
-    expect(ui.normalizeLang("zh-TW")).toBe("zh-CN");
+    expect(ui.normalizeLang("zh-TW")).toBe("zh-TW");
     expect(ui.normalizeLang("en-GB")).toBe("en");
     expect(ui.normalizeLang("ja-JP")).toBe("ja");
     expect(ui.normalizePref("fr")).toBe("system");
@@ -170,6 +170,7 @@ describe("界面接口：语言偏好", () => {
   });
 
   it("报错跟着请求头 x-amb-lang 的语言", async () => {
+    expect((await api("/bots/nope", { lang: "zh-Hant-TW" })).json.error).toBe("機器人不存在");
     expect((await api("/bots/nope", { lang: "en" })).json.error).toBe("Bot not found");
     expect((await api("/bots/nope", { lang: "zh-CN" })).json.error).toBe("机器人不存在");
   });

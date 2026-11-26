@@ -13,7 +13,7 @@ describe("PRINTFILM", () => {
   it("packages all five locales, valid samples and upstream attribution", () => {
     expect(checkStatic(bot).issues).toEqual([]);
     const schema = JSON.parse(fs.readFileSync(path.join(bot, "state.schema.json"), "utf8"));
-    for (const lang of ["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"]) {
+    for (const lang of ["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"]) {
       const sample = JSON.parse(fs.readFileSync(path.join(bot, `sample.${lang}.json`), "utf8"));
       expect(validate(sample, schema)).toEqual([]);
       for (const s of sample.sampleEpisode.shots) expect(fs.existsSync(path.join(bot, "ui", s.media.image[0].path))).toBe(true);

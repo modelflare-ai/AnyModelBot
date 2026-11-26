@@ -1,8 +1,15 @@
 # История изменений
 
-[简体中文](./CHANGELOG.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | Русский | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
+[简体中文](./CHANGELOG.md) | [繁體中文（台灣）](./CHANGELOG_zh-TW.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | Русский | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
 
 Здесь описаны заметные пользователю изменения приложения. Предыдущие версии — на странице [выпусков GitHub](https://github.com/modelflare-ai/AnyModelBot/releases).
+
+## 0.1.49 - 2026-11-26
+
+### Новое
+
+- Добавлен традиционный китайский (Тайвань). Выберите 繁體中文（台灣） в меню «Настройки → Основные → Язык» или используйте язык системы.
+- Переведены настольный и веб-интерфейсы, меню в области уведомлений, системные сообщения, библиотеки навыков и задач, а также рабочие пространства и примеры всех четырёх встроенных ботов.
 
 ## 0.1.48 - 2026-11-25
 

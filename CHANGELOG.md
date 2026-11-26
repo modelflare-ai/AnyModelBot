@@ -1,8 +1,15 @@
 # 更新日志
 
-简体中文 | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
+简体中文 | [繁體中文（台灣）](./CHANGELOG_zh-TW.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
 
 这里只写用户能感受到的变化。更早的版本见 [GitHub 发布页](https://github.com/modelflare-ai/AnyModelBot/releases)。
+
+## 0.1.49 - 2026-11-26
+
+### 新增
+
+- 新增繁体中文（台湾）。在「设置 → 常规 → 语言」中选择「繁體中文（台灣）」，或让应用跟随系统语言。
+- 桌面和网页界面、托盘与系统消息、技能与任务库，以及四个内置机器人的工作台和示例都提供繁体中文。
 
 ## 0.1.48 - 2026-11-25
 

@@ -4,6 +4,7 @@
   "minAppVersion": "0.1.33",
   "name": {
     "zh-CN": "PPT 大师",
+    "zh-TW": "PPT 大師",
     "en": "PPT Master",
     "ja": "PPT マスター",
     "ko": "PPT 마스터",
@@ -14,6 +15,7 @@
   },
   "summary": {
     "zh-CN": "把文档或主题做成可编辑的 PPT，也能改现有的演示文稿。",
+    "zh-TW": "把文件或主題做成可編輯的 PPT，也能改現有的簡報。",
     "en": "Turn documents or topics into editable slides, or edit decks you already have.",
     "ja": "文書やテーマから編集可能なスライドを作成。既存のプレゼン資料も編集できます。",
     "ko": "문서나 주제를 편집 가능한 슬라이드로 만들고, 기존 발표 자료도 수정합니다.",
@@ -27,6 +29,11 @@
       "基于开源项目 PPT Master（hugohe3/ppt-master）的流程和导出工具",
       "工程文件和 PPTX 都留在你的设备上，文档内容会发给你选的模型",
       "导出的是原生形状，能在 PowerPoint 里继续改；效果取决于所选模型"
+    ],
+    "zh-TW": [
+      "基於開放原始碼專案 PPT Master（hugohe3/ppt-master）的流程和匯出工具",
+      "工程檔案和 PPTX 都留在你的裝置上，文件內容會發給你選的模型",
+      "匯出的是原生形狀，能在 PowerPoint 裡繼續改；效果取決於所選模型"
     ],
     "en": [
       "Built on the workflow and export tools of the open-source PPT Master (hugohe3/ppt-master)",
@@ -75,6 +82,11 @@
       "为“如何开好一次 30 分钟周会”写 3 页 PPT 文字大纲，每页一个标题和三个要点，不生成文件。",
       "快速做一份 5 页 16:9 的 PPT，主题是如何开好远程周会，不用确认",
       "帮我做一份 8 页的新品发布 PPT，先给我看方案"
+    ],
+    "zh-TW": [
+      "為「如何開好一次 30 分鐘週會」寫 3 頁 PPT 文字大綱，每頁一個標題和三個要點，不產生檔案。",
+      "快速做一份 5 頁 16:9 的 PPT，主題是如何開好遠端週會，不用確認",
+      "幫我做一份 8 頁的新品發布 PPT，先給我看方案"
     ],
     "en": [
       "Outline 3 slides on running a good 30-minute team meeting, with a title and three bullets per slide. Text only, no files.",

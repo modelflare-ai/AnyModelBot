@@ -1,6 +1,6 @@
 # Cómo contribuir
 
-[简体中文](./CONTRIBUTING.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | Español | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
+[简体中文](./CONTRIBUTING.md) | [繁體中文（台灣）](./CONTRIBUTING_zh-TW.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | Español | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
 
 Gracias por ayudar a mejorar AnyModelBot. Los reportes de errores, las correcciones, la documentación y las ideas son bienvenidos.
 
@@ -63,7 +63,7 @@ La estructura del repositorio, el empaquetado y la configuración de canales se 
 - El color de acento de la marca es el amarillo verdoso fluorescente `#d7ff00`; no introduzcas el azul en la interfaz.
 - La consola usa Preact + htm sin paso de compilación; no agregues un empaquetador ni dependencias de front-end que necesiten compilación.
 - Revisa tanto el tema claro como el oscuro.
-- No escribas textos de la interfaz directamente en el código: agrégalos en `ui/locales/zh-CN/` y `ui/locales/en/` (en ambos idiomas) y usa `t()`; ejecuta `node scripts/i18n-check.mjs` antes de enviar el cambio. Revisa los dos idiomas: el inglés suele ser más largo.
+- Usa `t()` para los textos de la interfaz. Añade las traducciones en `ui/locales/<idioma>/` para todos los idiomas del manifiesto, incluido `zh-TW` para chino tradicional (Taiwán). Ejecuta `npm run i18n:check` antes de enviar los cambios.
 
 ## Código y dependencias de terceros
 

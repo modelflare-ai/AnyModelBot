@@ -1,6 +1,6 @@
 # Importar y administrar habilidades
 
-[简体中文](./skills.md) | [English](./skills_en.md) | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | Español | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
+[简体中文](./skills.md) | [繁體中文（台灣）](./skills_zh-TW.md) | [English](./skills_en.md) | [日本語](./skills_ja.md) | [한국어](./skills_ko.md) | [Русский](./skills_ru.md) | Español | [Português (Brasil)](./skills_pt.md) | [Türkçe](./skills_tr.md)
 
 A partir de AnyModelBot 0.1.24, puedes agregar a un bot flujos de trabajo que ya tengas, en forma de paquetes de habilidades ZIP, para tareas como informes semanales, procesamiento de documentos o investigación.
 

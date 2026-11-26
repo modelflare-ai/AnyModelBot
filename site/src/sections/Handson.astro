@@ -72,7 +72,7 @@ const chapters = [
               <span class="file-chip desk__out on-rise" data-at="9000"><Icon name="doc" />{h.file}</span>
             </div>
           </div>
-          <p class="sr-only">{lang !== "zh" && lang !== "ja"
+          <p class="sr-only">{!lang.startsWith("zh") && lang !== "ja"
             ? `${h.demoSteps.join(", ")}, ${w.approvalTitle}: ${h.approvalBody}, ${w.allow}, ${h.file}`
             : `${h.demoSteps.join("，")}，${w.approvalTitle}：${h.approvalBody}，${w.allow}，${h.file}`}</p>
         </div>

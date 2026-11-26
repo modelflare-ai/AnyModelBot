@@ -29,7 +29,7 @@ const changelogEn = fs.readFileSync(path.join(app, "CHANGELOG_en.md"), "utf8").s
 fs.writeFileSync(path.join(site, "src/data/changelog.en.md"), changelogEn);
 
 // Additional languages are independently authored; only the English channel policy filters its own changelog.
-for (const lang of ["ja", "ko", "ru", "es", "pt", "tr"]) {
+for (const lang of ["zh-TW", "ja", "ko", "ru", "es", "pt", "tr"]) {
   if (fs.existsSync(path.join(app, `THIRD_PARTY_NOTICES_${lang}.md`))) fs.copyFileSync(path.join(app, `THIRD_PARTY_NOTICES_${lang}.md`), path.join(site, `src/data/third-party.${lang}.md`));
   if (fs.existsSync(path.join(app, `CHANGELOG_${lang}.md`))) fs.copyFileSync(path.join(app, `CHANGELOG_${lang}.md`), path.join(site, `src/data/changelog.${lang}.md`));
 }

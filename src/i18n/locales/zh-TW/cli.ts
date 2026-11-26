@@ -1,0 +1,28 @@
+import type { TranslatedCatalog } from "../../index.js";
+
+export default {
+  entered: "（已輸入）",
+  done: "完成。執行 npm start 啟動；微信請在管理介面的 設定 › 聊天管道 裡掃碼，或執行 npm run weixin:login。",
+  title: "anymodel bot 首次設定（資料目錄：{dir}）",
+  noMagpie: "找不到 magpie 執行檔，請先執行：npm run setup",
+  alreadyConnected: "Modelflare 已連線（尾號 {tail}{account}），保留現有連線。",
+  accountSuffix: "，帳號 {name}",
+  signedIn: "已登入",
+  askHow: "連線模型：Enter = 在這台電腦的瀏覽器中登入 Modelflare，輸入 remote = 在別的裝置上登入，輸入 key = 用自己的官方 API Key，輸入 skip = 稍後在介面裡連線：",
+  askOfficial: "用哪家（輸入序號）：",
+  askOfficialKey: "{name} 的 API Key（在 {url} 取得）：",
+  officialConnected: "已連線 {name}，可用模型 {count} 個",
+  alreadyOfficial: "已經填過官方 API Key，這一步跳過",
+  regionCn: "中國",
+  regionGlobal: "海外",
+  askLoginLink: "在瀏覽器中開啟上面的連結並登入。頁面跳到打不開的位址後，把網址列裡的完整連結貼到這裡：",
+  askLine: "API 域名：Enter = modelflare.dev，輸入 origin = origin.modelflare.dev，輸入 cf = cf.modelflare.dev：",
+  askFeishuId: "飛書 App ID（cli_xxx，留空跳過）：",
+  askFeishuSecret: "飛書 App Secret：",
+  savedToBot: "✓ 已儲存到機器人「{name}」",
+  openLink: "在這台電腦的瀏覽器中開啟下面的連結，登入（或註冊）Modelflare 並點「繼續」授權：",
+  signedInConnected: "✓ 已登入 {name}，本機 Key 已連線，找到 {count} 個模型",
+  loginIncomplete: "登入沒有完成",
+  setupFailed: "設定失敗：",
+  weixinConnected: "✓ 微信已連線，執行 npm start 開始收發訊息（若已在執行，請重新啟動或在介面中重新啟用微信管道）。",
+} satisfies TranslatedCatalog["cli"];

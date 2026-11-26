@@ -1,6 +1,6 @@
 # 目录 Bot 开发框架
 
-[English](./bot-framework_en.md)
+[繁體中文（台灣）](./bot-framework_zh-TW.md) | [English](./bot-framework_en.md)
 
 一个 Bot 就是一个目录。App 里不放任何单个 Bot 的代码，上架新 Bot 不用发版。不管谁来做、做多少个，都过同一道约束检查，风格和安全由框架保证。
 
@@ -85,7 +85,7 @@ bots/<id>/
 | `permissions` | 见下表 |
 | `skills` | 引入的技能：`name`、`source`、`sha256`（`amb-bot hash` 算）、`author`、`license`、`url`。自己写的不用列 |
 
-文案字段都写成 `{ "zh-CN": …, "en": … }`。框架要求这两种，`ja`、`ko`、`ru`、`es`、`pt`、`tr` 缺了退回 `en`。这个仓库里上架的 Bot 八种语言都要有，文案、界面和示例数据都算，`test/bot-catalog-site.unit.test.ts` 会检查。
+文案字段都写成 `{ "zh-CN": …, "en": … }`。框架要求这两种，`zh-TW`、`ja`、`ko`、`ru`、`es`、`pt`、`tr` 缺了退回 `en`。这个仓库里上架的 Bot 九种语言都要有，文案、界面和示例数据都算，`test/bot-catalog-site.unit.test.ts` 会检查。
 
 ### 权限
 

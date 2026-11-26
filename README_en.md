@@ -17,6 +17,7 @@
   <a href="https://anymodel.bot/en/">Website</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">Download</a> |
   <a href="./README.md">简体中文</a> |
+  <a href="./README_zh-TW.md">繁體中文（台灣）</a> |
   English |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
@@ -60,7 +61,7 @@ Conversations, memory, files, and API keys stay on your device. Models can come 
 
 Ready to use after install: background tasks, scheduled rules, and items waiting for your OK are built in.
 
-**0.1.48:** the desktop app can import skills that other tools installed on this computer in one go, keep them in My skill library and turn them on for the bots that need them. [Changelog](./CHANGELOG_en.md#0148---2026-11-25)
+**0.1.49:** Added Traditional Chinese (Taiwan). Select 繁體中文（台灣） in Settings → General → Language, or follow the system language. [Changelog](./CHANGELOG_en.md#0149---2026-11-26)
 
 📥 [Download](#-download-and-run) · 🌠 [Screenshots](#-screenshots) · 🌟 [Features](#-key-features) · 🆚 [Compare](#-anymodelbot-vs-grok-bot-openai-dots-and-claude-duet) · 🔐 [Privacy](#-how-it-works--privacy)
 
@@ -141,7 +142,7 @@ Requirements for building from source: Node.js 22.13+ and Go 1.26.8+. To build t
 
 # 🌠 Screenshots
 
-These screenshots show the Simplified Chinese interface. The app also supports English, Japanese, Korean, Russian, Spanish and Portuguese (Brazil); switch in Settings.
+These screenshots show the Simplified Chinese interface. The app also supports Traditional Chinese (Taiwan), English, Japanese, Korean, Russian, Spanish, Portuguese (Brazil) and Turkish; switch in Settings.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/chat-dark.webp">
@@ -362,7 +363,7 @@ Directions we are exploring. They are not promises, and the order is not a sched
 - [x] **Scheduled tasks**: let a bot run work on a timer (shipped as rules, above).
 - [x] **In-app group chats**: create a group in the app and chat with several bots at once.
 - [ ] **Group chats on chat channels**: chat channels handle one-to-one chats today.
-- [x] **Multilingual interface**: the app supports Simplified Chinese, English, Japanese, Korean, Russian, Spanish and Portuguese (Brazil); switch in Settings.
+- [x] **Multilingual interface**: the app supports Simplified Chinese, Traditional Chinese (Taiwan), English, Japanese, Korean, Russian, Spanish, Portuguese (Brazil) and Turkish; switch in Settings.
 - [ ] **macOS computer use**: verify direct mode on more real machines and move it out of Beta.
 - [ ] **Email, calendar and event triggers**: connect email and calendar accounts, and let rules run the moment something happens (a message from a certain person, a meeting about to start), not only on a timer. Runs triggered by outside content get lower permissions, so text written by someone else can't give your bot orders.
 - [ ] **Always-on hosting, backup and migration**: rules don't run while your computer is off. Make it possible for anyone to deploy to their own server in one click, move their chats, memory and accounts over, and back up and restore.

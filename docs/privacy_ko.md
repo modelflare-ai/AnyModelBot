@@ -1,6 +1,6 @@
 # 데이터와 개인정보
 
-[简体中文](./privacy.md) | [English](./privacy_en.md) | [日本語](./privacy_ja.md) | 한국어 | [Русский](./privacy_ru.md) | [Español](./privacy_es.md) | [Português (Brasil)](./privacy_pt.md) | [Türkçe](./privacy_tr.md)
+[简体中文](./privacy.md) | [繁體中文（台灣）](./privacy_zh-TW.md) | [English](./privacy_en.md) | [日本語](./privacy_ja.md) | 한국어 | [Русский](./privacy_ru.md) | [Español](./privacy_es.md) | [Português (Brasil)](./privacy_pt.md) | [Türkçe](./privacy_tr.md)
 
 **핵심:** 대화, 기억, 파일, 키는 내 기기에 저장됩니다. 모델에 보내는 내용은 선택한 모델 제공업체로 전달됩니다. 공식 API 키는 직접, 그 외에는 Modelflare를 거칩니다. 데이터에 위험이 전혀 없다고 주장하지 않습니다. 모델에 전송한 정보는 기기를 벗어납니다.
 

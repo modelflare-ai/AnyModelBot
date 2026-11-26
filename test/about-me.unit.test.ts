@@ -23,6 +23,9 @@ describe("关于我：识别", () => {
     expect(sensitiveKind("Melody 的收件地址是上海市徐汇区某路 88 号")).toBe("address");
     expect(sensitiveKind("我的手机号 13800000000")).toBe("phone");
     expect(sensitiveKind("邮箱 melody@example.com")).toBe("email");
+    expect(isIdOrCard("身分證字號 A123456789")).toBe(true);
+    expect(isPasswordLike("我的密碼是 example123")).toBe(true);
+    expect(isPasswordLike("我使用密碼管理工具")).toBe(false);
     expect(isIdOrCard("身份证 110101199001011234")).toBe(true);
     expect(isIdOrCard("卡号 6222000000000000")).toBe(true);
     expect(isPasswordLike("我的密码是 abc123")).toBe(true);

@@ -338,7 +338,7 @@ const SUGGEST_SEEN = "rules:suggest-seen:";
 /** 预算用完时的回答：不要了 */
 const STOP_WORDS = /^(停止|停|不用了?|不要了?|算了|取消|stop|no|cancel)[。.!！]*$/i;
 /** 只写了一个金额（「再给 $3」里的 3） */
-const AMOUNT_ONLY = /^\s*(?:再给|加|给它)?\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:美元|美金|刀|块|dollars?|usd)?\s*$/i;
+const AMOUNT_ONLY = /^\s*(?:再[给給]|加|[给給]它)?\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:美元|美金|刀|[块塊]|dollars?|usd)?\s*$/i;
 const amountIn = (text: string) => {
   const m = /(\d+(?:\.\d+)?)/.exec(text);
   const v = m ? Number(m[1]) : NaN;
@@ -3349,7 +3349,7 @@ export class TaskService {
 
   /** 只认最近的确认或引用的确认；其他「撤销」留给普通对话询问。 */
   ruleReplyAction(conversationId: string, text: string, quoted = "", senderId?: string): { handled: boolean; text?: string } {
-    const op = /^(撤销|undo)$/i.test(text.trim()) ? "undo" : /^(恢复|restore)$/i.test(text.trim()) ? "restore" : "";
+    const op = /^(撤[销銷]|undo)$/i.test(text.trim()) ? "undo" : /^(恢[复復]|還原|restore)$/i.test(text.trim()) ? "restore" : "";
     if (!op) return { handled: false };
     const latest = this.store.listMessages(conversationId, 30).filter((m) => m.role === "assistant").at(-1);
     const conv = this.store.getConversation(conversationId);

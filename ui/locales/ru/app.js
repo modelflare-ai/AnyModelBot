@@ -32,7 +32,7 @@ export default {
     themeDark: "Тема: тёмная",
     themeDarkKeys: "тема тёмная ночь",
     lang: "Язык: {name}",
-    langKeys: "язык русский английский китайский японский корейский испанский португальский турецкий Türkçe",
+    langKeys: "язык русский английский китайский японский корейский испанский португальский турецкий Türkçe 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese",
     switchBot: "Переключиться на «{name}»",
   },
   lowBalance: "На счёте Modelflare осталось ${amount}",

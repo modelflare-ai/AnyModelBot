@@ -1,6 +1,6 @@
 # Участие в разработке
 
-[简体中文](./CONTRIBUTING.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | Русский | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
+[简体中文](./CONTRIBUTING.md) | [繁體中文（台灣）](./CONTRIBUTING_zh-TW.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | Русский | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
 
 Спасибо, что помогаете улучшать AnyModelBot. Приветствуются сообщения об ошибках, исправления, документация и идеи.
 
@@ -63,7 +63,7 @@ npm run setup          # получить подмодуль vendor/magpie и с
 - Акцент бренда — яркий жёлто-зелёный `#d7ff00`; не добавляйте в интерфейс синий цвет.
 - Консоль использует Preact + htm без сборки. Не добавляйте сборщик или зависимости интерфейса, требующие компиляции.
 - Проверяйте светлую и тёмную темы.
-- Не вписывайте текст прямо в код интерфейса: добавляйте строки в `ui/locales/zh-CN/` и `ui/locales/en/` на обоих языках и используйте `t()`. Перед отправкой выполните `node scripts/i18n-check.mjs`. Проверяйте оба языка: английский обычно длиннее.
+- Для текста интерфейса используйте `t()`. Добавьте переводы в `ui/locales/<язык>/` для каждого языка из манифеста. Код традиционного китайского (Тайвань) — `zh-TW`. Перед отправкой изменений запустите `npm run i18n:check`.
 
 ## Сторонний код и зависимости
 

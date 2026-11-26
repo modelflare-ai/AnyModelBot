@@ -30,7 +30,7 @@ export default {
     "themeDark": "테마: 다크",
     "themeDarkKeys": "테마 다크 어둡게 야간",
     "lang": "언어: {name}",
-    "langKeys": "언어 한국어 영어 중국어 일본어 러시아어 스페인어 포르투갈어 튀르키예어 Türkçe",
+    "langKeys": "언어 한국어 영어 중국어 일본어 러시아어 스페인어 포르투갈어 튀르키예어 Türkçe 繁體中文 繁体中文 台灣 zh-TW Traditional Chinese",
     "switchBot": "“{name}”(으)로 전환"
   },
   "lowBalance": "Modelflare 잔액이 ${amount} 남았습니다",

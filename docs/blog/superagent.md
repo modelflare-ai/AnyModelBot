@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="../../README.md">项目首页</a> |
+  <a href="./superagent_zh-TW.md">繁體中文（台灣）</a> |
   <a href="https://github.com/modelflare-ai/AnyModelBot/releases">下载</a> |
   <a href="../design/background-tasks-and-proactive.md">设计文档</a> |
   <a href="https://github.com/deepseek-ai/dsh-superagent-prototype">dsh-superagent</a> |

@@ -1,6 +1,6 @@
 # 개발 안내
 
-[简体中文](./development.md) | [English](./development_en.md) | [日本語](./development_ja.md) | 한국어 | [Русский](./development_ru.md) | [Español](./development_es.md) | [Português (Brasil)](./development_pt.md) | [Türkçe](./development_tr.md)
+[简体中文](./development.md) | [繁體中文（台灣）](./development_zh-TW.md) | [English](./development_en.md) | [日本語](./development_ja.md) | 한국어 | [Русский](./development_ru.md) | [Español](./development_es.md) | [Português (Brasil)](./development_pt.md) | [Türkçe](./development_tr.md)
 
 소스에서 AnyModelBot을 실행하거나 패키징하고 기여하려는 분을 위한 안내입니다. 앱을 사용하기만 하려면 [릴리스](https://github.com/modelflare-ai/AnyModelBot/releases)에서 설치 파일을 받으세요. [README](../README_ko.md#-다운로드-및-실행)를 참고하세요.
 
@@ -38,7 +38,7 @@ src/
 electron/        데스크톱 메인 프로세스(실행기+트레이)
 ui/              콘솔 화면(Preact+htm, 별도 빌드 없음)
   design/        디자인 시스템: tokens/, base/, components/, 봇 캐릭터 bots/
-  locales/       화면 문구: zh-CN/, en/ 등 언어별·네임스페이스별 파일
+  locales/       화면 문구: zh-CN/, zh-TW/, en/ 등 언어별·네임스페이스별 파일
   css/ lib/ components/ screens/ assets/ main.js
 dsh-runtime/     DSH 에이전트 런타임 의존성 및 AnyModelBot 플러그인(plugins/)
 scripts/         setup / build-magpie / fetch-cua-driver / prepare-dsh / bundle-dsh / electron-smoke / check-readme 등
@@ -81,7 +81,7 @@ npm run test:dsh-bundle  # 패키징된 build/dsh의 실제 DSH 통합 테스트
 - 콘솔은 127.0.0.1에서만 수신 대기하고 시작마다 임의 접근 토큰을 생성하여 다른 로컬 프로그램의 관리 API 직접 호출을 막습니다.
 - 종료 시 채널을 먼저 중지하고 magpie를 종료합니다. 이전 실행이 강제 종료되어 magpie가 남았다면 다음 실행에서 정리합니다(Linux/macOS).
 
-릴리스: `CHANGELOG.md`, `CHANGELOG_en.md`, `CHANGELOG_ja.md`, `CHANGELOG_ko.md`, `CHANGELOG_ru.md`, `CHANGELOG_es.md`, `CHANGELOG_pt.md`, `CHANGELOG_tr.md`에 해당 버전의 변경 사항을 작성합니다(웹사이트나 내부 구현보다 사용자가 느끼는 변경 중심, 영문 사이트는 WeChat·Feishu가 언급된 줄 제외). `package.json`의 `version`을 올리고 커밋한 뒤 `v<version>` 태그를 푸시합니다. 변경 내역이 없으면 릴리스 워크플로가 처음에 실패합니다. 있으면 GitHub Release 노트와 사이트 변경 내역에 반영됩니다. 앱의 ‘업데이트 내용’ 대화상자도 같은 변경 내역을 읽습니다. `CHANGELOG*.md`는 설치 파일과 Docker 이미지에 포함되며(`src/changelog.ts`), 아직 설치하지 않은 새 버전의 내용은 사용자가 열 때 해당 버전 태그에서 읽어 옵니다. `.github/workflows/release.yml`이 6개 OS/아키텍처 러너에서 빌드하고 설치 파일과 `SHA256SUMS`를 GitHub Release에 게시합니다. 서명·공증에 필요한 저장소 비밀 값은 해당 파일 상단 주석을 확인하세요. 같은 태그가 `.github/workflows/docker.yml`도 실행하여 x64+arm64 이미지를 `ghcr.io/modelflare-ai/anymodel-bot`에 `<version>`, `latest` 태그로 게시합니다. 태그로 배포할 때 macOS 설치 파일은 Developer ID 서명과 공증이 필수이며, 패키징 후 .app과 DMG 안의 .app을 `spctl` 등으로 검사해 통과하지 못하면 실패합니다. 정식 빌드는 개발자 도구를 끕니다. 디버그 빌드가 필요하면 `npm run dist:debug`를 쓰거나 Release를 수동 실행할 때 `debug_build`를 선택합니다(파일 이름에 `-debug-`가 붙고, 태그에서는 거부되며, `scripts/check-build-flavor.mjs`가 패키지 결과를 확인합니다).
+릴리스: `CHANGELOG.md`, `CHANGELOG_zh-TW.md`, `CHANGELOG_en.md`, `CHANGELOG_ja.md`, `CHANGELOG_ko.md`, `CHANGELOG_ru.md`, `CHANGELOG_es.md`, `CHANGELOG_pt.md`, `CHANGELOG_tr.md`에 해당 버전의 변경 사항을 작성합니다(웹사이트나 내부 구현보다 사용자가 느끼는 변경 중심, 영문 사이트는 WeChat·Feishu가 언급된 줄 제외). `package.json`의 `version`을 올리고 커밋한 뒤 `v<version>` 태그를 푸시합니다. 변경 내역이 없으면 릴리스 워크플로가 처음에 실패합니다. 있으면 GitHub Release 노트와 사이트 변경 내역에 반영됩니다. 앱의 ‘업데이트 내용’ 대화상자도 같은 변경 내역을 읽습니다. `CHANGELOG*.md`는 설치 파일과 Docker 이미지에 포함되며(`src/changelog.ts`), 아직 설치하지 않은 새 버전의 내용은 사용자가 열 때 해당 버전 태그에서 읽어 옵니다. `.github/workflows/release.yml`이 6개 OS/아키텍처 러너에서 빌드하고 설치 파일과 `SHA256SUMS`를 GitHub Release에 게시합니다. 서명·공증에 필요한 저장소 비밀 값은 해당 파일 상단 주석을 확인하세요. 같은 태그가 `.github/workflows/docker.yml`도 실행하여 x64+arm64 이미지를 `ghcr.io/modelflare-ai/anymodel-bot`에 `<version>`, `latest` 태그로 게시합니다. 태그로 배포할 때 macOS 설치 파일은 Developer ID 서명과 공증이 필수이며, 패키징 후 .app과 DMG 안의 .app을 `spctl` 등으로 검사해 통과하지 못하면 실패합니다. 정식 빌드는 개발자 도구를 끕니다. 디버그 빌드가 필요하면 `npm run dist:debug`를 쓰거나 Release를 수동 실행할 때 `debug_build`를 선택합니다(파일 이름에 `-debug-`가 붙고, 태그에서는 거부되며, `scripts/check-build-flavor.mjs`가 패키지 결과를 확인합니다).
 
 버전을 배포할 때마다 공식 사이트, 관련 문서와 모든 언어의 README를 함께 업데이트합니다. `npm --prefix site run sync`로 사이트 내용을 동기화하고 GitHub Release와 Docker 이미지 게시 후 [사이트 배포 안내](../site/README.md)에 따라 운영 사이트를 갱신합니다. `/download`, `/changelog`, `/bots`의 버전, 다운로드 링크와 설명이 일치하는지 확인하며 운영 사이트까지 반영되어야 배포가 완료됩니다.
 
@@ -157,7 +157,7 @@ docker exec amb cat /data/ui-token     # http://<host>:3600/?token=<token> 열�
 - 사이드바: 상단에는 접기·검색·새로 만들기, 그 아래에는 텍스트가 있는 예약 항목이 있습니다. 봇·그룹·카탈로그 봇을 섹션으로 정리하고 섹션 생성·이름 변경·삭제·드래그 정렬을 할 수 있습니다. 왼쪽 아래 아바타에서 계정 메뉴와 설정(`⌘/Ctrl+,`)을 열고, 옆 업데이트 버튼으로 다운로드한 뒤 준비가 되면 재시작하여 설치합니다.
 - 대화 화면: 상단 봇 이름을 누르면 정보 패널(`⌘/Ctrl+⇧+I`)이 열립니다. 기본 응답 채널 계정, 승인 대기, 작업·규칙, 기억, 최근 세션을 보여 주며 ⚙로 봇 설정을 엽니다. 응답은 Markdown과 코드 한 번에 복사를 지원하며 실시간 표시하고 `Esc`로 중지합니다. 승인·질문은 카드로 표시합니다. 위로 스크롤해도 강제로 맨 아래로 이동하지 않습니다.
 - 명령 팔레트는 `⌘/Ctrl+K`입니다. 테마(시스템/라이트/다크)는 설정 → 일반에 있습니다.
-- 언어: 설정 → 일반 → 언어에서 중국어 간체·영어·일본어·한국어·러시아어·스페인어·포르투갈어(브라질)를 선택합니다. 첫 화면 오른쪽 위와 명령 팔레트에서도 바꿀 수 있습니다. 기본은 시스템 언어이며 미지원 언어는 영어입니다. 선택은 config.json의 `ui.lang`에 저장하고 트레이 메뉴, 서버 오류·상태, WeChat/Feishu의 `/help`·승인 안내 등 시스템 메시지에 적용됩니다. 명령줄·Docker의 시스템 언어는 `AMB_LANG`, `LC_ALL`/`LC_MESSAGES`/`LANG` 순이며 없으면 중국어 간체입니다. 로그, 모델 프롬프트, 사용자가 정한 봇 이름은 번역하지 않습니다.
+- 언어: 설정 → 일반 → 언어에서 중국어 간체·중국어 번체(대만)·영어·일본어·한국어·러시아어·스페인어·포르투갈어(브라질)·튀르키예어를 선택합니다. 첫 화면 오른쪽 위와 명령 팔레트에서도 바꿀 수 있습니다. 기본은 시스템 언어이며 미지원 언어는 영어입니다. 선택은 config.json의 `ui.lang`에 저장하고 트레이 메뉴, 서버 오류·상태, WeChat/Feishu의 `/help`·승인 안내 등 시스템 메시지에 적용됩니다. 명령줄·Docker의 시스템 언어는 `AMB_LANG`, `LC_ALL`/`LC_MESSAGES`/`LANG` 순이며 없으면 중국어 간체입니다. 로그, 모델 프롬프트, 사용자가 정한 봇 이름은 번역하지 않습니다.
   - 화면 문구는 `ui/locales/<lang>/<namespace>.js`에 있고 `t("namespace.key", { params })`로 사용합니다(`ui/lib/i18n.js`). 서버 문구는 `src/i18n/messages/<namespace>.ts`이며 키를 타입 검사합니다. 모든 화면 요청은 `x-amb-lang`을 보내며 서버도 해당 언어로 응답합니다.
   - 새 문구는 두 기준 언어에 모두 추가합니다. `node scripts/i18n-check.mjs [files…]`는 화면 코드의 중국어 잔여 문구, 없는 키, zh/en 불일치를 검사합니다(`npm test`의 `test/i18n.unit.test.ts`도 동일 검사). 글꼴 이름·중국어 입력 정규식처럼 필요한 중국어는 해당 줄에 `// i18n-ignore`를 붙입니다.
 - 시작 체크리스트: 빈 대화에는 인사, 모델 변경, WeChat 연결, 작업 맡기기, 기억하기, 이미지 생성의 여섯 단계가 나옵니다. 마지막 단계는 계정의 미디어 모델 여부와 무관하게 내장 데모만 재생합니다. 실제 기본 흐름처럼 즉시 생성해 대화에 보이지만 봇에 전송하지 않고 모델 호출·과금도 없습니다. 이미지는 `ui/assets/guide-demo.svg`입니다. 비용 없이 흐름을 배우도록 한 것이며 실제 이미지 요청·수신으로도 완료됩니다. 보내기를 누르면 직접 시도하고 이동하기 또는 왼쪽 아래 항목을 누르면 해당 제어 요소를 테두리로 강조하는 안내 카드가 나옵니다. 응답, 모델 변경, 파일·이미지 수신, 채널 연결, 기억 저장에 따라 자동 완료되며 config.json의 `ui.guide`(API `/amb/api/guide`)에 저장합니다. 기존 사용자가 이미 한 단계도 인정합니다. 왼쪽 아래로 접거나 완전히 숨길 수 있고 설정 → 일반 → 시작 체크리스트에서 다시 시작합니다. 인사는 실제 응답이 있어야 하고(오류 안내는 제외), 채널은 실제로 연결되어야 합니다(설정만으로는 완료되지 않음). ‘자주 쓰는 채팅 앱 연결’에서는 WeChat, Feishu, Telegram, Slack, Discord를 고를 수 있고 UI 언어는 추천 항목만 정합니다. ‘기억해…’라고 분명히 말하면 턴 후 기억 정리를 90초 기다리지 않고 바로 합니다. 진행 상황은 사용자별로 저장되며(Modelflare 로그인 시 계정별로 KV `guide.owner.*`, 로그인하지 않았으면 기존대로 config.json의 `ui.guide`), 모두 마치면 이후 자동으로 숨겨집니다. 스스로 나타나는 안내 카드는 입력창에 초안이 있거나 작업이 실행 중이면 기다립니다.

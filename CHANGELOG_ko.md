@@ -1,8 +1,15 @@
 # 변경 내역
 
-[简体中文](./CHANGELOG.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | 한국어 | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
+[简体中文](./CHANGELOG.md) | [繁體中文（台灣）](./CHANGELOG_zh-TW.md) | [English](./CHANGELOG_en.md) | [日本語](./CHANGELOG_ja.md) | 한국어 | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
 
 앱을 사용하면서 확인할 수 있는 변경 사항입니다. 이전 버전은 [GitHub 릴리스](https://github.com/modelflare-ai/AnyModelBot/releases)를 확인하세요.
+
+## 0.1.49 - 2026-11-26
+
+### 새 기능
+
+- 중국어 번체(대만)를 지원합니다. 설정 → 일반 → 언어에서 繁體中文（台灣）를 선택하거나 시스템 언어를 따를 수 있습니다.
+- 데스크톱 및 웹 인터페이스, 트레이 메뉴와 시스템 메시지, 스킬 및 작업 라이브러리, 내장 봇 4종의 작업 공간과 예시를 대만 중국어 번체로 제공합니다.
 
 ## 0.1.48 - 2026-11-25
 

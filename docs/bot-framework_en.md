@@ -1,6 +1,6 @@
 # Catalog bot framework
 
-[简体中文](./bot-framework.md)
+[简体中文](./bot-framework.md) | [繁體中文（台灣）](./bot-framework_zh-TW.md)
 
 A bot is a folder. The app contains no code for any single bot, so shipping a new bot needs no app release. Whoever builds it, and however many there are, every bot passes the same checks, so consistency and safety come from the framework.
 
@@ -85,7 +85,7 @@ A Discover card opens with a cover image: `cover/light.png` and `cover/dark.png`
 | `permissions` | See below |
 | `skills` | Imported skills: `name`, `source`, `sha256` (from `amb-bot hash`), `author`, `license`, `url`. Your own skills aren't listed |
 
-Text fields are `{ "zh-CN": …, "en": … }`, both required. The framework requires these two; `ja`, `ko`, `ru`, `es`, `pt` and `tr` fall back to `en`. Bots listed in this repository need all eight languages, including text, UI and sample data, and `test/bot-catalog-site.unit.test.ts` checks this.
+Text fields are `{ "zh-CN": …, "en": … }`, both required. The framework requires these two; `zh-TW`, `ja`, `ko`, `ru`, `es`, `pt` and `tr` fall back to `en`. Bots listed in this repository need all nine languages, including text, UI and sample data, and `test/bot-catalog-site.unit.test.ts` checks this.
 
 ### Permissions
 

@@ -2,16 +2,18 @@
   "id": "__ID__",
   "version": "1.0.0",
   "minAppVersion": "__APP_VERSION__",
-  "name": { "zh-CN": "TODO 名称", "en": "TODO name" },
-  "summary": { "zh-CN": "TODO 一句话说明它能做什么", "en": "TODO one line on what it does" },
+  "name": { "zh-CN": "TODO 名称", "zh-TW": "TODO 名稱", "en": "TODO name" },
+  "summary": { "zh-CN": "TODO 一句话说明它能做什么", "zh-TW": "TODO 一句話說明它能做什麼", "en": "TODO one line on what it does" },
   "about": {
     "zh-CN": ["TODO 能做的第一件事", "TODO 能做的第二件事", "TODO 能做的第三件事"],
+    "zh-TW": ["TODO 能做的第一件事", "TODO 能做的第二件事", "TODO 能做的第三件事"],
     "en": ["TODO first thing it does", "TODO second thing it does", "TODO third thing it does"]
   },
   "avatar": "__AVATAR__",
   "permissions": ["workspace-write"],
   "starters": {
     "zh-CN": ["TODO 一句能让界面变化的话", "TODO 另一句能让界面变化的话"],
+    "zh-TW": ["TODO 一句能讓介面變化的話", "TODO 另一句能讓介面變化的話"],
     "en": ["TODO a sentence that changes the view", "TODO another sentence that changes the view"]
   },
   "skills": []

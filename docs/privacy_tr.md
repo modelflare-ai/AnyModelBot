@@ -1,6 +1,6 @@
 # Veriler ve gizlilik
 
-[简体中文](./privacy.md) | [English](./privacy_en.md) | [日本語](./privacy_ja.md) | [한국어](./privacy_ko.md) | [Русский](./privacy_ru.md) | [Español](./privacy_es.md) | [Português (Brasil)](./privacy_pt.md) | Türkçe
+[简体中文](./privacy.md) | [繁體中文（台灣）](./privacy_zh-TW.md) | [English](./privacy_en.md) | [日本語](./privacy_ja.md) | [한국어](./privacy_ko.md) | [Русский](./privacy_ru.md) | [Español](./privacy_es.md) | [Português (Brasil)](./privacy_pt.md) | Türkçe
 
 **Tek cümlede:** sohbetler, bellek, dosyalar ve anahtarlar cihazında durur; bir modele gönderdiğin her şey, seçtiğin model sağlayıcısına gider — kendi resmi API anahtarınla doğrudan, yoksa Modelflare üzerinden. Verilerinin her riskin ötesinde olduğunu söylemiyoruz: bir modele giden her şey cihazından çıkar.
 

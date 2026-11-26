@@ -1,6 +1,6 @@
 # 기여하기
 
-[简体中文](./CONTRIBUTING.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | 한국어 | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
+[简体中文](./CONTRIBUTING.md) | [繁體中文（台灣）](./CONTRIBUTING_zh-TW.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | 한국어 | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
 
 AnyModelBot을 더 나은 앱으로 만드는 데 함께해 주셔서 감사합니다. 버그 제보, 수정, 문서, 아이디어 모두 환영합니다.
 
@@ -63,7 +63,7 @@ npm run setup          # vendor/magpie 서브모듈을 가져와 build/bin/에 �
 - 브랜드 강조색은 형광 연두색 `#d7ff00`입니다. 화면에 파란색을 추가하지 마세요.
 - 콘솔은 별도 빌드 없는 Preact + htm으로 구성되어 있습니다. 번들러나 컴파일이 필요한 프런트엔드 의존성을 추가하지 마세요.
 - 라이트와 다크 테마를 모두 확인하세요.
-- 화면 문구를 하드코딩하지 마세요. `ui/locales/zh-CN/`와 `ui/locales/en/` 양쪽에 추가하고 `t()`를 사용하세요. 제출 전에 `node scripts/i18n-check.mjs`를 실행하고 두 언어를 모두 확인하세요. 영어가 대개 더 깁니다.
+- 화면 문구는 `t()`로 표시합니다. 매니페스트에 등록된 모든 언어의 번역을 `ui/locales/<언어>/`에 추가하세요. 대만 중국어 번체 코드는 `zh-TW`입니다. 제출 전에 `npm run i18n:check`를 실행하세요.
 
 ## 제3자 코드와 의존성
 

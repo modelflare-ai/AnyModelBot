@@ -27,7 +27,7 @@ export interface AppConfig {
     pwshHintDismissed: boolean;
     /** 新手引导（上手清单）的进度，见 src/guide.ts */
     guide: GuideState;
-    /** 界面语言：system 跟随系统，或 zh-CN / en / ja / ko / ru / es / pt / tr；托盘菜单和机器人发出的系统消息也用它（src/i18n） */
+    /** 界面语言：system 跟随系统，或 zh-CN / zh-TW / en / ja / ko / ru / es / pt / tr；托盘菜单和机器人发出的系统消息也用它（src/i18n） */
     lang: LangPref;
   };
   /**

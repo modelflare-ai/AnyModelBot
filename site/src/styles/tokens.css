@@ -4,6 +4,10 @@
    浅色下主操作是墨色，黄绿只做墨色上的光（--signal-*）或柔黄绿 --lime-soft / 淡底 --accent-wash；组件只认语义 token（--primary、--tag-*、--hl-bg…）。
    任何元素加 data-theme 都能让子树换一套（价格卡里主按钮上的标记靠 [data-on="accent"] 覆盖）。 */
 @layer tokens {
+  :root:lang(zh-TW) {
+    --font-sans: "Geist", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", system-ui, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, Consolas, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", monospace;
+  }
   :root:lang(ja) {
     --font-sans: system-ui, "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans JP", sans-serif;
     --font-mono: ui-monospace, "SFMono-Regular", Consolas, "Noto Sans JP", monospace;

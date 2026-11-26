@@ -18,6 +18,7 @@ BOTS = ["主-蓝色", "黄色小萌", "绿草", "红魔", "紫钻", "橙色探�
 
 COPY = {
     "zh": {"h1": ["你的 AI 机器人团队，", "跑在自己的电脑上。"], "mark": "跑在自己的电脑上", "sub": "任意模型，每台设备，数据留在你电脑上。", "chips": ["对话存本机", "按量付费 · App 免费", "MIT 开源"]},
+    "zh-TW": {"h1": ["你的 AI 機器人團隊，", "在自己的電腦上執行。"], "mark": "在自己的電腦上執行", "sub": "模型任你選，對話和檔案留在自己的電腦。", "chips": ["對話儲存於本機", "App 免費 · 依用量付費", "MIT 開放原始碼"]},
     "en": {"h1": ["Your team of AI bots,", "running on your computer."], "mark": "running on your computer", "sub": "Any model. Every device. Your data, your machine.", "chips": ["Chats stay local", "Pay per use · App is free", "MIT open source"]},
     "ja": {"h1": ["あなたのパソコンで動く", "AI ボットのチーム。"], "mark": "AI ボットのチーム", "sub": "好きなモデルで。チャットは手元に保存。", "chips": ["チャットは本機に保存", "アプリ無料・従量課金", "MIT オープンソース"]},
     "ko": {"h1": ["내 컴퓨터에서 실행하는", "나만의 AI 봇 팀."], "mark": "나만의 AI 봇 팀", "sub": "원하는 모델로. 대화는 내 기기에 저장.", "chips": ["대화는 내 기기에", "앱 무료 · 사용량 과금", "MIT 오픈 소스"]},
@@ -30,6 +31,7 @@ COPY = {
 # Source fonts from google/fonts (SIL OFL), supplied at generation time. The website
 # keeps using system fonts; these large font files are not shipped to visitors.
 LOCAL_FONTS = {
+    "zh-TW": os.environ.get("AMB_OG_FONT_ZH_TW", "/usr/share/fonts/truetype/noto-cjk/NotoSansTC.ttf"),
     "ja": os.environ.get("AMB_OG_FONT_JA", "/usr/share/fonts/truetype/noto-cjk/NotoSansJP.ttf"),
     "ko": os.environ.get("AMB_OG_FONT_KO", "/usr/share/fonts/truetype/noto-cjk/NotoSansKR.ttf"),
     "ru": os.environ.get("AMB_OG_FONT_RU", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
@@ -78,7 +80,7 @@ def og(lang):
     if lang in LOCAL_FONTS:
         face = LOCAL_FONTS[lang]
         if not os.path.isfile(face):
-            raise FileNotFoundError(f"Set AMB_OG_FONT_{lang.upper()} to a font supporting {lang}: {face}")
+            raise FileNotFoundError(f"Set AMB_OG_FONT_{lang.upper().replace('-', '_')} to a font supporting {lang}: {face}")
         size = 62
         head = font(face, size, 600)
         while max(d.textlength(line, font=head) for line in c["h1"]) > 680:

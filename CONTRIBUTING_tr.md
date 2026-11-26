@@ -1,6 +1,6 @@
 # Katkıda bulunma
 
-[简体中文](./CONTRIBUTING.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | Türkçe
+[简体中文](./CONTRIBUTING.md) | [繁體中文（台灣）](./CONTRIBUTING_zh-TW.md) | [English](./CONTRIBUTING_en.md) | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | Türkçe
 
 AnyModelBot'u geliştirmeye yardım ettiğin için teşekkürler. Hata bildirimleri, düzeltmeler, belgeler ve fikirler hoş gelir.
 
@@ -63,7 +63,7 @@ Depo düzeni, paketleme ve kanal kurulumu [geliştirme kılavuzunda](./docs/deve
 - Marka vurgu rengi floresan sarı-yeşil `#d7ff00`; arayüze mavi sokma.
 - Konsol, derleme adımı olmayan Preact + htm kullanır; paketleyici veya derlenmesi gereken ön yüz bağımlılığı ekleme.
 - Hem açık hem koyu temayı kontrol et.
-- Arayüz metnini koda gömme: `ui/locales/zh-CN/` ve `ui/locales/en/` içine ekle (iki dil) ve `t()` kullan; göndermeden önce `node scripts/i18n-check.mjs` çalıştır. İki dili de kontrol et — İngilizce genellikle daha uzundur.
+- Arayüz metinlerini `t()` ile göster. Bildirim dosyasında listelenen her dil için çevirileri `ui/locales/<dil>/` altına ekle. Geleneksel Çince (Tayvan) için `zh-TW` kullan. Değişiklikleri göndermeden önce `npm run i18n:check` çalıştır.
 
 ## Üçüncü taraf kod ve bağımlılıklar
 

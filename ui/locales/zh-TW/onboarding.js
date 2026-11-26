@@ -1,0 +1,47 @@
+// onboarding · zh-TW：引導頁（screens/onboarding.js：登入、選預設模型）
+export default {
+  slogan: "任意模型，一個助手",
+  gatewayFailed: "內建模型閘道沒有啟動：{error}。修復後重新啟動應用程式再連線。",
+  unknownReason: "未知原因",
+  line: {
+    "label": "API 域名",
+    "sub": "自行選擇域名，也可先測速；不會自動切換。",
+    "global": "modelflare.dev",
+    "cn": "origin.modelflare.dev",
+    "cf": "cf.modelflare.dev",
+    "test": "域名測速",
+    "testing": "測速中…",
+    "testNote": "從執行 AnyModelBot 的裝置測量：顯示三次探測的回應時間中位數和成功次數。不攜帶 API Key、不呼叫模型，不代表產生速度。",
+    "result": "{ms} ms · 成功 {count}/{total}",
+    "timeout": "逾時",
+    "unreachable": "無法連線"
+  },
+  login: {
+    label: "登入 / 註冊 Modelflare",
+    waiting: "在瀏覽器中完成登入後，會自動回到這裡",
+    reopen: "重新開啟登入頁 ↗",
+    copyLink: "複製連結",
+    manualHint: "在瀏覽器登入後，請複製網址列中的完整連結並貼到下方，即使該頁面無法開啟也可以繼續。",
+    manualLabel: "登入後的連結",
+    manualSubmit: "完成登入",
+    manualSending: "正在登入…",
+  },
+  model: {
+    /** n 是帶樣式的數字，count 用來選單複數 */
+    found: { other: "已連線，找到 {n} 個模型" },
+    hint: "選一個預設模型，之後隨時可在對話裡切換。",
+    filter: "篩選模型",
+    default: "預設模型",
+    noMatch: "沒有符合條件的模型",
+    mediaHint: "產生圖片和影片時預設用的模型。",
+    image: "圖片",
+    imageLabel: "預設圖片模型",
+    video: "影片",
+    videoLabel: "預設影片模型",
+    console: "去控制台 ↗",
+    empty: "你的帳號目前沒有可用的模型。請先到控制台啟用模型，再回來重新整理。",
+    saving: "正在儲存…",
+    start: "開始對話",
+    startAnyway: "仍然開始",
+  },
+};

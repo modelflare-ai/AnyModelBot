@@ -1,8 +1,15 @@
 # Changelog
 
-[简体中文](./CHANGELOG.md) | English | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
+[简体中文](./CHANGELOG.md) | [繁體中文（台灣）](./CHANGELOG_zh-TW.md) | English | [日本語](./CHANGELOG_ja.md) | [한국어](./CHANGELOG_ko.md) | [Русский](./CHANGELOG_ru.md) | [Español](./CHANGELOG_es.md) | [Português (Brasil)](./CHANGELOG_pt.md) | [Türkçe](./CHANGELOG_tr.md)
 
 This covers changes you'll notice in the app. For older versions, see the [GitHub releases](https://github.com/modelflare-ai/AnyModelBot/releases).
+
+## 0.1.49 - 2026-11-26
+
+### New
+
+- Added Traditional Chinese (Taiwan). Select 繁體中文（台灣） in Settings → General → Language, or follow the system language.
+- Traditional Chinese covers the desktop and web interfaces, tray and system messages, skill and task libraries, and workspaces and examples for all four built-in bots.
 
 ## 0.1.48 - 2026-11-25
 

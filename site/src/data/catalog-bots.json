@@ -5,6 +5,7 @@
     "avatar": "dossier",
     "name": {
       "zh-CN": "尽调助手",
+      "zh-TW": "盡職調查助手",
       "en": "Company Research",
       "ja": "企業リサーチ",
       "ko": "기업 리서치",
@@ -15,6 +16,7 @@
     },
     "summary": {
       "zh-CN": "在你的电脑上做公司尽调，生成可追溯的简报和 PDF。",
+      "zh-TW": "在你的電腦上做公司盡職調查，產生可追溯的簡報和 PDF。",
       "en": "Company research on your computer, with sourced briefings and PDF reports.",
       "ja": "手元のパソコンで企業を調査し、出典付きの要約と PDF レポートを作成します。",
       "ko": "내 컴퓨터에서 기업을 실사하고 출처가 있는 브리핑과 PDF를 만듭니다.",
@@ -28,6 +30,11 @@
         "研究流程和 PDF 导出对齐开源项目 Company Research Agent",
         "报告和来源留在你的设备上；在聊天渠道里发起，结果也发回那里",
         "仅供信息与学习参考，不构成投资建议"
+      ],
+      "zh-TW": [
+        "研究流程和 PDF 匯出對齊開放原始碼專案 Company Research Agent",
+        "報告和來源留在你的裝置上；在聊天管道裡發起，結果也發回那裡",
+        "僅供資訊與學習參考，不構成投資建議"
       ],
       "en": [
         "Follows the research flow and PDF export of the open-source Company Research Agent",
@@ -70,6 +77,11 @@
         "用一页纸介绍 Stripe 做什么、服务谁。只查官网的 1–2 个页面，不做完整尽调。",
         "对 Stripe 做完整尽调并生成报告",
         "打开上一份报告的来源与策展列表"
+      ],
+      "zh-TW": [
+        "用一頁紙介紹 Stripe 做什麼、服務誰。只查官方網站的 1–2 個頁面，不做完整盡職調查。",
+        "對 Stripe 做完整盡職調查並產生報告",
+        "開啟上一份報告的來源與策展清單"
       ],
       "en": [
         "Introduce what Stripe does and who it serves in one page. Use only 1–2 pages from its official site, without full diligence.",
@@ -114,6 +126,7 @@
     "avatar": "slides",
     "name": {
       "zh-CN": "PPT 大师",
+      "zh-TW": "PPT 大師",
       "en": "PPT Master",
       "ja": "PPT マスター",
       "ko": "PPT 마스터",
@@ -124,6 +137,7 @@
     },
     "summary": {
       "zh-CN": "把文档或主题做成可编辑的 PPT，也能改现有的演示文稿。",
+      "zh-TW": "把文件或主題做成可編輯的 PPT，也能改現有的簡報。",
       "en": "Turn documents or topics into editable slides, or edit decks you already have.",
       "ja": "文書やテーマから編集可能なスライドを作成。既存のプレゼン資料も編集できます。",
       "ko": "문서나 주제를 편집 가능한 슬라이드로 만들고, 기존 발표 자료도 수정합니다.",
@@ -137,6 +151,11 @@
         "基于开源项目 PPT Master（hugohe3/ppt-master）的流程和导出工具",
         "工程文件和 PPTX 都留在你的设备上，文档内容会发给你选的模型",
         "导出的是原生形状，能在 PowerPoint 里继续改；效果取决于所选模型"
+      ],
+      "zh-TW": [
+        "基於開放原始碼專案 PPT Master（hugohe3/ppt-master）的流程和匯出工具",
+        "工程檔案和 PPTX 都留在你的裝置上，文件內容會發給你選的模型",
+        "匯出的是原生形狀，能在 PowerPoint 裡繼續改；效果取決於所選模型"
       ],
       "en": [
         "Built on the workflow and export tools of the open-source PPT Master (hugohe3/ppt-master)",
@@ -179,6 +198,11 @@
         "为“如何开好一次 30 分钟周会”写 3 页 PPT 文字大纲，每页一个标题和三个要点，不生成文件。",
         "快速做一份 5 页 16:9 的 PPT，主题是如何开好远程周会，不用确认",
         "帮我做一份 8 页的新品发布 PPT，先给我看方案"
+      ],
+      "zh-TW": [
+        "為「如何開好一次 30 分鐘週會」寫 3 頁 PPT 文字大綱，每頁一個標題和三個要點，不產生檔案。",
+        "快速做一份 5 頁 16:9 的 PPT，主題是如何開好遠端週會，不用確認",
+        "幫我做一份 8 頁的新品發布 PPT，先給我看方案"
       ],
       "en": [
         "Outline 3 slides on running a good 30-minute team meeting, with a title and three bullets per slide. Text only, no files.",
@@ -223,6 +247,7 @@
     "avatar": "film",
     "name": {
       "zh-CN": "影视创作室",
+      "zh-TW": "影視創作室",
       "en": "Film Studio",
       "ja": "映像スタジオ",
       "ko": "영상 스튜디오",
@@ -233,6 +258,7 @@
     },
     "summary": {
       "zh-CN": "做短视频和分集短剧，从剧本、分镜到配音、剪辑和成片。",
+      "zh-TW": "做短片和分集短劇，從劇本、分鏡到配音、剪輯和成片。",
       "en": "Short videos and serials: script, storyboard, voice, editing, and final cut.",
       "ja": "短編動画と連続ドラマを、脚本・絵コンテから音声・編集・完成まで制作します。",
       "ko": "숏폼과 시리즈 드라마를 대본, 스토리보드부터 음성, 편집, 완성까지 만듭니다.",
@@ -246,6 +272,11 @@
         "移植 PRINTFILM 的编剧、分镜、资产设定与 FFmpeg 合成能力",
         "模型调用使用 Modelflare，项目与素材保存在你的设备",
         "支持逐镜修改、素材版本、共享资产库和中断恢复"
+      ],
+      "zh-TW": [
+        "移植 PRINTFILM 的編劇、分鏡、資產設定與 FFmpeg 合成能力",
+        "模型呼叫使用 Modelflare，專案與素材儲存在你的裝置",
+        "支援逐鏡修改、素材版本、共用資產庫和中斷還原"
       ],
       "en": [
         "Ports PRINTFILM scriptwriting, storyboards, asset design and FFmpeg composition",
@@ -288,6 +319,11 @@
         "写一个 150 字以内的短剧梗概：一位快递员每天收到来自明天的包裹。只写文字，不生成图片或视频。",
         "把我的创意做成完整短视频，先给我看文案和分镜",
         "创建一部三集短剧，先规划故事、角色与分集"
+      ],
+      "zh-TW": [
+        "寫一個 150 字以內的短劇梗概：一位快遞員每天收到來自明天的包裹。唯寫文字，不產生圖片或影片。",
+        "把我的創意做成完整短片，先給我看文案和分鏡",
+        "建立一部三集短劇，先規劃故事、角色與分集"
       ],
       "en": [
         "Write a short film synopsis under 100 words: a courier receives packages from tomorrow every day. Text only, no images or video.",
@@ -332,6 +368,7 @@
     "avatar": "ticker",
     "name": {
       "zh-CN": "美股研报",
+      "zh-TW": "美股研究報告",
       "en": "US Stock Research",
       "ja": "米国株リサーチ",
       "ko": "미국 주식 리서치",
@@ -342,6 +379,7 @@
     },
     "summary": {
       "zh-CN": "查阅美股财报和申报文件，写出数据可追溯的研究报告。",
+      "zh-TW": "查閱美股財報和申報檔案，寫出資料可追溯的研究報告。",
       "en": "Research US-listed companies from SEC filings, with every number traceable.",
       "ja": "米国上場企業の決算と SEC 提出書類を調べ、数字の出典をたどれるレポートを作成します。",
       "ko": "미국 상장사의 재무제표와 SEC 공시를 조사해 수치를 추적할 수 있는 보고서를 작성합니다.",
@@ -355,6 +393,11 @@
         "用 SEC EDGAR 的财报和申报文件研究美国上市公司：列计划、取数、自检、写报告",
         "取数记录和原始数据都留在你的工作区；没有股价、PE 和筛选器",
         "研究流程灵感来自开源项目 Dexter，不含其代码，也无关联。仅供参考，不构成投资建议"
+      ],
+      "zh-TW": [
+        "用 SEC EDGAR 的財報和申報檔案研究美國上市公司：列計畫、取數、自檢、寫報告",
+        "取數記錄和原始資料都留在你的工作區；沒有股價、PE 和篩選器",
+        "研究流程靈感來自開放原始碼專案 Dexter，不含其程式碼，也無關聯。僅供參考，不構成投資建議"
       ],
       "en": [
         "Researches US-listed companies from SEC EDGAR filings: plans, fetches, checks, then writes a report",
@@ -397,6 +440,11 @@
         "用一段话介绍苹果公司的主要业务，再列出读它年报时值得关注的三个问题。只做入门概览，不取财务数据、不做估值。",
         "研究英伟达近五年的收入和毛利率趋势，生成报告",
         "对比微软和 Alphabet 近三年的收入和营业利润率"
+      ],
+      "zh-TW": [
+        "用一段話介紹蘋果公司的主要業務，再列出讀它年報時值得關注的三個問題。只做入門概覽，不取財務資料、不做估值。",
+        "研究英偉達近五年的收入和毛利率趨勢，產生報告",
+        "對比微軟和 Alphabet 近三年的收入和營業利潤率"
       ],
       "en": [
         "Introduce Apple’s main businesses in one paragraph and list three questions to consider when reading its annual report. Intro only, no financial data or valuation.",

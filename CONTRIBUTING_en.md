@@ -1,6 +1,6 @@
 # Contributing
 
-[简体中文](./CONTRIBUTING.md) | English | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
+[简体中文](./CONTRIBUTING.md) | [繁體中文（台灣）](./CONTRIBUTING_zh-TW.md) | English | [日本語](./CONTRIBUTING_ja.md) | [한국어](./CONTRIBUTING_ko.md) | [Русский](./CONTRIBUTING_ru.md) | [Español](./CONTRIBUTING_es.md) | [Português (Brasil)](./CONTRIBUTING_pt.md) | [Türkçe](./CONTRIBUTING_tr.md)
 
 Thanks for helping make AnyModelBot better. Bug reports, fixes, docs and ideas are all welcome.
 
@@ -63,7 +63,7 @@ Repository layout, packaging and channel setup are covered in the [development g
 - The brand accent is fluorescent yellow-green `#d7ff00`; do not introduce blue into the UI.
 - The console is Preact + htm with no build step; please do not add a bundler or front-end dependencies that need compiling.
 - Check both the light and dark themes.
-- Don't hard-code UI text: add it to `ui/locales/zh-CN/` and `ui/locales/en/` (both languages) and use `t()`; run `node scripts/i18n-check.mjs` before submitting. Check both languages — English is usually longer.
+- Use `t()` for UI text. Add translations in `ui/locales/<language>/` for every language in the manifest, including `zh-TW` for Traditional Chinese (Taiwan). Run `npm run i18n:check` before submitting.
 
 ## Third-party code and dependencies
 

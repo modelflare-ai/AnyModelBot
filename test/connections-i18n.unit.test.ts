@@ -39,7 +39,7 @@ describe("connection authorization error localization", () => {
     expect(error).toBeInstanceOf(ConnectionError);
     expect(error.status).toBe(400);
     expect(error.message).toBe("This sign-in link has expired. Start again from Settings.");
-    for (const locale of ["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"] as const) {
+    for (const locale of ["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"] as const) {
       expect(withLang(locale, () => connectionUserMessage(error))).toBe(tl(locale, "connections.notionLinkExpired"));
     }
     expect(withLang("ko", () => error.userMessage())).toContain("로그인 링크");

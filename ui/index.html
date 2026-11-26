@@ -17,11 +17,15 @@
       try { m = localStorage.getItem("amb-theme") || "system"; } catch (_) {}
       var dark = m === "dark" || (m !== "light" && mq("(prefers-color-scheme: dark)"));
       root.setAttribute("data-theme", dark ? "dark" : "light");
-      // 首帧只应用本机缓存（此时还没有界面内容）；系统语言由 i18n.js 读取就绪清单后统一解析。
-      var norm = function (s) { var base = String(s || "").trim().toLowerCase().split(/[-_.@]/)[0]; return base === "zh" ? "zh-CN" : ["en", "ja", "ko", "ru", "es", "pt"].indexOf(base) >= 0 ? base : ""; };
+      // 词典模块加载前，先按缓存或浏览器偏好设置文档语言。
+      var norm = function (s) {
+        var parts = String(s || "").trim().toLowerCase().split(/[-_.@]/), base = parts[0];
+        if (base === "zh") return ["hant", "tw", "hk", "mo"].includes(parts[1]) ? "zh-TW" : "zh-CN";
+        return ["en", "ja", "ko", "ru", "es", "pt", "tr"].includes(base) ? base : "";
+      };
       var lang = "";
       try { lang = norm(localStorage.getItem("amb-lang")); } catch (_) {}
-      // The module resolves system languages from the shared readiness manifest before rendering any UI.
+      if (!lang) lang = (navigator.languages?.length ? navigator.languages : [navigator.language]).map(norm).find(Boolean);
       root.setAttribute("lang", lang || "en");
       var p = {};
       try { p = JSON.parse(localStorage.getItem("amb-prefs") || "{}") || {}; } catch (_) {}

@@ -56,6 +56,7 @@ export function feedbackEnvironment(locale: string): FeedbackEnvironment {
 
 const LANGUAGE_NAMES: Record<string, string> = {
   "zh-CN": "简体中文",
+  "zh-TW": "繁體中文（台灣）",
   en: "English",
   ja: "日本語",
   ko: "한국어",

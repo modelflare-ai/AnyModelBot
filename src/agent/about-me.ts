@@ -118,7 +118,7 @@ const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const PHONE = /(?<![\d.])(?:\+?\d{1,3}[\s-]?)?(?:1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}|\(?\d{2,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4})(?![\d.])/;
-const PHONE_WORD = /(电话|手机|手機|座机|联系方式|phone|mobile|cell|tel\b|telefone|teléfono|celular|電話|携帯|전화|휴대폰|телефон)/i;
+const PHONE_WORD = /(电话|手机|手機|座[机機]|市話|聯絡方式|联系方式|phone|mobile|cell|tel\b|telefone|teléfono|celular|電話|携帯|전화|휴대폰|телефон)/i;
 const CN_MOBILE = /(?<!\d)(?:\+?86[\s-]?)?1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}(?!\d)/;
 /** 门牌：数字 + 号 / 弄 / 栋 / 室…（中文），丁目、番地（日文），번지、호（韩文） */
 const ADDR_NUMBER = /\d+\s*(号|號|弄|栋|棟|幢|室|单元|單元|号楼|丁目|番地|番|번지|호|동)/;
@@ -126,7 +126,7 @@ const ADDR_ROAD = /(路|街|道|巷|弄|胡同|大道|村|镇|鎮|区|區|县|�
 const ADDR_EN = /\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s){0,4}(?:street|st|road|rd|avenue|ave|lane|ln|boulevard|blvd|drive|dr|way|court|ct|place|pl|rua|calle|avenida|av)\b\.?/i;
 const ADDR_WORD = /(地址|住址|收件|寄到|address|endereço|dirección|住所|주소|адрес)/i;
 /** 证件号、银行卡号（不存）：关键词，或 15 位以上的一串数字（中国身份证、银行卡） */
-const ID_WORD = /(身份证|身份證|护照|護照|驾照|驾驶证|社保|税号|证件号|银行卡|卡号|信用卡|借记卡|passport|\bssn\b|\bid (?:card|number)\b|card number|credit card|debit card|bank card|マイナンバー|パスポート|カード番号|주민등록|여권|카드번호|паспорт|номер карты|cpf|rg\b|dni|tarjeta|cartão)/i;
+const ID_WORD = /(身[份分][证證]|[护護]照|[驾駕]照|[驾駕][驶駛][证證]|社保|[税稅][号號]|[证證]件[号號]|[银銀]行卡|卡[号號]|信用卡|借[记記]卡|金融卡|passport|\bssn\b|\bid (?:card|number)\b|card number|credit card|debit card|bank card|マイナンバー|パスポート|カード番号|주민등록|여권|카드번호|паспорт|номер карты|cpf|rg\b|dni|tarjeta|cartão)/i;
 
 function longDigits(text: string): boolean {
   const s = text.replace(/(?<=\d)[\s-](?=\d)/g, "");

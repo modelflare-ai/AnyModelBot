@@ -29,7 +29,7 @@ describe.skipIf(!available)("PRINTFILM sandbox UI", () => {
     server = http.createServer((req, res) => {
       const u = new URL(req.url || "/", "http://localhost");
       if (serveBotAppStatic(req, res, u, { uiDir: path.join(root, "ui"), vendor, catalog })) return;
-      const lang = ["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"].includes(u.searchParams.get("lang") || "") ? u.searchParams.get("lang")! : "en";
+      const lang = ["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"].includes(u.searchParams.get("lang") || "") ? u.searchParams.get("lang")! : "en";
       const sample = JSON.parse(fs.readFileSync(path.join(bot, `sample.${lang}.json`), "utf8"));
       const messages = JSON.parse(fs.readFileSync(path.join(bot, `ui/locales/${lang}.json`), "utf8"));
       const p = sample.sampleProject, ep = sample.sampleEpisode;
@@ -61,7 +61,7 @@ describe.skipIf(!available)("PRINTFILM sandbox UI", () => {
   }, 30_000);
   afterAll(async () => { await browser?.close(); server?.closeAllConnections(); server?.close(); if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); });
 
-  it.each(["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"])("renders every %s tab at phone width without errors or overflow", async (lang) => {
+  it.each(["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"])("renders every %s tab at phone width without errors or overflow", async (lang) => {
     const page = await browser.newPage({ viewport: { width: 390, height: 780 } });
     const errors: string[] = [];
     page.on("pageerror", (e: Error) => errors.push(e.message));

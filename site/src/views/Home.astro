@@ -11,6 +11,7 @@ import Flow from "../sections/Flow.astro";
 import Devices from "../sections/Devices.astro";
 import Faq from "../sections/Faq.astro";
 import Final from "../sections/Final.astro";
+import DemoTour from "../components/DemoTour.astro";
 import DemoVideo from "../components/DemoVideo.astro";
 import { dict, type Lang } from "../i18n";
 import { homeJsonLd } from "../lib/seo";
@@ -38,6 +39,6 @@ const share = lang === "zh" ? { ogTitle: "AnyModelBot｜你的 AI 机器人团�
   <Devices lang={lang} />
   <Faq lang={lang} />
   <Final lang={lang} />
-  <DemoVideo lang={lang} />
+  {lang === "zh-TW" ? <DemoTour lang={lang} /> : <DemoVideo lang={lang} />}
   <script type="application/json" id="amb-quips" set:html={JSON.stringify(dict(lang).home.quips)} />
 </Base>

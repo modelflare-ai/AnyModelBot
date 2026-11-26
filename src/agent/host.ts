@@ -21,7 +21,7 @@ import { CUA_SKILL, MEDIA_SKILL, TASK_RULES, agentPersona, botPrompt, botSkills 
 import { mySkillsPrompt } from "./prompts/my-skills.js";
 import { UserSkills } from "../skills/service.js";
 import { skillDisplay, skillState, type SkillRuntime } from "../skills/display.js";
-import { t, t as tr } from "../i18n/index.js";
+import { appLang, t, t as tr } from "../i18n/index.js";
 import { dirBytes, taskSessionDirs } from "./session-dirs.js";
 
 const log = logger("agent.host");
@@ -1297,7 +1297,7 @@ exec "$REAL" "$@"
     const mine = mySkillsPrompt({ bot: bot?.name ?? "", skills: this.userSkills.mine.list().map((s) => ({ name: s.name, title: s.title, on: s.bots.includes(this.o.botId) })) });
     // 机器人之间发消息：已登录、开着时才建议交给别的机器人（登录状态、开关变了下一次模型请求就跟着变）
     const collab = this.o.collab?.();
-    const text = [botPrompt({ name: bot?.name ?? "", persona: bot?.systemPrompt ?? "", memory: this.settings().memory.enabled, others, collab }), apps, botSkills(this.liveSkills(), !!apps), mine].filter(Boolean).join("\n\n");
+    const text = [botPrompt({ lang: appLang(), name: bot?.name ?? "", persona: bot?.systemPrompt ?? "", memory: this.settings().memory.enabled, others, collab }), apps, botSkills(this.liveSkills(), !!apps), mine].filter(Boolean).join("\n\n");
     if (!force && text === this.promptText) return;
     try {
       fs.mkdirSync(path.dirname(this.promptFile), { recursive: true, mode: 0o700 });

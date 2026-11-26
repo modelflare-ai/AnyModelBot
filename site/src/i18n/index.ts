@@ -1,18 +1,12 @@
 import { localizeSnapshotUSD } from "../lib/locale-format";
-import { zh, type Dict } from "./zh";
-import { en } from "./en";
-import { ja } from "./ja";
-import { ko } from "./ko";
-import { ru } from "./ru";
-import { es } from "./es";
-import { pt } from "./pt";
-import { tr } from "./tr";
+import type { Dict } from "./zh";
+import { RAW_DICTS } from "./catalogs";
 import { LOCALES, type Lang } from "./locales";
-export { LANGS, READY_LANGS, LOCALES, href, switchHref, normalizeLang, type Lang } from "./locales";
+export { LANGS, READY_LANGS, languageLabel, LOCALES, href, switchHref, normalizeLang, type Lang } from "./locales";
 import { pricing, releases } from "../lib/site";
 
-export { RAW_DICTS } from "./catalogs";
-export const DICTS = { zh, en, ja, ko, ru, es, pt, tr } satisfies Record<Lang, Dict>;
+export { RAW_DICTS };
+export const DICTS = RAW_DICTS satisfies Record<Lang, Dict>;
 export const dict = (lang: Lang): Dict => DICTS[lang];
 
 /** "{a} / {b}" + { a, b } → 文本；未提供的变量原样保留（生产构建的占位符检查会拦下） */

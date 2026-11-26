@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.join(import.meta.dirname, "..");
-const LANGS = ["zh-CN", "en", "ja", "ko", "ru", "es", "pt", "tr"];
+const LANGS = ["zh-CN", "zh-TW", "en", "ja", "ko", "ru", "es", "pt", "tr"];
 const ids = fs.readdirSync(path.join(ROOT, "bots")).filter((d) => fs.existsSync(path.join(ROOT, "bots", d, "bot.json"))).sort();
 const manifest = (id: string) => JSON.parse(fs.readFileSync(path.join(ROOT, "bots", id, "bot.json"), "utf8"));
 

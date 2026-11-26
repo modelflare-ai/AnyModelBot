@@ -51,10 +51,10 @@ const KEY_PATTERNS = [
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,
 ];
 const PASSWORD_GIVEN =
-  /(?:密码(?!管理|策略|规则)|口令|验证码|校验码|\bpassw(?:or)?d\b(?!\s*(?:managers?|polic(?:y|ies)|rules?|resets?|strength|less)\b)|\bpwd\b|\bpin(?: code)?\b|\bpass(?:code|phrase)\b|\b(?:otp|cvv|cvc)\b|\b(?:security|verification) code\b|\b(?:api[_ -]?key|secret|token)\b)[^\n.。;；,，]{0,40}?(?:是|(?<![因作认成以行])为|还是|改成|改为|换成|设为|设成|叫|:|：|=|\b(?:is|are|was|becomes)\b|\b(?:set|changed) to\b)\s*\S/i;
-const PASSWORD_AFTER = /用(?![户于来途])[^\n,，。;；]{1,40}?(?:当作?|作为?|做)\s*\S{0,6}?(?:密码(?!管理)|口令|验证码)/;
+  /(?:密[码碼](?!管理|策略|規則|规则)|口令|通關密語|[验驗][证證][码碼]|校[验驗][码碼]|金鑰|權杖|\bpassw(?:or)?d\b(?!\s*(?:managers?|polic(?:y|ies)|rules?|resets?|strength|less)\b)|\bpwd\b|\bpin(?: code)?\b|\bpass(?:code|phrase)\b|\b(?:otp|cvv|cvc)\b|\b(?:security|verification) code\b|\b(?:api[_ -]?key|secret|token)\b)[^\n.。;；,，]{0,40}?(?:是|(?<![因作认認成以行])[为為]|[还還]是|改成|改[为為]|[换換]成|[设設][为為]|[设設]成|叫|:|：|=|\b(?:is|are|was|becomes)\b|\b(?:set|changed) to\b)\s*\S/i;
+const PASSWORD_AFTER = /用(?![户戶于於来來途])[^\n,，。;；]{1,40}?(?:[当當]作?|作[为為]?|做)\s*\S{0,6}?(?:密[码碼](?!管理)|口令|通關密語|[验驗][证證][码碼])/;
 const ID_GIVEN =
-  /(?:\bssn\b|\bpassport\b|\bid (?:card|number)\b|护照|身份证|社保|税号|驾驶证|驾照)[^\n.。;；,，]{0,30}?(?<![A-Za-z0-9-])(?!\d{4}-\d{1,2}-\d{1,2}(?!\d))[a-z]{0,2}\d[\d -]{4,}\d/i;
+  /(?:\bssn\b|\bpassport\b|\bid (?:card|number)\b|[护護]照|身[份分][证證]|社保|[税稅][号號]|[驾駕][驶駛][证證]|[驾駕]照)[^\n.。;；,，]{0,30}?(?<![A-Za-z0-9-])(?!\d{4}-\d{1,2}-\d{1,2}(?!\d))[a-z]{0,2}\d[\d -]{4,}\d/i;
 
 export function looksSecret(text: string): boolean {
   if (KEY_PATTERNS.some((p) => p.test(text))) return true;

@@ -13,9 +13,9 @@ import { errorText, loadMyLibrary, myLibrary, openLocalImport, sourceLabel } fro
 const HAN = /^\p{Script=Han}/u;
 function sortItems(items, lang) {
   const ui = new Intl.Collator(lang, { sensitivity: "base", numeric: true });
-  const pinyin = new Intl.Collator("zh-CN-u-co-pinyin", { sensitivity: "base", numeric: true });
+  const hanOrder = lang === "zh-TW" ? ui : new Intl.Collator("zh-CN-u-co-pinyin", { sensitivity: "base", numeric: true });
   const han = (s) => HAN.test(s.title || s.name);
-  return [...items].sort((a, b) => Number(han(a)) - Number(han(b)) || (han(a) ? pinyin : ui).compare(a.title || a.name, b.title || b.name) || a.id.localeCompare(b.id));
+  return [...items].sort((a, b) => Number(han(a)) - Number(han(b)) || (han(a) ? hanOrder : ui).compare(a.title || a.name, b.title || b.name) || a.id.localeCompare(b.id));
 }
 
 /** 使用情况：{机器人} 使用中 / 暂未使用（只开着的算使用中） */

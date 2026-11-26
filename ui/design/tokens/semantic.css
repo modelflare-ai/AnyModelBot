@@ -435,6 +435,11 @@
 }
 
 /* Locale-specific system fallbacks also apply when a custom font lacks these glyphs. */
+:root:lang(zh-TW) {
+  --font-system: system-ui, "PingFang TC", "Microsoft JhengHei UI", "Noto Sans CJK TC", "Noto Sans TC", sans-serif;
+  --font-serif: ui-serif, "Songti TC", "PMingLiU", "Noto Serif CJK TC", "Noto Serif TC", serif;
+  --code-system: ui-monospace, "SF Mono", Consolas, "PingFang TC", "Microsoft JhengHei UI", "Noto Sans TC", monospace;
+}
 :root:lang(ja) {
   --font-system: system-ui, "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans JP", sans-serif;
   --font-serif: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;

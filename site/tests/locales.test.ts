@@ -12,13 +12,14 @@ describe("locale URLs and presentation", () => {
     expect(headingUnits("내 기기에서 실행하는", "ko")).toContain("기기에서");
     expect(headingUnits("あなたのデバイスで動く", "ja")).toContain("デバイス");
     expect(headingUnits("AI アシスタント", "ja")).toContain("アシスタント");
+    expect(headingUnits("繁體中文", "zh-TW")).toEqual(["繁", "體", "中", "文"]);
     expect(headingUnits("Hello world", "en").join("")).toBe("Hello world");
   });
   it("keeps the app and standalone site's language manifests in sync", () => {
     expect(siteManifest).toEqual(appManifest);
     expect([...LANGS]).toEqual(appManifest.locales.map((l) => l.siteCode));
   });
-  it.each([["ja-JP", "ja"], ["ko_KR.UTF-8", "ko"], ["ru-RU", "ru"], ["es-419", "es"], ["pt-BR", "pt"], ["pt_PT.UTF-8", "pt"], ["tr-TR", "tr"], ["tr_TR.UTF-8", "tr"], ["zh-Hans", "zh"], ["english", undefined]])("recognizes complete language subtags: %s", (input, expected) => {
+  it.each([["ja-JP", "ja"], ["ko_KR.UTF-8", "ko"], ["ru-RU", "ru"], ["es-419", "es"], ["pt-BR", "pt"], ["pt_PT.UTF-8", "pt"], ["tr-TR", "tr"], ["tr_TR.UTF-8", "tr"], ["zh-Hans", "zh"], ["zh-Hans-TW", "zh"], ["zh_TW.UTF-8", "zh-TW"], ["zh-Hant-HK", "zh-TW"], ["zh-MO", "zh-TW"], ["english", undefined]])("recognizes complete language subtags: %s", (input, expected) => {
     expect(normalizeLang(input!)).toBe(expected);
   });
   it("preserves pages, query strings and fragments across language links", () => {
